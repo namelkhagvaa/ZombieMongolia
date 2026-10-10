@@ -1,0 +1,103 @@
+#pragma once
+
+#include "raylib.h"
+
+// Тоглогч, цэрэг, зомби гурвуулаа ашиглах үе мөчтэй хүн дүрс.
+// Бие нь нарийссан (tapered) хэсгүүдээс бүтэх ба төрөл бүр өөрийн нүүр, хувцас, хэрэгсэлтэй.
+
+enum class HumanoidKind
+{
+    Player,  // дээлтэй, шовгор малгайтай
+    Soldier, // дүрэмт хувцас, дуулга, хантааз, үүргэвч
+    Zombie
+};
+
+// Гартаа барьж буй зүйл
+enum class HeldItem
+{
+    None,
+    Knife,
+    Pistol,
+    Rifle,
+    Shotgun,
+    Grenade
+};
+
+// Гадаад төрх
+struct HumanoidLook
+{
+    HumanoidKind kind = HumanoidKind::Zombie;
+
+    Color pants = { 50, 50, 50, 255 };
+    Color boots = { 30, 28, 26, 255 };
+    Color body = { 90, 90, 90, 255 };   // цамц / дээл, ханцуй
+    Color skin = { 224, 180, 140, 255 };
+    Color belt = { 60, 45, 30, 255 };
+    Color hat = { 150, 30, 30, 255 };   // малгай / дуулга
+    Color vest = { 60, 64, 50, 255 };   // хантааз, үүргэвч
+    Color trim = { 230, 150, 30, 255 }; // дээлийн эмжээр
+    Color hair = { 26, 22, 20, 255 };
+
+    HeldItem held = HeldItem::None;
+    float bulk = 1.0f; // биеийн өргөний үржүүлэгч
+
+    // Зөвхөн зомби
+    bool missingLeftArm = false; // зүүн гар тохойноос доош байхгүй
+    bool bloody = false;         // цээжин дээр цусны толбо
+    bool shirtless = false;      // цамцгүй, хавирга нь товойсон
+    bool openRibs = false;       // хэвлийд урагдсан шарх, хавирга харагдана
+    bool tornLeg = false;        // нэг шилбэ нүцгэн, хөл нүцгэн
+    bool oneEye = false;
+    bool headWound = false;
+    int hairStyle = 0;           // 0 халзан, 1 цоохор үлдсэн, 2 сэгсгэр урт
+};
+
+// Биеийн байрлал. Өнцгүүд градусаар. Индекс 0 = баруун тал, 1 = зүүн тал.
+struct HumanoidPose
+{
+    float hip[2] = { 0.0f, 0.0f };          // гуя урагш (+) / хойш (-)
+    float knee[2] = { 0.0f, 0.0f };         // өвдөгний нугалалт (>= 0)
+    float shoulder[2] = { 0.0f, 0.0f };     // гар урагш өргөх (+)
+    float shoulderYaw[2] = { 0.0f, 0.0f };  // гарыг дотогш (+) эргүүлэх
+    float elbow[2] = { 0.0f, 0.0f };        // тохойн нугалалт (>= 0)
+    float legSpread = 0.0f; // хөлөө хажуу тийш алцайлгах (унаа унахад)
+    float bob = 0.0f;       // биеийн босоо шилжилт, метр
+    float lean = 0.0f;      // их бие урагш бөхийх
+    float roll = 0.0f;      // их бие хажуу тийш найгах
+    float headPitch = 0.0f; // толгой урагш бөхийх
+    float headRoll = 0.0f;  // толгой хажуу тийш хазайх
+    float jaw = 0.0f;       // эрүү онгойх (зомби)
+    float fall = 0.0f;      // 0 = босоо, 1 = нуруугаараа унасан
+    float spin = 0.0f;      // биеийн төвөө тойрон эргэлдэх өнцөг, градус (агаарт шидэгдсэн үед)
+    float breath = 0.0f;    // -1..1: амьсгалын үе; цээж тэлж, мөр өргөгдөнө
+    float gunKick = 0.0f;   // бууны ухралт, метр
+    bool hideItem = false;  // гарт барьсан зүйлийг зурахгүй (гранат шидэгдсэний дараа)
+};
+
+// Зэвсэгтэй хүний (тоглогч, цэрэг) байрлал.
+//  walkCycle  - алхааны үе (радиан), moveAmount - 0 зогсож байна, 1 алхаж байна, >1 гүйж байна
+//  recoil     - 0..1, дөнгөж буудсан үед 1
+//  held       - барьж буй зүйл: гарын байрлалыг тодорхойлно
+//  action     - 1 -> 0: хутгаар хатгах эсвэл гранат шидэх хөдөлгөөний явц (0 = хөдөлгөөнгүй)
+HumanoidPose MakeSoldierPose(float walkCycle, float moveAmount, bool grounded, float time, float recoil,
+                             HeldItem held = HeldItem::Rifle, float action = 0.0f);
+
+// Барьж буй зүйлийн амны (сум гарах цэгийн) орон нутгийн байрлал.
+Vector3 HumanoidMuzzleFor(HeldItem held);
+
+// feet: хөлийн байрлал, facing: радиан (0 = +Z).
+// detailed = false үед нүүр, хуруу, халаас зэрэг жижиг хэсгийг алгасна (холын дүрд).
+void DrawHumanoid(Vector3 feet, float facing, float scale, const HumanoidPose& pose, const HumanoidLook& look,
+                  bool detailed = true);
+
+// Хөл доорх бөөрөнхий сүүдэр (нарны эсрэг тал руу бага зэрэг шилжсэн).
+void DrawBlobShadow(Vector3 ground, float radius);
+
+// Дүрсийн орон нутгийн цэгийг (facing-ээр эргүүлж) ертөнцийн цэг болгоно.
+Vector3 HumanoidLocalToWorld(Vector3 feet, float facing, Vector3 local);
+
+// Бууны амны орон нутгийн байрлал (scale = 1 үед).
+extern const Vector3 kHumanoidMuzzle;
+
+// Нүүр, хуруу зэрэг нарийн хэсгийг энэ зайнаас ойр үед л зурна.
+constexpr float kHumanoidDetailDistance = 24.0f;

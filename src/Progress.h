@@ -1,0 +1,43 @@
+#pragma once
+
+#include "Weapon.h"
+
+#include <vector>
+
+// Нэг үеийн (аймгийн) даалгаврын хадгалагдах явц.
+struct StageSave
+{
+    static constexpr int kMaxObjectives = 4;
+
+    unsigned done = 0;                        // бит i = i-р даалгавар биелсэн
+    unsigned entities[kMaxObjectives] = {};   // даалгавар бүрд: бит k = k-р хүн аврагдсан / зүйл авагдсан
+    unsigned clearedZones = 0;                // бит i = i-р даалгаврын бүс бүрэн цэвэрлэгдсэн (дахин spawn болохгүй)
+
+    bool Empty() const
+    {
+        return done == 0 && clearedZones == 0 && entities[0] == 0 && entities[1] == 0 && entities[2] == 0 &&
+               entities[3] == 0;
+    }
+};
+
+// Даалгавар хооронд хадгалагдах тоглогчийн ахиц.
+struct Progress
+{
+    std::vector<StageSave> stages; // аймаг бүрээр: дуусаагүй үеийн даалгаврын явц
+    int coins = 0;
+    int kills = 0;
+    WeaponLevels weapon;
+    int healthLevel = 0;
+    int soldiers = 0;
+    std::vector<bool> liberated; // аймаг бүрээр
+
+    int LiberatedCount() const;
+};
+
+// Файл нь exe-ийн хажууд savegame.txt нэрээр хадгалагдана.
+// Файл байхгүй эсвэл уншигдахгүй бол progress-ийг шинэ тоглоомын утгаар үлдээж false буцаана.
+bool LoadProgress(Progress& progress, int provinceCount);
+bool SaveProgress(const Progress& progress);
+
+// Хадгалах файлын замыг солино (туршилтад: жинхэнэ хадгалалтыг хөндөхгүй). nullptr = анхдагч.
+void SetSavePath(const char* path);

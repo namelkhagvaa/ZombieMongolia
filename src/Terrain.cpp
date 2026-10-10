@@ -1,0 +1,462 @@
+#include "Terrain.h"
+
+#include "MeshBuilder.h"
+#include "Procedural.h"
+#include "raymath.h"
+
+#include <algorithm>
+#include <cmath>
+
+namespace
+{
+    const float kCellSize = 3.0f;
+    const int kChunkCells = 20;          // нэг хэсэг = 60 x 60 м
+    const float kLodDistance = 230.0f;   // үүнээс холын хэсгийг хоёр дахин бүдүүн тороор зурна
+    const float kDrawDistance = 680.0f;  // үүнээс холын хэсгийг зурахгүй (мананд уусчихсан байдаг)
+    const float kDetailLoadDistance = 150.0f; // өвс чулууны mesh-ийг үүсгэх зай
+
+    // Mesh-ийг чөлөөлөх зай нь үүсгэх зайнаас хол: хил дээр нааш цааш явахад дахин дахин үүсгэхгүй.
+    const float kGroundKeep = 160.0f;
+    const float kFarKeep = 260.0f;
+    const float kDetailKeep = 120.0f;
+
+    // Тал хээрийн өнгөнүүд
+    const Color kGrassGreen = { 104, 122, 66, 255 };
+    const Color kGrassDry = { 160, 146, 88, 255 };
+    const Color kEarth = { 128, 104, 74, 255 };
+    const Color kRockyGround = { 122, 110, 96, 255 };
+    const Color kTrampled = { 146, 128, 96, 255 };
+    const Color kStone = { 128, 124, 118, 255 };
+    const Color kBush = { 84, 98, 52, 255 };
+    const Color kBushDry = { 132, 112, 70, 255 };
+
+    // Тэгшлээгүй үеийн толгодын өндөр.
+    float Hills(float x, float z)
+    {
+        const float distance = std::sqrt(x * x + z * z);
+        const float rolling = (Fbm(x * 0.018f, z * 0.018f, 3) - 0.5f) * 5.0f;
+        const float big = Fbm(x * 0.0035f + 31.0f, z * 0.0035f + 17.0f, 3);
+        const float far = SmoothStep(110.0f, 900.0f, distance); // төвөөс холдох тусам өндөр толгод
+        return rolling + big * big * 70.0f * far + far * 5.0f;
+    }
+
+    bool InsideObstacle(const std::vector<const Obstacle*>& obstacles, float x, float z, float margin)
+    {
+        for (const Obstacle* o : obstacles)
+        {
+            if (std::fabs(x - o->center.x) <= o->size.x * 0.5f + margin &&
+                std::fabs(z - o->center.z) <= o->size.z * 0.5f + margin)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void AddGrassTuft(MeshBuilder& builder, Vector3 base, Rng& rng)
+    {
+        const Color tint = MixColor(kGrassGreen, kGrassDry, rng.Next());
+        // Нимгэн ир нь ихэвчлэн нарны эсрэг харж бараан гардаг тул өнгийг нь цайвар авна.
+        const Color root = ScaleColor(tint, 1.0f);
+        const Color tip = ScaleColor(tint, 1.5f);
+        const float height = rng.Range(0.25f, 0.6f);
+
+        for (int blade = 0; blade < 3; ++blade)
+        {
+            const float angle = rng.Range(0.0f, 2.0f * PI);
+            const float sx = std::cos(angle) * 0.07f;
+            const float sz = std::sin(angle) * 0.07f;
+            const Vector3 top = { base.x + rng.Range(-0.2f, 0.2f), base.y + height * rng.Range(0.7f, 1.0f),
+                                  base.z + rng.Range(-0.2f, 0.2f) };
+            builder.Triangle({ base.x - sx, base.y, base.z - sz }, { base.x + sx, base.y, base.z + sz }, top, root, root,
+                             tip);
+        }
+    }
+}
+
+Terrain::Terrain(const Layout& layout) : layout(layout)
+{
+    cellSize = kCellSize;
+    chunksPerSide = (int)std::ceil(kWorldHalfExtent * 2.0f / (cellSize * (float)kChunkCells));
+    cells = chunksPerSide * kChunkCells;
+    halfExtent = (float)cells * cellSize * 0.5f;
+
+    // --- Өндрийн тор: бүх ертөнцөөр ---
+    const int side = cells + 1;
+    heights.resize((size_t)side * (size_t)side);
+    for (int iz = 0; iz < side; ++iz)
+    {
+        const float z = -halfExtent + (float)iz * cellSize;
+        for (int ix = 0; ix < side; ++ix)
+        {
+            const float x = -halfExtent + (float)ix * cellSize;
+            // Зам, суурингийн орчим тэгш, тэндээс холдох тусам толгод аажим өндөрсөнө.
+            const float mask = SmoothStep(0.0f, 30.0f, layout.FlatDistance(x, z));
+            const float height = mask > 0.0f ? Hills(x, z) * mask : 0.0f;
+            heights[(size_t)iz * (size_t)side + (size_t)ix] = height;
+            maxHeight = std::max(maxHeight, height);
+        }
+    }
+
+    // --- Хэсгүүдийн хамрах бөмбөлөг (mesh-ийг дараа, хэрэг болоход үүсгэнэ) ---
+    chunks.resize((size_t)chunksPerSide * (size_t)chunksPerSide);
+    const float chunkSize = (float)kChunkCells * cellSize;
+    for (int cz = 0; cz < chunksPerSide; ++cz)
+    {
+        for (int cx = 0; cx < chunksPerSide; ++cx)
+        {
+            Chunk& chunk = chunks[(size_t)cz * chunksPerSide + (size_t)cx];
+            chunk.cellX = cx * kChunkCells;
+            chunk.cellZ = cz * kChunkCells;
+
+            float minY = 1e9f, maxY = -1e9f;
+            for (int iz = chunk.cellZ; iz <= chunk.cellZ + kChunkCells; ++iz)
+            {
+                for (int ix = chunk.cellX; ix <= chunk.cellX + kChunkCells; ++ix)
+                {
+                    minY = std::min(minY, GridHeight(ix, iz));
+                    maxY = std::max(maxY, GridHeight(ix, iz));
+                }
+            }
+
+            chunk.center = { -halfExtent + ((float)cx + 0.5f) * chunkSize, (minY + maxY) * 0.5f,
+                             -halfExtent + ((float)cz + 0.5f) * chunkSize };
+            const float halfHeight = (maxY - minY) * 0.5f + 2.0f;
+            chunk.radius = std::sqrt(chunkSize * chunkSize * 0.5f + halfHeight * halfHeight);
+        }
+    }
+}
+
+Terrain::~Terrain()
+{
+    for (Chunk& chunk : chunks)
+    {
+        UnloadBuiltMesh(chunk.ground);
+        UnloadBuiltMesh(chunk.groundFar);
+        UnloadBuiltMesh(chunk.details);
+    }
+}
+
+Mesh Terrain::BuildGround(const Chunk& chunk, int step) const
+{
+    MeshBuilder builder;
+    Rng rng((uint32_t)(chunk.cellX * 7919 + chunk.cellZ * 104729 + 13 + step));
+
+    // Гурвалжин бүрийг өөр өнгөөр будаж low-poly олон өнгийн гадаргуу гаргана.
+    auto colorAt = [&](Vector3 a, Vector3 b, Vector3 c) {
+        const float cx = (a.x + b.x + c.x) / 3.0f;
+        const float cy = (a.y + b.y + c.y) / 3.0f;
+        const float cz = (a.z + b.z + c.z) / 3.0f;
+
+        const float patches = Fbm(cx * 0.03f, cz * 0.03f, 3);
+        const float spots = ValueNoise(cx * 0.15f + 40.0f, cz * 0.15f + 11.0f);
+        Color color = MixColor(kGrassGreen, kGrassDry, SmoothStep(0.36f, 0.64f, patches));
+        color = MixColor(color, kEarth, SmoothStep(0.62f, 0.92f, spots) * 0.65f);
+
+        // Эгц налуу ба өндөр газар чулуурхаг
+        const Vector3 normal = Vector3Normalize(Vector3CrossProduct(Vector3Subtract(b, a), Vector3Subtract(c, a)));
+        color = MixColor(color, kRockyGround, SmoothStep(0.93f, 0.80f, std::fabs(normal.y)));
+        color = MixColor(color, kRockyGround, SmoothStep(34.0f, 60.0f, cy) * 0.6f);
+
+        // Суурин, замын орчим гишгэгдсэн шороо
+        const float flat = layout.FlatDistance(cx, cz);
+        color = MixColor(color, kTrampled, SmoothStep(6.0f, -10.0f, flat) * 0.55f);
+        color = MixColor(color, kEarth, SmoothStep(3.0f, 0.0f, layout.RoadDistance(cx, cz)) * 0.5f);
+
+        return JitterColor(color, rng, 0.05f);
+    };
+    auto point = [&](int ix, int iz) {
+        return Vector3{ -halfExtent + (float)ix * cellSize, GridHeight(ix, iz), -halfExtent + (float)iz * cellSize };
+    };
+
+    for (int iz = chunk.cellZ; iz < chunk.cellZ + kChunkCells; iz += step)
+    {
+        for (int ix = chunk.cellX; ix < chunk.cellX + kChunkCells; ix += step)
+        {
+            const Vector3 p00 = point(ix, iz);
+            const Vector3 p10 = point(ix + step, iz);
+            const Vector3 p01 = point(ix, iz + step);
+            const Vector3 p11 = point(ix + step, iz + step);
+
+            // step = 1 үед HeightAt-ийн хуваалттай ижил байх ёстой.
+            builder.Triangle(p00, p01, p10, colorAt(p00, p01, p10));
+            builder.Triangle(p10, p01, p11, colorAt(p10, p01, p11));
+        }
+    }
+
+    if (step > 1)
+    {
+        // Бүдүүн тор нь хөрш нарийн хэсэгтэй ирмэгээрээ яг таарахгүй тул завсрыг доош унжсан хормойгоор хаана.
+        const float drop = 4.0f;
+        const int x0 = chunk.cellX, x1 = chunk.cellX + kChunkCells;
+        const int z0 = chunk.cellZ, z1 = chunk.cellZ + kChunkCells;
+        auto skirt = [&](Vector3 a, Vector3 b) {
+            builder.Quad(a, b, { b.x, b.y - drop, b.z }, { a.x, a.y - drop, a.z }, kEarth);
+        };
+        for (int i = 0; i < kChunkCells; i += step)
+        {
+            skirt(point(x0 + i, z0), point(x0 + i + step, z0));
+            skirt(point(x0 + i, z1), point(x0 + i + step, z1));
+            skirt(point(x0, z0 + i), point(x0, z0 + i + step));
+            skirt(point(x1, z0 + i), point(x1, z0 + i + step));
+        }
+    }
+
+    return builder.Upload();
+}
+
+Mesh Terrain::BuildDetails(const Chunk& chunk) const
+{
+    const float chunkSize = (float)kChunkCells * cellSize;
+    const float x0 = chunk.center.x - chunkSize * 0.5f;
+    const float z0 = chunk.center.z - chunkSize * 0.5f;
+
+    // Зөвхөн энэ хэсэгтэй давхцах саадуудыг шалгана.
+    std::vector<const Obstacle*> nearby;
+    if (obstacles)
+    {
+        for (const Obstacle& o : *obstacles)
+        {
+            if (std::fabs(o.center.x - chunk.center.x) <= chunkSize * 0.5f + o.size.x * 0.5f + 2.0f &&
+                std::fabs(o.center.z - chunk.center.z) <= chunkSize * 0.5f + o.size.z * 0.5f + 2.0f)
+            {
+                nearby.push_back(&o);
+            }
+        }
+    }
+
+    MeshBuilder builder;
+    Rng rng((uint32_t)(chunk.cellX * 31337 + chunk.cellZ * 2713 + 99));
+
+    // --- Өвс: бөөгнөрч ургана ---
+    for (int i = 0; i < 800; ++i)
+    {
+        const float x = x0 + rng.Next() * chunkSize;
+        const float z = z0 + rng.Next() * chunkSize;
+        const bool keep = rng.Chance(0.75f);
+
+        if (Fbm(x * 0.05f, z * 0.05f, 2) < 0.44f) continue;
+        if (layout.RoadDistance(x, z) < 0.5f) continue;
+        if (layout.FlatDistance(x, z) < 0.0f && !keep) continue; // суурин дотор сийрэг
+        if (InsideObstacle(nearby, x, z, 0.15f)) continue;
+
+        AddGrassTuft(builder, { x, HeightAt(x, z), z }, rng);
+    }
+
+    // --- Жижиг чулуу ---
+    for (int i = 0; i < 34; ++i)
+    {
+        const float x = x0 + rng.Next() * chunkSize;
+        const float z = z0 + rng.Next() * chunkSize;
+        const float radius = rng.Range(0.12f, 0.5f);
+        const Vector3 radii = { radius * rng.Range(0.8f, 1.4f), radius * 0.6f, radius * rng.Range(0.8f, 1.4f) };
+
+        if (layout.RoadDistance(x, z) < 1.0f) continue;
+        if (InsideObstacle(nearby, x, z, 0.6f)) continue;
+
+        builder.Blob({ x, HeightAt(x, z) + radii.y * 0.3f, z }, radii, JitterColor(kStone, rng, 0.15f), rng);
+    }
+
+    // --- Бут сөөг: тэгш бус газар, толгодын хажуугаар ---
+    for (int i = 0; i < 12; ++i)
+    {
+        const float x = x0 + rng.Next() * chunkSize;
+        const float z = z0 + rng.Next() * chunkSize;
+        const float size = rng.Range(0.5f, 1.0f);
+        const Color color = MixColor(kBush, kBushDry, rng.Next());
+
+        if (Fbm(x * 0.02f + 7.0f, z * 0.02f + 3.0f, 2) < 0.48f) continue;
+        if (layout.RoadDistance(x, z) < 2.0f) continue;
+        if (InsideObstacle(nearby, x, z, 1.2f)) continue;
+
+        const float ground = HeightAt(x, z);
+        for (int part = 0; part < 3; ++part)
+        {
+            const float px = x + rng.Range(-0.5f, 0.5f) * size;
+            const float pz = z + rng.Range(-0.5f, 0.5f) * size;
+            const float r = size * rng.Range(0.5f, 0.8f);
+            builder.Blob({ px, ground + r * 0.55f, pz }, { r, r * 0.75f, r }, color, rng, 0.12f);
+        }
+    }
+
+    return builder.Upload();
+}
+
+void Terrain::InvalidateDetails()
+{
+    for (int index : loaded)
+    {
+        Chunk& chunk = chunks[(size_t)index];
+        if (chunk.hasDetails)
+        {
+            UnloadBuiltMesh(chunk.details);
+            chunk.hasDetails = false;
+            --loadedMeshes;
+        }
+    }
+}
+
+float Terrain::HeightAt(float x, float z) const
+{
+    const float limit = (float)cells - 0.001f;
+    const float gx = std::clamp((x + halfExtent) / cellSize, 0.0f, limit);
+    const float gz = std::clamp((z + halfExtent) / cellSize, 0.0f, limit);
+    const int ix = (int)gx;
+    const int iz = (int)gz;
+    const float fx = gx - (float)ix;
+    const float fz = gz - (float)iz;
+
+    const float h00 = GridHeight(ix, iz);
+    const float h10 = GridHeight(ix + 1, iz);
+    const float h01 = GridHeight(ix, iz + 1);
+    const float h11 = GridHeight(ix + 1, iz + 1);
+
+    if (fx + fz <= 1.0f)
+    {
+        return h00 + (h10 - h00) * fx + (h01 - h00) * fz;
+    }
+    return h11 + (h01 - h11) * (1.0f - fx) + (h10 - h11) * (1.0f - fz);
+}
+
+void Terrain::ChunkRange(Vector3 position, float radius, int& x0, int& x1, int& z0, int& z1) const
+{
+    const float chunkSize = (float)kChunkCells * cellSize;
+    x0 = std::clamp((int)std::floor((position.x - radius + halfExtent) / chunkSize), 0, chunksPerSide - 1);
+    x1 = std::clamp((int)std::floor((position.x + radius + halfExtent) / chunkSize), 0, chunksPerSide - 1);
+    z0 = std::clamp((int)std::floor((position.z - radius + halfExtent) / chunkSize), 0, chunksPerSide - 1);
+    z1 = std::clamp((int)std::floor((position.z + radius + halfExtent) / chunkSize), 0, chunksPerSide - 1);
+}
+
+void Terrain::Stream(Vector3 viewPosition, int budget)
+{
+    // --- Холдсон хэсгүүдийн mesh-ийг чөлөөлнө ---
+    for (size_t i = 0; i < loaded.size();)
+    {
+        Chunk& chunk = chunks[(size_t)loaded[i]];
+        const float distance = Vector3Distance(chunk.center, viewPosition) - chunk.radius;
+
+        if (chunk.hasGround && distance > kLodDistance + kGroundKeep)
+        {
+            UnloadBuiltMesh(chunk.ground);
+            chunk.hasGround = false;
+            --loadedMeshes;
+        }
+        if (chunk.hasFar && distance > kDrawDistance + kFarKeep)
+        {
+            UnloadBuiltMesh(chunk.groundFar);
+            chunk.hasFar = false;
+            --loadedMeshes;
+        }
+        if (chunk.hasDetails && distance > kDetailLoadDistance + kDetailKeep)
+        {
+            UnloadBuiltMesh(chunk.details);
+            chunk.hasDetails = false;
+            --loadedMeshes;
+        }
+
+        if (!chunk.hasGround && !chunk.hasFar && !chunk.hasDetails)
+        {
+            loaded[i] = loaded.back();
+            loaded.pop_back();
+        }
+        else
+        {
+            ++i;
+        }
+    }
+
+    // --- Хэрэгтэй боловч байхгүй mesh-үүдийг ойроос нь эхлэн үүсгэнэ ---
+    struct Job
+    {
+        float distance;
+        int chunk;
+        int kind; // 0 = нарийн газар, 1 = бүдүүн газар, 2 = өвс чулуу
+    };
+    std::vector<Job> jobs;
+
+    int x0, x1, z0, z1;
+    ChunkRange(viewPosition, kDrawDistance + 120.0f, x0, x1, z0, z1);
+    for (int cz = z0; cz <= z1; ++cz)
+    {
+        for (int cx = x0; cx <= x1; ++cx)
+        {
+            const int index = cz * chunksPerSide + cx;
+            const Chunk& chunk = chunks[(size_t)index];
+            const float distance = Vector3Distance(chunk.center, viewPosition) - chunk.radius;
+
+            if (distance < kLodDistance + 40.0f && !chunk.hasGround) jobs.push_back({ distance, index, 0 });
+            // Бүдүүн тор: ойрын хэсэгт ч үүсгэнэ, нарийн нь бэлэн болох хүртэл газар цоорхой харагдахгүй.
+            if (distance < kDrawDistance + 60.0f && !chunk.hasFar) jobs.push_back({ distance - 60.0f, index, 1 });
+            if (distance < kDetailLoadDistance && !chunk.hasDetails) jobs.push_back({ distance + 30.0f, index, 2 });
+        }
+    }
+    std::sort(jobs.begin(), jobs.end(), [](const Job& a, const Job& b) { return a.distance < b.distance; });
+
+    for (const Job& job : jobs)
+    {
+        const int cost = job.kind == 1 ? 1 : 3; // нарийн тор, өвс чулуу нь бүдүүн торноос ~3 дахин үнэтэй
+        if (budget < cost)
+        {
+            break;
+        }
+        budget -= cost;
+
+        Chunk& chunk = chunks[(size_t)job.chunk];
+        const bool wasEmpty = !chunk.hasGround && !chunk.hasFar && !chunk.hasDetails;
+        if (job.kind == 0)
+        {
+            chunk.ground = BuildGround(chunk, 1);
+            chunk.hasGround = true;
+        }
+        else if (job.kind == 1)
+        {
+            chunk.groundFar = BuildGround(chunk, 2);
+            chunk.hasFar = true;
+        }
+        else
+        {
+            chunk.details = BuildDetails(chunk);
+            chunk.hasDetails = true;
+        }
+        ++loadedMeshes;
+        if (wasEmpty)
+        {
+            loaded.push_back(job.chunk);
+        }
+    }
+}
+
+void Terrain::Draw(const Camera3D& camera, const Material& material, float detailDistance) const
+{
+    const ViewCone view = ViewCone::From(camera);
+
+    int x0, x1, z0, z1;
+    ChunkRange(camera.position, kDrawDistance + 60.0f, x0, x1, z0, z1);
+
+    lastDrawnChunks = 0;
+    for (int cz = z0; cz <= z1; ++cz)
+    {
+        for (int cx = x0; cx <= x1; ++cx)
+        {
+            const Chunk& chunk = chunks[(size_t)cz * chunksPerSide + (size_t)cx];
+            if (!view.Sees(chunk.center, chunk.radius, kDrawDistance))
+            {
+                continue;
+            }
+
+            // Ойрын хэсэг бүрэн нарийвчлалтай, холынх бүдүүн тороор. Хүссэн нь бэлэн биш бол нөгөөг нь зурна.
+            const float distance = Vector3Distance(chunk.center, camera.position);
+            const bool wantFine = distance < kLodDistance + chunk.radius;
+            if (wantFine && chunk.hasGround) DrawBuiltMesh(chunk.ground, material);
+            else if (chunk.hasFar) DrawBuiltMesh(chunk.groundFar, material);
+            else if (chunk.hasGround) DrawBuiltMesh(chunk.ground, material);
+            else continue;
+
+            if (chunk.hasDetails && distance < detailDistance + chunk.radius)
+            {
+                DrawBuiltMesh(chunk.details, material);
+            }
+            ++lastDrawnChunks;
+        }
+    }
+}
