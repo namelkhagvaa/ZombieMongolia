@@ -9,6 +9,7 @@ struct HudInfo
     const char* provinceName = "";
     const char* objective = nullptr;       // одоо хийх даалгавар: "2 / 4  Генераторыг асаа" (UTF-8)
     const char* objectiveDetail = nullptr; // явц ба зай: "1 / 3    120 м"
+    const char* hordeText = nullptr;       // үеийн зомбины нөөц: "Зомби: 120 / 5000    Том зомби: 8 / 500"
     const char* prompt = nullptr;          // харилцах заавар: "E — Генератор асаах"
     const char* notice = nullptr;          // богино мэдэгдэл: "ДААЛГАВАР БИЕЛЛЭЭ: ..."
     int coins = 0;
@@ -16,7 +17,19 @@ struct HudInfo
     int ammo = 0;
     int magazine = 0;
     bool reloading = false;
-    int weaponSlot = 2;        // 0..4: хутга, гар буу, автомат, үрлэн буу, гранат
+    int weaponSlot = 2;        // сонгогдсон зэвсгийн нүд (0-ээс)
+    const char* const* slotNames = nullptr; // зэвсгийн нүднүүдийн бичвэр (гишүүний бүрдлээс хамаарна)
+    int slotCount = 0;
+    const char* stance = nullptr; // "CROUCH" / "PRONE"; босоо үед nullptr
+    bool scoped = false;       // мэргэн буудагчийн дуран хараа дэлгэцэд гарна
+    struct TeamEntry
+    {
+        const char* name = "";
+        int health = 0;
+        bool alive = true;
+        bool active = false; // тоглогчийн удирдаж буй гишүүн
+    };
+    TeamEntry team[3]; // F1, F2, F3
     bool usesAmmo = true;      // хутганд сум харуулахгүй
     bool showMagazine = true;  // гранатад зөвхөн үлдсэн тоо
     int squadAlive = 0;
@@ -25,6 +38,7 @@ struct HudInfo
     const char* subBanner = nullptr; // доор нь жижиг бичвэр
     const char* rideText = nullptr;  // унааны хурд, гадаргуу эсвэл "E: ride ..." санамж
     bool showHelp = true;
+    bool touch = false; // мэдрэгчтэй дэлгэц: зэвсэг, баг, газрын зургийг товчлуурын давхарга зурна
 };
 
 // 2D дэлгэцийн мэдээлэл: FPS, амь, сум, давалгаа, удирдлага.

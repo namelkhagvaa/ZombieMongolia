@@ -45,6 +45,62 @@ int main(int argc, char** argv)
         {
             options.timeScale = (float)std::atof(argv[++i]);
         }
+        else if (std::strcmp(argv[i], "--member") == 0 && i + 1 < argc)
+        {
+            options.member = std::atoi(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--demo") == 0 && i + 4 < argc)
+        {
+            // Тоглогчийн дүрийг тогтсон байрлалд зурна: хурд, алхааны үе, онилгоо, үйлдлийн явц (-1 = үгүй)
+            options.demo = true;
+            options.demoMove = (float)std::atof(argv[++i]);
+            options.demoPhase = (float)std::atof(argv[++i]);
+            options.demoAim = (float)std::atof(argv[++i]);
+            options.demoAction = (float)std::atof(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--use-frame") == 0 && i + 1 < argc)
+        {
+            options.useFrame = std::atoi(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--move") == 0 && i + 2 < argc)
+        {
+            options.moveForward = (float)std::atof(argv[++i]);
+            options.moveRight = (float)std::atof(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--quota") == 0 && i + 2 < argc)
+        {
+            options.quotaSmall = std::atoi(argv[++i]);
+            options.quotaBig = std::atoi(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--bindpose") == 0)
+        {
+            options.bindPose = true;
+        }
+        else if (std::strcmp(argv[i], "--touch") == 0)
+        {
+            options.touch = true;
+        }
+        else if (std::strcmp(argv[i], "--view-height") == 0 && i + 1 < argc)
+        {
+            options.viewHeight = std::atoi(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--stance") == 0 && i + 1 < argc)
+        {
+            options.stance = std::atoi(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--demo-extra") == 0 && i + 2 < argc)
+        {
+            options.demoDirection = (float)std::atof(argv[++i]);
+            options.demoReload = (float)std::atof(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--hold") == 0 && i + 1 < argc)
+        {
+            options.hold = std::atoi(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--scope") == 0)
+        {
+            options.scope = true;
+        }
         else if (std::strcmp(argv[i], "--journal") == 0)
         {
             options.journal = true;

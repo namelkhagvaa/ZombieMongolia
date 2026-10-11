@@ -71,6 +71,17 @@ public:
     int Driven() const { return driven; } // -1 = явган
     bool IsDriving() const { return driven >= 0; }
 
+    // Багийн гишүүдийн жолоодож буй хэрэгсэл (-1 = байхгүй) ба түүний удирдлага (AI).
+    void SetEscort(int index) { escort = index; }
+    int Escort() const { return escort; }
+    void SetEscortInput(float throttle, float steer)
+    {
+        escortThrottle = throttle;
+        escortSteer = steer;
+    }
+    // index хэрэгслийн суудлын (ташааны) ертөнцийн байрлал. passenger: жолоочийн ард / хажууд / тэвшинд.
+    Vector3 SeatWorld(int index, bool passenger) const;
+
     // throttle: -1..1 (S..W), steer: -1..1 (A..D). Унаагүй хэрэгсэл аяндаа зогсоно.
     // Хурдтай явахдаа зомбийг дайрч гэмтээнэ.
     void Update(float dt, const World& world, ZombieHorde& horde, float throttle, float steer, bool handbrake);
@@ -88,6 +99,8 @@ public:
 private:
     std::vector<Vehicle> vehicles;
     int driven = -1;
+    int escort = -1;
+    float escortThrottle = 0.0f, escortSteer = 0.0f;
     Surface drivenSurface = Surface::Steppe;
     float drivenMaxSpeed = 0.0f;
 };

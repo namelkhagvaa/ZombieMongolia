@@ -12,10 +12,12 @@ struct StageSave
     unsigned done = 0;                        // бит i = i-р даалгавар биелсэн
     unsigned entities[kMaxObjectives] = {};   // даалгавар бүрд: бит k = k-р хүн аврагдсан / зүйл авагдсан
     unsigned clearedZones = 0;                // бит i = i-р даалгаврын бүс бүрэн цэвэрлэгдсэн (дахин spawn болохгүй)
+    int killedSmall = 0;                      // энэ үед устгасан алхагч + гүйгч зомби
+    int killedBig = 0;                        // энэ үед устгасан том зомби
 
     bool Empty() const
     {
-        return done == 0 && clearedZones == 0 && entities[0] == 0 && entities[1] == 0 && entities[2] == 0 &&
+        return done == 0 && clearedZones == 0 && killedSmall == 0 && killedBig == 0 && entities[0] == 0 && entities[1] == 0 && entities[2] == 0 &&
                entities[3] == 0;
     }
 };

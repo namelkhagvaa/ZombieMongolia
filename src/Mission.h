@@ -9,6 +9,7 @@
 #include "Zombie.h"
 #include "raylib.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -53,6 +54,19 @@ public:
                 bool onFoot);
 
     bool IsComplete() const;
+
+    // Үеийн зомбины нөөц: ийм тооны зомби л гарч ирнэ; бүгдийг устгасны дараа шинээр гарахгүй.
+    // Үе давахын тулд бүх даалгавар биелсэн, нөөц бүхэлдээ устгагдсан байх ёстой.
+    void SetQuota(int small, int big)
+    {
+        quotaSmall = small;
+        quotaBig = big;
+    }
+    int QuotaSmall() const { return quotaSmall; }
+    int QuotaBig() const { return quotaBig; }
+    int KilledSmall() const { return save ? std::min(save->killedSmall, quotaSmall) : 0; }
+    int KilledBig() const { return save ? std::min(save->killedBig, quotaBig) : 0; }
+    bool QuotaMet() const { return KilledSmall() >= quotaSmall && KilledBig() >= quotaBig; }
     bool TakeDirty();  // сүүлийн дуудалтаас хойш хадгалах зүйл гарсан бол true
     int TakeReward();  // сүүлийн дуудалтаас хойш олсон зоос
 
@@ -86,12 +100,18 @@ private:
     void UpdateZone(int index, float dt, const World& world, const Player& player, ZombieHorde& horde);
     void UpdateAmbient(float dt, const World& world, const Player& player, ZombieHorde& horde);
     bool InClearedZone(Vector3 position) const;
+    // Нөөцөөс нэг зомби гаргана (том, жижгийг үлдсэн тооны харьцаагаар сонгоно). Нөөц дууссан бол false.
+    bool SpawnFromPool(ZombieHorde& horde, Vector3 position, int zone, bool alerted);
 
     const StageDef* stage = nullptr;
     StageSave* save = nullptr;
     MissionParams params = {};
     int province = 0;
     std::vector<ObjectiveState> states;
+    int quotaSmall = 5000;  // алхагч + гүйгч
+    int quotaBig = 500;     // том зомби
+    int aliveSmall = 0;     // одоо амьд байгаа (frame бүрд шинэчлэгдэнэ)
+    int aliveBig = 0;
 
     std::string prompt;
     std::string notice;

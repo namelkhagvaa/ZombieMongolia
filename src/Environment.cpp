@@ -1,5 +1,7 @@
 #include "Environment.h"
 
+#include "Input.h"
+
 #include "Layout.h"
 #include "MeshBuilder.h"
 #include "Procedural.h"
@@ -8,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 namespace
 {
@@ -21,8 +24,7 @@ namespace
     const Vector3 kAmbient = { 0.44f, 0.47f, 0.54f };   // тэнгэрээс ойсон гэрэл (сэрүүн)
     const float kFogDensity = 0.0013f;                  // 300 м-т ~14%, 600 м-т ~45%, 1000 м-т ~80% манан
 
-    const char* kVertexShader = R"(#version 330
-in vec3 vertexPosition;
+    const char* kVertexShader = R"(in vec3 vertexPosition;
 in vec4 vertexColor;
 uniform mat4 mvp;
 uniform vec3 worldOffset;
@@ -38,8 +40,7 @@ void main()
 }
 )";
 
-    const char* kFragmentShader = R"(#version 330
-in vec3 fragPosition;
+    const char* kFragmentShader = R"(in vec3 fragPosition;
 in vec4 fragColor;
 uniform vec4 colDiffuse;
 uniform vec3 viewPos;
@@ -62,6 +63,72 @@ void main()
     finalColor = vec4(mix(lit, fogColor, fog), fragColor.a * colDiffuse.a);
 }
 )";
+
+    // Ястай загварууд: оройн normal-тай тул гэрэлтүүлэг нь гөлгөр, өнгө нь текстураас.
+    const char* kCharacterVertexShader = R"(in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec3 vertexNormal;
+in vec4 vertexBoneIds;
+in vec4 vertexBoneWeights;
+uniform mat4 mvp;
+uniform mat4 matModel;
+uniform mat4 boneMatrices[72];
+out vec3 fragPosition;
+out vec2 fragTexCoord;
+out vec3 fragNormal;
+void main()
+{
+    // Арьслалт: орой бүр дөрөв хүртэлх ясны хувиргалтын жигнэсэн нийлбэрээр хөдөлнө.
+    mat4 skin = vertexBoneWeights.x * boneMatrices[int(vertexBoneIds.x)] +
+                vertexBoneWeights.y * boneMatrices[int(vertexBoneIds.y)] +
+                vertexBoneWeights.z * boneMatrices[int(vertexBoneIds.z)] +
+                vertexBoneWeights.w * boneMatrices[int(vertexBoneIds.w)];
+    vec4 position = skin * vec4(vertexPosition, 1.0);
+    fragPosition = vec3(matModel * position);
+    fragTexCoord = vertexTexCoord;
+    fragNormal = mat3(matModel) * (mat3(skin) * vertexNormal);
+    gl_Position = mvp * position;
+}
+)";
+
+    const char* kCharacterFragmentShader = R"(in vec3 fragPosition;
+in vec2 fragTexCoord;
+in vec3 fragNormal;
+uniform sampler2D texture0;
+uniform vec4 colDiffuse;
+uniform vec3 viewPos;
+uniform vec3 sunDirection;
+uniform vec3 sunLight;
+uniform vec3 ambientLight;
+uniform vec3 fogColor;
+uniform float fogDensity;
+out vec4 finalColor;
+void main()
+{
+    vec3 normal = normalize(fragNormal);
+    if (!gl_FrontFacing) normal = -normal; // хоёр талт гадаргуугийн ар тал
+    // Сүүдэр талыг бүр харлуулахгүй: нарны эсрэг тал ч бага зэрэг гэрэлтэнэ.
+    float diffuse = max(dot(normal, sunDirection), 0.0) * 0.85 + 0.15 * (0.5 + 0.5 * normal.y);
+    vec3 albedo = texture(texture0, fragTexCoord).rgb * colDiffuse.rgb;
+    vec3 lit = albedo * (ambientLight + sunLight * diffuse);
+
+    float d = distance(viewPos, fragPosition) * fogDensity;
+    float fog = 1.0 - exp(-d * d);
+    finalColor = vec4(mix(lit, fogColor, fog), 1.0);
+}
+)";
+
+    // Shader-ийн эхлэл: компьютер дээр OpenGL 3.3, утсан дээр OpenGL ES 3.0.
+#if defined(__ANDROID__)
+    const char* kShaderHeader = "#version 300 es\nprecision highp float;\n";
+#else
+    const char* kShaderHeader = "#version 330\n";
+#endif
+
+    Shader LoadVersionedShader(const char* vertex, const char* fragment)
+    {
+        return LoadShaderFromMemory(TextFormat("%s%s", kShaderHeader, vertex), std::string(kShaderHeader).append(fragment).c_str());
+    }
 
     Vector3 ToVector(Color color)
     {
@@ -134,7 +201,7 @@ void main()
 
 Environment::Environment()
 {
-    shader = LoadShaderFromMemory(kVertexShader, kFragmentShader);
+    shader = LoadVersionedShader(kVertexShader, kFragmentShader);
     if (shader.id == rlGetShaderIdDefault())
     {
         // Shader ачаалагдаагүй бол тоглоом гэрэлтүүлэг, манангүйгээр үргэлжилнэ.
@@ -156,6 +223,18 @@ Environment::Environment()
     material = LoadMaterialDefault();
     material.shader = shader;
 
+    characterShader = LoadVersionedShader(kCharacterVertexShader, kCharacterFragmentShader);
+    characterViewPosLocation = GetShaderLocation(characterShader, "viewPos");
+    SetVec3(characterShader, "sunDirection", Vector3Normalize(kSunDirection));
+    SetVec3(characterShader, "sunLight", kSunLight);
+    SetVec3(characterShader, "ambientLight", kAmbient);
+    SetVec3(characterShader, "fogColor", ToVector(kSkyHorizon));
+    const int characterDensity = GetShaderLocation(characterShader, "fogDensity");
+    if (characterDensity >= 0)
+    {
+        SetShaderValue(characterShader, characterDensity, &kFogDensity, SHADER_UNIFORM_FLOAT);
+    }
+
     mountains = BuildMountains();
 }
 
@@ -163,17 +242,21 @@ Environment::~Environment()
 {
     UnloadBuiltMesh(mountains);
     UnloadMaterial(material); // shader-ийг мөн чөлөөлнө
+    if (characterShader.id != rlGetShaderIdDefault())
+    {
+        UnloadShader(characterShader);
+    }
 }
 
 void Environment::DrawSky(const Camera3D& camera) const
 {
-    const int width = GetScreenWidth();
-    const int height = GetScreenHeight();
+    const int width = ViewWidth();
+    const int height = ViewHeight();
 
     // Тэнгэрийн хаяаны дэлгэц дээрх өндөр: камерын өндөрт, хол байгаа цэгийн проекц.
     Vector3 forward = Vector3Subtract(camera.target, camera.position);
     const Vector3 flat = Vector3Normalize({ forward.x, 0.0f, forward.z });
-    const Vector2 horizonPoint = GetWorldToScreen(Vector3Add(camera.position, Vector3Scale(flat, 5000.0f)), camera);
+    const Vector2 horizonPoint = ViewWorldToScreen(Vector3Add(camera.position, Vector3Scale(flat, 5000.0f)), camera);
     const int horizon = (int)std::clamp(horizonPoint.y, -4.0f * (float)height, 5.0f * (float)height);
 
     // Хаяанаас доош манангийн өнгө, дээш оргил руу аажим хөхөрнө.
@@ -190,7 +273,7 @@ void Environment::DrawSky(const Camera3D& camera) const
     const Vector3 sun = Vector3Normalize(kSunDirection);
     if (Vector3DotProduct(forward, sun) > 0.15f)
     {
-        const Vector2 p = GetWorldToScreen(Vector3Add(camera.position, Vector3Scale(sun, 5000.0f)), camera);
+        const Vector2 p = ViewWorldToScreen(Vector3Add(camera.position, Vector3Scale(sun, 5000.0f)), camera);
         const float scale = (float)height / 720.0f;
         DrawCircleGradient((int)p.x, (int)p.y, 150.0f * scale, Fade(kSunGlow, 0.55f), Fade(kSunGlow, 0.0f));
         DrawCircleV(p, 26.0f * scale, kSunCore);
@@ -202,6 +285,10 @@ void Environment::Begin(const Camera3D& camera) const
     if (viewPosLocation >= 0)
     {
         SetShaderValue(shader, viewPosLocation, &camera.position, SHADER_UNIFORM_VEC3);
+    }
+    if (characterViewPosLocation >= 0)
+    {
+        SetShaderValue(characterShader, characterViewPosLocation, &camera.position, SHADER_UNIFORM_VEC3);
     }
     BeginShaderMode(shader);
 }

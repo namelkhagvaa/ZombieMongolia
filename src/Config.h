@@ -44,6 +44,9 @@ struct GameConfig
     float aimDistance = 2.2f;          // камер мөрөнд ойртоно
     float aimSensitivityScale = 0.55f; // онилох үед хулгана удааширна
     float aimBlendSpeed = 12.0f;       // онилгоо руу шилжих хурд
+    bool touchAimAssist = false;       // мэдрэгчтэй дэлгэцэд буудах үед хараа зомби руу өөрөө татагдах (унтраалттай)
+    float scopeFovY = 6.5f;            // мэргэн буудагчийн дуран харааны харах өнцөг
+    float scopeSensitivityScale = 0.14f; // дуран хараагаар онилоход хулгана бүр удааширна
 
     // Ертөнц
     float worldHalfSize = kPlayableHalfExtent; // тоглогч явж болох талбайн хагас хэмжээ (4.3 x 4.3 км)

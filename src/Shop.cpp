@@ -33,11 +33,11 @@ const char* ShopItemName(ShopItem item)
 {
     switch (item)
     {
-    case ShopItem::Damage: return "Weapon damage";
-    case ShopItem::FireRate: return "Fire rate";
-    case ShopItem::Magazine: return "Magazine size";
-    case ShopItem::Health: return "Max health";
-    case ShopItem::Soldier: return "Recruit soldier";
+    case ShopItem::Damage: return "Зэвсгийн хүч";
+    case ShopItem::FireRate: return "Буудах хурд";
+    case ShopItem::Magazine: return "Сумны багтаамж";
+    case ShopItem::Health: return "Амийн дээд хэмжээ";
+    case ShopItem::Soldier: return "Цэрэг элсүүлэх";
     default: return "";
     }
 }

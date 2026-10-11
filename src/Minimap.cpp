@@ -1,5 +1,8 @@
 #include "Minimap.h"
 
+#include "Input.h"
+#include "UiFont.h"
+
 #include "raylib.h"
 #include "raymath.h"
 
@@ -210,7 +213,7 @@ namespace
     void DrawLegendEntry(int x, int y, Color color, const char* text)
     {
         DrawCircle(x + 7, y + 9, 6.0f, color);
-        DrawText(text, x + 20, y, 18, kFrame);
+        UiText(text, x + 20, y, 18, kFrame);
     }
 }
 
@@ -221,8 +224,9 @@ void DrawMinimap(const World& world, const Player& player, float cameraYaw, cons
 {
     const float size = (float)kMinimapSize;
     MapView view;
-    view.area = { (float)(GetScreenWidth() - kMinimapSize - kMinimapMargin),
-                  (float)(GetScreenHeight() - kMinimapSize - kMinimapMargin), size, size };
+    // Мэдрэгчтэй дэлгэцэд баруун доод буланд тулааны товчлуурууд байдаг тул газрын зураг баруун дээд буланд.
+    view.area = { (float)(ViewWidth() - kMinimapSize - kMinimapMargin),
+                  InTouchMode() ? (float)kMinimapMargin : (float)(ViewHeight() - kMinimapSize - kMinimapMargin), size, size };
     view.origin = { player.Position().x, player.Position().z };
     view.scale = size * 0.5f / kMinimapRadius;
     view.yaw = cameraYaw;
@@ -241,7 +245,7 @@ void DrawMinimap(const World& world, const Player& player, float cameraYaw, cons
     const Vector2 north = { center.x + northX / reach * (size * 0.5f - 9.0f),
                             center.y + northY / reach * (size * 0.5f - 9.0f) };
     DrawCircleV(north, 8.0f, Fade(BLACK, 0.7f));
-    DrawText("N", (int)north.x - 4, (int)north.y - 6, 14, kFrame);
+    UiText("Х", (int)north.x - 5, (int)north.y - 8, 15, kFrame);
 }
 
 // ---------------------------------------------------------------- Бүтэн дэлгэцийн зураг
@@ -251,8 +255,8 @@ namespace
     Rectangle FullMapArea()
     {
         const float margin = 60.0f;
-        return { margin, margin + 10.0f, (float)GetScreenWidth() - margin * 2.0f,
-                 (float)GetScreenHeight() - margin * 2.0f - 20.0f };
+        return { margin, margin + 10.0f, (float)ViewWidth() - margin * 2.0f,
+                 (float)ViewHeight() - margin * 2.0f - 20.0f };
     }
 }
 
@@ -282,11 +286,11 @@ void FullMap::Update(const World& world, const Player& player)
 {
     const Rectangle area = FullMapArea();
     const Vector2 center = { area.x + area.width * 0.5f, area.y + area.height * 0.5f };
-    const Vector2 mouse = GetMousePosition();
+    const Vector2 mouse = InPointer();
 
     // Хойд зүг дээшээ харах үед дэлгэцийн баруун тал нь ертөнцийн -X, доод тал нь -Z тул
     // дэлгэцийн шилжилтийг ертөнцийн шилжилт болгоход тэмдэг нь урвуу.
-    const float wheel = GetMouseWheelMove();
+    const float wheel = InWheel();
     if (wheel != 0.0f)
     {
         // Хулганы доорх цэг байрандаа үлдэхээр томруулна.
@@ -297,15 +301,15 @@ void FullMap::Update(const World& world, const Player& player)
         focus = { anchor.x + (mouse.x - center.x) / after, anchor.y + (mouse.y - center.y) / after };
     }
 
-    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
+    if (InMouseDown(MOUSE_BUTTON_LEFT))
     {
-        const Vector2 delta = GetMouseDelta();
+        const Vector2 delta = InLookDelta();
         const float scale = BaseScale(world) * zoom;
         focus.x += delta.x / scale;
         focus.y += delta.y / scale;
     }
 
-    if (IsKeyPressed(KEY_C))
+    if (InKeyPressed(KEY_C))
     {
         focus = { player.Position().x, player.Position().z };
     }
@@ -318,8 +322,8 @@ void FullMap::Update(const World& world, const Player& player)
 void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& horde, const SoldierSquad& squad,
                    const Garage& garage, const std::vector<Vector3>& markers, const char* title) const
 {
-    const int width = GetScreenWidth();
-    const int height = GetScreenHeight();
+    const int width = ViewWidth();
+    const int height = ViewHeight();
 
     MapView view;
     view.area = FullMapArea();
@@ -334,15 +338,15 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     // Газрын нэрс
     BeginScissorMode((int)view.area.x, (int)view.area.y, (int)view.area.width, (int)view.area.height);
     const struct { float x, z; const char* name; } places[] = {
-        { 28.0f, 34.0f, "SETTLEMENT" },  { -52.0f, 2.0f, "CHECKPOINT" }, { 38.0f, -13.0f, "GAS STATION" },
-        { 10.0f, 70.0f, "WAREHOUSE" },
+        { 28.0f, 34.0f, "СУУРИН" },  { -52.0f, 2.0f, "ЗАСТАВ" }, { 38.0f, -13.0f, "ШАТАХУУН ТҮГЭЭХ ГАЗАР" },
+        { 10.0f, 70.0f, "АГУУЛАХ" },
     };
     for (const auto& place : places)
     {
         const Vector2 p = view.ToScreen(place.x, place.z);
-        const int textWidth = MeasureText(place.name, 16);
-        DrawText(place.name, (int)p.x - textWidth / 2 + 1, (int)p.y - 7, 16, Fade(BLACK, 0.8f));
-        DrawText(place.name, (int)p.x - textWidth / 2, (int)p.y - 8, 16, kFrame);
+        const int textWidth = UiMeasure(place.name, 16);
+        UiText(place.name, (int)p.x - textWidth / 2 + 1, (int)p.y - 7, 16, Fade(BLACK, 0.8f));
+        UiText(place.name, (int)p.x - textWidth / 2, (int)p.y - 8, 16, kFrame);
     }
     EndScissorMode();
 
@@ -352,18 +356,18 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     DrawRectangleLinesEx(view.area, 2.0f, kFrame);
 
     // Гарчиг, томруулалт, тайлбар
-    DrawText(TextFormat("MAP - %s", title), (int)view.area.x, 22, 28, kFrame);
+    UiText(TextFormat("ГАЗРЫН ЗУРАГ — %s", title), (int)view.area.x, 22, 28, kFrame);
     const char* zoomText = TextFormat("%d%%", (int)std::round(zoom * 100.0f));
-    DrawText(zoomText, width - (int)view.area.x - MeasureText(zoomText, 28), 22, 28, kPlayer);
-    DrawText("N", width / 2 - 6, (int)view.area.y + 6, 22, kFrame);
+    UiText(zoomText, width - (int)view.area.x - UiMeasure(zoomText, 28), 22, 28, kPlayer);
+    UiText("Х", width / 2 - 7, (int)view.area.y + 6, 22, kFrame);
 
     const int legendY = height - 40;
     int x = (int)view.area.x;
-    DrawLegendEntry(x, legendY, kPlayer, "you");
-    DrawLegendEntry(x + 80, legendY, kZombie, "zombie");
-    DrawLegendEntry(x + 190, legendY, kSoldier, "soldier");
-    DrawLegendEntry(x + 300, legendY, kVehicle, "ride");
-    DrawLegendEntry(x + 380, legendY, kObjective, "objective");
-    const char* help = "Wheel: zoom 100-1000%    Drag: move    C: center on you    M: close";
-    DrawText(help, width - (int)view.area.x - MeasureText(help, 18), legendY, 18, kFrame);
+    DrawLegendEntry(x, legendY, kPlayer, "та");
+    DrawLegendEntry(x + 70, legendY, kZombie, "зомби");
+    DrawLegendEntry(x + 170, legendY, kSoldier, "цэрэг");
+    DrawLegendEntry(x + 270, legendY, kVehicle, "унаа");
+    DrawLegendEntry(x + 360, legendY, kObjective, "даалгавар");
+    const char* help = "Хулганы дугуй — томруулах (100–1000%)    Чирэх — зөөх    C — өөр дээрээ төвлөрүүлэх    M — хаах";
+    UiText(help, width - (int)view.area.x - UiMeasure(help, 18), legendY, 18, kFrame);
 }

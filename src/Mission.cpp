@@ -1,5 +1,9 @@
 #include "Mission.h"
 
+#include "Input.h"
+
+#include "CharacterModel.h"
+
 #include "Humanoid.h"
 #include "Mover.h"
 #include "Procedural.h"
@@ -15,6 +19,13 @@ namespace
     const float kInteractDistance = 2.8f;
     const float kReachRadius = 9.0f;
     const float kDefendRadius = 30.0f;
+    // Зомбины нягтрал: тасралтгүй тулаантай байхаар тохируулсан.
+    const int kAmbientCap = 46;            // тоглогчийг тойрон тэнүүчлэх зомбины дээд тоо
+    const float kAmbientInterval = 0.4f;   // шинэ тэнүүлч гарах хугацаа, сек
+    const int kZoneScale = 3;              // бүс, аваргын бараа бологчдын тоог үржүүлнэ
+    const int kGuardScale = 6;             // даалгаврын объектыг сахих зомбины тоог үржүүлнэ
+    const float kRecycleDistance = 170.0f; // үүнээс хол хоцорсон тэнүүлч зомби нөөцөд буцна
+
     const float kZoneRadius = 42.0f;
     const float kZoneWakeDistance = 130.0f; // тоглогч ийм ойртоход бүсийн зомби гарч эхэлнэ
     const float kNoticeTime = 4.5f;
@@ -27,15 +38,6 @@ namespace
     {
         return type == ObjectiveType::ClearZone || type == ObjectiveType::DefendLocation ||
                type == ObjectiveType::DefeatBoss;
-    }
-
-    // Хүнд аймагт хурдан ба том зомби олширно.
-    ZombieType PickType(int province)
-    {
-        const int roll = GetRandomValue(0, 99);
-        if (province >= 3 && roll < 6 + province) return ZombieType::Brute;
-        if (province >= 1 && roll < 25 + 2 * province) return ZombieType::Runner;
-        return ZombieType::Walker;
     }
 
     // center-ийн эргэн тойронд, саад ба барилгын доторх биш, хилийн доторх чөлөөт цэг.
@@ -173,6 +175,7 @@ namespace
             static const Color deels[] = { { 124, 70, 50, 255 }, { 56, 110, 92, 255 }, { 116, 60, 104, 255 },
                                            { 60, 84, 132, 255 } };
             look.kind = HumanoidKind::Player;
+            look.model = variant % 2 == 0 ? kCharacterSurvivorMan : kCharacterSurvivorWoman;
             look.pants = { 60, 54, 48, 255 };
             look.boots = { 52, 36, 26, 255 };
             look.body = deels[variant % 4];
@@ -320,7 +323,7 @@ void Mission::Start(int provinceIndex, const MissionParams& missionParams, const
 
         case ObjectiveType::ClearZone:
             state.radius = kZoneRadius;
-            state.target = std::max(4, (8 + provinceIndex) * def.count / 100);
+            state.target = std::max(4, (8 + provinceIndex) * def.count / 100) * kZoneScale;
             state.reserve = done ? 0 : state.target;
             state.progress = done ? state.target : 0;
             break;
@@ -502,13 +505,17 @@ void Mission::UpdateZone(int index, float dt, const World& world, const Player& 
     if (def.type == ObjectiveType::ClearZone)
     {
         // Бүсийн нөөц: тоглогч ойртоход дотор нь бага багаар гарч ирнэ; нөөц дуусвал дахин гарахгүй.
-        const int cap = std::min(14 + province / 3, state.target);
+        const int cap = std::min(30 + province / 2, state.target);
         int alive = horde.AliveInZone(zone);
         if (playerDistance < state.radius + kZoneWakeDistance)
         {
             while (state.reserve > 0 && alive < cap && state.spawnTimer <= 0.0f)
             {
-                horde.Spawn(PickType(province), RandomAround(world, state.location, 4.0f, state.radius), params, zone, false);
+                if (!SpawnFromPool(horde, RandomAround(world, state.location, 4.0f, state.radius), zone, false))
+                {
+                    state.reserve = 0; // үеийн нөөц дууссан: энэ бүсэд дахин гарахгүй
+                    break;
+                }
                 --state.reserve;
                 ++alive;
                 state.spawnTimer = alive < cap * 2 / 3 ? 0.0f : 1.0f; // эхний хэсэг шууд, дараа нь нэг нэгээр
@@ -527,11 +534,11 @@ void Mission::UpdateZone(int index, float dt, const World& world, const Player& 
         if (playerDistance < state.radius)
         {
             state.timer += dt;
-            const int cap = 8 + province / 3;
+            const int cap = 22 + province / 2;
             if (state.spawnTimer <= 0.0f && horde.AliveInZone(zone) < cap)
             {
-                horde.Spawn(PickType(province), RandomAround(world, state.location, 42.0f, 58.0f), params, zone, true);
-                state.spawnTimer = 1.6f;
+                SpawnFromPool(horde, RandomAround(world, state.location, 42.0f, 58.0f), zone, true);
+                state.spawnTimer = 0.55f;
             }
         }
         state.progress = std::min(state.target, (int)state.timer);
@@ -545,9 +552,9 @@ void Mission::UpdateZone(int index, float dt, const World& world, const Player& 
         if (!state.spawned && playerDistance < 110.0f)
         {
             horde.SpawnBoss(RandomAround(world, state.location, 0.0f, 6.0f), params, zone);
-            for (int k = 0; k < 3; ++k)
+            for (int k = 0; k < 3 * kZoneScale; ++k)
             {
-                horde.Spawn(PickType(province), RandomAround(world, state.location, 4.0f, 12.0f), params, zone, false);
+                SpawnFromPool(horde, RandomAround(world, state.location, 4.0f, 16.0f), zone, false);
             }
             state.spawned = true;
         }
@@ -568,17 +575,55 @@ void Mission::UpdateAmbient(float dt, const World& world, const Player& player, 
     {
         return;
     }
-    ambientTimer = 7.0f;
+    ambientTimer = kAmbientInterval;
 
-    if (horde.AliveInZone(0) >= 4 + province / 5)
+    // Хол хоцорсон тэнүүлчид нөөцөд буцна: тэд тоглогчийн ойролцоо дахин гарч ирнэ.
+    // Бүх даалгавар биелсний дараа үлдсэн бүх зомбид хамаарна, эс бөгөөс алсад үлдсэн нь үеийг дуусгахад саад болно.
+    horde.RemoveFar(player.Position(), kRecycleDistance, !IsComplete());
+
+    // Тоглогчийг тойрсон зомбины урсгал: цөөрөх тусам хурдан нөхөгдөнө, тиймээс тулаан тасрахгүй.
+    // Одоо хийх даалгаврын цэгт ойртоход шинээр гарах зомбины тал нь тэр цэгийг тойрон гарч, замыг хаана.
+    const int alive = horde.AliveInZone(0);
+    const int cap = kAmbientCap + province;
+    const int batch = alive < cap / 2 ? 3 : 1;
+    const int focus = FocusObjective();
+    for (int k = 0; k < batch && alive + k < cap; ++k)
     {
-        return;
+        const bool atObjective = focus >= 0 && GetRandomValue(0, 99) < 50 &&
+                                 HorizontalDistance(player.Position(), states[(size_t)focus].location) < 150.0f;
+        const Vector3 position = atObjective ? RandomAround(world, states[(size_t)focus].location, 8.0f, 44.0f)
+                                             : RandomAround(world, player.Position(), 48.0f, 82.0f);
+        if (!InClearedZone(position) && HorizontalDistance(position, player.Position()) > 28.0f)
+        {
+            SpawnFromPool(horde, position, 0, !atObjective);
+        }
     }
-    const Vector3 position = RandomAround(world, player.Position(), 48.0f, 78.0f);
-    if (!InClearedZone(position) && HorizontalDistance(position, player.Position()) > 35.0f)
+}
+
+bool Mission::SpawnFromPool(ZombieHorde& horde, Vector3 position, int zone, bool alerted)
+{
+    // Үлдсэн нөөц = нийт тоо - устгагдсан - одоо амьд байгаа.
+    const int smallLeft = quotaSmall - save->killedSmall - aliveSmall;
+    const int bigLeft = quotaBig - save->killedBig - aliveBig;
+    if (smallLeft <= 0 && bigLeft <= 0)
     {
-        horde.Spawn(PickType(province), position, params, 0, true);
+        return false;
     }
+
+    // Том зомби нь үлдсэн нөөцийн харьцаагаар (ойролцоогоор арав тутмын нэг); жижгүүдийн нэг хэсэг нь гүйгч.
+    ZombieType type = ZombieType::Walker;
+    if (bigLeft > 0 && (smallLeft <= 0 || GetRandomValue(0, smallLeft + bigLeft - 1) < bigLeft))
+    {
+        type = ZombieType::Brute;
+        ++aliveBig;
+    }
+    else
+    {
+        type = GetRandomValue(0, 99) < 30 + 2 * province ? ZombieType::Runner : ZombieType::Walker;
+        ++aliveSmall;
+    }
+    horde.Spawn(type, position, params, zone, alerted);
+    return true;
 }
 
 void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde, SoldierSquad& squad,
@@ -586,6 +631,22 @@ void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde,
 {
     prompt.clear();
     noticeTimer -= dt;
+
+    // Үеийн нөөцийн тооцоо: устгагдсаныг бүртгэж, амьд байгааг тоолно. 25 зомби тутамд хадгална.
+    int small = 0, big = 0;
+    horde.TakeKillTypes(small, big);
+    if (small + big > 0)
+    {
+        const int before = (save->killedSmall + save->killedBig) / 25;
+        save->killedSmall += small;
+        save->killedBig += big;
+        if ((save->killedSmall + save->killedBig) / 25 != before || QuotaMet())
+        {
+            dirty = true;
+        }
+    }
+    aliveSmall = aliveBig = 0;
+    horde.CountAlive(aliveSmall, aliveBig);
 
     // Хамгийн ойрын харилцаж болох объект (идэвхтэй даалгавруудын дундаас)
     int nearestObjective = -1, nearestEntity = -1;
@@ -605,9 +666,9 @@ void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde,
         if (!state.spawned && def.guards > 0 && !IsZoneType(def.type) &&
             HorizontalDistance(position, state.location) < kZoneWakeDistance)
         {
-            for (int k = 0; k < def.guards; ++k)
+            for (int k = 0; k < def.guards * kGuardScale; ++k)
             {
-                horde.Spawn(PickType(province), RandomAround(world, state.location, 6.0f, 18.0f), params, i + 1, false);
+                SpawnFromPool(horde, RandomAround(world, state.location, 6.0f, 22.0f), i + 1, false);
             }
             state.spawned = true;
         }
@@ -656,13 +717,14 @@ void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde,
     }
     if (!onFoot)
     {
-        prompt = "Унаанаасаа бууж байж харилцана (F)";
+        prompt = InTouchMode() ? "Эхлээд унаанаасаа бууна уу" : "Эхлээд унаанаасаа бууна уу (F)";
         return;
     }
 
     const ObjectiveDef& def = stage->objectives[(size_t)nearestObjective];
     ObjectiveState& state = states[(size_t)nearestObjective];
-    prompt = std::string("E \xE2\x80\x94 ") + def.action; // "E — ..."
+    // Гараар: "E — Радио станц асаах"; мэдрэгчтэй дэлгэцэд товчлуур нь тусдаа тул зөвхөн үйлдлийн нэр.
+    prompt = InTouchMode() ? std::string(def.action) : std::string("E \xE2\x80\x94 ") + def.action;
 
     if (!interactPressed)
     {
@@ -809,6 +871,7 @@ void Mission::Draw(Vector3 viewPosition) const
                     pose.elbow[0] = pose.elbow[1] = 105.0f;
                     pose.shoulderYaw[0] = pose.shoulderYaw[1] = 20.0f;
                     pose.headPitch = 18.0f;
+                    pose.seated = true; // өнцгүүдийг шууд хэрэглэнэ (загварын алхааны найруулагч оролцохгүй)
                     pose.breath = std::sin(time * 3.4f + (float)k);
                 }
                 DrawBlobShadow(entity.position, 0.5f);
@@ -875,8 +938,8 @@ void Mission::DrawBeacons(const World& world, Vector3 viewPosition) const
 
 void Mission::DrawJournal() const
 {
-    const int screenWidth = GetScreenWidth();
-    const int screenHeight = GetScreenHeight();
+    const int screenWidth = ViewWidth();
+    const int screenHeight = ViewHeight();
     const int width = 960, height = 640;
     const int left = (screenWidth - width) / 2, top = (screenHeight - height) / 2;
 
@@ -889,7 +952,7 @@ void Mission::DrawJournal() const
     DrawRectangleLinesEx({ (float)left, (float)top, (float)width, (float)height }, 2.0f, kMarker);
 
     int y = top + 20;
-    UiText("MISSION JOURNAL", left + 28, y, 34, kMarker);
+    UiText("ДААЛГАВРЫН ЖУРНАЛ", left + 28, y, 34, kMarker);
     char header[128];
     std::snprintf(header, sizeof(header), "%s \xE2\x80\x94 ҮЕ %02d / %02d", stage->provinceName, province + 1,
                   (int)Provinces().size());
@@ -960,6 +1023,6 @@ void Mission::DrawJournal() const
     char footer[128];
     std::snprintf(footer, sizeof(footer), "Явц: %d / %d даалгавар биелсэн.", CompletedCount(), ObjectiveCount());
     UiText(footer, left + 28, top + height - 44, 24, CompletedCount() == ObjectiveCount() ? kDoneGreen : text);
-    const char* close = "Q / ESC \xE2\x80\x94 хаах";
+    const char* close = InTouchMode() ? "" : "Q / ESC \xE2\x80\x94 хаах";
     UiText(close, left + width - 28 - UiMeasure(close, 20), top + height - 40, 20, dim);
 }

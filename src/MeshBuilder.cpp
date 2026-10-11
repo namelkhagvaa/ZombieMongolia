@@ -1,5 +1,7 @@
 #include "MeshBuilder.h"
 
+#include "Input.h"
+
 #include "raymath.h"
 
 #include <algorithm>
@@ -219,7 +221,7 @@ std::vector<MeshPiece> MeshBuilder::UploadPartitioned(float cellSize) const
 
 ViewCone ViewCone::From(const Camera3D& camera)
 {
-    const float aspect = (float)GetScreenWidth() / (float)std::max(1, GetScreenHeight());
+    const float aspect = (float)ViewWidth() / (float)std::max(1, ViewHeight());
     const float tanHalf = std::tan(camera.fovy * DEG2RAD * 0.5f);
     return { camera.position, Vector3Normalize(Vector3Subtract(camera.target, camera.position)),
              std::atan(tanHalf * std::sqrt(1.0f + aspect * aspect)) };

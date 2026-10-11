@@ -1,0 +1,94 @@
+# Zombie Mongolia-г Android APK болгон бүтээнэ.
+#
+# Шаардлага (C:\Android дотор; өөр газар бол -AndroidRoot заана):
+#   jdk\                      Java 17 (keytool, apksigner-т)
+#   sdk\build-tools\34.0.0    aapt, zipalign, apksigner
+#   sdk\platforms\android-34  android.jar
+#   sdk\ndk\26.3.11579264     C++ хөрвүүлэгч
+#
+# Хэрэглээ:  powershell -ExecutionPolicy Bypass -File tools\build_android.ps1
+# Үр дүн:    build_android\ZombieMongolia.apk
+param(
+    [string]$AndroidRoot = "C:\Android",
+    [string[]]$Abis = @("arm64-v8a", "armeabi-v7a"),
+    [string]$NdkVersion = "26.3.11579264",
+    [string]$BuildTools = "34.0.0",
+    [string]$Platform = "android-34"
+)
+
+$ErrorActionPreference = "Stop"
+$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$out = Join-Path $root "build_android"
+$sdk = Join-Path $AndroidRoot "sdk"
+$ndk = Join-Path $sdk "ndk\$NdkVersion"
+$tools = Join-Path $sdk "build-tools\$BuildTools"
+$androidJar = Join-Path $sdk "platforms\$Platform\android.jar"
+$env:JAVA_HOME = Join-Path $AndroidRoot "jdk"
+$env:PATH = "$env:JAVA_HOME\bin;C:\msys64\ucrt64\bin;$env:PATH"
+
+foreach ($path in $ndk, $tools, $androidJar, $env:JAVA_HOME) {
+    if (-not (Test-Path $path)) { throw "Missing: $path" }
+}
+
+function Run([string]$exe, [string[]]$arguments) {
+    & $exe @arguments
+    if ($LASTEXITCODE -ne 0) { throw "$exe failed with exit code $LASTEXITCODE" }
+}
+
+# --- 1. Native сан: ABI бүрд хөрвүүлнэ ---
+$staging = Join-Path $out "apk"
+if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
+New-Item -ItemType Directory -Force (Join-Path $staging "assets") | Out-Null
+
+foreach ($abi in $Abis) {
+    $build = Join-Path $out "native-$abi"
+    Run "cmake" @("-S", $root, "-B", $build, "-G", "Ninja",
+                  "-DCMAKE_TOOLCHAIN_FILE=$ndk\build\cmake\android.toolchain.cmake",
+                  "-DANDROID_ABI=$abi", "-DANDROID_PLATFORM=android-24", "-DANDROID_STL=c++_static",
+                  "-DCMAKE_BUILD_TYPE=Release")
+    Run "cmake" @("--build", $build)
+
+    $libDir = Join-Path $staging "lib\$abi"
+    New-Item -ItemType Directory -Force $libDir | Out-Null
+    Copy-Item (Join-Path $build "libZombieMongolia.so") $libDir
+    Run "$ndk\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-strip.exe" @("--strip-unneeded", (Join-Path $libDir "libZombieMongolia.so"))
+}
+
+# --- 2. Assets: дүрүүдийн загвар, текстур, фонт ---
+Copy-Item (Join-Path $root "assets\*_mesh.glb") (Join-Path $staging "assets")
+Copy-Item (Join-Path $root "assets\*_color.png") (Join-Path $staging "assets")
+Copy-Item (Join-Path $root "android\ui_font.ttf") (Join-Path $staging "assets")
+
+# --- 3. APK: багцлах, native санг нэмэх, зэрэгцүүлэх, гарын үсэг зурах ---
+$unsigned = Join-Path $out "unsigned.apk"
+$aligned = Join-Path $out "aligned.apk"
+$apk = Join-Path $out "ZombieMongolia.apk"
+Remove-Item -Force -ErrorAction SilentlyContinue $unsigned, $aligned, $apk
+
+Run "$tools\aapt.exe" @("package", "-f", "-M", (Join-Path $root "android\AndroidManifest.xml"),
+                        "-A", (Join-Path $staging "assets"), "-I", $androidJar, "-F", $unsigned)
+
+Push-Location $staging
+try {
+    foreach ($abi in $Abis) {
+        Run "$tools\aapt.exe" @("add", $unsigned, "lib/$abi/libZombieMongolia.so")
+    }
+} finally {
+    Pop-Location
+}
+
+Run "$tools\zipalign.exe" @("-f", "-p", "4", $unsigned, $aligned)
+
+# Туршилтын түлхүүр (нэг удаа үүснэ). Play Store-д гаргахад өөрийн нууц түлхүүрээр солино.
+$keystore = Join-Path $out "debug.keystore"
+if (-not (Test-Path $keystore)) {
+    Run "keytool" @("-genkeypair", "-keystore", $keystore, "-storepass", "android", "-keypass", "android",
+                    "-alias", "debug", "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",
+                    "-dname", "CN=Zombie Mongolia Debug,O=ZombieMongolia,C=MN")
+}
+Run "$tools\apksigner.bat" @("sign", "--ks", $keystore, "--ks-pass", "pass:android", "--key-pass", "pass:android",
+                             "--out", $apk, $aligned)
+Run "$tools\apksigner.bat" @("verify", $apk)
+
+Remove-Item -Force $unsigned, $aligned
+"APK: $apk ($([int]((Get-Item $apk).Length / 1MB)) MB)"

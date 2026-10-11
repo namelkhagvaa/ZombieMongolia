@@ -37,6 +37,14 @@ struct Zombie
     int reward = 0;
     int zone = 0;         // аль spawn бүсэд харьяалагдах (0 = бүсгүй, тэнүүчилсэн)
     bool alerted = false; // бай руугаа хөөж эхэлсэн; үгүй бол байрандаа зогсоно
+    // Барилга руу нэвтрэх: сонгосон гарц (-1 = хаалга, бусад нь цонхны гарцын индекс), аль барилгад зориулсан
+    int entryRoom = -1;
+    int entryPassage = -1;
+    float entryChosenAt = -100.0f;
+    // Цонхоор авирч орж яваа: үлдсэн хугацаа, эхлэх ба хүрэх цэг
+    float climbTimer = 0.0f;
+    Vector3 climbFrom = { 0.0f, 0.0f, 0.0f };
+    Vector3 climbTo = { 0.0f, 0.0f, 0.0f };
     bool boss = false;    // аварга: толгойн буудлага, хутга, машины цохилтод шууд үхэхгүй
 
     // Зомби бүрийн санамсаргүй гадаад төрх
@@ -106,6 +114,16 @@ public:
 
     int AliveCount() const;
     int Count() const { return (int)zombies.size(); } // цогцсыг оруулаад
+
+    // Сүүлийн дуудалтаас хойш устгагдсан зомбины тоо, хэмжээгээр (аварга тоологдохгүй).
+    void TakeKillTypes(int& small, int& big);
+    // Буун дуу, дэлбэрэлт: center-ээс radius доторх зомбинууд сэрж, дуу гарсан зүг рүү ирнэ.
+    void AlertAround(Vector3 center, float radius);
+    // Амьд зомбины тоо, хэмжээгээр (аварга тоологдохгүй).
+    void CountAlive(int& small, int& big) const;
+    // center-ээс distance-аас хол байгаа амьд зомбийг шагналгүйгээр арилгана (үеийн нөөцөд буцна).
+    // ambientOnly: зөвхөн тэнүүлч (бүс 0) зомби.
+    void RemoveFar(Vector3 center, float distance, bool ambientOnly);
     const Zombie& At(int index) const { return zombies[index]; }
 
     // viewPosition-оос maxDistance-аас хол байгаа зомбийг зурахгүй.
@@ -115,4 +133,7 @@ private:
     std::vector<Zombie> zombies; // үхсэн нь хэдэн секунд газар хэвтээд арилна
     int pendingCoins = 0;
     int pendingKills = 0;
+    float navClock = 0.0f; // орох гарцыг дахин сонгох хугацааг тоолно
+    int pendingSmallKills = 0; // алхагч + гүйгч
+    int pendingBigKills = 0;   // том зомби (аварга орохгүй)
 };

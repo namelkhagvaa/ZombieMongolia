@@ -14,6 +14,14 @@ enum class RideStyle
     Hidden  // бүхээгтэй машин: жолооч харагдахгүй
 };
 
+// Биеийн байрлал: C суух, Z хэвтэх, Space босох.
+enum class Stance
+{
+    Stand,
+    Crouch, // удаан, жижиг бай, оновч сайн
+    Prone   // маш удаан (мөлхөнө), хамгийн жижиг бай, хамгийн сайн оновч
+};
+
 class Player
 {
 public:
@@ -39,6 +47,24 @@ public:
     // Эхлэх цэгт, бүрэн амьтай буцаана.
     void Reset(float newMaxHealth);
     void Teleport(Vector3 newPosition);
+    // Багийн өөр гишүүн рүү шилжих: түүний байрлал, харах зүг, амийг авна.
+    void Assume(Vector3 newPosition, float newFacing, float newHealth, float newMaxHealth);
+    // Гадаад төрх (удирдаж буй гишүүнээс хамаарна).
+    void SetLook(const HumanoidLook& newLook) { look = newLook; }
+    // Туршилт: дүрийг тогтсон байрлалд зурна (хөдөлгөөний үе шатыг дэлгэцийн зургаар шалгахад).
+    void SetPoseDemo(float move, float phase, float aim, float actionProgress)
+    {
+        demo = true;
+        demoMove = move;
+        demoPhase = phase;
+        demoAim = aim;
+        demoAction = actionProgress;
+    }
+    void SetPoseDemoExtra(float direction, float reloadProgress)
+    {
+        demoDirection = direction;
+        demoReload = reloadProgress;
+    }
 
     // Буудах үед биеэ камерын зүг рүү шууд эргүүлнэ.
     void AimAt(float yaw);
@@ -50,6 +76,21 @@ public:
     // Хутгаар хатгах, гранат шидэх хөдөлгөөнийг эхлүүлнэ.
     void StartAction(float duration);
     float Facing() const { return facing; }
+
+    // Шат, цонх зэрэг гарцыг туулж эхэлнэ: дуустал удирдлага түр зогсоно.
+    void StartTraverse(const Passage& passage);
+    bool IsTraversing() const { return traversing; }
+
+    Stance GetStance() const { return stance; }
+    void SetStance(Stance newStance) { stance = newStance; }
+    // Суух, хэвтэхэд зомби анзаарах зай багасна (1 = босоо).
+    float Concealment() const { return 1.0f - 0.4f * crouchPose - 0.65f * pronePose; }
+    // Сумны тархалтын үржүүлэгч: суусан, хэвтсэн үед буу тогтвортой.
+    float SpreadScale() const { return 1.0f - 0.4f * crouchPose - 0.65f * pronePose; }
+    // Камерын харах цэг хэдэн метр доошлох.
+    float CameraDrop() const { return 0.5f * crouchPose + 1.2f * pronePose; }
+    // Цэнэглэлтийн явц (гарын хөдөлгөөнд); -1 = цэнэглээгүй.
+    void SetReload(float progress) { reload = progress; }
 
     void TakeDamage(float amount);
     void Heal(float amount);
@@ -70,10 +111,24 @@ private:
     float floorY = 0.0f;       // доорх гадаргуу (сүүдэрт)
     float walkCycle = 0.0f;    // хөл гарын савлалтын үе
     float aimTimer = 0.0f;     // >0 үед хөдөлгөөн биеийг эргүүлэхгүй
+    float aimPose = 0.0f;      // 0 = зэвсгээ бэлэн барьсан .. 1 = онилсон (зөөлөн шилжинэ)
+    Stance stance = Stance::Stand;
+    float crouchPose = 0.0f;   // 0 = босоо .. 1 = суусан (зөөлөн шилжинэ)
+    float pronePose = 0.0f;    // 0 = босоо .. 1 = хэвтсэн
+    float moveDirection = 0.0f; // явж буй зүг, харж буй зүгтэй харьцангуй
+    bool traversing = false;    // шат, цонхоор гарч яваа
+    Passage traverse = {};
+    float traverseTime = 0.0f;
+    float traverseDuration = 1.0f;
+    float reload = -1.0f;
     float recoil = 0.0f;       // 1 = дөнгөж буудсан, 0 руу буурна
     float action = 0.0f;       // 1 -> 0: хатгах / шидэх хөдөлгөөний явц
     float actionDuration = 0.3f;
     HeldItem held = HeldItem::Rifle;
+    HumanoidLook look;
+    bool demo = false;
+    float demoMove = 0.0f, demoPhase = 0.0f, demoAim = 0.0f, demoAction = -1.0f;
+    float demoDirection = 0.0f, demoReload = -1.0f;
     RideStyle rideStyle = RideStyle::None;
     Vector3 seat = { 0.0f, 0.0f, 0.0f }; // унаа унасан үеийн ташааны байрлал
 

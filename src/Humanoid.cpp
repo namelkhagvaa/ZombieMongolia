@@ -1,5 +1,8 @@
 #include "Humanoid.h"
 
+#include "CharacterModel.h"
+#include "raymath.h"
+
 #include "rlgl.h"
 
 #include <algorithm>
@@ -139,6 +142,41 @@ namespace
 
     // ------------------------------------------------------------------ Гар
 
+    // Баруун гарт барьсан жижиг зэвсэг. Шууны орон зайд зурна: эх нь тохой, шууны тэнхлэг (-Y) нь
+    // зэвсгийн чиглэл, гар урагш сунгасан үед +Z нь дээш харна.
+    void DrawHandItem(const HumanoidLook& look)
+    {
+        const float grip = -kForearm - 0.05f;
+        if (look.held == HeldItem::Knife)
+        {
+            Cube(0.0f, grip, 0.01f, 0.035f, 0.13f, 0.04f, { 40, 30, 24, 255 });              // иш
+            Cube(0.0f, grip - 0.07f, 0.01f, 0.03f, 0.02f, 0.09f, kGunMetal);                 // хамгаалалт
+            Tapered(0.0f, grip - 0.3f, 0.01f, 0.006f, 0.012f, 0.014f, 0.05f, 0.23f, { 196, 200, 206, 255 }); // ир
+        }
+        else if (look.held == HeldItem::Pistol)
+        {
+            Cube(0.0f, grip, 0.0f, 0.04f, 0.12f, 0.06f, kGun);                               // бариул
+            Cube(0.0f, grip - 0.1f, 0.055f, 0.045f, 0.24f, 0.06f, kGunMetal);                // их бие, замаг
+            Cube(0.0f, grip - 0.07f, 0.09f, 0.03f, 0.2f, 0.012f, kGun);
+            Cube(0.0f, grip - 0.06f, 0.0f, 0.02f, 0.06f, 0.02f, kGun);                       // гох хамгаалалт
+        }
+        else if (look.held == HeldItem::Grenade)
+        {
+            DrawSphereEx({ 0.0f, grip - 0.03f, 0.03f }, 0.06f, 4, 6, { 62, 78, 48, 255 });
+            Cube(0.0f, grip - 0.03f, 0.1f, 0.03f, 0.03f, 0.04f, kGunMetal);                  // гал хамгаалагч
+        }
+    }
+
+    // Босоо бариултай гар буу (оруулсан загварын гарт): эх нь бариулын төв, +Z нь ам, +Y нь дээш.
+    void DrawPistolUpright()
+    {
+        Cube(0.0f, 0.085f, 0.055f, 0.034f, 0.05f, 0.21f, kGunMetal);          // замаг
+        Cube(0.0f, 0.058f, 0.06f, 0.03f, 0.022f, 0.17f, kGun);                // их бие
+        Tapered(0.0f, -0.07f, -0.02f, 0.03f, 0.05f, 0.032f, 0.055f, 0.13f, kGun, 0.025f); // бариул (хойш налуу)
+        Cube(0.0f, 0.03f, 0.055f, 0.012f, 0.012f, 0.07f, kGun);               // гох хамгаалалт
+        Cube(0.0f, 0.115f, 0.15f, 0.008f, 0.012f, 0.012f, kGun);              // урд хараа
+    }
+
     void DrawArm(int side, const HumanoidPose& pose, const HumanoidLook& look, bool detailed)
     {
         const float x = side == 0 ? -kShoulderX : kShoulderX;
@@ -202,29 +240,9 @@ namespace
             }
         }
 
-        // Баруун гарт барьсан жижиг зэвсэг. Шууны тэнхлэг (-Y) нь зэвсгийн чиглэл,
-        // гар урагш сунгасан үед +Z нь дээш харна.
         if (side == 0 && !pose.hideItem)
         {
-            const float grip = -kForearm - 0.05f;
-            if (look.held == HeldItem::Knife)
-            {
-                Cube(0.0f, grip, 0.01f, 0.035f, 0.13f, 0.04f, { 40, 30, 24, 255 });              // иш
-                Cube(0.0f, grip - 0.07f, 0.01f, 0.03f, 0.02f, 0.09f, kGunMetal);                 // хамгаалалт
-                Tapered(0.0f, grip - 0.3f, 0.01f, 0.006f, 0.012f, 0.014f, 0.05f, 0.23f, { 196, 200, 206, 255 }); // ир
-            }
-            else if (look.held == HeldItem::Pistol)
-            {
-                Cube(0.0f, grip, 0.0f, 0.04f, 0.12f, 0.06f, kGun);                               // бариул
-                Cube(0.0f, grip - 0.1f, 0.055f, 0.045f, 0.24f, 0.06f, kGunMetal);                // их бие, замаг
-                Cube(0.0f, grip - 0.07f, 0.09f, 0.03f, 0.2f, 0.012f, kGun);
-                Cube(0.0f, grip - 0.06f, 0.0f, 0.02f, 0.06f, 0.02f, kGun);                       // гох хамгаалалт
-            }
-            else if (look.held == HeldItem::Grenade)
-            {
-                DrawSphereEx({ 0.0f, grip - 0.03f, 0.03f }, 0.06f, 4, 6, { 62, 78, 48, 255 });
-                Cube(0.0f, grip - 0.03f, 0.1f, 0.03f, 0.03f, 0.04f, kGunMetal);                  // гал хамгаалагч
-            }
+            DrawHandItem(look);
         }
         rlPopMatrix();
     }
@@ -272,6 +290,58 @@ namespace
             Cube(x, y + 0.075f, z + 0.98f, 0.016f, 0.07f, 0.02f, kGun);        // урд хараа
             Cube(x, y + 0.095f, z + 0.3f, 0.03f, 0.03f, 0.04f, kGun);          // хойд хараа
             Cube(x, y - 0.075f, z + 0.82f, 0.03f, 0.03f, 0.3f, kGunMetal);     // хийн хоолой
+        }
+    }
+
+    // Танк эсэргүүцэгч пуужин харвагч: мөрөн дээр хэвтэх урт хоолой, урд үзүүрт нь шовх пуужин,
+    // доор нь хоёр бариул, ард нь өргөссөн яндан. Хоолойн тэнхлэг бууны шугамаас арай дээр.
+    void DrawLauncher(float kick, bool detailed)
+    {
+        const float x = kHumanoidMuzzle.x;
+        const float y = kHumanoidMuzzle.y - kHipHeight;
+        const float z = -kick;
+        const Color tube = { 78, 88, 62, 255 };
+        const Color wood = { 120, 84, 50, 255 };
+        const Color warhead = { 96, 106, 74, 255 };
+
+        Cube(x, y, z + 0.3f, 0.09f, 0.09f, 1.15f, tube);                                  // хоолой
+        Cube(x, y, z + 0.34f, 0.105f, 0.105f, 0.3f, wood);                                // модон дулаан хамгаалалт
+        Tapered(x, y - 0.075f, z - 0.36f, 0.15f, 0.15f, 0.09f, 0.09f, 0.15f, tube);       // арын өргөссөн яндан
+        Cube(x, y - 0.14f, z + 0.5f, 0.04f, 0.17f, 0.05f, kGun);                          // гохны бариул
+        Cube(x, y - 0.14f, z + 0.72f, 0.04f, 0.17f, 0.05f, wood);                         // урд бариул
+        // Пуужингийн толгой: бүдүүн их бие, шовх хошуу
+        Cube(x, y, z + 1.0f, 0.13f, 0.13f, 0.26f, warhead);
+        Tapered(x - 0.0f, y - 0.065f, z + 1.2f, 0.13f, 0.14f, 0.03f, 0.03f, 0.13f, warhead);
+        if (detailed)
+        {
+            Cube(x, y + 0.09f, z + 0.42f, 0.03f, 0.09f, 0.12f, kGun);                     // хараа
+            Cube(x, y + 0.075f, z + 0.82f, 0.016f, 0.06f, 0.02f, kGun);                   // урд хараа
+        }
+    }
+
+    // Мэргэн буудагчийн буу: модон бөгс, урт гол төмөр, дээрээ дуран хараатай.
+    void DrawSniper(float kick, bool detailed)
+    {
+        const float x = kHumanoidMuzzle.x;
+        const float y = kHumanoidMuzzle.y - kHipHeight;
+        const float z = -kick;
+
+        Tapered(x, y - 0.1f, z + 0.1f, 0.06f, 0.26f, 0.06f, 0.3f, 0.14f, kGunWood, 0.02f); // бөгс
+        Cube(x, y - 0.01f, z + 0.5f, 0.075f, 0.11f, 0.5f, kGunWood);                          // их бие
+        Cube(x, y + 0.04f, z + 0.5f, 0.05f, 0.04f, 0.42f, kGunMetal);                         // замаг
+        Cube(x, y + 0.03f, z + 1.05f, 0.035f, 0.035f, 0.66f, kGun);                           // урт гол төмөр
+        Cube(x, y - 0.12f, z + 0.52f, 0.05f, 0.1f, 0.1f, kGunMetal);                          // сумны хайрцаг
+        // Дуран хараа: хоёр суурь дээрх хоолой, хоёр үзүүр нь бүдүүн
+        Cube(x, y + 0.13f, z + 0.5f, 0.05f, 0.05f, 0.36f, kGun);
+        Cube(x, y + 0.13f, z + 0.3f, 0.066f, 0.066f, 0.07f, kGun);
+        Cube(x, y + 0.13f, z + 0.7f, 0.074f, 0.074f, 0.09f, kGun);
+        if (detailed)
+        {
+            Cube(x, y + 0.085f, z + 0.4f, 0.025f, 0.05f, 0.03f, kGunMetal);  // хараагийн суурь
+            Cube(x, y + 0.085f, z + 0.6f, 0.025f, 0.05f, 0.03f, kGunMetal);
+            Cube(x, y + 0.13f, z + 0.746f, 0.05f, 0.05f, 0.004f, { 70, 110, 150, 255 }); // линз
+            Cube(x, y - 0.1f, z + 0.36f, 0.02f, 0.07f, 0.1f, kGun);          // гох хамгаалалт
+            Cube(x, y + 0.03f, z + 1.36f, 0.05f, 0.05f, 0.06f, kGun);        // амны тоормос
         }
     }
 
@@ -533,6 +603,8 @@ Vector3 HumanoidMuzzleFor(HeldItem held)
     switch (held)
     {
     case HeldItem::Shotgun: return { kHumanoidMuzzle.x, kHumanoidMuzzle.y + 0.03f, 1.2f };
+    case HeldItem::Sniper: return { kHumanoidMuzzle.x, kHumanoidMuzzle.y + 0.03f, 1.4f };
+    case HeldItem::Launcher: return { -0.2f, 1.6f, 1.25f }; // мөрөн дээрх хоолойн ам
     case HeldItem::Pistol: return { -0.26f, 1.44f, 0.82f };  // урагш сунгасан гарын үзүүр
     case HeldItem::Knife: return { -0.26f, 1.25f, 0.75f };
     case HeldItem::Grenade: return { -0.3f, 1.85f, 0.3f };   // толгой дээрээс шиднэ
@@ -544,6 +616,12 @@ HumanoidPose MakeSoldierPose(float walkCycle, float moveAmount, bool grounded, f
                              HeldItem held, float action)
 {
     HumanoidPose pose;
+    pose.walkPhase = walkCycle;
+    pose.moveAmount = moveAmount;
+    pose.time = time;
+    pose.recoil = recoil;
+    pose.grounded = grounded;
+    pose.actionProgress = action > 0.0f ? 1.0f - action : -1.0f;
     const float amount = std::min(moveAmount, 1.0f);
     const float sprint = std::clamp(moveAmount - 1.0f, 0.0f, 0.6f) / 0.6f; // 0 алхаа .. 1 гүйлт
 
@@ -583,9 +661,11 @@ HumanoidPose MakeSoldierPose(float walkCycle, float moveAmount, bool grounded, f
     {
     case HeldItem::Rifle:
     case HeldItem::Shotgun:
+    case HeldItem::Sniper:
+    case HeldItem::Launcher:
     {
         // Бууг хоёр гараар барина: баруун гар бариулд, зүүн гар урд талын модонд.
-        const float kick = held == HeldItem::Shotgun ? 1.8f : 1.0f; // үрлэн буу хүчтэй ухарна
+        const float kick = held == HeldItem::Rifle ? 1.0f : 1.8f; // үрлэн буу хүчтэй ухарна
         pose.shoulder[0] = 20.0f - recoil * 6.0f * kick;
         pose.shoulderYaw[0] = 14.0f;
         pose.elbow[0] = 80.0f + recoil * 8.0f * kick;
@@ -628,7 +708,7 @@ HumanoidPose MakeSoldierPose(float walkCycle, float moveAmount, bool grounded, f
             pose.shoulder[0] = 190.0f - 130.0f * progress;
             pose.elbow[0] = 50.0f * (1.0f - progress);
             pose.lean += -8.0f + 20.0f * progress;
-            pose.hideItem = progress > 0.45f; // гараас гарсан
+            pose.hideItem = progress > 0.5f; // гараас гарсан
         }
         else
         {
@@ -667,6 +747,11 @@ Vector3 HumanoidLocalToWorld(Vector3 feet, float facing, Vector3 local)
     };
 }
 
+namespace
+{
+    void DrawBuiltInFigure(const HumanoidPose& pose, const HumanoidLook& look, bool detailed, Color torso);
+}
+
 void DrawHumanoid(Vector3 feet, float facing, float scale, const HumanoidPose& pose, const HumanoidLook& look,
                   bool detailed)
 {
@@ -676,6 +761,13 @@ void DrawHumanoid(Vector3 feet, float facing, float scale, const HumanoidPose& p
     rlTranslatef(feet.x, feet.y, feet.z);
     rlRotatef(facing * RAD2DEG, 0.0f, 1.0f, 0.0f);
     rlScalef(scale * look.bulk, scale, scale * look.bulk);
+
+    // Хэвтэх: бүх бие урагшаа хэвтэнэ (ташаа нь зогсож байсан цэгийнхээ дээр үлдэнэ).
+    if (pose.prone > 0.0f)
+    {
+        rlTranslatef(0.0f, 0.26f * pose.prone, -0.85f * pose.prone);
+        rlRotatef(86.0f * pose.prone, 1.0f, 0.0f, 0.0f);
+    }
 
     // Унах: хөлөө тойрон хойшоо эргэж, нуруугаараа газар хэвтэнэ.
     if (pose.fall > 0.0f)
@@ -692,6 +784,61 @@ void DrawHumanoid(Vector3 feet, float facing, float scale, const HumanoidPose& p
     }
     rlTranslatef(0.0f, pose.bob, 0.0f);
 
+    if (HasCharacterModel(look.model))
+    {
+        // Гаднаас оруулсан ястай загвар: бие нь загвараас, зэвсэг нь урьдын адил кодоор.
+        const bool twoHanded = look.held == HeldItem::Rifle || look.held == HeldItem::Sniper ||
+                               look.held == HeldItem::Launcher ||
+                               look.held == HeldItem::Shotgun;
+        const CharacterFrames frames = DrawCharacterModel(look.model, pose, look.held,
+                                                          look.kind == HumanoidKind::Zombie, look.modelTint);
+
+        if (twoHanded)
+        {
+            rlPushMatrix();
+            rlMultMatrixf(MatrixToFloat(frames.gun));
+            if (look.held == HeldItem::Rifle) DrawGun(pose.gunKick, detailed);
+            else if (look.held == HeldItem::Launcher) DrawLauncher(pose.gunKick, detailed);
+            else if (look.held == HeldItem::Sniper) DrawSniper(pose.gunKick, detailed);
+            else DrawShotgun(pose.gunKick, detailed);
+            rlPopMatrix();
+        }
+        else if (!pose.hideItem)
+        {
+            rlPushMatrix();
+            rlMultMatrixf(MatrixToFloat(frames.rightForearm));
+            if (look.held == HeldItem::Pistol) DrawPistolUpright();
+            else DrawHandItem(look);
+            rlPopMatrix();
+        }
+        rlPopMatrix();
+        return;
+    }
+
+    // Кодоор үүсгэсэн дүрс: суухад өвдөг нугарч бие доошилно; хэвтэхэд гар, буу толгой дээгүүр урагш сунана.
+    HumanoidPose bent = pose;
+    if (pose.crouch > 0.0f || pose.prone > 0.0f)
+    {
+        const float c = pose.crouch * (1.0f - pose.prone), p = pose.prone;
+        for (int side = 0; side < 2; ++side)
+        {
+            bent.hip[side] = pose.hip[side] * (1.0f - 0.5f * c) * (1.0f - p) + 62.0f * c;
+            bent.knee[side] = pose.knee[side] * (1.0f - p) + 108.0f * c + 8.0f * p;
+            bent.shoulder[side] = pose.shoulder[side] * (1.0f - p) + 150.0f * p;
+            bent.elbow[side] = pose.elbow[side] * (1.0f - p) + 30.0f * p;
+        }
+        bent.lean = pose.lean * (1.0f - p) + 14.0f * c - 14.0f * p;
+        bent.headPitch = pose.headPitch - 40.0f * p;
+        rlTranslatef(0.0f, -0.33f * c, 0.0f);
+    }
+    DrawBuiltInFigure(bent, look, detailed, torso);
+}
+
+namespace
+{
+// Кодоор үүсгэсэн (хайрцган) дүрсийг зурна. Үндсэн хувиргалт rlgl-д тавигдсан байна; төгсгөлд нь буцаана.
+void DrawBuiltInFigure(const HumanoidPose& pose, const HumanoidLook& look, bool detailed, Color torso)
+{
     DrawLeg(0, pose, look, detailed);
     DrawLeg(1, pose, look, detailed);
 
@@ -728,9 +875,26 @@ void DrawHumanoid(Vector3 feet, float facing, float scale, const HumanoidPose& p
     DrawHead(pose, look, detailed);
     DrawArm(0, pose, look, detailed);
     DrawArm(1, pose, look, detailed);
+    if (pose.prone > 0.0f)
+    {
+        // Хэвтэж байхад буу биеийн тэнхлэгийн дагуу (толгой дээгүүр) урагш чиглэнэ.
+        rlTranslatef(0.0f, kShoulderHeight, 0.0f);
+        rlRotatef(-84.0f * pose.prone, 1.0f, 0.0f, 0.0f);
+        rlTranslatef(0.0f, -kShoulderHeight + 0.25f * pose.prone, -0.2f * pose.prone);
+    }
     if (look.held == HeldItem::Rifle)
     {
         DrawGun(pose.gunKick, detailed);
+    }
+    else if (look.held == HeldItem::Sniper)
+    {
+        DrawSniper(pose.gunKick, detailed);
+    }
+    else if (look.held == HeldItem::Launcher)
+    {
+        // Кодоор үүсгэсэн дүрс: хоолойг мөрний түвшинд өргөнө.
+        rlTranslatef(0.0f, 0.34f, -0.1f);
+        DrawLauncher(pose.gunKick, detailed);
     }
     else if (look.held == HeldItem::Shotgun)
     {
@@ -740,3 +904,4 @@ void DrawHumanoid(Vector3 feet, float facing, float scale, const HumanoidPose& p
     rlPopMatrix();
     rlPopMatrix();
 }
+} // namespace

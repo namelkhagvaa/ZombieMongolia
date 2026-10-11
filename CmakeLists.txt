@@ -15,6 +15,13 @@ include(FetchContent)
 
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
+# Android (NDK-ийн toolchain-аар тохируулсан үед; tools\build_android.ps1 үүнийг хийнэ):
+# raylib-ийг Android платформоор, OpenGL ES 3.0-оор хөрвүүлнэ.
+if(ANDROID)
+    set(PLATFORM "Android" CACHE STRING "" FORCE)
+    set(OPENGL_VERSION "ES 3.0" CACHE STRING "" FORCE)
+endif()
+
 FetchContent_Declare(
     raylib
     GIT_REPOSITORY https://github.com/raysan5/raylib.git
@@ -23,14 +30,16 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(raylib)
 
-add_executable(ZombieMongolia
+set(GAME_SOURCES
     main.cpp
     src/Campaign.cpp
     src/CampaignData.cpp
+    src/CharacterModel.cpp
     src/Environment.cpp
     src/Game.cpp
     src/Grenades.cpp
     src/Hud.cpp
+    src/Input.cpp
     src/Humanoid.cpp
     src/Layout.cpp
     src/MeshBuilder.cpp
@@ -46,6 +55,7 @@ add_executable(ZombieMongolia
     src/Shop.cpp
     src/Soldier.cpp
     src/Structures.cpp
+    src/Team.cpp
     src/Terrain.cpp
     src/ThirdPersonCamera.cpp
     src/Tracers.cpp
@@ -55,6 +65,16 @@ add_executable(ZombieMongolia
     src/World.cpp
     src/Zombie.cpp
 )
+
+if(ANDROID)
+    # Android дээр тоглоом нь NativeActivity-ийн ачаалдаг сан (libZombieMongolia.so) болно.
+    add_library(ZombieMongolia SHARED ${GAME_SOURCES})
+    target_include_directories(ZombieMongolia PRIVATE ${ANDROID_NDK}/sources/android/native_app_glue)
+    target_link_options(ZombieMongolia PRIVATE -u ANativeActivity_onCreate)
+    target_link_libraries(ZombieMongolia PRIVATE log android EGL GLESv3 m)
+else()
+    add_executable(ZombieMongolia ${GAME_SOURCES})
+endif()
 target_include_directories(ZombieMongolia PRIVATE src)
 target_link_libraries(ZombieMongolia PRIVATE raylib)
 

@@ -13,8 +13,11 @@ public:
     // Хулганын оролтыг уншиж, тоглогчийн хөлийн байрлалыг зөөлөн дагана.
     // aiming: онилж байгаа үед камер ойртож, харах өнцөг нарийсна.
     // extraDistance: унаа унасан үед камерыг холдуулах нэмэлт зай.
+    // scoped: мэргэн буудагчийн дуран хараа: камер нүдний түвшинд очиж, харах өнцөг маш нарийсна.
     void Update(float dt, const GameConfig& config, const World& world, Vector3 playerFeet, bool aiming,
-                float extraDistance = 0.0f);
+                float extraDistance = 0.0f, bool scoped = false, float targetDrop = 0.0f);
+    // Дуран хараагаар харж байгаа эсэх (тоглогчийн биеийг зурахгүй, дэлгэцэд хараа гарна).
+    bool IsScoped() const { return scopeBlend > 0.6f; }
 
     // Тоглогч шинэ газар гарч ирэхэд (даалгавар эхлэх) камерыг шууд тэнд аваачна.
     void Snap(Vector3 playerFeet);
@@ -23,6 +26,13 @@ public:
 
     const Camera3D& Get() const { return camera; }
     float Yaw() const { return yaw; }
+    float Pitch() const { return pitch; }
+    // Харах чиглэлийг гаднаас бага зэрэг эргүүлнэ (онилгооны туслах); хязгаарыг Update барина.
+    void AddView(float yawDelta, float pitchDelta)
+    {
+        yaw += yawDelta;
+        pitch += pitchDelta;
+    }
 
 private:
     Camera3D camera = {};
@@ -32,5 +42,6 @@ private:
     float pitch = 0.3f;  // эерэг = камер дээрээс харна
     float distance;
     float aimBlend = 0.0f; // 0 = ердийн, 1 = бүрэн онилсон
+    float scopeBlend = 0.0f; // 0 = ердийн, 1 = дуран хараа
     float rideDistance = 0.0f; // унаа унасан үеийн нэмэлт зай (аажим өөрчлөгдөнө)
 };

@@ -20,11 +20,14 @@
 //  glass   - торон хашаа зэрэг хагас тунгалаг гадаргуу
 //  obstacles - мөргөлдөөний хайрцгууд (жагсаалтын төгсгөлд нэмэгдэнэ)
 //  interiors, doors - дотогш орж болох барилгуудын дотор тал ба нээж хаадаг хаалганууд
+//  passages - шат, цонх зэрэг тусгай гарцууд
 
 void BuildStaticStructures(const Layout& layout, const Terrain& terrain, std::vector<Obstacle>& obstacles,
                            MeshBuilder& solid, MeshBuilder& shadows, MeshBuilder& glass,
-                           std::vector<Interior>& interiors, std::vector<Door>& doors);
+                           std::vector<Interior>& interiors, std::vector<Door>& doors,
+                           std::vector<Passage>& passages);
 
 void BuildSettlementStructures(int variant, const Layout& layout, const Terrain& terrain,
                                std::vector<Obstacle>& obstacles, MeshBuilder& solid, MeshBuilder& shadows,
-                               MeshBuilder& glass, std::vector<Interior>& interiors, std::vector<Door>& doors);
+                               MeshBuilder& glass, std::vector<Interior>& interiors, std::vector<Door>& doors,
+                           std::vector<Passage>& passages);

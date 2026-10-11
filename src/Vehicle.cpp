@@ -12,10 +12,10 @@ const VehicleSpec& SpecFor(VehicleType type)
 {
     //                name          top   acc   brake rev  turn  rad   asph  dirt  steppe slope ram   encl   seat                   cam
     static const VehicleSpec specs[] = {
-        /* Jeep  */ { "JEEP",       30.0f, 9.0f, 20.0f, 7.0f, 1.9f, 1.5f, 1.00f, 0.70f, 0.45f, 1.6f, 9.0f, true,  { 0.0f, 1.0f, 0.0f },   4.0f },
-        /* Moto  */ { "MOTORCYCLE", 26.0f, 11.0f, 18.0f, 3.0f, 2.4f, 0.7f, 1.00f, 0.80f, 0.60f, 1.2f, 3.0f, false, { 0.0f, 0.86f, -0.22f }, 1.5f },
-        /* Trike */ { "TRIKE",      17.0f, 6.0f, 14.0f, 4.0f, 1.8f, 1.0f, 1.00f, 0.85f, 0.70f, 1.4f, 4.5f, false, { 0.0f, 0.92f, 0.05f },  2.0f },
-        /* Horse */ { "HORSE",      13.0f, 8.0f, 12.0f, 2.0f, 2.8f, 0.8f, 0.85f, 1.00f, 0.95f, 0.6f, 2.0f, false, { 0.0f, 1.5f, -0.05f },  1.5f },
+        /* Jeep  */ { "ЖИЙП",       30.0f, 9.0f, 20.0f, 7.0f, 1.9f, 1.5f, 1.00f, 0.70f, 0.45f, 1.6f, 9.0f, true,  { 0.0f, 1.0f, 0.0f },   4.0f },
+        /* Moto  */ { "МОТОЦИКЛ", 26.0f, 11.0f, 18.0f, 3.0f, 2.4f, 0.7f, 1.00f, 0.80f, 0.60f, 1.2f, 3.0f, false, { 0.0f, 0.86f, -0.22f }, 1.5f },
+        /* Trike */ { "ГУРВАН ДУГУЙТ",      17.0f, 6.0f, 14.0f, 4.0f, 1.8f, 1.0f, 1.00f, 0.85f, 0.70f, 1.4f, 4.5f, false, { 0.0f, 0.92f, 0.05f },  2.0f },
+        /* Horse */ { "МОРЬ",      13.0f, 8.0f, 12.0f, 2.0f, 2.8f, 0.8f, 0.85f, 1.00f, 0.95f, 0.6f, 2.0f, false, { 0.0f, 1.5f, -0.05f },  1.5f },
     };
     return specs[(int)type];
 }
@@ -202,6 +202,7 @@ void Garage::Clear()
 {
     vehicles.clear();
     driven = -1;
+    escort = -1;
 }
 
 void Garage::Add(VehicleType type, Vector3 position, float heading)
@@ -240,8 +241,27 @@ Vector3 Garage::SeatPosition() const
     {
         return { 0.0f, 0.0f, 0.0f };
     }
-    const Vehicle& vehicle = vehicles[driven];
+    return SeatWorld(driven, false);
+}
+
+Vector3 Garage::SeatWorld(int index, bool passenger) const
+{
+    const Vehicle& vehicle = vehicles[index];
     Vector3 seat = SpecFor(vehicle.type).seat;
+    if (passenger)
+    {
+        switch (vehicle.type)
+        {
+        case VehicleType::Jeep: seat = { -0.45f, 1.0f, 0.0f }; break;         // жолоочийн эсрэг талын суудал
+        case VehicleType::Motorcycle: seat = { 0.0f, 0.9f, -0.62f }; break;   // сундлана
+        case VehicleType::Trike: seat = { -0.22f, 0.98f, -1.0f }; break;      // ачааны тэвшин дээр
+        case VehicleType::Horse: seat = { 0.0f, 1.5f, -0.52f }; break;        // сундлана
+        }
+    }
+    else if (vehicle.type == VehicleType::Jeep)
+    {
+        seat.x = 0.45f; // жолоочийн суудал
+    }
     if (vehicle.type == VehicleType::Horse)
     {
         // Морины давхилттай хамт дэгдэнэ.
@@ -256,7 +276,9 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
     {
         Vehicle& vehicle = vehicles[i];
         const VehicleSpec& spec = SpecFor(vehicle.type);
-        const bool controlled = i == driven;
+        const bool byPlayer = i == driven;
+        const bool controlled = byPlayer || i == escort; // тоглогч эсвэл багийн гишүүн жолоодож байгаа
+        const float steerInput = byPlayer ? steer : escortSteer;
         if (!controlled && vehicle.speed == 0.0f)
         {
             continue; // зогсож буй унаа: тооцох зүйлгүй (ертөнцөд олон унаа байгаа)
@@ -279,8 +301,8 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
         const float maxSpeed = spec.topSpeed * surfaceFactor * slopeFactor;
 
         // --- Хурд ---
-        const float input = controlled ? throttle : 0.0f;
-        if (controlled && handbrake)
+        const float input = byPlayer ? throttle : controlled ? escortThrottle : 0.0f;
+        if (byPlayer && handbrake)
         {
             vehicle.speed -= std::clamp(vehicle.speed, -spec.braking * 1.5f * dt, spec.braking * 1.5f * dt);
         }
@@ -309,11 +331,11 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
         }
 
         // --- Эргэлт: хурдтай үед л эргэнэ, хурд их байх тусам эргэлт өргөснө ---
-        if (controlled && steer != 0.0f)
+        if (controlled && steerInput != 0.0f)
         {
             const float grip = std::clamp(vehicle.speed / 3.0f, -1.0f, 1.0f);
             const float rate = spec.turnRate / (1.0f + std::fabs(vehicle.speed) * 0.045f);
-            vehicle.heading -= steer * rate * grip * dt; // D = баруун тийш
+            vehicle.heading -= steerInput * rate * grip * dt; // D = баруун тийш
         }
 
         // --- Хөдөлгөөн ба мөргөлдөөн ---
@@ -340,10 +362,13 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
         // Дугуй / хөлийн хөдөлгөөн
         vehicle.animation += vehicle.speed * dt * (vehicle.type == VehicleType::Horse ? 1.1f : 2.6f);
 
-        if (controlled)
+        if (byPlayer)
         {
             drivenSurface = surface;
             drivenMaxSpeed = maxSpeed;
+        }
+        if (controlled)
+        {
 
             // Зомбийг дайрах. Цохилтын хүч = хурд x унааны жин (ramDamage).
             // Хүчтэй цохилт (жийп ~16 км/ц-аас дээш, мотоцикл ~48 км/ц-аас дээш) зомбийг агаарт шидэж ална;

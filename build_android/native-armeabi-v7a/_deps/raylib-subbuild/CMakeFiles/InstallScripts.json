@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

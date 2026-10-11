@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/ZombieMongolia/build_android/native-arm64-v8a/cmake_install.cmake",
+		"C:/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-build/cmake_install.cmake",
+		"C:/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-build/raylib/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

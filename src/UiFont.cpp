@@ -22,14 +22,21 @@ void LoadUiFont()
     for (int c = 0x0400; c <= 0x045F; ++c) codepoints.push_back(c);
     for (int c : { 0x04AE, 0x04AF, 0x04E8, 0x04E9, 0x2014, 0x2013, 0x2116, 0x00B7 }) codepoints.push_back(c);
 
+#if defined(__ANDROID__)
+    // APK-ийн assets дотор хамт ирсэн чөлөөт лицензтэй фонт (FileExists нь assets-ийг хардаггүй тул шалгахгүй).
+    const char* candidates[] = { "ui_font.ttf" };
+    const bool checkExists = false;
+#else
     const char* candidates[] = {
         "C:/Windows/Fonts/segoeui.ttf",
         "C:/Windows/Fonts/arial.ttf",
         "C:/Windows/Fonts/tahoma.ttf",
     };
+    const bool checkExists = true;
+#endif
     for (const char* path : candidates)
     {
-        if (!FileExists(path)) continue;
+        if (checkExists && !FileExists(path)) continue;
 
         font = LoadFontEx(path, kBaseSize, codepoints.data(), (int)codepoints.size());
         if (font.texture.id != 0 && font.glyphCount > 100)

@@ -1,31 +1,33 @@
 #include "Player.h"
 
+#include "Input.h"
+
 #include "Humanoid.h"
+#include "Team.h"
 #include "raymath.h"
 
 #include <algorithm>
 #include <cmath>
 
-namespace
+Player::Player(Vector3 spawn) : spawnPoint(spawn), position(spawn), look(TeamMemberLook(0))
 {
-    HumanoidLook MakeLook()
-    {
-        HumanoidLook look;
-        look.kind = HumanoidKind::Player;
-        look.pants = { 58, 54, 48, 255 };
-        look.boots = { 52, 36, 26, 255 };   // Монгол гутал
-        look.body = { 40, 70, 150, 255 };   // хөх дээл
-        look.trim = { 230, 150, 30, 255 };  // шар бүс, эмжээр
-        look.belt = look.trim;
-        look.hat = { 160, 34, 34, 255 };    // улаан оройтой малгай
-        look.vest = { 122, 104, 70, 255 };  // савхин сумны хантааз
-        look.skin = { 214, 168, 128, 255 };
-        return look;
-    }
 }
 
-Player::Player(Vector3 spawn) : spawnPoint(spawn), position(spawn)
+void Player::Assume(Vector3 newPosition, float newFacing, float newHealth, float newMaxHealth)
 {
+    position = newPosition;
+    velocity = { 0.0f, 0.0f, 0.0f };
+    facing = newFacing;
+    health = newHealth;
+    maxHealth = newMaxHealth;
+    grounded = false;
+    timeSinceHit = 10.0f;
+    aimTimer = 0.0f;
+    recoil = 0.0f;
+    action = 0.0f;
+    traversing = false;
+    stance = Stance::Stand;
+    crouchPose = pronePose = 0.0f;
 }
 
 void Player::Reset(float newMaxHealth)
@@ -37,8 +39,12 @@ void Player::Reset(float newMaxHealth)
     health = newMaxHealth;
     timeSinceHit = 10.0f;
     aimTimer = 0.0f;
+    aimPose = 0.0f;
     recoil = 0.0f;
     action = 0.0f;
+    traversing = false;
+    stance = Stance::Stand;
+    crouchPose = pronePose = 0.0f;
     rideStyle = RideStyle::None;
 }
 
@@ -56,7 +62,11 @@ void Player::AimAt(float yaw)
 
 Vector3 Player::MuzzlePosition() const
 {
-    return HumanoidLocalToWorld(BodyBase(), facing, HumanoidMuzzleFor(held));
+    // Суух, хэвтэхэд буу доошилж, хэвтэхэд бага зэрэг урагшилна.
+    Vector3 muzzle = HumanoidMuzzleFor(held);
+    muzzle.y = std::max(0.22f, muzzle.y - 0.42f * crouchPose - 1.0f * pronePose);
+    muzzle.z += 0.35f * pronePose;
+    return HumanoidLocalToWorld(BodyBase(), facing, muzzle);
 }
 
 Vector3 Player::BodyBase() const
@@ -69,8 +79,13 @@ void Player::Ride(float dt, Vector3 ground, Vector3 seatHip, float heading, Ride
 {
     timeSinceHit += dt;
     aimTimer -= dt;
+    aimPose += ((aimTimer > 0.0f ? 1.0f : 0.0f) - aimPose) * std::min(1.0f, 9.0f * dt);
     recoil = std::max(0.0f, recoil - dt * 9.0f);
     action = std::max(0.0f, action - dt / actionDuration);
+
+    traversing = false;
+    stance = Stance::Stand; // унаан дээр суух, хэвтэхгүй
+    crouchPose = pronePose = 0.0f;
 
     position = ground;
     velocity = { 0.0f, 0.0f, 0.0f };
@@ -92,6 +107,17 @@ void Player::StopRiding(Vector3 exitPosition)
     position = exitPosition;
     velocity = { 0.0f, 0.0f, 0.0f };
     grounded = false;
+}
+
+void Player::StartTraverse(const Passage& passage)
+{
+    traversing = true;
+    traverse = passage;
+    traverseTime = 0.0f;
+    traverseDuration = passage.kind == PassageKind::LadderUp || passage.kind == PassageKind::LadderDown ? 1.9f
+                     : passage.kind == PassageKind::WindowDrop ? 1.25f : 0.85f;
+    stance = Stance::Stand;
+    velocity = { 0.0f, 0.0f, 0.0f };
 }
 
 void Player::StartAction(float duration)
@@ -120,12 +146,54 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
 {
     timeSinceHit += dt;
     aimTimer -= dt;
+    aimPose += ((aimTimer > 0.0f ? 1.0f : 0.0f) - aimPose) * std::min(1.0f, 9.0f * dt);
     recoil = std::max(0.0f, recoil - dt * 9.0f);
     action = std::max(0.0f, action - dt / actionDuration);
 
+    // --- Шат, цонхоор гарч яваа: тогтсон замаар шилжинэ, удирдлага үйлчлэхгүй ---
+    if (traversing)
+    {
+        traverseTime += dt;
+        const float t = std::min(1.0f, traverseTime / traverseDuration);
+        const Vector3 from = traverse.from, to = traverse.to;
+        auto smooth = [](float x) { x = std::clamp(x, 0.0f, 1.0f); return x * x * (3.0f - 2.0f * x); };
+
+        // Зам: from -> via -> to. Шат: босоо хэсэг + тавцан руу алхам. Цонх: тавцангийн дээгүүр давна.
+        Vector3 via = {};
+        float split = 0.5f, moveTime = 1.0f;
+        switch (traverse.kind)
+        {
+        case PassageKind::LadderUp: via = { from.x, to.y, from.z }; split = 0.8f; break;
+        case PassageKind::LadderDown: via = { to.x, from.y, to.z }; split = 0.2f; break;
+        case PassageKind::WindowDrop:
+            via = { (from.x + to.x) * 0.5f, from.y + 1.0f, (from.z + to.z) * 0.5f };
+            moveTime = 0.6f; // үлдсэн хугацаанд тавцангаас зүүгдэж байна
+            break;
+        default: via = { (from.x + to.x) * 0.5f, std::max(from.y, to.y) + 1.15f, (from.z + to.z) * 0.5f }; break;
+        }
+        const float p = std::min(1.0f, t / moveTime);
+        position = p < split ? Vector3Lerp(from, via, smooth(p / split)) : Vector3Lerp(via, to, smooth((p - split) / (1.0f - split)));
+
+        facing = traverse.facing;
+        velocity = { 0.0f, 0.0f, 0.0f };
+        grounded = false;
+        floorY = world.SurfaceHeightAt(position.x, position.z, position.y + 0.3f);
+        walkCycle += dt * 9.0f;
+        crouchPose = pronePose = 0.0f;
+        if (t >= 1.0f)
+        {
+            traversing = false; // цонхноос зүүгдсэн бол эндээс чөлөөтэй унана
+            position = to;
+        }
+        return;
+    }
+
     // --- Оролт: камерын зүгтэй харьцангуй хөдөлгөөний чиглэл ---
-    const float inputForward = (float)IsKeyDown(KEY_W) - (float)IsKeyDown(KEY_S);
-    const float inputRight = (float)IsKeyDown(KEY_D) - (float)IsKeyDown(KEY_A);
+    // Гар (WASD) эсвэл мэдрэгчтэй дэлгэцийн хүрд: хүрдийг бага хазайлгавал удаан алхана.
+    const Vector2 axis = InMoveAxis();
+    const float inputForward = axis.y;
+    const float inputRight = axis.x * InStrafeScale();
+    const float inputStrength = std::min(1.0f, std::sqrt(inputRight * inputRight + inputForward * inputForward));
 
     const Vector3 forward = { std::sin(cameraYaw), 0.0f, std::cos(cameraYaw) };
     const Vector3 right = { -std::cos(cameraYaw), 0.0f, std::sin(cameraYaw) };
@@ -137,11 +205,25 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
         wish = Vector3Normalize(wish);
     }
 
-    float speed = config.walkSpeed;
-    if (IsKeyDown(KEY_LEFT_SHIFT))
+    // --- Биеийн байрлал: C суух / босох, Z хэвтэх / босох, Space босох ---
+    if (InKeyPressed(KEY_C)) stance = stance == Stance::Crouch ? Stance::Stand : Stance::Crouch;
+    if (InKeyPressed(KEY_Z)) stance = stance == Stance::Prone ? Stance::Stand : Stance::Prone;
+    bool jump = InKeyPressed(KEY_SPACE);
+    if (jump && stance != Stance::Stand)
     {
-        speed *= config.sprintMultiplier;
+        stance = Stance::Stand; // эхний Space зөвхөн босгоно
+        jump = false;
     }
+    crouchPose += ((stance == Stance::Crouch ? 1.0f : 0.0f) - crouchPose) * std::min(1.0f, 10.0f * dt);
+    pronePose += ((stance == Stance::Prone ? 1.0f : 0.0f) - pronePose) * std::min(1.0f, 6.0f * dt);
+
+    // Сууж алхах нь удаан, мөлхөх нь бүр удаан; хурдан гүйх нь зөвхөн босоо үед бүрэн хүчтэй.
+    float speed = config.walkSpeed * (1.0f - 0.45f * crouchPose - 0.78f * pronePose);
+    if (InSprint() && stance != Stance::Prone)
+    {
+        speed *= stance == Stance::Crouch ? 1.25f : config.sprintMultiplier;
+    }
+    speed *= inputStrength;
 
     // --- Хэвтээ хурд: зорилтот хурд руу зөөлөн ойртоно ---
     const float control = grounded ? 1.0f : config.airControl;
@@ -150,7 +232,7 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
     velocity.z += (wish.z * speed - velocity.z) * blend;
 
     // --- Үсрэлт ба таталцал ---
-    if (grounded && IsKeyPressed(KEY_SPACE))
+    if (grounded && jump)
     {
         velocity.y = config.jumpSpeed;
         grounded = false;
@@ -163,7 +245,8 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
 
     position.x += velocity.x * dt;
     position.z += velocity.z * dt;
-    world.ResolveHorizontal(position, config.playerRadius, config.playerHeight, config.stepHeight);
+    const float height = config.playerHeight * (1.0f - 0.3f * crouchPose - 0.65f * pronePose);
+    world.ResolveHorizontal(position, config.playerRadius, height, config.stepHeight);
 
     position.y += velocity.y * dt;
 
@@ -190,6 +273,13 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
         facing += diff * std::min(1.0f, config.turnSpeed * dt);
     }
 
+    // Явж буй зүг (харж буй зүгтэй харьцангуй): хажуу тийш, арагш алхахад хөл тэр зүг рүү гишгэнэ.
+    if (HorizontalSpeed() > 0.4f)
+    {
+        const float target = std::remainder(std::atan2(velocity.x, velocity.z) - facing, 2.0f * PI);
+        moveDirection += std::remainder(target - moveDirection, 2.0f * PI) * std::min(1.0f, 12.0f * dt);
+    }
+
     if (grounded)
     {
         // Гүйхэд алхам уртсах тул давтамж хурдтай шууд пропорциональ өсөхгүй.
@@ -205,8 +295,7 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
         return; // бүхээг дотор
     }
 
-    static const HumanoidLook baseLook = MakeLook();
-    HumanoidLook look = baseLook;
+    HumanoidLook look = this->look;
     look.held = held;
 
     if (IsRiding())
@@ -219,6 +308,8 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
         pose.legSpread = saddle ? 24.0f : 13.0f;
         pose.lean += saddle ? 4.0f : 14.0f;
         pose.bob = 0.0f;
+        pose.seated = true;
+        pose.aim = aimPose;
         DrawHumanoid(BodyBase(), facing, 1.0f, pose, look);
         return;
     }
@@ -226,8 +317,71 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
     // Сүүдэр: үсрэх үед газраас хэр өндөрт байгааг харуулна.
     DrawBlobShadow({ position.x, floorY, position.z }, config.playerRadius * 1.3f);
 
-    const float moveAmount = HorizontalSpeed() / config.walkSpeed;
-    const HumanoidPose pose = MakeSoldierPose(walkCycle, moveAmount, grounded, (float)GetTime(), recoil, held, action);
+    if (traversing && !demo)
+    {
+        // Авирах, давах, зүүгдэх байрлал: гар хоосон, мөчнүүдийг шууд өнцгөөр нь тавина.
+        HumanoidPose pose;
+        pose.seated = true;
+        pose.time = (float)GetTime();
+        const float t = std::min(1.0f, traverseTime / traverseDuration);
+        const float swing = std::sin(walkCycle);
+        if (traverse.kind == PassageKind::LadderUp || traverse.kind == PassageKind::LadderDown)
+        {
+            // Шат: гар хөл ээлжлэн дээш доош
+            pose.shoulder[0] = 140.0f + 28.0f * swing;
+            pose.shoulder[1] = 140.0f - 28.0f * swing;
+            pose.elbow[0] = 50.0f - 30.0f * swing;
+            pose.elbow[1] = 50.0f + 30.0f * swing;
+            pose.hip[0] = 38.0f - 30.0f * swing;
+            pose.hip[1] = 38.0f + 30.0f * swing;
+            pose.knee[0] = 60.0f - 38.0f * swing;
+            pose.knee[1] = 60.0f + 38.0f * swing;
+            pose.lean = 6.0f;
+        }
+        else if (traverse.kind == PassageKind::WindowDrop && t > 0.6f)
+        {
+            // Тавцангаас зүүгдсэн: гар дээшээ сунасан, хөл унжсан
+            pose.shoulder[0] = pose.shoulder[1] = 176.0f;
+            pose.elbow[0] = pose.elbow[1] = 6.0f;
+            pose.knee[0] = 10.0f;
+            pose.knee[1] = 18.0f;
+        }
+        else
+        {
+            // Цонхны тавцан давах: өвдгөө эвхэж, гараараа тулна
+            const float tuck = std::sin(std::min(1.0f, t / (traverse.kind == PassageKind::WindowDrop ? 0.6f : 1.0f)) * PI);
+            pose.hip[0] = 78.0f * tuck;
+            pose.hip[1] = 52.0f * tuck;
+            pose.knee[0] = 96.0f * tuck;
+            pose.knee[1] = 70.0f * tuck;
+            pose.lean = 34.0f * tuck;
+            pose.shoulder[0] = pose.shoulder[1] = 40.0f + 30.0f * tuck;
+            pose.elbow[0] = pose.elbow[1] = 40.0f;
+        }
+        look.held = HeldItem::None;
+        DrawHumanoid(position, facing, 1.0f, pose, look);
+        return;
+    }
+
+    // Суух, мөлхөх үеийн удаан хурдыг тухайн байрлалынхаа "бүтэн алхаа" гэж тооцно.
+    const float stanceSpeed = config.walkSpeed * (1.0f - 0.45f * crouchPose - 0.78f * pronePose);
+    const float moveAmount = HorizontalSpeed() / stanceSpeed;
+    HumanoidPose pose = MakeSoldierPose(walkCycle, moveAmount, grounded, (float)GetTime(), recoil, held, action);
+    pose.aim = aimPose;
+    pose.crouch = crouchPose;
+    pose.prone = pronePose;
+    pose.moveDirection = moveDirection;
+    pose.reload = reload;
+    if (demo)
+    {
+        pose = MakeSoldierPose(demoPhase, demoMove, true, (float)GetTime(), 0.0f, held,
+                               demoAction >= 0.0f ? 1.0f - demoAction : 0.0f);
+        pose.aim = demoAim;
+        pose.crouch = stance == Stance::Crouch ? 1.0f : 0.0f;
+        pose.prone = stance == Stance::Prone ? 1.0f : 0.0f;
+        pose.moveDirection = demoDirection;
+        pose.reload = demoReload;
+    }
     DrawHumanoid(position, facing, 1.0f, pose, look);
 
     if (showCollider)

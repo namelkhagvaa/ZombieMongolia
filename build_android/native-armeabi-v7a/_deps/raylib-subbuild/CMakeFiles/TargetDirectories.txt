@@ -1,0 +1,3 @@
+C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/CMakeFiles/raylib-populate.dir
+C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/CMakeFiles/edit_cache.dir
+C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/CMakeFiles/rebuild_cache.dir

@@ -100,6 +100,12 @@ public:
     // Ойрын хаалгануудыг зурна (BeginMode3D + орчны shader дотор).
     void DrawDoors(Vector3 viewPosition) const;
 
+    // --- Тусгай гарцууд: шат, цонх ---
+    // position-д (хөлийн байрлал) хамгийн ойр эхлэлтэй гарц; -1 = байхгүй.
+    int NearestPassage(Vector3 position, float maxDistance) const;
+    const Passage& GetPassage(int index) const { return passages[(size_t)index]; }
+    int PassageCount() const { return (int)passages.size(); }
+
     // Газар, байгууламж, сүүдэр. Орчны shader-тэй material дамжуулна.
     void Draw(const Camera3D& camera, const Material& material, float detailDistance) const;
     // Хагас тунгалаг хэсгүүд (торон хашаа): бусад бүх зүйлийн дараа зурна.
@@ -121,6 +127,8 @@ private:
     std::vector<Obstacle> obstacles;
     std::vector<Interior> interiors;
     std::vector<Door> doors;
+    std::vector<Passage> passages;
+    size_t staticPassageCount = 0; // эхний хэсэг нь тогтмол (цамхаг), үлдсэн нь суурингийнх
 
     // Саадын тор: нүд бүрд тэр нүдтэй давхцах саадуудын индекс
     int gridSide = 0;

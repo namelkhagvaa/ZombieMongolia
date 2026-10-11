@@ -1,3 +1,9 @@
+#if defined(__ANDROID__)
+#include <cstdio>
+#include <android_native_app_glue.h>
+extern "C" struct android_app* GetAndroidApp(void); // raylib-ийн Android давхаргаас
+#endif
+
 #include "Progress.h"
 
 #include "Shop.h"
@@ -13,7 +19,12 @@ namespace
 
     std::string SavePath()
     {
+#if defined(__ANDROID__)
+        // Апп-ын дотоод хадгалах сан (зөвхөн энэ апп унших, бичих эрхтэй).
+        return std::string(GetAndroidApp()->activity->internalDataPath) + "/savegame.txt";
+#else
         return overridePath.empty() ? std::string(GetApplicationDirectory()) + "savegame.txt" : overridePath;
+#endif
     }
 }
 
@@ -63,6 +74,10 @@ bool LoadProgress(Progress& progress, int provinceCount)
             file >> index >> stage.done;
             for (unsigned& mask : stage.entities) file >> mask;
             file >> stage.clearedZones;
+            // Хуучин хадгалалтад устгасан зомбины тоо байхгүй: мөрийн үлдсэн хэсгээс байвал уншина.
+            std::string rest;
+            std::getline(file, rest);
+            std::sscanf(rest.c_str(), "%d %d", &stage.killedSmall, &stage.killedBig);
             if (file && index >= 0 && index < (int)progress.stages.size())
             {
                 progress.stages[index] = stage;
@@ -131,7 +146,7 @@ bool SaveProgress(const Progress& progress)
 
         file << "stage " << i << ' ' << stage.done;
         for (unsigned mask : stage.entities) file << ' ' << mask;
-        file << ' ' << stage.clearedZones << '\n';
+        file << ' ' << stage.clearedZones << ' ' << stage.killedSmall << ' ' << stage.killedBig << '\n';
     }
 
     return file.good();

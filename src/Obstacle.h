@@ -11,6 +11,7 @@ struct Obstacle
     Vector3 center;
     Vector3 size;
     bool blocksRays = true; // false: торон хашаа шиг сум, камер нэвтэрнэ
+    bool walkable = false;  // шатны гишгүүр: ойролцоо өндөрт зогссон хүнийг хэвтээ чиглэлд хаахгүй, дээгүүр нь алхана
 
     float Top() const { return center.y + size.y * 0.5f; }
     float Bottom() const { return center.y - size.y * 0.5f; }
@@ -49,6 +50,25 @@ struct Door
     }
 };
 
+// Тусгай аргаар туулах гарц: шат, цонх. Тоглогч from цэгийн дэргэд F дарахад to цэг рүү шилжинэ
+// (авирах, давж гарах, зүүгдэж буух хөдөлгөөнтэйгөөр). Хоёр чиглэлтэй гарц хоёр бичлэгээр хадгалагдана.
+enum class PassageKind
+{
+    LadderUp,   // шатаар дээш авирах
+    LadderDown, // шатаар доош буух
+    WindowOut,  // 1 давхрын цонхоор үсэрч гарах
+    WindowIn,   // 1 давхрын цонхоор авирч орох
+    WindowDrop  // 2 давхрын цонхоор гарч, тавцангаас нь зүүгдээд доош үсрэх
+};
+
+struct Passage
+{
+    Vector3 from;   // эхлэх цэг (хөлийн байрлал)
+    Vector3 to;     // хүрэх цэг; WindowDrop-д зүүгдэх байрлал (тэндээс чөлөөтэй унана)
+    PassageKind kind;
+    float facing;   // туулах үед харах зүг, радиан
+};
+
 // Дотогш орж болох барилгын (гэр, байшин) дотор тал ба хаалга.
 // Багийн цэргүүд тоглогчийг дагаж орохдоо хаалганы хоёр цэгээр дамжина.
 struct Interior
@@ -59,6 +79,12 @@ struct Interior
     Vector2 doorOutside; // хаалганы гадна талын цэг
     Vector2 doorInside;  // хаалганы дотор талын цэг
     int door;            // World-ийн хаалганы жагсаалт дахь индекс
+
+    // Хоёр давхар байшин: дотуур шатны доод, дээд үзүүр (зомби, цэрэг дээд давхар руу гарахад)
+    bool hasStairs = false;
+    Vector2 stairBottom = { 0.0f, 0.0f };
+    Vector2 stairTop = { 0.0f, 0.0f };
+    float upperFloor = 0.0f; // дээд давхрын шалны өндөр
 
     bool Contains(float x, float z) const
     {

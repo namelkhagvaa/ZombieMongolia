@@ -30,8 +30,13 @@ public:
     // Mesh зурахад ашиглах material (орчны shader-тэй).
     const Material& GetMaterial() const { return material; }
 
+    // Гаднаас оруулсан ястай загваруудын shader: текстур + жинхэнэ normal-аар гөлгөр гэрэлтүүлэг + манан.
+    Shader CharacterShader() const { return characterShader; }
+
 private:
     Shader shader = {};
+    Shader characterShader = {};
+    int characterViewPosLocation = -1;
     Material material = {};
     Mesh mountains = {};
     int viewPosLocation = -1;

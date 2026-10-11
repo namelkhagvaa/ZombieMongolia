@@ -22,7 +22,9 @@ World::World(float halfSize) : halfSize(halfSize), layout(MakeLayout()), terrain
 {
     // Тогтмол хэсэг: зам, пост, агуулах, шон, чулуу. Нэг удаа үүснэ.
     MeshBuilder solidBuilder, shadowBuilder, glassBuilder;
-    BuildStaticStructures(layout, terrain, obstacles, solidBuilder, shadowBuilder, glassBuilder, interiors, doors);
+    BuildStaticStructures(layout, terrain, obstacles, solidBuilder, shadowBuilder, glassBuilder, interiors, doors,
+                          passages);
+    staticPassageCount = passages.size();
 
     structures = solidBuilder.UploadPartitioned(kPieceSize);
     shadows = shadowBuilder.UploadPartitioned(kPieceSize);
@@ -70,10 +72,11 @@ void World::BuildSettlements(int variant)
     obstacles.resize(staticObstacleCount);
     interiors.clear();
     doors.clear();
+    passages.resize(staticPassageCount);
 
     MeshBuilder solidBuilder, shadowBuilder, glassBuilder;
     BuildSettlementStructures(variant, layout, terrain, obstacles, solidBuilder, shadowBuilder, glassBuilder, interiors,
-                              doors);
+                              doors, passages);
 
     settlementStructures = solidBuilder.UploadPartitioned(kPieceSize);
     settlementShadows = shadowBuilder.UploadPartitioned(kPieceSize);
@@ -198,7 +201,7 @@ void World::SetBoundary(const Shape& shape, bool markers)
 
 namespace
 {
-    const float kDoorPoundTime = 2.5f;     // зомби хаалгыг эвдэхэд шаардагдах хугацаа
+    const float kDoorPoundTime = 1.0f;     // зомби хаалгыг эвдэхэд шаардагдах хугацаа
     const float kDoorDrawDistance = 90.0f;
 
     // Хайрцаг саадаас босоо цилиндрийг хэвтээ чиглэлд түлхэж гаргана.
@@ -309,6 +312,28 @@ void World::PoundDoors(Vector3 position, float dt)
     }
 }
 
+int World::NearestPassage(Vector3 position, float maxDistance) const
+{
+    int best = -1;
+    float bestDistance = maxDistance;
+    for (int i = 0; i < (int)passages.size(); ++i)
+    {
+        const Vector3 from = passages[(size_t)i].from;
+        if (std::fabs(from.y - position.y) > 0.9f) // өөр давхрын гарц
+        {
+            continue;
+        }
+        const float dx = from.x - position.x, dz = from.z - position.z;
+        const float distance = std::sqrt(dx * dx + dz * dz);
+        if (distance < bestDistance)
+        {
+            best = i;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
 int World::InteriorAt(float x, float z) const
 {
     for (int i = 0; i < (int)interiors.size(); ++i)
@@ -394,7 +419,10 @@ void World::ResolveHorizontal(Vector3& feetPos, float radius, float height, floa
                 const Obstacle& o = obstacles[index];
 
                 // Гишгээд гарч болох намхан, эсвэл толгойноос дээш байгаа саад хэвтээ чиглэлд хаахгүй.
-                if (o.Top() <= feetPos.y + stepHeight || o.Bottom() >= feetPos.y + height)
+                // Шатны гишгүүр: биеийн өргөн гишгүүрээс их тул дараагийн хоёр гишгүүр хүртэлх өндрийг хаахгүй;
+                // харин шатыг хажуугаас нь (газрын түвшнээс өндөр хэсгийг) нэвтлэхгүй.
+                const float step = o.walkable ? std::max(stepHeight, 0.62f) : stepHeight;
+                if (o.Top() <= feetPos.y + step || o.Bottom() >= feetPos.y + height)
                 {
                     continue;
                 }

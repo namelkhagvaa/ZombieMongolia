@@ -1,5 +1,8 @@
 #include "Campaign.h"
 
+#include "Input.h"
+#include "UiFont.h"
+
 #include "CampaignData.h"
 #include "Shop.h"
 #include "raylib.h"
@@ -116,12 +119,12 @@ MapScreen::Result MapScreen::Update(Progress& progress, bool& progressChanged)
     const int count = (int)art.size();
 
     // Сонголт: сум товч (аяны дарааллаар) эсвэл аймаг дээр товших
-    if (IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_DOWN)) selected = (selected + 1) % count;
-    if (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_UP)) selected = (selected + count - 1) % count;
+    if (InKeyPressed(KEY_RIGHT) || InKeyPressed(KEY_DOWN)) selected = (selected + 1) % count;
+    if (InKeyPressed(KEY_LEFT) || InKeyPressed(KEY_UP)) selected = (selected + count - 1) % count;
 
-    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+    if (InMousePressed(MOUSE_BUTTON_LEFT))
     {
-        const Vector2 mouse = GetMousePosition();
+        const Vector2 mouse = InPointer();
         for (int i = 0; i < count; ++i)
         {
             // Contains нь нүхийг хасдаг тул Төв дотор Улаанбаатарыг товшиход Улаанбаатар сонгогдоно.
@@ -136,13 +139,13 @@ MapScreen::Result MapScreen::Update(Progress& progress, bool& progressChanged)
     // Дэлгүүр: 1..5 товч
     for (int i = 0; i < (int)ShopItem::Count; ++i)
     {
-        if (IsKeyPressed(KEY_ONE + i) && ShopBuy(progress, (ShopItem)i))
+        if (InKeyPressed(KEY_ONE + i) && ShopBuy(progress, (ShopItem)i))
         {
             progressChanged = true;
         }
     }
 
-    if (IsKeyPressed(KEY_ENTER) && IsProvinceUnlocked(progress, selected))
+    if (InKeyPressed(KEY_ENTER) && IsProvinceUnlocked(progress, selected))
     {
         return Result::StartMission;
     }
@@ -157,11 +160,11 @@ void MapScreen::Draw(const Progress& progress) const
     const int liberated = progress.LiberatedCount();
 
     ClearBackground({ 28, 34, 44, 255 });
-    DrawText("ZOMBIE MONGOLIA", 30, 20, 36, RAYWHITE);
-    DrawText(TextFormat("Liberated: %d / %d", liberated, count), 30, 60, 20, kLiberated);
+    UiText("ZOMBIE MONGOLIA", 30, 20, 36, RAYWHITE);
+    UiText(TextFormat("Чөлөөлсөн аймаг: %d / %d", liberated, count), 30, 60, 20, kLiberated);
     if (liberated == count)
     {
-        DrawText("MONGOLIA IS FREE!", 330, 26, 30, kAvailable);
+        UiText("МОНГОЛ УЛС ЧӨЛӨӨЛӨГДЛӨӨ!", 330, 26, 30, kAvailable);
     }
 
     // --- Газрын зураг: эхлээд дотроо өөр нэгж агуулсан аймгууд, дараа нь бусад нь (дээр нь давхарлана) ---
@@ -186,23 +189,23 @@ void MapScreen::Draw(const Progress& progress) const
     for (int i = 0; i < count; ++i)
     {
         const char* text = TextFormat("%d %s", i + 1, provinces[i].name);
-        const int width = MeasureText(text, 10);
+        const int width = UiMeasure(text, 12);
         const int x = (int)art[i].label.x - width / 2;
-        const int y = (int)art[i].label.y - 5;
-        DrawText(text, x + 1, y + 1, 10, Fade(BLACK, 0.7f));
-        DrawText(text, x, y, 10, RAYWHITE);
+        const int y = (int)art[i].label.y - 6;
+        UiText(text, x + 1, y + 1, 12, Fade(BLACK, 0.7f));
+        UiText(text, x, y, 12, RAYWHITE);
     }
 
     // Тайлбар
     int legendX = (int)kMapRect.x + 10;
     const int legendY = (int)(kMapRect.y + kMapRect.height) - 24;
     const struct { Color color; const char* text; } legend[] = {
-        { kLiberated, "liberated" }, { kAvailable, "can attack" }, { kLocked, "locked" } };
+        { kLiberated, "чөлөөлсөн" }, { kAvailable, "довтолж болно" }, { kLocked, "түгжээтэй" } };
     for (const auto& entry : legend)
     {
         DrawCircle(legendX + 6, legendY + 8, 6.0f, entry.color);
-        DrawText(entry.text, legendX + 18, legendY, 16, LIGHTGRAY);
-        legendX += 130;
+        UiText(entry.text, legendX + 18, legendY, 16, LIGHTGRAY);
+        legendX += 150;
     }
 
     // --- Сонгосон аймгийн мэдээлэл ---
@@ -211,25 +214,25 @@ void MapScreen::Draw(const Progress& progress) const
     const bool free = progress.liberated[selected];
 
     int y = 90;
-    DrawText(provinces[selected].name, kPanelX, y, 28, RAYWHITE);
+    UiText(provinces[selected].name, kPanelX, y, 28, RAYWHITE);
     y += 36;
-    DrawText(free ? "Liberated (replay for coins)" : unlocked ? "Occupied by zombies" : "Locked",
+    UiText(free ? "Чөлөөлөгдсөн (дахин тоглож зоос цуглуулж болно)" : unlocked ? "Зомбид эзлэгдсэн" : "Түгжээтэй",
              kPanelX, y, 18, StatusColor(progress, selected));
     y += 28;
-    DrawText(TextFormat("Stage: %d / %d", selected + 1, count), kPanelX, y, 18, LIGHTGRAY);
+    UiText(TextFormat("Үе: %d / %d", selected + 1, count), kPanelX, y, 18, LIGHTGRAY);
     y += 22;
     const int objectives = (int)StageFor(selected).objectives.size();
     const unsigned doneMask = progress.stages[(size_t)selected].done;
     int objectivesDone = 0;
     for (int i = 0; i < objectives; ++i) objectivesDone += (doneMask >> i) & 1u;
-    DrawText(TextFormat("Objectives: %d / %d done", free ? objectives : objectivesDone, objectives), kPanelX, y, 18,
+    UiText(TextFormat("Биелсэн даалгавар: %d / %d", free ? objectives : objectivesDone, objectives), kPanelX, y, 18,
              LIGHTGRAY);
     y += 22;
-    DrawText(TextFormat("Reward: %d coins", free ? 0 : mission.reward), kPanelX, y, 18, LIGHTGRAY);
+    UiText(TextFormat("Шагнал: %d зоос", free ? 0 : mission.reward), kPanelX, y, 18, LIGHTGRAY);
     y += 40;
 
     // --- Дэлгүүр ---
-    DrawText(TextFormat("Coins: %d", progress.coins), kPanelX, y, 24, kAvailable);
+    UiText(TextFormat("Зоос: %d", progress.coins), kPanelX, y, 24, kAvailable);
     y += 34;
     for (int i = 0; i < (int)ShopItem::Count; ++i)
     {
@@ -240,22 +243,22 @@ void MapScreen::Draw(const Progress& progress) const
         const bool maxed = level >= maxLevel;
         const Color color = maxed ? kLocked : progress.coins >= cost ? RAYWHITE : GRAY;
 
-        DrawText(TextFormat("[%d] %s", i + 1, ShopItemName(item)), kPanelX, y, 18, color);
+        UiText(TextFormat("[%d] %s", i + 1, ShopItemName(item)), kPanelX, y, 18, color);
         y += 20;
-        DrawText(maxed ? TextFormat("     level %d/%d  MAX", level, maxLevel)
-                       : TextFormat("     level %d/%d  cost %d", level, maxLevel, cost),
+        UiText(maxed ? TextFormat("     түвшин %d/%d  (дээд түвшин)", level, maxLevel)
+                       : TextFormat("     түвшин %d/%d   үнэ: %d зоос", level, maxLevel, cost),
                  kPanelX, y, 16, color);
         y += 26;
     }
 
-    DrawText(TextFormat("Total kills: %d", progress.kills), kPanelX, y + 6, 16, LIGHTGRAY);
+    UiText(TextFormat("Нийт устгасан зомби: %d", progress.kills), kPanelX, y + 6, 16, LIGHTGRAY);
 
     // --- Удирдлага ---
-    DrawText("Click / arrows: select province     ENTER: attack     1-5: buy upgrade     ESC: quit",
+    UiText("Товших / сумтай товч — аймаг сонгох     ENTER — довтлох     1–5 — сайжруулалт худалдаж авах     ESC — гарах",
              30, 580, 18, LIGHTGRAY);
     if (!unlocked)
     {
-        DrawText(TextFormat("Liberate %s first: provinces open one by one from west to east.",
+        UiText(TextFormat("Эхлээд өмнөх аймгийг (%s) чөлөөлнө үү: аймгууд баруунаас зүүн тийш нэг нэгээр нээгдэнэ.",
                             provinces[selected - 1].name),
                  30, 610, 18, kAvailable);
     }
