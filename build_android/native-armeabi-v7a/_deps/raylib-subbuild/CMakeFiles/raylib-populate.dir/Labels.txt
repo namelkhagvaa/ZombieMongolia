@@ -1,14 +1,14 @@
 # Target labels
  raylib-populate
 # Source files and their labels
-C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/CMakeFiles/raylib-populate
-C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/CMakeFiles/raylib-populate.rule
-C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/CMakeFiles/raylib-populate-complete.rule
-C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-build.rule
-C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-configure.rule
-C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-download.rule
-C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-install.rule
-C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-mkdir.rule
-C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-patch.rule
-C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-test.rule
-C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-update.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/CMakeFiles/raylib-populate
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/CMakeFiles/raylib-populate.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/CMakeFiles/raylib-populate-complete.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-build.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-configure.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-download.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-install.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-mkdir.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-patch.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-test.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/raylib-populate-update.rule

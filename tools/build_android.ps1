@@ -66,6 +66,7 @@ $apk = Join-Path $out "ZombieMongolia.apk"
 Remove-Item -Force -ErrorAction SilentlyContinue $unsigned, $aligned, $apk
 
 Run "$tools\aapt.exe" @("package", "-f", "-M", (Join-Path $root "android\AndroidManifest.xml"),
+                        "-S", (Join-Path $root "android\res"),
                         "-A", (Join-Path $staging "assets"), "-I", $androidJar, "-F", $unsigned)
 
 Push-Location $staging

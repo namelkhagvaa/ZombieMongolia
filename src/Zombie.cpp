@@ -27,6 +27,8 @@ namespace
     const int kModelBudget = 16;
 #endif
     const float kAggroDistance = 60.0f; // ийм зайд бай орж ирэхэд зомби сэрэмжилж хөөнө
+    // Бүх зомбины амийг 300%-иар нэмэгдүүлнэ (4 дахин). Толгойд оносон сум аваргаас бусдыг нэг сумаар устгасан хэвээр.
+    const float kZombieHealthMultiplier = 4.0f;
 
     struct TypeStats
     {
@@ -373,7 +375,8 @@ void ZombieHorde::Spawn(ZombieType type, Vector3 position, const MissionParams& 
     zombie.mover.position = position;
     zombie.mover.detourSign = GetRandomValue(0, 1) == 0 ? -1.0f : 1.0f;
     zombie.type = type;
-    zombie.health = stats.health * mission.healthScale;
+    zombie.health = stats.health * mission.healthScale * kZombieHealthMultiplier;
+    zombie.id = ++nextId;
     zombie.maxHealth = zombie.health;
     zombie.speed = stats.speed + mission.speedBonus;
     zombie.damage = mission.zombieDamage * stats.damageScale;
@@ -444,6 +447,17 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
             {
                 target = i;
                 targetPosition = soldiers[i].mover.position;
+                targetDistance = distance;
+            }
+        }
+        const int kRemote = -3; // хамтарсан тоглолтын зочин
+        if (remoteActive)
+        {
+            const float distance = HorizontalDistance(pos, remotePosition);
+            if (distance < targetDistance)
+            {
+                target = kRemote;
+                targetPosition = remotePosition;
                 targetDistance = distance;
             }
         }
@@ -570,7 +584,7 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
         const bool detour = moveTarget.x != targetPosition.x || moveTarget.z != targetPosition.z;
         if (detour || targetDistance > reach * 0.8f)
         {
-            const float speed = zombie.speed * (zombie.stagger > 0.0f ? 0.2f : 1.0f);
+            const float speed = zombie.speed * speedMultiplier * (zombie.stagger > 0.0f ? 0.2f : 1.0f);
             MoveToward(zombie.mover, moveTarget, speed, dt, world, zombie.Radius(), zombie.Height(), kClimbHeight);
             zombie.walkCycle += speed * dt * StatsFor(zombie.type).cadence / zombie.scale;
 
@@ -594,6 +608,10 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
             if (target == kPlayer)
             {
                 player.TakeDamage(zombie.damage);
+            }
+            else if (target == kRemote)
+            {
+                remoteDamage += zombie.damage;
             }
             else
             {
@@ -673,7 +691,7 @@ int ZombieHorde::Nearest(Vector3 position, float maxDistance) const
 void ZombieHorde::Damage(int index, float amount)
 {
     Zombie& zombie = zombies[index];
-    if (!zombie.IsAlive())
+    if (!zombie.IsAlive() || puppet) // зочин: хохирлыг хост тооцно
     {
         return;
     }
@@ -687,6 +705,12 @@ void ZombieHorde::Damage(int index, float amount)
         zombie.deathTimer = 0.0f;
         pendingCoins += zombie.reward;
         ++pendingKills;
+        if (killRewards.size() < 64)
+        {
+            const float top = 1.9f * zombie.scale;
+            killRewards.push_back({ { zombie.mover.position.x, zombie.mover.position.y + top, zombie.mover.position.z },
+                                    zombie.reward });
+        }
         if (!zombie.boss)
         {
             ++(zombie.type == ZombieType::Brute ? pendingBigKills : pendingSmallKills);
@@ -850,5 +874,114 @@ void ZombieHorde::Draw(Vector3 viewPosition, float maxDistance, bool showCollide
         {
             DrawCylinderWires(zombie.mover.position, zombie.Radius(), zombie.Radius(), zombie.Height(), 10, RED);
         }
+    }
+}
+
+// ---------------------------------------------------------------- Хамтарсан тоглолт
+
+bool ZombieHorde::DamageById(uint32_t id, float amount, int& coins, Vector3& position)
+{
+    for (int i = 0; i < (int)zombies.size(); ++i)
+    {
+        Zombie& zombie = zombies[(size_t)i];
+        if (zombie.id != id || !zombie.IsAlive()) continue;
+        Damage(i, amount);
+        if (!zombie.IsAlive())
+        {
+            coins = zombie.reward;
+            position = { zombie.mover.position.x, zombie.mover.position.y + 1.9f * zombie.scale, zombie.mover.position.z };
+            return true;
+        }
+        return false;
+    }
+    return false;
+}
+
+void ZombieHorde::CollectStates(Vector3 around, float radius, std::vector<Net::ZombieState>& out) const
+{
+    out.clear();
+    for (const Zombie& zombie : zombies)
+    {
+        if (!zombie.IsAlive() && zombie.deathTimer > 1.0f) continue; // хуучин цогцос: зочин өөрөө хэвтүүлнэ
+        if (HorizontalDistance(around, zombie.mover.position) > radius) continue;
+        Net::ZombieState state;
+        state.id = zombie.id;
+        state.type = (uint8_t)zombie.type;
+        state.flags = (uint8_t)((zombie.IsAlive() ? Net::kZombieAlive : 0) | (zombie.boss ? Net::kZombieBoss : 0) |
+                                (zombie.attackAnim > 0.0f ? Net::kZombieAttack : 0));
+        state.position = zombie.mover.position;
+        state.facing = zombie.mover.facing;
+        out.push_back(state);
+        if (out.size() >= 160) break; // пакетийн хэмжээг хязгаарлана
+    }
+}
+
+void ZombieHorde::ApplySnapshot(const std::vector<Net::ZombieState>& states, const MissionParams& mission)
+{
+    for (const Net::ZombieState& state : states)
+    {
+        Zombie* zombie = nullptr;
+        for (Zombie& candidate : zombies)
+        {
+            if (candidate.id == state.id) { zombie = &candidate; break; }
+        }
+        const bool alive = (state.flags & Net::kZombieAlive) != 0;
+        if (!zombie)
+        {
+            if (!alive) continue;
+            const uint32_t keepNext = nextId;
+            if (state.flags & Net::kZombieBoss) SpawnBoss(state.position, mission, 0);
+            else Spawn((ZombieType)state.type, state.position, mission, 0, true);
+            nextId = keepNext;
+            zombie = &zombies.back();
+            zombie->id = state.id;
+            zombie->mover.facing = state.facing;
+        }
+        zombie->netTarget = state.position;
+        zombie->netFacing = state.facing;
+        zombie->netSeen = 0.0f;
+        if (!alive && zombie->IsAlive())
+        {
+            zombie->health = 0.0f;
+            zombie->deathTimer = 0.0f;
+        }
+        if ((state.flags & Net::kZombieAttack) && zombie->attackAnim <= 0.0f)
+        {
+            zombie->attackAnim = kAttackAnimTime;
+        }
+    }
+}
+
+void ZombieHorde::UpdatePuppets(float dt)
+{
+    zombies.erase(std::remove_if(zombies.begin(), zombies.end(),
+                                 [](const Zombie& z) {
+                                     return (!z.IsAlive() && z.deathTimer > kCorpseTime) || (z.IsAlive() && z.netSeen > 1.5f);
+                                 }),
+                  zombies.end());
+    for (Zombie& zombie : zombies)
+    {
+        zombie.netSeen += dt;
+        zombie.attackAnim -= dt;
+        if (!zombie.IsAlive())
+        {
+            zombie.deathTimer += dt;
+            continue;
+        }
+        Vector3& pos = zombie.mover.position;
+        const Vector3 delta = Vector3Subtract(zombie.netTarget, pos);
+        const float distance = Vector3Length(delta);
+        if (distance > 8.0f)
+        {
+            pos = zombie.netTarget; // хэт хол хоцорсон: шууд байрлуулна
+        }
+        else
+        {
+            const Vector3 step = Vector3Scale(delta, std::min(1.0f, 10.0f * dt));
+            pos = Vector3Add(pos, step);
+            const float moved = std::sqrt(step.x * step.x + step.z * step.z);
+            zombie.walkCycle += moved * StatsFor(zombie.type).cadence / zombie.scale;
+        }
+        zombie.mover.facing += std::remainder(zombie.netFacing - zombie.mover.facing, 2.0f * PI) * std::min(1.0f, 10.0f * dt);
     }
 }

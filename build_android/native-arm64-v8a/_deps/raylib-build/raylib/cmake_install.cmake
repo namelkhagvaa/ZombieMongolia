@@ -1,4 +1,4 @@
-# Install script for directory: C:/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-src/src
+# Install script for directory: C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-src/src
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -43,32 +43,32 @@ if(NOT DEFINED CMAKE_OBJDUMP)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-build/raylib/libraylib.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-build/raylib/libraylib.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE FILE FILES
-    "C:/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-src/src/raylib.h"
-    "C:/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-src/src/rlgl.h"
-    "C:/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-src/src/raymath.h"
+    "C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-src/src/raylib.h"
+    "C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-src/src/rlgl.h"
+    "C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-src/src/raymath.h"
     )
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "C:/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-build/raylib/raylib.pc")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig" TYPE FILE FILES "C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-build/raylib/raylib.pc")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/raylib" TYPE FILE FILES "C:/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-build/raylib/raylib-config-version.cmake")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/raylib" TYPE FILE FILES "C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-build/raylib/raylib-config-version.cmake")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/raylib" TYPE FILE FILES "C:/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-src/src/../cmake/raylib-config.cmake")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/cmake/raylib" TYPE FILE FILES "C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-src/src/../cmake/raylib-config.cmake")
 endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "C:/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-build/raylib/install_local_manifest.txt"
+  file(WRITE "C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-build/raylib/install_local_manifest.txt"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()

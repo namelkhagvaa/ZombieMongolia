@@ -20,7 +20,20 @@ public:
     // Дэлбэрэхэд ойрын зомби, тоглогч хоёуланд зайнаас хамаарсан хохирол учруулна.
     void Update(float dt, const World& world, ZombieHorde& horde, Player& player, Particles& particles);
     void Draw() const;
-    void Clear() { grenades.clear(); }
+    void Clear() { grenades.clear(); blasts.clear(); }
+    // Сүүлд авснаас хойших дэлбэрэлтүүд (байрлал, радиус): бензинтэй торхнуудыг дэлбэлэхэд.
+    struct BlastEvent
+    {
+        Vector3 position;
+        float radius;
+        float damage;
+    };
+    std::vector<BlastEvent> TakeBlasts()
+    {
+        std::vector<BlastEvent> out;
+        out.swap(blasts);
+        return out;
+    }
 
 private:
     struct Grenade
@@ -33,4 +46,5 @@ private:
     };
 
     std::vector<Grenade> grenades;
+    std::vector<BlastEvent> blasts;
 };

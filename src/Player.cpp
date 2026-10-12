@@ -9,6 +9,154 @@
 #include <algorithm>
 #include <cmath>
 
+namespace
+{
+    // Цонх давах хөдөлгөөний түлхүүр агшин. Хөлийн байрлал:
+    //   wall  - цонхны ханын төвөөс замын дагуу хэдэн метр (сөрөг = эхлэх тал, эерэг = хүрэх тал);
+    //           -1 = эхлэх цэг, 1.2 = хүрэх цэг (бодит зай нь гарц бүрт өөр байж болно: VaultDistance)
+    //   level - 0 = эхлэх шал, 1 = цонхны тавцан, 2 = хүрэх цэг (газар, эсвэл 2 давхраас зүүгдэх өндөр)
+    //   lift  - нэмэлт өндөр, метр; turn - биеийн эргэлт, градус (180 = хана руу харсан)
+    // Мөч: hip, knee [баруун, зүүн]; их биеийн бөхийлт, мөр (+ = урагш), тохой, толгой (+ = доош).
+    // Гар: grip > 0 үед гар тавцан / хүрээн дээрх цэгт тулна: ханын төвөөс handWall метр, тавцангаас handUp
+    //   метр дээр, биеийн төвөөс хажуу тийш handSide метр.
+    struct VaultKey
+    {
+        float t, wall, level, lift, turn;
+        float hip[2], knee[2];
+        float lean, shoulder, elbow, head;
+        float grip, handWall, handUp, handSide;
+    };
+
+    // 1 давхрын цонх: гараа тавцанд тавиад өвдгөө гаргаж, цонхонд бөхийн суугаад хүрээнээс түлхэж үсэрнэ.
+    const VaultKey kWindowKeys[] = {
+        { 0.00f, -1.00f, 0.00f, 0.00f, 0.0f, { 0.0f, 0.0f }, { 4.0f, 4.0f }, 0.0f, 8.0f, 14.0f, 0.0f, 0.0f, -0.08f, 0.0f, 0.3f },
+        // Хананд ойртож, хоёр гараа тавцангийн ирмэгт тавиад үсрэхээр суугаад авна
+        { 0.14f, -0.42f, 0.00f, 0.00f, 0.0f, { 24.0f, 16.0f }, { 46.0f, 34.0f }, 26.0f, 70.0f, 30.0f, -4.0f, 1.0f, -0.08f, 0.0f, 0.3f },
+        // Гараараа түлхэж биеэ өргөөд баруун өвдгөө тавцан дээр тавина: гуя урагш, шилбэ тавцангийн дагуу хэвтээ
+        // (бие хананаас гуяны уртаар хол, эс бөгөөс өвдөг хана нэвтэлнэ), зүүн хөл унжина
+        { 0.32f, -0.46f, 0.24f, 0.00f, 0.0f, { 70.0f, 10.0f }, { 160.0f, 22.0f }, 30.0f, 30.0f, 70.0f, 10.0f, 1.0f, -0.06f, 0.0f, 0.3f },
+        // Тулсан хөлөө өвдгөөр нь хойш эвхэж (хөл хана мөргөхгүй) биеэ тавцан руу өргөнө
+        { 0.41f, -0.40f, 0.70f, 0.00f, 0.0f, { 74.0f, 34.0f }, { 156.0f, 112.0f }, 38.0f, 26.0f, 50.0f, 14.0f, 1.0f, -0.04f, 0.0f, 0.3f },
+        // Тавцан дээр бөхийж сууна (өгзөг дотор талд, ул тавцан дээр), хоёр гараараа цонхны хүрээнээс барина
+        { 0.50f, -0.28f, 1.00f, 0.00f, 0.0f, { 104.0f, 98.0f }, { 130.0f, 124.0f }, 40.0f, 26.0f, 32.0f, 22.0f, 1.0f, 0.02f, 0.72f, 0.56f },
+        // Хүрээнээс түлхэж нөгөө тал руу гишгэнэ
+        { 0.62f, 0.25f, 1.08f, 0.06f, 0.0f, { 72.0f, 98.0f }, { 92.0f, 122.0f }, 30.0f, 60.0f, 30.0f, 12.0f, 0.6f, 0.06f, 0.72f, 0.56f },
+        // Үсрэлт: хөл газар руу сунаж, гар тэнцвэр барина
+        { 0.72f, 0.55f, 1.45f, 0.10f, 0.0f, { 40.0f, 26.0f }, { 52.0f, 34.0f }, 14.0f, 58.0f, 30.0f, 6.0f, 0.0f, 0.06f, 0.72f, 0.56f },
+        // Буухдаа өвдгөө нугалж цохилтоо зөөлрүүлнэ
+        { 0.84f, 1.20f, 2.00f, 0.00f, 0.0f, { 72.0f, 60.0f }, { 108.0f, 96.0f }, 30.0f, 44.0f, 36.0f, 10.0f, 0.0f, 0.0f, 0.0f, 0.3f },
+        // Босно
+        { 1.00f, 1.20f, 2.00f, 0.00f, 0.0f, { 4.0f, 4.0f }, { 8.0f, 8.0f }, 4.0f, 10.0f, 20.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.3f },
+    };
+
+    // 2 давхрын цонх: тавцан дээр гарч суугаад хана руу эргэж, гараараа тавцангаас барьсан чигээр хөлөө
+    // доош хийж суларна, гараа тэнийлгэн зүүгдэнэ (тэндээс газарт үсэрнэ).
+    const VaultKey kDropKeys[] = {
+        { 0.00f, -1.00f, 0.00f, 0.00f, 0.0f, { 0.0f, 0.0f }, { 4.0f, 4.0f }, 0.0f, 8.0f, 14.0f, 0.0f, 0.0f, -0.08f, 0.0f, 0.3f },
+        { 0.10f, -0.42f, 0.00f, 0.00f, 0.0f, { 24.0f, 16.0f }, { 46.0f, 34.0f }, 26.0f, 70.0f, 30.0f, -4.0f, 1.0f, -0.08f, 0.0f, 0.3f },
+        { 0.22f, -0.46f, 0.24f, 0.00f, 0.0f, { 70.0f, 10.0f }, { 160.0f, 22.0f }, 30.0f, 30.0f, 70.0f, 10.0f, 1.0f, -0.06f, 0.0f, 0.3f },
+        { 0.28f, -0.40f, 0.70f, 0.00f, 0.0f, { 74.0f, 34.0f }, { 156.0f, 112.0f }, 38.0f, 26.0f, 50.0f, 14.0f, 1.0f, -0.04f, 0.0f, 0.3f },
+        // Тавцан дээр бөхийж сууна, хүрээнээс барина; доошоо харна
+        { 0.34f, -0.28f, 1.00f, 0.00f, 0.0f, { 104.0f, 98.0f }, { 130.0f, 124.0f }, 40.0f, 26.0f, 32.0f, 30.0f, 1.0f, 0.02f, 0.72f, 0.56f },
+        // Хүрээг суллаж, бөхийсөн чигээрээ хана руу эргэнэ
+        { 0.42f, -0.05f, 1.00f, 0.00f, 90.0f, { 104.0f, 98.0f }, { 130.0f, 124.0f }, 46.0f, 60.0f, 40.0f, 20.0f, 0.0f, 0.0f, 0.0f, 0.3f },
+        // Хана руу харсан (ул тавцан дээрээ эргэнэ): хоёр гараа тавцангийн гадна ирмэгт тавина
+        { 0.50f, 0.18f, 1.00f, 0.00f, 180.0f, { 104.0f, 98.0f }, { 130.0f, 124.0f }, 46.0f, 40.0f, 40.0f, 24.0f, 1.0f, 0.06f, 0.0f, 0.3f },
+        // Хөлөө ар тийш тавцангаас гаргаж, тохойгоо нугалан доош суларна; өвдөг, ул хананы гадна талд тулна
+        { 0.64f, 0.44f, 1.45f, 0.00f, 180.0f, { 34.0f, 26.0f }, { 66.0f, 54.0f }, 14.0f, 140.0f, 80.0f, 12.0f, 1.0f, 0.08f, 0.0f, 0.28f },
+        // Гараа тэнийлгэн зүүгдэнэ, хөл унжина
+        { 0.80f, 0.30f, 2.00f, 0.00f, 180.0f, { 8.0f, 2.0f }, { 18.0f, 10.0f }, -4.0f, 175.0f, 8.0f, 6.0f, 1.0f, 0.08f, 0.0f, 0.26f },
+        // Доошоо харж үсрэх газраа шалгана
+        { 1.00f, 0.30f, 2.00f, -0.02f, 180.0f, { 4.0f, 0.0f }, { 14.0f, 8.0f }, -6.0f, 178.0f, 4.0f, 28.0f, 1.0f, 0.08f, 0.0f, 0.26f },
+    };
+
+    template <size_t N>
+    VaultKey SampleKeys(const VaultKey (&keys)[N], float t)
+    {
+        size_t i = 0;
+        while (i + 2 < N && t > keys[i + 1].t) ++i;
+        const VaultKey& a = keys[i];
+        const VaultKey& b = keys[i + 1];
+        float u = std::clamp((t - a.t) / (b.t - a.t), 0.0f, 1.0f);
+        u = u * u * (3.0f - 2.0f * u);
+        auto mix = [u](float x, float y) { return x + (y - x) * u; };
+        VaultKey k;
+        k.t = t;
+        k.wall = mix(a.wall, b.wall);
+        k.level = mix(a.level, b.level);
+        k.lift = mix(a.lift, b.lift);
+        k.turn = mix(a.turn, b.turn);
+        for (int side = 0; side < 2; ++side)
+        {
+            k.hip[side] = mix(a.hip[side], b.hip[side]);
+            k.knee[side] = mix(a.knee[side], b.knee[side]);
+        }
+        k.lean = mix(a.lean, b.lean);
+        k.shoulder = mix(a.shoulder, b.shoulder);
+        k.elbow = mix(a.elbow, b.elbow);
+        k.head = mix(a.head, b.head);
+        k.grip = mix(a.grip, b.grip);
+        k.handWall = mix(a.handWall, b.handWall);
+        k.handUp = mix(a.handUp, b.handUp);
+        k.handSide = mix(a.handSide, b.handSide);
+        return k;
+    }
+
+    bool IsWindow(PassageKind kind)
+    {
+        return kind == PassageKind::WindowIn || kind == PassageKind::WindowOut || kind == PassageKind::WindowDrop;
+    }
+
+    VaultKey SampleVault(PassageKind kind, float t)
+    {
+        return kind == PassageKind::WindowDrop ? SampleKeys(kDropKeys, t) : SampleKeys(kWindowKeys, t);
+    }
+
+    // Түлхүүр агшны ханаас хэмжсэн зайг тухайн цонхны бодит зайд тааруулна: эхлэх, хүрэх цэг тавилга, хашааны
+    // улмаас ханаас хол байж болно (World::FitWindowPassages). Ойртох алхам эхлэх цэгээс, үсрэлт хүрэх цэг хүртэл.
+    float VaultDistance(const Passage& passage, float keyWall, float total)
+    {
+        if (keyWall < -0.42f)
+        {
+            return Lerp(-passage.wall, -0.42f, (keyWall + 1.0f) / 0.58f);
+        }
+        if (keyWall > 0.55f && passage.kind != PassageKind::WindowDrop)
+        {
+            return Lerp(0.55f, total - passage.wall, (keyWall - 0.55f) / 0.65f);
+        }
+        return keyWall;
+    }
+
+    // Цонхны тавцангийн өндөр (Structures.cpp-ийн sillHeight = 1.05 давхрын суурнаас; 1 давхарт дотор шал
+    // суурнаас 0.1 м өндөр, 2 давхарт эхлэх цэг нь давхрын суурь өөрөө).
+    float VaultSill(const Passage& passage)
+    {
+        return passage.kind == PassageKind::WindowDrop ? passage.from.y + 1.05f
+                                                       : std::max(passage.from.y, passage.to.y) + 0.95f;
+    }
+
+    // Замын чиглэл (from -> to), хэвтээ нэгж вектор
+    Vector3 VaultAxis(const Passage& passage)
+    {
+        const Vector3 axis = { passage.to.x - passage.from.x, 0.0f, passage.to.z - passage.from.z };
+        const float length = Vector3Length(axis);
+        return length > 0.001f ? Vector3Scale(axis, 1.0f / length) : Vector3{ std::sin(passage.facing), 0.0f, std::cos(passage.facing) };
+    }
+
+    // Ханын төв (хөлийн өндөрт биш, хэвтээ байрлал)
+    Vector3 VaultWall(const Passage& passage)
+    {
+        return Vector3Add(passage.from, Vector3Scale(VaultAxis(passage), passage.wall));
+    }
+
+    // Биеийн харах зүг: замын чиглэл + түлхүүр агшны эргэлт
+    float VaultFacing(const Passage& passage, const VaultKey& key)
+    {
+        const Vector3 axis = VaultAxis(passage);
+        return std::atan2(axis.x, axis.z) + key.turn * DEG2RAD;
+    }
+}
+
 Player::Player(Vector3 spawn) : spawnPoint(spawn), position(spawn), look(TeamMemberLook(0))
 {
 }
@@ -54,18 +202,45 @@ void Player::Teleport(Vector3 newPosition)
     velocity = { 0.0f, 0.0f, 0.0f };
 }
 
-void Player::AimAt(float yaw)
+Vector3 Player::GunPivot() const
 {
+    // Буу мөрөн дээр тулж эргэнэ: суух, хэвтэхэд доошилно.
+    Vector3 pivot = HumanoidMuzzleFor(held);
+    pivot.y = std::max(0.22f, pivot.y - 0.42f * crouchPose - 1.0f * pronePose);
+    pivot.z = 0.0f;
+    return pivot;
+}
+
+void Player::AimAtPoint(Vector3 target)
+{
+    // Буу биеийн төвөөс баруун тийш зөрж байрладаг тул бууны тэнхлэг цэгээр дайрч гарах эргэлтийг
+    // хэдэн давталтаар олно (камерын yaw-аар эргүүлбэл буу хараанаас зүүн тийш зөрнө).
+    const Vector3 pivot = GunPivot();
+    float yaw = facing;
+    Vector3 from = HumanoidLocalToWorld(BodyBase(), yaw, pivot);
+    for (int i = 0; i < 3; ++i)
+    {
+        const float dx = target.x - from.x, dz = target.z - from.z;
+        if (dx * dx + dz * dz < 0.36f) break; // цэг хэт ойр (хөл доор): эргэлт тогтворгүй болно
+        yaw = std::atan2(dx, dz);
+        from = HumanoidLocalToWorld(BodyBase(), yaw, pivot);
+    }
+
+    const float horizontal = std::sqrt((target.x - from.x) * (target.x - from.x) + (target.z - from.z) * (target.z - from.z));
+    const float limit = 1.1f - 0.75f * pronePose; // хэвтсэн үед буу их өргөгдөхгүй
     facing = yaw;
+    aimPitch = horizontal > 0.6f ? std::clamp(std::atan2(target.y - from.y, horizontal), -limit, limit) : 0.0f;
     aimTimer = 0.4f;
 }
 
 Vector3 Player::MuzzlePosition() const
 {
-    // Суух, хэвтэхэд буу доошилж, хэвтэхэд бага зэрэг урагшилна.
-    Vector3 muzzle = HumanoidMuzzleFor(held);
-    muzzle.y = std::max(0.22f, muzzle.y - 0.42f * crouchPose - 1.0f * pronePose);
-    muzzle.z += 0.35f * pronePose;
+    // Суух, хэвтэхэд буу доошилж, хэвтэхэд бага зэрэг урагшилна. Онилсон үед мөрөө тойрон дээш доош хазайна.
+    Vector3 muzzle = GunPivot();
+    const float length = HumanoidMuzzleFor(held).z + 0.35f * pronePose;
+    const float pitch = aimPitch * aimPose;
+    muzzle.y += length * std::sin(pitch);
+    muzzle.z = length * std::cos(pitch);
     return HumanoidLocalToWorld(BodyBase(), facing, muzzle);
 }
 
@@ -115,7 +290,7 @@ void Player::StartTraverse(const Passage& passage)
     traverse = passage;
     traverseTime = 0.0f;
     traverseDuration = passage.kind == PassageKind::LadderUp || passage.kind == PassageKind::LadderDown ? 1.9f
-                     : passage.kind == PassageKind::WindowDrop ? 1.25f : 0.85f;
+                     : passage.kind == PassageKind::WindowDrop ? 2.4f : 1.4f;
     stance = Stance::Stand;
     velocity = { 0.0f, 0.0f, 0.0f };
 }
@@ -149,6 +324,7 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
     aimPose += ((aimTimer > 0.0f ? 1.0f : 0.0f) - aimPose) * std::min(1.0f, 9.0f * dt);
     recoil = std::max(0.0f, recoil - dt * 9.0f);
     action = std::max(0.0f, action - dt / actionDuration);
+    landing = std::max(0.0f, landing - dt * 2.2f);
 
     // --- Шат, цонхоор гарч яваа: тогтсон замаар шилжинэ, удирдлага үйлчлэхгүй ---
     if (traversing)
@@ -165,16 +341,27 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
         {
         case PassageKind::LadderUp: via = { from.x, to.y, from.z }; split = 0.8f; break;
         case PassageKind::LadderDown: via = { to.x, from.y, to.z }; split = 0.2f; break;
-        case PassageKind::WindowDrop:
-            via = { (from.x + to.x) * 0.5f, from.y + 1.0f, (from.z + to.z) * 0.5f };
-            moveTime = 0.6f; // үлдсэн хугацаанд тавцангаас зүүгдэж байна
-            break;
-        default: via = { (from.x + to.x) * 0.5f, std::max(from.y, to.y) + 1.15f, (from.z + to.z) * 0.5f }; break;
+        default: break;
         }
-        const float p = std::min(1.0f, t / moveTime);
-        position = p < split ? Vector3Lerp(from, via, smooth(p / split)) : Vector3Lerp(via, to, smooth((p - split) / (1.0f - split)));
+        if (IsWindow(traverse.kind))
+        {
+            // Цонх: хөлийн байрлал, биеийн зүг түлхүүр агшнуудын дагуу (гараа тавих, өвдөг гаргах, суух,
+            // үсрэх эсвэл эргэж зүүгдэх).
+            const VaultKey key = SampleVault(traverse.kind, t);
+            const float total = std::max(0.01f, Vector2Distance({ from.x, from.z }, { to.x, to.z }));
+            const float along = std::clamp((traverse.wall + VaultDistance(traverse, key.wall, total)) / total, 0.0f, 1.0f);
+            const float sill = VaultSill(traverse);
+            const float y = key.level <= 1.0f ? Lerp(from.y, sill, key.level) : Lerp(sill, to.y, key.level - 1.0f);
+            position = { Lerp(from.x, to.x, along), y + key.lift, Lerp(from.z, to.z, along) };
+            facing = VaultFacing(traverse, key);
+        }
+        else
+        {
+            const float p = std::min(1.0f, t / moveTime);
+            position = p < split ? Vector3Lerp(from, via, smooth(p / split)) : Vector3Lerp(via, to, smooth((p - split) / (1.0f - split)));
+            facing = traverse.facing;
+        }
 
-        facing = traverse.facing;
         velocity = { 0.0f, 0.0f, 0.0f };
         grounded = false;
         floorY = world.SurfaceHeightAt(position.x, position.z, position.y + 0.3f);
@@ -183,7 +370,9 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
         if (t >= 1.0f)
         {
             traversing = false; // цонхноос зүүгдсэн бол эндээс чөлөөтэй унана
-            position = to;
+            if (!IsWindow(traverse.kind)) position = to; // цонхны сүүлийн агшин аль хэдийн байрлалдаа
+            // Аюулгүйн үүднээс: саадтай давхцаж үлдвэл (хөдөлж чадахгүй гацна) ойрын чөлөөт газар руу түлхэнэ.
+            world.ResolveHorizontal(position, config.playerRadius, config.playerHeight, config.stepHeight);
         }
         return;
     }
@@ -224,6 +413,7 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
         speed *= stance == Stance::Crouch ? 1.25f : config.sprintMultiplier;
     }
     speed *= inputStrength;
+    speed *= 1.0f - 0.7f * landing; // буусан даруйд хурдан гүйж чадахгүй
 
     // --- Хэвтээ хурд: зорилтот хурд руу зөөлөн ойртоно ---
     const float control = grounded ? 1.0f : config.airControl;
@@ -256,6 +446,11 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
     const bool snapDown = wasGrounded && position.y - floorY < config.stepHeight;
     if (velocity.y <= 0.0f && (position.y <= floorY || snapDown))
     {
+        // Өндрөөс (~1.5 м-ээс дээш) унаж буувал хөлөө нугалж суугаад босно.
+        if (!wasGrounded && velocity.y < -5.5f)
+        {
+            landing = std::min(1.0f, -velocity.y / 9.0f);
+        }
         position.y = floorY;
         velocity.y = 0.0f;
         grounded = true;
@@ -283,8 +478,7 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
     if (grounded)
     {
         // Гүйхэд алхам уртсах тул давтамж хурдтай шууд пропорциональ өсөхгүй.
-        const float speedNow = HorizontalSpeed();
-        walkCycle += dt * (speedNow > 0.1f ? 4.5f + speedNow * 0.9f : 0.0f);
+        walkCycle += dt * HumanoidGaitRate(HorizontalSpeed());
     }
 }
 
@@ -310,6 +504,7 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
         pose.bob = 0.0f;
         pose.seated = true;
         pose.aim = aimPose;
+        pose.aimPitch = aimPitch * RAD2DEG;
         DrawHumanoid(BodyBase(), facing, 1.0f, pose, look);
         return;
     }
@@ -338,25 +533,36 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
             pose.knee[1] = 60.0f + 38.0f * swing;
             pose.lean = 6.0f;
         }
-        else if (traverse.kind == PassageKind::WindowDrop && t > 0.6f)
-        {
-            // Тавцангаас зүүгдсэн: гар дээшээ сунасан, хөл унжсан
-            pose.shoulder[0] = pose.shoulder[1] = 176.0f;
-            pose.elbow[0] = pose.elbow[1] = 6.0f;
-            pose.knee[0] = 10.0f;
-            pose.knee[1] = 18.0f;
-        }
         else
         {
-            // Цонхны тавцан давах: өвдгөө эвхэж, гараараа тулна
-            const float tuck = std::sin(std::min(1.0f, t / (traverse.kind == PassageKind::WindowDrop ? 0.6f : 1.0f)) * PI);
-            pose.hip[0] = 78.0f * tuck;
-            pose.hip[1] = 52.0f * tuck;
-            pose.knee[0] = 96.0f * tuck;
-            pose.knee[1] = 70.0f * tuck;
-            pose.lean = 34.0f * tuck;
-            pose.shoulder[0] = pose.shoulder[1] = 40.0f + 30.0f * tuck;
-            pose.elbow[0] = pose.elbow[1] = 40.0f;
+            // Цонх: мөчний өнцөг түлхүүр агшнаас, гар тавцан / хүрээн дээрх цэгт тулна.
+            const VaultKey key = SampleVault(traverse.kind, t);
+            for (int side = 0; side < 2; ++side)
+            {
+                pose.hip[side] = key.hip[side];
+                pose.knee[side] = key.knee[side];
+            }
+            pose.lean = key.lean;
+            pose.headPitch = key.head;
+            pose.shoulder[0] = pose.shoulder[1] = key.shoulder;
+            pose.elbow[0] = pose.elbow[1] = key.elbow;
+            pose.shoulderYaw[0] = pose.shoulderYaw[1] = 8.0f;
+            pose.plantFeet = true; // хөл нугарахад бие доошилж, доод хөлийн ул тавцан / газарт хүрнэ
+
+            // Гарын цэг (ертөнцөд) -> биеийн орон зай (хөлийн байрлал, харах зүгээр; DrawHumanoid bob-оор шилжүүлнэ)
+            pose.grip = key.grip;
+            const Vector3 axis = VaultAxis(traverse);
+            const Vector3 wall = VaultWall(traverse);
+            const Vector3 bodyRight = { -std::cos(facing), 0.0f, std::sin(facing) };
+            const float sn = std::sin(facing), cs = std::cos(facing);
+            for (int side = 0; side < 2; ++side)
+            {
+                Vector3 point = Vector3Add(wall, Vector3Scale(axis, key.handWall));
+                point = Vector3Add(point, Vector3Scale(bodyRight, (side == 0 ? 1.0f : -1.0f) * key.handSide));
+                point.y = VaultSill(traverse) + key.handUp;
+                const Vector3 d = Vector3Subtract(point, position);
+                pose.gripPoint[side] = { d.x * cs - d.z * sn, d.y - pose.bob, d.x * sn + d.z * cs };
+            }
         }
         look.held = HeldItem::None;
         DrawHumanoid(position, facing, 1.0f, pose, look);
@@ -368,7 +574,9 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
     const float moveAmount = HorizontalSpeed() / stanceSpeed;
     HumanoidPose pose = MakeSoldierPose(walkCycle, moveAmount, grounded, (float)GetTime(), recoil, held, action);
     pose.aim = aimPose;
-    pose.crouch = crouchPose;
+    pose.aimPitch = aimPitch * RAD2DEG;
+    pose.speed = HorizontalSpeed();
+    pose.crouch = std::max(crouchPose, 0.85f * std::sqrt(landing));
     pose.prone = pronePose;
     pose.moveDirection = moveDirection;
     pose.reload = reload;
@@ -377,6 +585,7 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
         pose = MakeSoldierPose(demoPhase, demoMove, true, (float)GetTime(), 0.0f, held,
                                demoAction >= 0.0f ? 1.0f - demoAction : 0.0f);
         pose.aim = demoAim;
+        pose.speed = demoMove * stanceSpeed;
         pose.crouch = stance == Stance::Crouch ? 1.0f : 0.0f;
         pose.prone = stance == Stance::Prone ? 1.0f : 0.0f;
         pose.moveDirection = demoDirection;

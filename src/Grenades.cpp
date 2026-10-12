@@ -67,6 +67,7 @@ void Grenades::Update(float dt, const World& world, ZombieHorde& horde, Player& 
             {
                 grenade.fuse = 0.0f;
                 horde.Explode(grenade.position, kRocketRadius, kRocketMaxDamage);
+                blasts.push_back({ grenade.position, kRocketRadius, kRocketMaxDamage });
                 const Vector3 chest = { player.Position().x, player.Position().y + 1.1f, player.Position().z };
                 const float distance = Vector3Distance(chest, grenade.position);
                 if (distance < kRocketRadius)
@@ -110,6 +111,7 @@ void Grenades::Update(float dt, const World& world, ZombieHorde& horde, Player& 
         if (grenade.fuse <= 0.0f)
         {
             horde.Explode(grenade.position, kGrenadeRadius, kGrenadeMaxDamage);
+            blasts.push_back({ grenade.position, kGrenadeRadius, kGrenadeMaxDamage });
 
             const Vector3 chest = { player.Position().x, player.Position().y + 1.1f, player.Position().z };
             const float distance = Vector3Distance(chest, grenade.position);

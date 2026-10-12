@@ -2,7 +2,9 @@
 
 #include "Input.h"
 #include "UiFont.h"
+#include "UiStyle.h"
 
+#include "Layout.h"
 #include "raylib.h"
 #include "raymath.h"
 
@@ -231,12 +233,14 @@ void DrawMinimap(const World& world, const Player& player, float cameraYaw, cons
     view.scale = size * 0.5f / kMinimapRadius;
     view.yaw = cameraYaw;
 
+    // Шил карт дотор: эргэн тойронд 6 px зай, нимгэн хүрээ
+    Ui::Panel({ view.area.x - 6.0f, view.area.y - 6.0f, view.area.width + 12.0f, view.area.height + 12.0f }, Ui::kPanel, 12.0f);
     DrawRectangleRec(view.area, kOutside);
     DrawTerrainLayers(view, world, kBackground, kOutside);
     DrawVehicles(view, garage, 1.0f);
     DrawObjectives(view, markers, 1.0f);
     DrawMarkers(view, player, horde, squad, true, 1.0f);
-    DrawRectangleLinesEx(view.area, 2.0f, kFrame);
+    DrawRectangleLinesEx(view.area, 1.0f, Ui::kBorder);
 
     // Хойд зүгийн (+Z) тэмдэг хүрээн дээр
     const Vector2 center = view.Center();
@@ -244,8 +248,9 @@ void DrawMinimap(const World& world, const Player& player, float cameraYaw, cons
     const float reach = std::max(std::fabs(northX), std::fabs(northY));
     const Vector2 north = { center.x + northX / reach * (size * 0.5f - 9.0f),
                             center.y + northY / reach * (size * 0.5f - 9.0f) };
-    DrawCircleV(north, 8.0f, Fade(BLACK, 0.7f));
-    UiText("Х", (int)north.x - 5, (int)north.y - 8, 15, kFrame);
+    DrawCircleV(north, 10.0f, Ui::kAccent);
+    const int northWidth = Ui::MeasureBold("Х", 14);
+    Ui::TextBold("Х", (int)north.x - northWidth / 2, (int)north.y - 8, 14, { 20, 16, 8, 255 });
 }
 
 // ---------------------------------------------------------------- Бүтэн дэлгэцийн зураг
@@ -331,7 +336,8 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     view.scale = BaseScale(world) * zoom;
     view.yaw = 0.0f;
 
-    DrawRectangle(0, 0, width, height, Fade(BLACK, 0.8f));
+    DrawRectangle(0, 0, width, height, Fade({ 6, 8, 12, 255 }, 0.85f));
+    Ui::Panel({ view.area.x - 8.0f, view.area.y - 8.0f, view.area.width + 16.0f, view.area.height + 16.0f }, Ui::kPanel, 14.0f);
     DrawRectangleRec(view.area, kOutside);
     DrawTerrainLayers(view, world, kFullBackground, kOutside);
 
@@ -339,7 +345,7 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     BeginScissorMode((int)view.area.x, (int)view.area.y, (int)view.area.width, (int)view.area.height);
     const struct { float x, z; const char* name; } places[] = {
         { 28.0f, 34.0f, "СУУРИН" },  { -52.0f, 2.0f, "ЗАСТАВ" }, { 38.0f, -13.0f, "ШАТАХУУН ТҮГЭЭХ ГАЗАР" },
-        { 10.0f, 70.0f, "АГУУЛАХ" },
+        { 10.0f, 70.0f, "АГУУЛАХ" }, { kRecruitStation.x, kRecruitStation.y - 4.0f, "ЦЭРЭГ ЭЛСҮҮЛЭХ" },
     };
     for (const auto& place : places)
     {
@@ -353,12 +359,13 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     DrawVehicles(view, garage, 1.3f);
     DrawObjectives(view, markers, 1.5f);
     DrawMarkers(view, player, horde, squad, true, 1.5f);
-    DrawRectangleLinesEx(view.area, 2.0f, kFrame);
+    DrawRectangleLinesEx(view.area, 1.0f, Ui::kBorder);
 
     // Гарчиг, томруулалт, тайлбар
-    UiText(TextFormat("ГАЗРЫН ЗУРАГ — %s", title), (int)view.area.x, 22, 28, kFrame);
+    Ui::TextBold("ГАЗРЫН ЗУРАГ", (int)view.area.x, 18, 28, Ui::kText);
+    Ui::Text(title, (int)view.area.x + Ui::MeasureBold("ГАЗРЫН ЗУРАГ", 28) + 16, 26, 20, Ui::kAccent);
     const char* zoomText = TextFormat("%d%%", (int)std::round(zoom * 100.0f));
-    UiText(zoomText, width - (int)view.area.x - UiMeasure(zoomText, 28), 22, 28, kPlayer);
+    Ui::Chip(zoomText, width - (int)view.area.x, 18, Ui::kText, Ui::kInfo, true);
     UiText("Х", width / 2 - 7, (int)view.area.y + 6, 22, kFrame);
 
     const int legendY = height - 40;

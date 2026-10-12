@@ -28,6 +28,9 @@ namespace
     const Color kTrampled = { 146, 128, 96, 255 };
     const Color kStone = { 128, 124, 118, 255 };
     const Color kBush = { 84, 98, 52, 255 };
+    const Color kGrassLush = { 92, 140, 62, 255 };
+    // Тал хээрийн цэцэг: алтан гагнуур (шар), хонхон цэцэг (ягаан хөх), цагаан цэцэг, улаан
+    const Color kFlowers[4] = { { 236, 196, 52, 255 }, { 150, 110, 196, 255 }, { 236, 232, 220, 255 }, { 206, 72, 64, 255 } };
     const Color kBushDry = { 132, 112, 70, 255 };
 
     // Тэгшлээгүй үеийн толгодын өндөр.
@@ -55,22 +58,39 @@ namespace
 
     void AddGrassTuft(MeshBuilder& builder, Vector3 base, Rng& rng)
     {
-        const Color tint = MixColor(kGrassGreen, kGrassDry, rng.Next());
+        // Хиаг, ерхөг: ногоон, шаргал, цайвар ногоон хольцтой; ир бүр гадагшаа налж, үзүүр нь цайвар.
+        const Color tint = rng.Chance(0.2f) ? MixColor(kGrassLush, kGrassGreen, rng.Next())
+                                            : MixColor(kGrassGreen, kGrassDry, rng.Next());
         // Нимгэн ир нь ихэвчлэн нарны эсрэг харж бараан гардаг тул өнгийг нь цайвар авна.
-        const Color root = ScaleColor(tint, 1.0f);
-        const Color tip = ScaleColor(tint, 1.5f);
-        const float height = rng.Range(0.25f, 0.6f);
+        const Color root = ScaleColor(tint, 0.85f);
+        const Color tip = ScaleColor(tint, 1.55f);
+        const float height = rng.Range(0.22f, 0.62f);
+        const int blades = rng.Chance(0.5f) ? 4 : 3;
 
-        for (int blade = 0; blade < 3; ++blade)
+        for (int blade = 0; blade < blades; ++blade)
         {
-            const float angle = rng.Range(0.0f, 2.0f * PI);
-            const float sx = std::cos(angle) * 0.07f;
-            const float sz = std::sin(angle) * 0.07f;
-            const Vector3 top = { base.x + rng.Range(-0.2f, 0.2f), base.y + height * rng.Range(0.7f, 1.0f),
-                                  base.z + rng.Range(-0.2f, 0.2f) };
+            const float angle = 2.0f * PI * ((float)blade + rng.Range(0.0f, 0.6f)) / (float)blades;
+            const float sx = std::cos(angle + PI * 0.5f) * 0.05f;
+            const float sz = std::sin(angle + PI * 0.5f) * 0.05f;
+            const float lean = rng.Range(0.08f, 0.26f);
+            const Vector3 top = { base.x + std::cos(angle) * lean, base.y + height * rng.Range(0.7f, 1.0f),
+                                  base.z + std::sin(angle) * lean };
             builder.Triangle({ base.x - sx, base.y, base.z - sz }, { base.x + sx, base.y, base.z + sz }, top, root, root,
                              tip);
         }
+    }
+
+    // Зэрлэг цэцэг: нарийн иш дээр өнгөт толгой (хоёр загалмай гурвалжин)
+    void AddFlower(MeshBuilder& builder, Vector3 base, Color petal, Rng& rng)
+    {
+        const float height = rng.Range(0.18f, 0.38f);
+        const Vector3 head = { base.x + rng.Range(-0.04f, 0.04f), base.y + height, base.z + rng.Range(-0.04f, 0.04f) };
+        builder.Triangle({ base.x - 0.012f, base.y, base.z }, { base.x + 0.012f, base.y, base.z }, head, kGrassGreen);
+        const float r = rng.Range(0.04f, 0.07f);
+        builder.Triangle({ head.x - r, head.y, head.z - r * 0.5f }, { head.x + r, head.y, head.z - r * 0.5f },
+                         { head.x, head.y + r * 0.6f, head.z + r }, petal);
+        builder.Triangle({ head.x, head.y, head.z - r }, { head.x - r * 0.8f, head.y + r * 0.4f, head.z + r * 0.6f },
+                         { head.x + r * 0.8f, head.y + r * 0.4f, head.z + r * 0.6f }, ScaleColor(petal, 1.15f));
     }
 }
 
@@ -243,7 +263,22 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
         AddGrassTuft(builder, { x, HeightAt(x, z), z }, rng);
     }
 
-    // --- Жижиг чулуу ---
+    // --- Зэрлэг цэцэг: нэг төрлийнх нь бөөнөөрөө ургана ---
+    for (int patch = 0; patch < 6; ++patch)
+    {
+        const float px = x0 + rng.Next() * chunkSize;
+        const float pz = z0 + rng.Next() * chunkSize;
+        const Color petal = kFlowers[rng.Int(0, 3)];
+        if (layout.FlatDistance(px, pz) < 2.0f) continue; // суурин, замын ойролцоо гишгэгдсэн
+        for (int i = 0; i < 14; ++i)
+        {
+            const float x = px + rng.Range(-2.5f, 2.5f), z = pz + rng.Range(-2.5f, 2.5f);
+            if (InsideObstacle(nearby, x, z, 0.2f)) continue;
+            AddFlower(builder, { x, HeightAt(x, z), z }, JitterColor(petal, rng, 0.08f), rng);
+        }
+    }
+
+    // --- Жижиг чулуу: газарт хагас шигдсэн, заримдаа бөөгнөрсөн, хаг ургасан ---
     for (int i = 0; i < 34; ++i)
     {
         const float x = x0 + rng.Next() * chunkSize;
@@ -254,7 +289,19 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
         if (layout.RoadDistance(x, z) < 1.0f) continue;
         if (InsideObstacle(nearby, x, z, 0.6f)) continue;
 
-        builder.Blob({ x, HeightAt(x, z) + radii.y * 0.3f, z }, radii, JitterColor(kStone, rng, 0.15f), rng);
+        const float ground = HeightAt(x, z);
+        const Color stone = rng.Chance(0.25f) ? MixColor(kStone, { 150, 140, 96, 255 }, 0.4f) : JitterColor(kStone, rng, 0.15f);
+        builder.Rock({ x, ground + radii.y * 0.15f, z }, radii, stone, rng);
+        if (rng.Chance(0.35f))
+        {
+            const int extra = rng.Int(1, 3);
+            for (int k = 0; k < extra; ++k)
+            {
+                const float r = radius * rng.Range(0.3f, 0.6f);
+                const float ex = x + rng.Range(-1.0f, 1.0f) * radius * 2.0f, ez = z + rng.Range(-1.0f, 1.0f) * radius * 2.0f;
+                builder.Rock({ ex, HeightAt(ex, ez) + r * 0.1f, ez }, { r, r * 0.6f, r }, JitterColor(kStone, rng, 0.15f), rng);
+            }
+        }
     }
 
     // --- Бут сөөг: тэгш бус газар, толгодын хажуугаар ---
@@ -269,13 +316,23 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
         if (layout.RoadDistance(x, z) < 2.0f) continue;
         if (InsideObstacle(nearby, x, z, 1.2f)) continue;
 
+        // Харгана: доороо бараан, дээшээ цайвар бөмбөлгүүд, ёроолоос хуурай мөчир цухуйна
         const float ground = HeightAt(x, z);
-        for (int part = 0; part < 3; ++part)
+        for (int part = 0; part < 4; ++part)
         {
             const float px = x + rng.Range(-0.5f, 0.5f) * size;
             const float pz = z + rng.Range(-0.5f, 0.5f) * size;
-            const float r = size * rng.Range(0.5f, 0.8f);
-            builder.Blob({ px, ground + r * 0.55f, pz }, { r, r * 0.75f, r }, color, rng, 0.12f);
+            const float r = size * rng.Range(0.45f, 0.75f);
+            const bool upper = part >= 2;
+            builder.Blob({ px, ground + r * (upper ? 0.85f : 0.45f), pz }, { r, r * 0.7f, r },
+                         upper ? ScaleColor(color, 1.12f) : ScaleColor(color, 0.82f), rng, 0.12f);
+        }
+        for (int twig = 0; twig < 3; ++twig)
+        {
+            const float a = rng.Range(0.0f, 2.0f * PI);
+            const Vector3 root = { x + std::cos(a) * size * 0.3f, ground, z + std::sin(a) * size * 0.3f };
+            const Vector3 tip = { x + std::cos(a) * size * 0.9f, ground + size * rng.Range(0.6f, 1.0f), z + std::sin(a) * size * 0.9f };
+            builder.Triangle({ root.x - 0.02f, root.y, root.z }, { root.x + 0.02f, root.y, root.z }, tip, Color{ 96, 74, 52, 255 });
         }
     }
 

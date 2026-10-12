@@ -2,6 +2,9 @@
 
 #include "raylib.h"
 
+// Цэрэг элсүүлэх цэг (заставын хуаранд): тоглогч энд зогсож E дарж зоосоор цэрэг элсүүлнэ.
+constexpr Vector2 kRecruitStation = { -46.2f, -10.4f };
+
 #include <cstdint>
 #include <vector>
 

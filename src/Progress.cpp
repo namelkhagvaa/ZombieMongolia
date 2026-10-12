@@ -98,6 +98,9 @@ bool LoadProgress(Progress& progress, int provinceCount)
         else if (key == "magazine") progress.weapon.magazine = std::clamp(value, 0, kMaxWeaponLevel);
         else if (key == "health") progress.healthLevel = std::clamp(value, 0, kMaxHealthLevel);
         else if (key == "soldiers") progress.soldiers = std::clamp(value, 0, kMaxSoldiers);
+        else if (key == "aimAssist") progress.aimAssist = value != 0;
+        else if (key == "firstPerson") progress.firstPerson = value != 0;
+        else if (key == "netTag") progress.netTag = value;
         else if (key == "format") format = value;
     }
 
@@ -130,6 +133,9 @@ bool SaveProgress(const Progress& progress)
     file << "magazine " << progress.weapon.magazine << '\n';
     file << "health " << progress.healthLevel << '\n';
     file << "soldiers " << progress.soldiers << '\n';
+    file << "aimAssist " << (progress.aimAssist ? 1 : 0) << '\n';
+    file << "firstPerson " << (progress.firstPerson ? 1 : 0) << '\n';
+    file << "netTag " << progress.netTag << '\n';
 
     file << "liberated ";
     for (bool flag : progress.liberated)

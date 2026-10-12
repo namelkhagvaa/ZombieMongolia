@@ -1,0 +1,21 @@
+# ninja log v7
+4	167	8134298304067493	enet-populate-prefix/src/enet-populate-stamp/enet-populate-mkdir	bcdb465e30d29089
+4	167	8134298304067493	C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-mkdir	bcdb465e30d29089
+168	4203	8134298344082840	enet-populate-prefix/src/enet-populate-stamp/enet-populate-download	64098162155f1411
+168	4203	8134298344082840	C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-download	64098162155f1411
+4204	4690	8134298344572181	enet-populate-prefix/src/enet-populate-stamp/enet-populate-update	19d39c6b8c395d89
+4204	4690	8134298344572181	C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-update	19d39c6b8c395d89
+4691	4870	8134298351096023	enet-populate-prefix/src/enet-populate-stamp/enet-populate-patch	fe48c72a5dc1e011
+4691	4870	8134298351096023	C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-patch	fe48c72a5dc1e011
+4870	5033	8134298352728154	enet-populate-prefix/src/enet-populate-stamp/enet-populate-configure	ef6a19e0599208b5
+4870	5033	8134298352728154	C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-configure	ef6a19e0599208b5
+5033	5182	8134298354198838	enet-populate-prefix/src/enet-populate-stamp/enet-populate-build	39f53b88c3bc2d59
+5033	5182	8134298354198838	C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-build	39f53b88c3bc2d59
+5182	5335	8134298355741985	enet-populate-prefix/src/enet-populate-stamp/enet-populate-install	701b70654cef18fa
+5182	5335	8134298355741985	C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-install	701b70654cef18fa
+5335	5489	8134298357272958	enet-populate-prefix/src/enet-populate-stamp/enet-populate-test	d2197d613d211dbe
+5335	5489	8134298357272958	C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-test	d2197d613d211dbe
+5489	5702	8134298359425989	CMakeFiles/enet-populate-complete	e11dce36dd5bd115
+5489	5702	8134298359425989	enet-populate-prefix/src/enet-populate-stamp/enet-populate-done	e11dce36dd5bd115
+5489	5702	8134298359425989	C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/enet-subbuild/CMakeFiles/enet-populate-complete	e11dce36dd5bd115
+5489	5702	8134298359425989	C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-done	e11dce36dd5bd115

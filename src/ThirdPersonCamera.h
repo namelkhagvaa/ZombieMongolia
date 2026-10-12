@@ -18,11 +18,18 @@ public:
                 float extraDistance = 0.0f, bool scoped = false, float targetDrop = 0.0f);
     // Дуран хараагаар харж байгаа эсэх (тоглогчийн биеийг зурахгүй, дэлгэцэд хараа гарна).
     bool IsScoped() const { return scopeBlend > 0.6f; }
+    // 1-р этгээд: камер нүдний түвшинд, тоглогчийн биеийг зурахгүй (гар, буу нь тусдаа зурагдана).
+    void SetFirstPerson(bool active) { firstPerson = active; }
+    bool IsFirstPerson() const { return firstPerson && !IsScoped(); }
 
     // Тоглогч шинэ газар гарч ирэхэд (даалгавар эхлэх) камерыг шууд тэнд аваачна.
     void Snap(Vector3 playerFeet);
     void SetView(float newYaw, float newPitch);
     void SetDistance(float newDistance) { distance = newDistance; }
+    // Шат, цонх давах үед: камерыг өгсөн зүг рүү зөөлөн эргүүлж, ойртуулж, мөрний шилжилтгүй болгоно.
+    // Ингэснээр камер давж буй замын ард байрлаж, цонхны нүхээр тоглогчийг харна (хананд наалдахгүй).
+    void Guide(float targetYaw, float targetPitch, float dt);
+    void SetTraversing(bool active) { traversing = active; }
 
     const Camera3D& Get() const { return camera; }
     float Yaw() const { return yaw; }
@@ -44,4 +51,7 @@ private:
     float aimBlend = 0.0f; // 0 = ердийн, 1 = бүрэн онилсон
     float scopeBlend = 0.0f; // 0 = ердийн, 1 = дуран хараа
     float rideDistance = 0.0f; // унаа унасан үеийн нэмэлт зай (аажим өөрчлөгдөнө)
+    bool traversing = false;
+    bool firstPerson = false;
+    float traverseBlend = 0.0f; // 0 = ердийн, 1 = давж буй үеийн ойрын камер
 };

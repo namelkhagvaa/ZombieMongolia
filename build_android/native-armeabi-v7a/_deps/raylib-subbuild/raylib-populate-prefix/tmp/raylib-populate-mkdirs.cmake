@@ -6,22 +6,22 @@ cmake_minimum_required(VERSION ${CMAKE_VERSION}) # this file comes with cmake
 # If CMAKE_DISABLE_SOURCE_CHANGES is set to true and the source directory is an
 # existing directory in our source tree, calling file(MAKE_DIRECTORY) on it
 # would cause a fatal error, even though it would be a no-op.
-if(NOT EXISTS "C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src")
-  file(MAKE_DIRECTORY "C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src")
+if(NOT EXISTS "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src")
+  file(MAKE_DIRECTORY "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src")
 endif()
 file(MAKE_DIRECTORY
-  "C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build"
-  "C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix"
-  "C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/tmp"
-  "C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp"
-  "C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src"
-  "C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp"
+  "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build"
+  "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix"
+  "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/tmp"
+  "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp"
+  "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src"
+  "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp"
 )
 
 set(configSubDirs )
 foreach(subDir IN LISTS configSubDirs)
-    file(MAKE_DIRECTORY "C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/${subDir}")
+    file(MAKE_DIRECTORY "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp/${subDir}")
 endforeach()
 if(cfgdir)
-  file(MAKE_DIRECTORY "C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp${cfgdir}") # cfgdir has leading slash
+  file(MAKE_DIRECTORY "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-subbuild/raylib-populate-prefix/src/raylib-populate-stamp${cfgdir}") # cfgdir has leading slash
 endif()

@@ -44,6 +44,7 @@ struct TouchState
     int weaponCount = 0;
     const char* const* weaponNames = nullptr;
     int weaponCurrent = -1;
+    int weaponTypes[8] = {}; // нүд бүрийн зэвсгийн төрөл (дүрс зурахад)
 
     // Багийн гурван гишүүн (товшиж шилжинэ)
     struct Member
@@ -59,6 +60,9 @@ struct TouchState
     const char* actLabel = nullptr; // E-ийн үйлдэл (даалгаврын объект); nullptr = гарахгүй
     bool driving = false;           // унаа жолоодож буй: үсрэх товч тоормос болно
     bool sniper = false;            // онилох товч дуран хараа нээнэ
+    bool aimAssist = false;         // автомат онилгоо асаалттай (чагттай товч)
+    bool firstPerson = false;       // камер 1-р этгээдийн горимд
+    bool joinRequest = false;       // хамтарсан тоглолтын хүсэлт: зөвшөөрөх / татгалзах товч
     int stance = 0;                 // 0 босоо, 1 суусан, 2 хэвтсэн (товчлуурыг тодруулахад)
     int minimapSize = 0;            // жижиг газрын зургийн хэмжээ (баруун дээд буланд; товшиход бүтэн зураг нээгдэнэ)
 };

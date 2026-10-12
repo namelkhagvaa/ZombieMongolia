@@ -118,6 +118,9 @@ public:
 
 private:
     void BuildObstacleGrid();
+    // Цонхны гарцын зогсох цэгүүд хашаа, тавилга зэрэг саадтай давхцвал ойрын чөлөөт газар руу шилжүүлнэ;
+    // хол шилжүүлэх шаардлагатай бол (давсны дараа гацна) гарцыг хасна.
+    void FitWindowPassages();
     float DoorRayDistance(Ray ray, float maxDistance) const;
     int GridCell(float value) const;
 

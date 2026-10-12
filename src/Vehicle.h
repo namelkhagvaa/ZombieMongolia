@@ -44,7 +44,8 @@ struct Vehicle
     float heading;    // радиан, 0 = +Z
     float speed = 0.0f;     // урагш эерэг, м/с
     float pitch = 0.0f;     // газрын налууг дагасан хазайлт, радиан
-    float animation = 0.0f; // дугуйн эргэлт / морины давхилтын үе
+    float animation = 0.0f; // дугуйн эргэлт (радиан, 1 м радиустай дугуйнд) / морины давхилтын үе
+    float steer = 0.0f;     // жолооны байрлал -1..1 (эерэг = баруун тийш), зөөлөн шилжинэ
 };
 
 // Талбар дээрх бүх тээврийн хэрэгсэл ба тоглогчийн унаж буй нэг.
@@ -94,7 +95,8 @@ public:
     float DrivenMaxSpeed() const { return drivenMaxSpeed; } // одоогийн гадаргуу, налуу дээрх дээд хурд
     Vector3 SeatPosition() const;                           // жолоочийн ташааны ертөнцийн байрлал
 
-    void Draw(Vector3 viewPosition, float maxDistance) const;
+    // material: орчны PropMaterial (унааны mesh-ийг GPU-д хадгалж зурна); nullptr бол шууд зурна.
+    void Draw(Vector3 viewPosition, float maxDistance, const Material* material = nullptr) const;
 
 private:
     std::vector<Vehicle> vehicles;

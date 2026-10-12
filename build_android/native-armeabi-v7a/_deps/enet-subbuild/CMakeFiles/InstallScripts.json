@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

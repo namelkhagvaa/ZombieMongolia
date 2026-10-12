@@ -33,10 +33,16 @@ public:
     // Гаднаас оруулсан ястай загваруудын shader: текстур + жинхэнэ normal-аар гөлгөр гэрэлтүүлэг + манан.
     Shader CharacterShader() const { return characterShader; }
 
+    // Хөдөлдөг объектын (унаа) material: mesh-ийг rlgl-ийн одоогийн хувиргалтаар DrawMesh-ээр зурна.
+    const Material& PropMaterial() const { return propMaterial; }
+
 private:
     Shader shader = {};
     Shader characterShader = {};
     int characterViewPosLocation = -1;
+    Shader propShader = {};
+    Material propMaterial = {};
+    int propViewPosLocation = -1;
     Material material = {};
     Mesh mountains = {};
     int viewPosLocation = -1;

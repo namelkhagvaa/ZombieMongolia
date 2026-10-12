@@ -16,3 +16,6 @@ void UiText(const char* text, int x, int y, int size, Color color);
 // Бараан сүүдэртэй: ямар ч дэвсгэр дээр уншигдана.
 void UiTextShadow(const char* text, int x, int y, int size, Color color);
 int UiMeasure(const char* text, int size);
+// Тод (semibold) фонт: гарчиг, тоо. Олдохгүй бол энгийн фонтоор зурна.
+void UiTextBold(const char* text, int x, int y, int size, Color color);
+int UiMeasureBold(const char* text, int size);

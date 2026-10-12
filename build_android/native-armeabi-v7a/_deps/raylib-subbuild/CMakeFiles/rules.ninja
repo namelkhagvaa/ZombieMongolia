@@ -23,7 +23,7 @@ rule CUSTOM_COMMAND
 # Rule for re-running cmake.
 
 rule RERUN_CMAKE
-  command = C:\msys64\ucrt64\bin\cmake.exe --regenerate-during-build -SC:\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-subbuild -BC:\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-subbuild
+  command = C:\msys64\ucrt64\bin\cmake.exe --regenerate-during-build -SC:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-subbuild -BC:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-subbuild
   description = Re-running CMake...
   generator = 1
 

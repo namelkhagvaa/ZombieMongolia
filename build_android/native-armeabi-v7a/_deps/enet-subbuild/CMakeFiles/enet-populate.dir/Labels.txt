@@ -1,0 +1,14 @@
+# Target labels
+ enet-populate
+# Source files and their labels
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/CMakeFiles/enet-populate
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/CMakeFiles/enet-populate.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/CMakeFiles/enet-populate-complete.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-build.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-configure.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-download.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-install.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-mkdir.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-patch.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-test.rule
+C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-update.rule

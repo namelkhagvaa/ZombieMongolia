@@ -8,6 +8,8 @@
 #include "Minimap.h"
 #include "UiFont.h"
 #include "Shop.h"
+#include "Layout.h"
+#include "UiStyle.h"
 #include "raylib.h"
 #include "raymath.h"
 #include "rlgl.h"
@@ -22,6 +24,11 @@ namespace
     const float kMountDistance = 2.2f;    // унааны ирмэгээс ийм зайд F дарж сууна
     const float kDoorDistance = 2.4f;     // хаалганы төвөөс ийм зайд F дарж нээж хаана
     const float kPassageDistance = 1.3f;  // шат, цонхны эхлэх цэгээс ийм зайд F дарж туулна
+    const float kRecruitDistance = 3.2f;  // элсүүлэх цэгээс ийм зайд E дарна
+    // 500 зомби устгах тутам зомбины хурд 2 дахин нэмэгдэнэ; тоглох боломжтой байхын тулд 4 дахинаар хязгаарлана.
+    const int kKillsPerSpeedup = 500;
+    const float kMaxZombieSpeedMultiplier = 4.0f;
+    const int kRecruitCost = 300;         // нэг цэрэг элсүүлэх үнэ, зоос
 
     // Гарцын үйлдлийн нэр: [0] гарын заавар, [1] мэдрэгчтэй дэлгэцийн товчлуур.
     const char* PassageLabel(PassageKind kind, bool touch)
@@ -65,6 +72,16 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
     ViewInit(720);
 #else
     InitWindow(config.screenWidth, config.screenHeight, "Zombie Mongolia");
+    // Цонхны икон (tools\make_icons.ps1 үүсгэнэ): exe-ийн хажуу эсвэл төслийн assets хавтсаас
+    for (const char* path : { "assets/window_icon.png", "../assets/window_icon.png" })
+    {
+        if (!FileExists(path)) continue;
+        Image icon = LoadImage(path);
+        ImageFormat(&icon, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        SetWindowIcon(icon);
+        UnloadImage(icon);
+        break;
+    }
     InSetTouchMode(options.touch);
     ViewInit(options.viewHeight);
 #endif
@@ -94,6 +111,11 @@ Game::Game(const LaunchOptions& launchOptions)
     SetCharacterBindPose(options.bindPose);
     LoadCharacterModels(environment.CharacterShader()); // байхгүй бол дүрүүд кодоор үүсгэсэн дүрсээрээ зурагдана
     LoadProgress(progress, (int)Provinces().size());
+    if (progress.netTag < 1000 || progress.netTag > 9999)
+    {
+        progress.netTag = GetRandomValue(1000, 9999);
+    }
+    config.touchAimAssist = progress.aimAssist;
     mapScreen.SelectNextTarget(progress);
 }
 
@@ -299,6 +321,7 @@ void Game::Run()
         // Мэдрэгчтэй дэлгэцийн товчлуурууд ба гар, хулганы оролтыг нэгтгэнэ.
         touchState = MakeTouchState();
         InBeginFrame(touchState);
+        if (!benchmark || options.coopTest) UpdateNetwork(dt);
 
         // ESC (утсан дээр "буцах" товч): нээлттэй цонхыг (даалгаврын журнал, газрын зураг) хаана; цонхгүй бол гарна.
         if (InKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_BACK))
@@ -401,6 +424,8 @@ void Game::HandleSettingsInput()
 
 void Game::UpdateMap()
 {
+    UpdateCoopMap();
+    if (state != GameState::Map) return; // хамтарсан тоглолт эхэлсэн
     bool changed = false;
     const MapScreen::Result result = mapScreen.Update(progress, changed);
     if (changed)
@@ -415,6 +440,8 @@ void Game::UpdateMap()
 
 void Game::ReturnToMap()
 {
+    if (coopGuest) LeaveCoop();
+    else if (net.GetRole() == Net::Role::Host) { net.Stop(); remoteActive = false; joinRequestPending = false; }
     Save();
     horde.Clear();
     tracers.Clear();
@@ -455,6 +482,7 @@ void Game::StartMission(int index)
     tracers.Clear();
     particles.Clear();
     fullMap.Close();
+    barrels.Spawn(world, index); // аймаг бүрт өөр байрлалд
     world.Stream(player.Position(), true); // эхлэх цэгийн орчмын газрыг бүгдийг нь нэг дор бэлтгэнэ
     world.CloseAllDoors();
     SpawnVehicles();
@@ -598,7 +626,7 @@ void Game::UpdateShooting()
         return;
     }
 
-    player.AimAt(camera.Yaw());
+    player.AimAtPoint(CrosshairTarget());
     if (!arsenal.TryUse())
     {
         return;
@@ -610,7 +638,7 @@ void Game::UpdateShooting()
     const float targetDistance = Vector3Length(toTarget);
     const Ray aim = { cam.position, Vector3Scale(toTarget, 1.0f / targetDistance) };
     // Дуран хараагаар харахад камер нүдэн дээр байгаа тул камер, тоглогч хоёрын хоорондох зай тэг.
-    const float cameraDistance = camera.IsScoped() ? 0.0f : targetDistance;
+    const float cameraDistance = camera.IsScoped() || camera.IsFirstPerson() ? 0.0f : targetDistance;
 
     switch (arsenal.Current())
     {
@@ -619,6 +647,27 @@ void Game::UpdateShooting()
     case WeaponType::Launcher: FireLauncher(aim, cameraDistance); break;
     default: FireGun(aim, cameraDistance); break;
     }
+}
+
+Vector3 Game::EffectMuzzle() const
+{
+    // 1-р этгээдийн үед сумны мөр, амны гал дэлгэц дээрх бууны амнаас гарна.
+    return camera.IsFirstPerson() ? ViewModelMuzzle(camera.Get(), player.Held()) : player.MuzzlePosition();
+}
+
+Vector3 Game::CrosshairTarget() const
+{
+    // Дэлгэцийн төвийн туяа хана, газар эсвэл зомбид тусах цэг: буу яг энэ цэг рүү чиглэнэ.
+    const Camera3D& cam = camera.Get();
+    const Vector3 toTarget = Vector3Subtract(cam.target, cam.position);
+    const float targetDistance = Vector3Length(toTarget);
+    const Ray ray = { cam.position, Vector3Scale(toTarget, 1.0f / targetDistance) };
+    const float cameraDistance = camera.IsScoped() || camera.IsFirstPerson() ? 0.0f : targetDistance;
+    const float wall = world.RayDistance(ray, cameraDistance + 150.0f);
+    const ZombieHit hit = horde.Raycast(ray, cameraDistance * 0.9f, wall);
+    // Тоглогчийн ард (камер, тоглогч хоёрын дунд) байх цэг рүү онилохгүй.
+    const float distance = std::max(hit.index >= 0 ? hit.distance : wall, cameraDistance + 1.0f);
+    return Vector3Add(ray.position, Vector3Scale(ray.direction, distance));
 }
 
 void Game::UseKnife(Ray aim, float cameraDistance)
@@ -662,7 +711,7 @@ void Game::UseKnife(Ray aim, float cameraDistance)
 void Game::FireGun(Ray aim, float cameraDistance)
 {
     const WeaponSpec& spec = arsenal.Spec();
-    const Vector3 muzzle = player.MuzzlePosition();
+    const Vector3 muzzle = EffectMuzzle();
 
     // Тархалтыг тооцох тэнхлэгүүд (онилгооны чиглэлд перпендикуляр)
     const Vector3 side = Vector3Normalize(Vector3CrossProduct(aim.direction, { 0.0f, 1.0f, 0.0f }));
@@ -682,6 +731,19 @@ void Game::FireGun(Ray aim, float cameraDistance)
         const float wallDistance = world.RayDistance(ray, reach);
         const ZombieHit hit = horde.Raycast(ray, cameraDistance * 0.9f, wallDistance);
 
+        // Бензинтэй торх зомби, хананаас өмнө байвал сум түүнд тусна.
+        float barrelDistance = 0.0f;
+        const int barrel = barrels.Raycast(ray, cameraDistance * 0.9f, hit.index >= 0 ? hit.distance : wallDistance, barrelDistance);
+        if (barrel >= 0)
+        {
+            barrels.Damage(barrel, arsenal.Damage());
+            if (coopGuest) net.SendBarrelHit(barrel, arsenal.Damage());
+            const Vector3 at = Vector3Add(ray.position, Vector3Scale(ray.direction, barrelDistance));
+            tracers.Add(muzzle, at, YELLOW);
+            particles.Flash(at, Vector3Negate(ray.direction)); // оч
+            continue;
+        }
+
         const float distance = hit.index >= 0 ? hit.distance : wallDistance;
         const Vector3 end = Vector3Add(ray.position, Vector3Scale(ray.direction, distance));
         tracers.Add(muzzle, end, hit.headshot ? RED : YELLOW);
@@ -690,6 +752,7 @@ void Game::FireGun(Ray aim, float cameraDistance)
         {
             // Толгойд оновол нэг сумаар устгана. Аварга зомби л үл хамаарна: толгойд гурав дахин хохирол.
             const float headshot = horde.At(hit.index).boss ? arsenal.Damage() * 3.0f : kHeadshotDamage;
+            if (coopGuest) net.SendHit(horde.At(hit.index).id, hit.headshot ? headshot : arsenal.Damage(), hit.headshot);
             horde.Damage(hit.index, hit.headshot ? headshot : arsenal.Damage());
             particles.Blood(end, Vector3Negate(ray.direction), hit.headshot ? 14 : (spec.pellets > 1 ? 3 : 7));
         }
@@ -720,7 +783,7 @@ void Game::FireLauncher(Ray aim, float cameraDistance)
     const float distance = hit.index >= 0 ? hit.distance : wall;
     const Vector3 target = Vector3Add(aim.position, Vector3Scale(aim.direction, distance));
 
-    const Vector3 muzzle = player.MuzzlePosition();
+    const Vector3 muzzle = EffectMuzzle();
     const Vector3 direction = Vector3Normalize(Vector3Subtract(target, muzzle));
     grenades.Launch(muzzle, Vector3Scale(direction, kRocketSpeed));
     horde.AlertAround(player.Position(), 130.0f);
@@ -1122,6 +1185,7 @@ void Game::UpdateMission(float dt)
         return;
     }
 
+    UpdateCoopMission(dt);
     UpdateVehicles(dt);
     UpdateTeamRiding(dt);
     world.UpdateDoors(dt);
@@ -1132,7 +1196,7 @@ void Game::UpdateMission(float dt)
     // F1, F2, F3: багийн гишүүд рүү шилжинэ.
     for (int member = 0; member < kTeamSize; ++member)
     {
-        if (InKeyPressed(KEY_F1 + member))
+        if (InKeyPressed(KEY_F1 + member) && !coopGuest)
         {
             SwitchMember(member, false);
         }
@@ -1143,14 +1207,37 @@ void Game::UpdateMission(float dt)
     // Мэргэн буудагч дурантай буугаараа шагайхад дуран хараа гарна (явган үед).
     const bool scoped = aiming && arsenal.Current() == WeaponType::Sniper && !garage.IsDriving();
     const bool firearm = arsenal.Current() != WeaponType::Knife && arsenal.Current() != WeaponType::Grenade;
+    // Автомат онилгоог асаах / унтраах (утасны "АВТО ОНИЛГОО" товч): сонголт хадгалагдана.
+    if (InTouchMode() && (InKeyPressed(KEY_T)))
+    {
+        config.touchAimAssist = !config.touchAimAssist;
+        progress.aimAssist = config.touchAimAssist;
+        recruitNotice = config.touchAimAssist ? "АВТО ОНИЛГОО АСЛАА" : "АВТО ОНИЛГОО УНТАРЛАА — өөрөө онилно";
+        recruitNoticeTimer = 1.8f;
+        Save();
+    }
     if (config.touchAimAssist && InTouchMode() && !enclosed && firearm && (aiming || InMouseDown(MOUSE_BUTTON_LEFT)))
     {
         AimAssist(dt);
     }
+    // Камерын горим: V (утсан дээр "КАМЕР" товч) — 1-р / 3-р этгээд. Унаа, шат, цонхонд 3-р этгээд.
+    if (InKeyPressed(KEY_V))
+    {
+        progress.firstPerson = !progress.firstPerson;
+        recruitNotice = progress.firstPerson ? "КАМЕР: 1-Р ЭТГЭЭД" : "КАМЕР: 3-Р ЭТГЭЭД";
+        recruitNoticeTimer = 1.4f;
+        Save();
+    }
+    camera.SetFirstPerson(progress.firstPerson && !garage.IsDriving() && !player.IsTraversing());
+    camera.SetTraversing(player.IsTraversing());
+    if (player.IsTraversing())
+    {
+        camera.Guide(player.TraverseFacing(), 0.03f, dt); // бараг хэвтээ: цонхны нүхээр харна
+    }
     camera.Update(dt, config, world, player.Position(), aiming, cameraExtra, scoped, player.CameraDrop());
     if (aiming)
     {
-        player.AimAt(camera.Yaw());
+        player.AimAtPoint(CrosshairTarget());
     }
 
     arsenal.Update(dt);
@@ -1162,8 +1249,27 @@ void Game::UpdateMission(float dt)
 
     squad.Update(dt, world, player.Position(), horde, tracers, particles);
     grenades.Update(dt, world, horde, player, particles);
+    // Бензинтэй торх: гранат, пуужингийн дэлбэрэлт, хурдтай унаа дэлбэлнэ; тоглогч дундуур нь гарахгүй.
+    for (const Grenades::BlastEvent& blast : grenades.TakeBlasts())
+    {
+        barrels.Blast(blast.position, blast.radius);
+        if (coopGuest) net.SendBlast(blast.position, blast.radius, blast.damage); // хост тооцно
+    }
+    if (garage.IsDriving())
+    {
+        const Vehicle& driven = garage.At(garage.Driven());
+        barrels.Ram(driven.position, SpecFor(driven.type).radius, std::fabs(driven.speed));
+    }
+    barrels.Update(dt, horde, player, squad, particles);
+    if (!garage.IsDriving())
+    {
+        Vector3 position = player.Position();
+        barrels.PushOut(position, config.playerRadius);
+        player.Nudge(position.x, position.z);
+    }
     particles.Update(dt, world);
-    horde.Update(dt, world, player, squad);
+    if (!coopGuest) horde.Update(dt, world, player, squad); // зочин: зомбинууд хостоос (UpdateCoopMission)
+    SendHostSnapshot(dt);
     if (options.screenshotPath && options.autoPlay)
     {
         player.Heal(1.0e6f); // автомат туршилтын дүр үхэхгүй: даалгаврын логикийг л шалгана
@@ -1174,6 +1280,38 @@ void Game::UpdateMission(float dt)
     horde.TakeRewards(progress.coins, kills);
     progress.kills += kills;
     missionKills += kills;
+
+    // Зомбины хурд: тухайн аймгийн үед устгасан тоо (хадгалагдана) 500 тутамд 2 дахин
+    if (!coopGuest)
+    {
+        const int stageKills = mission.KilledSmall() + mission.KilledBig();
+        const int level = stageKills / kKillsPerSpeedup;
+        const float multiplier = std::min(kMaxZombieSpeedMultiplier, std::pow(2.0f, (float)level));
+        if (multiplier > horde.SpeedMultiplier() + 0.01f && state == GameState::Playing && missionFrame > 2)
+        {
+            recruitNotice = multiplier >= kMaxZombieSpeedMultiplier ? "ЗОМБИНУУД ХАМГИЙН ХУРДАН БОЛЛОО!" : "ЗОМБИНУУД 2 ДАХИН ХУРДАН БОЛЛОО!";
+            recruitNoticeTimer = 2.5f;
+        }
+        horde.SetSpeedMultiplier(multiplier);
+    }
+
+    // "+N" зоос: шинэ устгалтуудыг нэмж, хуучныг (1.4 сек) арилгана
+    killRewardBuffer.clear();
+    horde.TakeKillRewards(killRewardBuffer);
+    for (const ZombieHorde::KillReward& reward : killRewardBuffer)
+    {
+        coinPopups.push_back({ reward.position, reward.coins, 0.0f });
+    }
+    for (CoinPopup& popup : coinPopups) popup.age += dt;
+    coinPopups.erase(std::remove_if(coinPopups.begin(), coinPopups.end(), [](const CoinPopup& p) { return p.age > 1.4f; }),
+                     coinPopups.end());
+
+    if (coopGuest)
+    {
+        // Зочин: даалгавар, шагнал, ялалтыг хост тооцно (UpdateCoopMission, UpdateNetwork)
+        recruitNoticeTimer = std::max(0.0f, recruitNoticeTimer - dt);
+        return;
+    }
 
     if (!player.IsAlive())
     {
@@ -1201,6 +1339,31 @@ void Game::UpdateMission(float dt)
             interact = false; // заасан тооны даалгаврын дараа зогсоно (хадгалалтыг шалгахад)
         }
     }
+    // --- Цэрэг элсүүлэх цэг: E дарж 300 зоосоор нэг цэрэг багт нэмнэ (тоо хязгааргүй, тухайн даалгаврын турш) ---
+    recruitNoticeTimer = std::max(0.0f, recruitNoticeTimer - dt);
+    nearRecruitStation = !garage.IsDriving() && !player.IsTraversing() &&
+                         HorizontalDistance(player.Position(), { kRecruitStation.x, 0.0f, kRecruitStation.y }) < kRecruitDistance;
+    if (nearRecruitStation && interact)
+    {
+        interact = false; // даалгаврын объекттой давхар харилцахгүй
+        if (progress.coins >= kRecruitCost)
+        {
+            progress.coins -= kRecruitCost;
+            const float angle = (float)(squad.Total() % 8) * 0.785f;
+            Vector3 spot = { kRecruitStation.x + std::sin(angle) * 2.5f, 0.0f, kRecruitStation.y + 1.5f + std::cos(angle) * 1.5f };
+            world.ResolveHorizontal(spot, 0.4f, 1.8f, 0.0f);
+            spot.y = world.GroundHeight(spot.x, spot.z);
+            squad.Add(spot, PI);
+            recruitNotice = "ШИНЭ ЦЭРЭГ БАГТ НЭГДЛЭЭ";
+            Save();
+        }
+        else
+        {
+            recruitNotice = "ЗООС ХҮРЭЛЦЭХГҮЙ";
+        }
+        recruitNoticeTimer = 2.2f;
+    }
+
     const bool autoStopped = options.autoPlay && options.stopAfter > 0 && mission.CompletedCount() >= options.stopAfter;
     if (!autoStopped)
     {
@@ -1227,6 +1390,7 @@ void Game::UpdateMission(float dt)
         }
         progress.stages[(size_t)provinceIndex] = StageSave{}; // дараагийн удаа шинээр эхэлнэ
         Save();
+        if (net.Connected() && remoteActive) net.SendMissionWon(params.reward);
         state = GameState::Won;
     }
 }
@@ -1256,23 +1420,36 @@ void Game::DrawMission() const
     environment.DrawMountains(view.position);
     world.Draw(view, material, config.detailDistance);
     world.DrawDoors(view.position);
-    garage.Draw(view.position, config.vehicleDrawDistance);
+    garage.Draw(view.position, config.vehicleDrawDistance, &environment.PropMaterial());
     mission.Draw(view.position);
     squad.Draw(view.position, showDebug);
     horde.Draw(view.position, config.characterDrawDistance, showDebug);
-    if (!camera.IsScoped())
+    if (!camera.IsScoped() && !camera.IsFirstPerson())
     {
-        player.Draw(config, showDebug); // дуран хараагаар харахад өөрийн бие харагдахгүй
+        player.Draw(config, showDebug); // дуран хараа, 1-р этгээдийн үед өөрийн бие харагдахгүй
+    }
+    barrels.Draw(view.position);
+    if (remoteActive && !coopGuest) DrawRemoteFigure(guestFigure, TeamMemberLook(guestFigure.member));
+    if (coopGuest && guestPlaced)
+    {
+        DrawRemoteFigure(hostFigure, TeamMemberLook(hostFigure.member));
+        for (const RemoteFigure& soldier : hostSoldiers) DrawRemoteFigure(soldier, TeamMemberLook(soldier.member));
     }
     particles.Draw();
     grenades.Draw();
     rlDrawRenderBatchActive(); // дүрүүдийг хагас тунгалаг хашаанаас өмнө зурж дуусгана
     world.DrawTransparent(view, material);
+    if (camera.IsFirstPerson() && player.IsAlive())
+    {
+        DrawViewModel(view, player.Held(), player.Recoil(), player.WalkPhase(), player.HorizontalSpeed() / config.walkSpeed,
+                      player.ReloadProgress(), player.ActionProgress());
+    }
     environment.End();
 
     // Гэрэлтүүлэггүй: сумны мөр, амны гал
     tracers.Draw();
     particles.DrawUnlit();
+    barrels.DrawUnlit(view.position);
     if (state == GameState::Playing)
     {
         mission.DrawBeacons(world, view.position);
@@ -1296,6 +1473,7 @@ void Game::DrawMission() const
     info.weaponSlot = arsenal.CurrentSlot();
     info.slotNames = IsSniperMember(activeMember) ? sniperSlots : activeMember == 1 ? heavySlots : fighterSlots;
     info.slotCount = arsenal.SlotCount();
+    for (int i = 0; i < info.slotCount && i < 8; ++i) info.slotWeapons[i] = (int)arsenal.SlotWeapon(i);
     info.scoped = camera.IsScoped() && state == GameState::Playing;
     info.usesAmmo = arsenal.UsesAmmo() && arsenal.Current() != WeaponType::Grenade; // гранат хязгааргүй: тоо харуулахгүй
     info.showMagazine = arsenal.Current() != WeaponType::Grenade;
@@ -1350,12 +1528,46 @@ void Game::DrawMission() const
         // Даалгаврууд биелсэн ч зомби үлдсэн
         info.objective = "Үлдсэн зомбийг устга";
     }
-    char hordeText[120];
-    std::snprintf(hordeText, sizeof(hordeText), "Устгах зомби: %d      Том зомби: %d",
-                  mission.QuotaSmall() - mission.KilledSmall(), mission.QuotaBig() - mission.KilledBig());
-    info.hordeText = hordeText;
+    info.hordeSmall = mission.QuotaSmall() - mission.KilledSmall();
+    info.hordeBig = mission.QuotaBig() - mission.KilledBig();
+    info.zombieSpeed = horde.SpeedMultiplier();
+    if (coopGuest)
+    {
+        // Зочин: даалгавар, зомбины тоог хостоос
+        info.objective = guestView.objective.empty() ? "Хосттой холбогдож байна..." : guestView.objective.c_str();
+        info.objectiveDetail = guestView.detail.empty() ? nullptr : guestView.detail.c_str();
+        info.hordeSmall = guestView.hordeSmall;
+        info.hordeBig = guestView.hordeBig;
+        info.zombieSpeed = guestView.zombieSpeed;
+        static std::string selfName;
+        selfName = PlayerName();
+        info.teamCount = 2;
+        info.team[0] = { selfName.c_str(), (int)std::ceil(player.Health()), player.IsAlive(), true };
+        info.team[1] = { "Хост", (int)std::ceil(guestView.host.health), (guestView.host.flags & Net::kAlive) != 0, false };
+        info.teamKeys[0] = "Та";
+        info.teamKeys[1] = "НЭГ";
+        info.squadTotal = 0;
+    }
+    else if (remoteActive)
+    {
+        info.partnerName = joinRequester.c_str(); // хост: нэгдсэн тоглогч
+        info.partnerHealth = guestFigure.alive ? -1 : 0;
+    }
     info.prompt = mission.Prompt();
     info.notice = mission.Notice();
+    static char recruitPrompt[96];
+    if (nearRecruitStation && state == GameState::Playing)
+    {
+        if (progress.coins >= kRecruitCost)
+            std::snprintf(recruitPrompt, sizeof(recruitPrompt), "%sЦэрэг элсүүлэх — %d зоос", InTouchMode() ? "" : "E — ", kRecruitCost);
+        else
+            std::snprintf(recruitPrompt, sizeof(recruitPrompt), "Цэрэг элсүүлэх: %d зоос хэрэгтэй (танд %d)", kRecruitCost, progress.coins);
+        info.prompt = recruitPrompt;
+    }
+    if (recruitNoticeTimer > 0.0f && recruitNotice)
+    {
+        info.notice = recruitNotice;
+    }
 
     if (state == GameState::Lost)
     {
@@ -1410,8 +1622,10 @@ void Game::DrawMission() const
         return;
     }
 
+    DrawCoinPopups();
     DrawMinimap(world, player, camera.Yaw(), horde, squad, garage, markers);
     DrawHud(config, player, info, showDebug);
+    DrawCoopOverlay();
 
     if (journalOpen)
     {
@@ -1486,8 +1700,12 @@ TouchState Game::MakeTouchState() const
     touch.weaponCount = arsenal.SlotCount();
     touch.weaponNames = IsSniperMember(activeMember) ? sniperWeapons : activeMember == 1 ? heavyWeapons : fighterWeapons;
     touch.weaponCurrent = arsenal.CurrentSlot();
+    for (int i = 0; i < touch.weaponCount && i < 8; ++i) touch.weaponTypes[i] = (int)arsenal.SlotWeapon(i);
     touch.sniper = arsenal.Current() == WeaponType::Sniper;
     touch.driving = garage.IsDriving();
+    touch.aimAssist = config.touchAimAssist;
+    touch.firstPerson = progress.firstPerson;
+    touch.joinRequest = joinRequestPending && !coopGuest;
     touch.stance = player.GetStance() == Stance::Crouch ? 1 : player.GetStance() == Stance::Prone ? 2 : 0;
 
     for (int member = 0; member < kTeamSize; ++member)
@@ -1524,7 +1742,47 @@ TouchState Game::MakeTouchState() const
     {
         touch.actLabel = "ҮЙЛДЭЛ ХИЙХ";
     }
+    if (nearRecruitStation)
+    {
+        touch.actLabel = "ЦЭРЭГ ЭЛСҮҮЛЭХ";
+    }
     return touch;
+}
+
+void Game::DrawCoinPopups() const
+{
+    const Camera3D& view = camera.Get();
+    const Vector3 forward = Vector3Normalize(Vector3Subtract(view.target, view.position));
+    for (const CoinPopup& popup : coinPopups)
+    {
+        // Дээшээ хөвж, сүүлийн хэсэгт бүдгэрнэ; эхэндээ бага зэрэг томорч "үсэрнэ".
+        const Vector3 world = { popup.position.x, popup.position.y + popup.age * 1.1f, popup.position.z };
+        const Vector3 toPopup = Vector3Subtract(world, view.position);
+        const float distance = Vector3Length(toPopup);
+        if (Vector3DotProduct(toPopup, forward) < 0.5f || distance > 90.0f) continue; // камерын ард эсвэл хол
+        Vector2 screen = ViewWorldToScreen(world, view);
+        // Эхэндээ томорч "үсрээд" (overshoot), дээшээ удааширч хөвж, сүүлдээ бүдгэрнэ.
+        const float t = std::min(1.0f, popup.age / 0.22f);
+        const float pop = t < 1.0f ? 0.5f + 0.75f * t - 0.25f * t * t * 3.0f * (1.0f - t) : 1.0f;
+        const float alpha = popup.age < 1.0f ? 1.0f : std::max(0.0f, 1.0f - (popup.age - 1.0f) / 0.4f);
+        screen.y -= 26.0f * (1.0f - std::exp(-popup.age * 2.5f));
+        const int size = (int)(std::clamp(30.0f - distance * 0.2f, 18.0f, 30.0f) * std::max(0.5f, pop));
+        const bool big = popup.coins >= 20; // том зомби, аварга: илүү тод
+        const char* text = TextFormat("+%d", popup.coins);
+        const int textWidth = Ui::MeasureBold(text, size);
+        const float coinRadius = (float)size * 0.46f;
+        const float padX = (float)size * 0.32f, gap = (float)size * 0.22f;
+        const float width = padX * 2.0f + coinRadius * 2.0f + gap + (float)textWidth;
+        const float height = (float)size * 1.36f;
+        const Rectangle pill = { screen.x - width * 0.5f, screen.y - height * 0.5f, width, height };
+        DrawRectangleRounded(pill, 1.0f, 12, Fade({ 14, 12, 8, 255 }, 0.62f * alpha));
+        DrawRectangleRoundedLinesEx(pill, 1.0f, 12, big ? 2.0f : 1.2f, Fade(Ui::kAccent, (big ? 0.9f : 0.55f) * alpha));
+        Ui::Coin({ pill.x + padX + coinRadius, screen.y }, coinRadius, alpha);
+        const int textX = (int)(pill.x + padX + coinRadius * 2.0f + gap);
+        const int textY = (int)(screen.y - (float)size * 0.56f);
+        Ui::TextBold(text, textX + 1, textY + 2, size, Fade(BLACK, 0.6f * alpha));
+        Ui::TextBold(text, textX, textY, size, Fade(big ? Color{ 255, 214, 90, 255 } : Color{ 255, 226, 120, 255 }, alpha));
+    }
 }
 
 void Game::Draw() const
@@ -1534,6 +1792,7 @@ void Game::Draw() const
     if (state == GameState::Map)
     {
         mapScreen.Draw(progress);
+        DrawCoopMap();
     }
     else
     {
@@ -1542,6 +1801,533 @@ void Game::Draw() const
     InDrawTouch(touchState);
     ViewEnd();
     EndDrawing();
+}
+
+
+// ---------------------------------------------------------------- Хамтарсан тоглолт (Wi-Fi)
+
+namespace
+{
+    const float kCoopSendInterval = 1.0f / 15.0f; // snapshot, дүрийн байдлын давтамж
+    const float kCoopViewRadius = 150.0f;          // зочинд илгээх зомбины хүрээ
+    const float kGuestRespawnTime = 5.0f;
+}
+
+void Game::SetNotice(const std::string& text, float seconds)
+{
+    noticeText = text;
+    recruitNotice = noticeText.c_str();
+    recruitNoticeTimer = seconds;
+}
+
+std::string Game::PlayerName() const
+{
+    return std::string("Тоглогч ") + std::to_string(progress.netTag);
+}
+
+void Game::UpdateRemoteFigure(RemoteFigure& figure, const Net::AvatarState& state, float dt, bool snap)
+{
+    figure.target = state.position;
+    figure.targetFacing = state.facing;
+    figure.speed = state.speed;
+    figure.aimPitch = state.aimPitch;
+    figure.held = state.held;
+    figure.member = state.member;
+    figure.flags = state.flags;
+    figure.alive = (state.flags & Net::kAlive) != 0;
+    if (snap || Vector3Distance(figure.position, figure.target) > 6.0f) figure.position = figure.target;
+    (void)dt;
+}
+
+void Game::AdvanceRemoteFigure(RemoteFigure& figure, float dt) const
+{
+    figure.position = Vector3Lerp(figure.position, figure.target, std::min(1.0f, 12.0f * dt));
+    figure.facing += std::remainder(figure.targetFacing - figure.facing, 2.0f * PI) * std::min(1.0f, 12.0f * dt);
+    figure.walk += dt * HumanoidGaitRate(figure.speed);
+}
+
+void Game::DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& baseLook) const
+{
+    HumanoidLook look = baseLook;
+    look.held = (HeldItem)figure.held;
+    HumanoidPose pose;
+    if (!figure.alive)
+    {
+        pose = MakeSoldierPose(0.0f, 0.0f, true, (float)GetTime(), 0.0f, look.held);
+        pose.fall = 1.0f;
+    }
+    else
+    {
+        pose = MakeSoldierPose(figure.walk, figure.speed / config.walkSpeed, true, (float)GetTime(), 0.0f, look.held);
+        pose.speed = figure.speed;
+        pose.aim = (figure.flags & Net::kAiming) ? 1.0f : 0.0f;
+        pose.aimPitch = figure.aimPitch * RAD2DEG;
+        pose.crouch = (figure.flags & Net::kCrouch) ? 1.0f : 0.0f;
+        pose.prone = (figure.flags & Net::kProne) ? 1.0f : 0.0f;
+    }
+    DrawBlobShadow(figure.position, 0.5f);
+    DrawHumanoid(figure.position, figure.facing, 1.0f, pose, look, true);
+}
+
+Net::AvatarState Game::LocalAvatar() const
+{
+    Net::AvatarState state;
+    state.position = player.Position();
+    state.facing = player.Facing();
+    state.aimPitch = 0.0f;
+    state.speed = player.HorizontalSpeed();
+    state.held = (uint8_t)player.Held();
+    state.member = (uint8_t)activeMember;
+    state.flags = (uint8_t)((player.IsAlive() ? Net::kAlive : 0) | (player.GetStance() == Stance::Crouch ? Net::kCrouch : 0) |
+                            (player.GetStance() == Stance::Prone ? Net::kProne : 0) |
+                            (player.Recoil() > 0.5f ? Net::kFired : 0) | (player.IsRiding() ? Net::kRiding : 0) |
+                            (InMouseDown(MOUSE_BUTTON_RIGHT) ? Net::kAiming : 0));
+    state.health = player.Health();
+    return state;
+}
+
+void Game::StartCoopGuest(int province)
+{
+    StartMission(province);
+    coopGuest = true;
+    guestPlaced = false;
+    guestRespawnTimer = 0.0f;
+    squad.Reset(0, player.Position(), world); // зочин ганцаараа: AI цэрэггүй
+    horde.Clear();
+    horde.SetPuppet(true);
+    hostFigure = RemoteFigure{};
+    hostSoldiers.clear();
+    guestView = Net::Snapshot{};
+    SetNotice("ХАМТАРСАН ТОГЛОЛТ ЭХЭЛЛЭЭ", 2.5f);
+}
+
+void Game::LeaveCoop()
+{
+    net.Stop();
+    coopGuest = false;
+    remoteActive = false;
+    joinRequestPending = false;
+    waitingForReply = false;
+    horde.SetPuppet(false);
+    horde.SetRemoteTarget(false, {});
+}
+
+void Game::UpdateNetwork(float dt)
+{
+    if (!net.Available()) return;
+    if (net.LocalName().empty()) net.SetName(PlayerName());
+
+    // Газрын зураг дээр: зочин болох гэж ойролцоох тоглолтыг хайна. Даалгаврын үед: хост болж хүсэлт хүлээнэ.
+    if (state == GameState::Map)
+    {
+        if (net.GetRole() == Net::Role::Host) net.Stop();
+        if (net.GetRole() != Net::Role::Guest || waitingForReply) net.Discover(dt);
+        if (waitingForReply)
+        {
+            waitTimer -= dt;
+            if (waitTimer <= 0.0f)
+            {
+                LeaveCoop();
+                coopStatus = "Хариу ирсэнгүй";
+            }
+        }
+    }
+    else if (state == GameState::Playing && !coopGuest && net.GetRole() != Net::Role::Host)
+    {
+        net.StopDiscovery();
+        net.StartHosting(provinceIndex);
+    }
+
+    netEvents.clear();
+    net.Poll(netEvents);
+    for (const Net::Event& event : netEvents)
+    {
+        switch (event.type)
+        {
+        // ---- Хост ----
+        case Net::Msg::JoinRequest:
+            if (state == GameState::Playing && !coopGuest && !remoteActive)
+            {
+                joinRequestPending = true;
+                joinRequester = event.text;
+            }
+            else
+            {
+                net.AnswerJoin(false, provinceIndex);
+            }
+            break;
+        case Net::Msg::GuestState:
+            if (!remoteActive) UpdateRemoteFigure(guestFigure, event.avatar, dt, true);
+            else UpdateRemoteFigure(guestFigure, event.avatar, dt, false);
+            remoteActive = true;
+            if (event.avatar.flags & Net::kFired)
+            {
+                const Vector3 muzzle = HumanoidLocalToWorld(guestFigure.position, guestFigure.facing,
+                                                            HumanoidMuzzleFor((HeldItem)guestFigure.held));
+                particles.Flash(muzzle, { std::sin(guestFigure.facing), 0.0f, std::cos(guestFigure.facing) });
+            }
+            break;
+        case Net::Msg::GuestHit:
+        {
+            int coins = 0;
+            Vector3 at = {};
+            if (horde.DamageById(event.id, event.amount, coins, at))
+            {
+                net.SendKillReward(coins, at);
+            }
+            break;
+        }
+        case Net::Msg::GuestBarrel:
+            barrels.Damage((int)event.id, event.amount);
+            break;
+        case Net::Msg::GuestBlast:
+            horde.Explode(event.position, event.radius, event.amount);
+            barrels.Blast(event.position, event.radius);
+            particles.Explosion(event.position);
+            break;
+
+        // ---- Зочин ----
+        case Net::Msg::JoinReply:
+            waitingForReply = false;
+            if (event.accepted)
+            {
+                StartCoopGuest(event.province);
+            }
+            else
+            {
+                LeaveCoop();
+                coopStatus = "Хүсэлтийг татгалзлаа";
+            }
+            break;
+        case Net::Msg::GuestDamage:
+            if (coopGuest) player.TakeDamage(event.amount);
+            break;
+        case Net::Msg::KillReward:
+            if (coopGuest)
+            {
+                progress.coins += (int)event.amount;
+                progress.kills += 1;
+                missionKills += 1;
+                coinPopups.push_back({ event.position, (int)event.amount, 0.0f });
+            }
+            break;
+        case Net::Msg::BarrelExploded:
+            if (coopGuest) barrels.Trigger((int)event.id);
+            break;
+        case Net::Msg::MissionWon:
+            if (coopGuest && state == GameState::Playing)
+            {
+                lastReward = 0;
+                if (!progress.liberated[provinceIndex])
+                {
+                    progress.liberated[provinceIndex] = true;
+                    lastReward = (int)event.amount;
+                    progress.coins += lastReward;
+                }
+                Save();
+                state = GameState::Won;
+                LeaveCoop();
+            }
+            break;
+
+        case Net::Msg::Leave:
+            if (coopGuest)
+            {
+                LeaveCoop();
+                coopStatus = "Хост тоглолтоос гарлаа";
+                if (state == GameState::Playing) ReturnToMap();
+            }
+            else if (remoteActive || joinRequestPending)
+            {
+                SetNotice(joinRequester + " тоглолтоос гарлаа", 2.5f);
+                remoteActive = false;
+                joinRequestPending = false;
+                horde.SetRemoteTarget(false, {});
+            }
+            else if (waitingForReply)
+            {
+                LeaveCoop();
+                coopStatus = "Холбогдож чадсангүй";
+            }
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+void Game::UpdateCoopMission(float dt)
+{
+    // ---- Хост: хүсэлтэд хариулах, зочныг бай болгох, snapshot илгээх ----
+    if (!coopGuest)
+    {
+        if (joinRequestPending)
+        {
+            const bool autoAccept = options.screenshotPath && options.coopTest; // туршилт: автоматаар зөвшөөрнө
+            if (InKeyPressed(KEY_Y) || autoAccept)
+            {
+                net.AnswerJoin(true, provinceIndex);
+                joinRequestPending = false;
+                SetNotice(joinRequester + " нэгдлээ", 2.5f);
+            }
+            else if (InKeyPressed(KEY_N))
+            {
+                net.AnswerJoin(false, provinceIndex);
+                joinRequestPending = false;
+            }
+        }
+        if (!net.Connected())
+        {
+            remoteActive = false;
+        }
+        if (remoteActive)
+        {
+            AdvanceRemoteFigure(guestFigure, dt);
+        }
+        horde.SetRemoteTarget(remoteActive && guestFigure.alive && !(guestFigure.flags & Net::kRiding), guestFigure.position);
+        return;
+    }
+
+    // ---- Зочин: хостын snapshot-оор зомбинуудыг хөдөлгөж, өөрийн байдлаа илгээнэ ----
+    Net::Snapshot snapshot;
+    if (net.TakeSnapshot(snapshot))
+    {
+        guestView = snapshot;
+        horde.ApplySnapshot(snapshot.zombies, params);
+        UpdateRemoteFigure(hostFigure, snapshot.host, dt, !guestPlaced);
+        hostSoldiers.resize(snapshot.soldiers.size());
+        for (size_t i = 0; i < snapshot.soldiers.size(); ++i)
+        {
+            const Net::SoldierState& s = snapshot.soldiers[i];
+            Net::AvatarState a;
+            a.position = s.position;
+            a.facing = s.facing;
+            a.speed = s.speed;
+            a.held = (uint8_t)(s.member == kSniperMember ? HeldItem::Sniper : HeldItem::Rifle);
+            a.member = (uint8_t)std::max<int>(0, s.member);
+            a.flags = s.alive ? Net::kAlive : 0;
+            UpdateRemoteFigure(hostSoldiers[i], a, dt, false);
+        }
+        if (!guestPlaced)
+        {
+            // Эхний snapshot: хостын хажууд гарч ирнэ
+            guestPlaced = true;
+            Vector3 spot = { snapshot.host.position.x + 2.5f, 0.0f, snapshot.host.position.z - 2.0f };
+            world.ResolveHorizontal(spot, config.playerRadius, config.playerHeight, 0.0f);
+            spot.y = world.GroundHeight(spot.x, spot.z);
+            player.Teleport(spot);
+            camera.Snap(spot);
+            world.Stream(spot, true);
+        }
+    }
+    horde.UpdatePuppets(dt);
+    AdvanceRemoteFigure(hostFigure, dt);
+    for (RemoteFigure& figure : hostSoldiers) AdvanceRemoteFigure(figure, dt);
+
+    // Унасан зочин: хэдэн секундын дараа хостын дэргэд амилна
+    if (!player.IsAlive())
+    {
+        guestRespawnTimer += dt;
+        if (guestRespawnTimer > kGuestRespawnTime)
+        {
+            guestRespawnTimer = 0.0f;
+            player.Reset(player.MaxHealth());
+            Vector3 spot = { hostFigure.position.x + 2.0f, 0.0f, hostFigure.position.z + 2.0f };
+            world.ResolveHorizontal(spot, config.playerRadius, config.playerHeight, 0.0f);
+            spot.y = world.GroundHeight(spot.x, spot.z);
+            player.Teleport(spot);
+            camera.Snap(spot);
+        }
+    }
+
+    coopSendTimer -= dt;
+    if (coopSendTimer <= 0.0f)
+    {
+        coopSendTimer = kCoopSendInterval;
+        net.SendGuestState(LocalAvatar());
+    }
+}
+
+void Game::SendHostSnapshot(float dt)
+{
+    if (coopGuest || !net.Connected() || !remoteActive) return;
+
+    // Дэлбэрсэн торх, зочныг цохисон хохирол: шууд
+    std::vector<int> exploded;
+    barrels.TakeExploded(exploded);
+    for (int index : exploded) net.SendBarrelExploded(index);
+    const float damage = horde.TakeRemoteDamage();
+    if (damage > 0.0f) net.SendGuestDamage(damage);
+
+    coopSendTimer -= dt;
+    if (coopSendTimer > 0.0f) return;
+    coopSendTimer = kCoopSendInterval;
+
+    Net::Snapshot snapshot;
+    snapshot.host = LocalAvatar();
+    for (const Soldier& soldier : squad.All())
+    {
+        Net::SoldierState s;
+        s.position = soldier.mover.position;
+        s.facing = soldier.mover.facing;
+        s.speed = soldier.moving ? soldier.moveAmount * 6.0f : 0.0f;
+        s.member = (int8_t)soldier.member;
+        s.alive = soldier.alive ? 1 : 0;
+        if (soldier.riding >= 0) continue; // унаанд сууж яваа цэргийг харуулахгүй (энгийн байлгах)
+        snapshot.soldiers.push_back(s);
+    }
+    horde.CollectStates(guestFigure.position, kCoopViewRadius, snapshot.zombies);
+    ObjectiveTexts(snapshot.objective, snapshot.detail);
+    snapshot.hordeSmall = mission.QuotaSmall() - mission.KilledSmall();
+    snapshot.hordeBig = mission.QuotaBig() - mission.KilledBig();
+    snapshot.zombieSpeed = horde.SpeedMultiplier();
+    net.SendSnapshot(snapshot);
+}
+
+void Game::ObjectiveTexts(std::string& objective, std::string& detail) const
+{
+    objective.clear();
+    detail.clear();
+    const int focus = mission.FocusObjective();
+    if (focus >= 0)
+    {
+        objective = TextFormat("%d / %d  %s", focus + 1, mission.ObjectiveCount(), mission.Stage().objectives[(size_t)focus].title);
+        const std::string progressText = mission.ProgressText(focus);
+        const int meters = (int)mission.DistanceTo(focus, player.Position());
+        detail = progressText.empty() ? TextFormat("%d м", meters) : TextFormat("%s    %d м", progressText.c_str(), meters);
+    }
+    else if (!mission.QuotaMet())
+    {
+        objective = "Үлдсэн зомбийг устга";
+    }
+}
+
+void Game::DrawCoopOverlay() const
+{
+    const int width = ViewWidth();
+    // Хост: нэгдэх хүсэлт
+    if (joinRequestPending && !coopGuest)
+    {
+        const char* line = TextFormat("%s тантай хамт тоглохыг хүсэж байна", joinRequester.c_str());
+        const int textWidth = Ui::MeasureBold(line, 20);
+        const int cardWidth = std::max(460, textWidth + 60);
+        const Rectangle card = { (float)(width - cardWidth) / 2.0f, 70.0f, (float)cardWidth, InTouchMode() ? 70.0f : 110.0f };
+        Ui::PanelAccent(card, Ui::kInfo, { 12, 18, 28, 235 });
+        Ui::TextBold(line, (int)card.x + 30, (int)card.y + 16, 20, Ui::kText);
+        if (!InTouchMode())
+        {
+            int x = (int)card.x + 30;
+            const int y = (int)card.y + 62;
+            x += Ui::KeyBadge("Y", x, y, 16, Ui::kGood) + 8;
+            Ui::TextBold("ЗӨВШӨӨРӨХ", x, y + 3, 17, Ui::kGood);
+            x += Ui::MeasureBold("ЗӨВШӨӨРӨХ", 17) + 40;
+            x += Ui::KeyBadge("N", x, y, 16, Ui::kDanger) + 8;
+            Ui::TextBold("ТАТГАЛЗАХ", x, y + 3, 17, Ui::kDanger);
+        }
+    }
+
+    // Нөгөө тоглогчийн нэр: толгой дээр
+    const Camera3D& view = camera.Get();
+    auto nameTag = [&](const RemoteFigure& figure, const std::string& name) {
+        const Vector3 head = { figure.position.x, figure.position.y + 2.25f, figure.position.z };
+        const Vector3 forward = Vector3Subtract(view.target, view.position);
+        if (Vector3DotProduct(Vector3Subtract(head, view.position), forward) <= 0.0f) return;
+        if (Vector3Distance(head, view.position) > 120.0f) return;
+        const Vector2 p = ViewWorldToScreen(head, view);
+        const int w = Ui::MeasureBold(name.c_str(), 15) + 20;
+        DrawRectangleRounded({ p.x - (float)w / 2.0f, p.y - 13.0f, (float)w, 24.0f }, 1.0f, 8, Fade({ 12, 18, 28, 255 }, 0.7f));
+        Ui::TextBold(name.c_str(), (int)p.x - w / 2 + 10, (int)p.y - 10, 15, Ui::kInfo);
+    };
+    if (remoteActive && !coopGuest) nameTag(guestFigure, joinRequester);
+    if (coopGuest && guestPlaced) nameTag(hostFigure, "Хост");
+
+    if (coopGuest && !player.IsAlive())
+    {
+        const char* text = TextFormat("Та унасан — %d сек дараа хостын дэргэд амилна",
+                                      (int)std::ceil(kGuestRespawnTime - guestRespawnTimer));
+        const int w = Ui::MeasureBold(text, 22);
+        Ui::Panel({ (float)(width - w) / 2.0f - 20.0f, 200.0f, (float)w + 40.0f, 48.0f });
+        Ui::TextBold(text, (width - w) / 2, 212, 22, Ui::kDanger);
+    }
+}
+
+// Газрын зургийн дэлгэц: ойролцоох тоглолтууд, нэгдэх товч
+void Game::UpdateCoopMap()
+{
+    if (!net.Available()) return;
+    const std::vector<Net::FoundGame>& found = net.Found();
+    const bool click = InMousePressed(MOUSE_BUTTON_LEFT);
+    const Vector2 pointer = InPointer();
+    if (waitingForReply)
+    {
+        if ((click && CheckCollisionPointRec(pointer, CoopButtonRect(0))) || InKeyPressed(KEY_J))
+        {
+            LeaveCoop();
+            coopStatus = "Цуцаллаа";
+        }
+        return;
+    }
+    const bool autoJoin = options.screenshotPath && options.coopTest; // туршилт: олдсон тоглолт руу шууд нэгдэнэ
+    for (int i = 0; i < (int)found.size() && i < 2; ++i)
+    {
+        if ((click && CheckCollisionPointRec(pointer, CoopButtonRect(i))) || (i == 0 && (InKeyPressed(KEY_J) || autoJoin)))
+        {
+            net.SetName(PlayerName());
+            net.RequestJoin(found[(size_t)i]);
+            waitingForReply = true;
+            waitTimer = 30.0f;
+            coopStatus.clear();
+            return;
+        }
+    }
+}
+
+Rectangle Game::CoopButtonRect(int row) const
+{
+    return { 790.0f, 640.0f + 30.0f * (float)row, 120.0f, 26.0f };
+}
+
+void Game::DrawCoopMap() const
+{
+    if (!net.Available()) return;
+    const Rectangle panel = { 430.0f, 600.0f, 500.0f, 108.0f };
+    Ui::PanelAccent(panel, Ui::kInfo, Ui::kPanelSoft);
+    Ui::TextBold("ХАМТ ТОГЛОХ  (нэг Wi-Fi)", (int)panel.x + 18, (int)panel.y + 10, 15, Ui::kInfo);
+    Ui::Text(PlayerName().c_str(), (int)(panel.x + panel.width) - 16 - Ui::Measure(PlayerName().c_str(), 13), (int)panel.y + 12,
+             13, Ui::kTextDim);
+
+    const std::vector<Net::FoundGame>& found = net.Found();
+    if (waitingForReply)
+    {
+        Ui::Text("Хүсэлт илгээлээ, хариу хүлээж байна...", (int)panel.x + 18, 642, 15, Ui::kText);
+        const Rectangle button = CoopButtonRect(0);
+        DrawRectangleRounded(button, 0.5f, 6, Fade(Ui::kDanger, 0.8f));
+        Ui::TextBold("ЦУЦЛАХ", (int)(button.x + (button.width - (float)Ui::MeasureBold("ЦУЦЛАХ", 13)) / 2.0f), (int)button.y + 5, 13,
+                     Ui::kText);
+        return;
+    }
+    if (found.empty())
+    {
+        const float dots = std::fmod((float)GetTime(), 1.5f);
+        Ui::Text(TextFormat("Ойролцоо тоглож буй хүн хайж байна%s", dots < 0.5f ? "." : dots < 1.0f ? ".." : "..."),
+                 (int)panel.x + 18, 642, 15, Ui::kTextDim);
+        Ui::Text("Нөгөө хүн аймгаа эхлүүлсэн, нэг Wi-Fi-д байх ёстой", (int)panel.x + 18, 666, 13, Ui::kTextDim);
+    }
+    for (int i = 0; i < (int)found.size() && i < 2; ++i)
+    {
+        const Net::FoundGame& game = found[(size_t)i];
+        const int y = 642 + 30 * i;
+        const char* province = game.province >= 0 && game.province < (int)Provinces().size() ? Provinces()[(size_t)game.province].name : "?";
+        Ui::Text(TextFormat("%s  —  %s", game.name.c_str(), province), (int)panel.x + 18, y + 2, 15, Ui::kText);
+        const Rectangle button = CoopButtonRect(i);
+        DrawRectangleRounded(button, 0.5f, 6, Fade(Ui::kInfo, 0.85f));
+        Ui::TextBold("НЭГДЭХ", (int)(button.x + (button.width - (float)Ui::MeasureBold("НЭГДЭХ", 13)) / 2.0f), (int)button.y + 5, 13,
+                     { 10, 20, 30, 255 });
+    }
+    if (!coopStatus.empty())
+    {
+        Ui::Text(coopStatus.c_str(), (int)panel.x + 18, (int)(panel.y + panel.height) - 20, 13, Ui::kAccent);
+    }
 }
 
 #if defined(__ANDROID__)

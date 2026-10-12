@@ -1,5 +1,6 @@
 #include "World.h"
 
+#include "Config.h"
 #include "Structures.h"
 #include "raymath.h"
 #include "rlgl.h"
@@ -83,6 +84,7 @@ void World::BuildSettlements(int variant)
     settlementGlass = glassBuilder.UploadPartitioned(kPieceSize);
 
     BuildObstacleGrid();
+    FitWindowPassages();
     terrain.InvalidateDetails(); // өвс, чулуу шинэ барилгуудын дотор үлдэхгүй
 
     TraceLog(LOG_INFO, "WORLD: settlements variant %d: %d triangles, %d colliders total, %d enterable buildings", variant,
@@ -402,6 +404,80 @@ float World::SurfaceHeightAt(float x, float z, float maxY) const
         }
     }
     return height;
+}
+
+void World::FitWindowPassages()
+{
+    const GameConfig config;
+    auto isFree = [&](Vector3 point) {
+        Vector3 free = point;
+        ResolveHorizontal(free, config.playerRadius, config.playerHeight, config.stepHeight);
+        return Vector2Distance({ free.x, free.z }, { point.x, point.z }) < 0.05f;
+    };
+    // Ханын төвөөс dir зүгт эхлээд base метрт, саадтай бол алхам алхмаар цааш, бага зэрэг хажуу тийш чөлөөт
+    // цэг хайна (цонхны доор ор, ширээ байвал түүний цаана буух / түүний цаанаас эхэлнэ).
+    auto findFree = [&](Vector3 center, Vector3 dir, float base, float y, Vector3& out) {
+        const Vector3 side = { -dir.z, 0.0f, dir.x };
+        for (int k = 0; k < 6; ++k)
+        {
+            for (float lateral : { 0.0f, 0.45f, -0.45f })
+            {
+                const float distance = base + 0.4f * (float)k;
+                const Vector3 point = { center.x + dir.x * distance + side.x * lateral, y,
+                                        center.z + dir.z * distance + side.z * lateral };
+                if (isFree(point))
+                {
+                    out = point;
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    int moved = 0, removed = 0;
+    std::vector<Passage> kept(passages.begin(), passages.begin() + (long)staticPassageCount);
+    for (size_t i = staticPassageCount; i < passages.size(); ++i)
+    {
+        Passage passage = passages[i];
+        const Vector3 axis = Vector3Normalize({ passage.to.x - passage.from.x, 0.0f, passage.to.z - passage.from.z });
+        const Vector3 center = { passage.from.x + axis.x * passage.wall, 0.0f, passage.from.z + axis.z * passage.wall };
+        const Vector3 back = Vector3Negate(axis);
+        bool usable = true;
+        switch (passage.kind)
+        {
+        case PassageKind::WindowOut: // дотроос гадагш
+            usable = findFree(center, back, 0.7f, passage.from.y, passage.from) &&
+                     findFree(center, axis, 1.05f, passage.to.y, passage.to);
+            break;
+        case PassageKind::WindowIn: // гаднаас дотогш
+            usable = findFree(center, back, 1.05f, passage.from.y, passage.from) &&
+                     findFree(center, axis, 0.7f, passage.to.y, passage.to);
+            break;
+        case PassageKind::WindowDrop:
+        {
+            // Зүүгдэх цэгээс доош унана: газарт буух цэг ойрхон чөлөөтэй байх ёстой (хананаас түлхэгдэх нь хэвийн).
+            Vector3 landing = { passage.to.x, terrain.HeightAt(passage.to.x, passage.to.z), passage.to.z };
+            Vector3 free = landing;
+            ResolveHorizontal(free, config.playerRadius, config.playerHeight, config.stepHeight);
+            usable = findFree(center, back, 0.7f, passage.from.y, passage.from) &&
+                     Vector2Distance({ free.x, free.z }, { landing.x, landing.z }) < 0.9f;
+            break;
+        }
+        default: break;
+        }
+        if (!usable)
+        {
+            ++removed;
+            continue;
+        }
+        const float wall = Vector2Distance({ passage.from.x, passage.from.z }, { center.x, center.z });
+        moved += std::fabs(wall - passage.wall) > 0.05f || Vector3Distance(passage.to, passages[i].to) > 0.05f;
+        passage.wall = wall;
+        kept.push_back(passage);
+    }
+    passages = std::move(kept);
+    TraceLog(LOG_INFO, "WORLD: window passages: %d moved past furniture or fences, %d removed", moved, removed);
 }
 
 void World::ResolveHorizontal(Vector3& feetPos, float radius, float height, float stepHeight) const

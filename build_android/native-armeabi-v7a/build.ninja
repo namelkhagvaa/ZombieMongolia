@@ -39,7 +39,7 @@ include CMakeFiles/rules.ninja
 #############################################
 # Logical path to working directory; prefix for absolute paths.
 
-cmake_ninja_workdir = C$:/ZombieMongolia/build_android/native-armeabi-v7a/
+cmake_ninja_workdir = C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/
 # =============================================================================
 # Object build statements for SHARED_LIBRARY target ZombieMongolia
 
@@ -47,334 +47,364 @@ cmake_ninja_workdir = C$:/ZombieMongolia/build_android/native-armeabi-v7a/
 #############################################
 # Order-only phony target for ZombieMongolia
 
-build cmake_object_order_depends_target_ZombieMongolia: phony || cmake_object_order_depends_target_raylib
+build cmake_object_order_depends_target_ZombieMongolia: phony || cmake_object_order_depends_target_enet cmake_object_order_depends_target_raylib
 
-build CMakeFiles/ZombieMongolia.dir/main.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/main.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/main.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/main.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\main.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Campaign.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Campaign.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Campaign.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Campaign.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Campaign.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/CampaignData.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/CampaignData.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/CampaignData.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/CampaignData.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\CampaignData.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/CharacterModel.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/CharacterModel.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/CharacterModel.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/CharacterModel.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\CharacterModel.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Environment.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Environment.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Environment.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Environment.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Environment.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Game.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Game.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/FuelBarrels.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/FuelBarrels.cpp || cmake_object_order_depends_target_ZombieMongolia
+  CONFIG = Release
+  DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
+  DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\FuelBarrels.cpp.o.d
+  FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
+  OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
+  TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
+
+build CMakeFiles/ZombieMongolia.dir/src/Game.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Game.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Game.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Grenades.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Grenades.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Grenades.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Grenades.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Grenades.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Hud.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Hud.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Hud.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Hud.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Hud.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Input.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Input.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Input.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Input.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Input.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Humanoid.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Humanoid.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Humanoid.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Humanoid.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Humanoid.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Layout.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Layout.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Layout.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Layout.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Layout.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/MeshBuilder.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/MeshBuilder.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/MeshBuilder.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/MeshBuilder.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\MeshBuilder.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Minimap.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Minimap.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Minimap.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Minimap.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Minimap.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Mission.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Mission.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Mission.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Mission.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Mission.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Mover.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Mover.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Mover.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Mover.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Mover.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Particles.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Particles.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Net.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Net.cpp || cmake_object_order_depends_target_ZombieMongolia
+  CONFIG = Release
+  DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
+  DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Net.cpp.o.d
+  FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
+  OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
+  TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
+
+build CMakeFiles/ZombieMongolia.dir/src/Particles.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Particles.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Particles.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Player.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Player.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Player.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Player.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Player.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Polygon.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Polygon.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Polygon.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Polygon.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Polygon.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Procedural.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Procedural.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Procedural.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Procedural.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Procedural.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Progress.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Progress.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Progress.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Progress.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Progress.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Regions.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Regions.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Regions.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Regions.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Regions.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Shop.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Shop.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Shop.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Shop.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Shop.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Soldier.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Soldier.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Soldier.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Soldier.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Soldier.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Structures.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Structures.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Structures.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Structures.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Structures.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Team.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Team.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Team.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Team.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Team.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Terrain.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Terrain.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Terrain.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Terrain.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Terrain.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/ThirdPersonCamera.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/ThirdPersonCamera.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/ThirdPersonCamera.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/ThirdPersonCamera.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\ThirdPersonCamera.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Tracers.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Tracers.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Tracers.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Tracers.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Tracers.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/UiFont.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/UiFont.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/UiFont.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/UiFont.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\UiFont.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Vehicle.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Vehicle.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/UiStyle.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/UiStyle.cpp || cmake_object_order_depends_target_ZombieMongolia
+  CONFIG = Release
+  DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
+  DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\UiStyle.cpp.o.d
+  FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
+  OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
+  TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
+
+build CMakeFiles/ZombieMongolia.dir/src/Vehicle.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Vehicle.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Vehicle.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Weapon.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Weapon.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Weapon.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Weapon.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Weapon.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/World.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/World.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/World.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/World.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\World.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
-build CMakeFiles/ZombieMongolia.dir/src/Zombie.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ZombieMongolia/src/Zombie.cpp || cmake_object_order_depends_target_ZombieMongolia
+build CMakeFiles/ZombieMongolia.dir/src/Zombie.cpp.o: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Zombie.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID -DZombieMongolia_EXPORTS
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Zombie.cpp.o.d
   FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG  -std=gnu++17 -fPIC -Wall -Wextra -Wno-missing-field-initializers
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/src -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
@@ -387,12 +417,12 @@ build CMakeFiles/ZombieMongolia.dir/src/Zombie.cpp.o: CXX_COMPILER__ZombieMongol
 #############################################
 # Link the shared library libZombieMongolia.so
 
-build libZombieMongolia.so: CXX_SHARED_LIBRARY_LINKER__ZombieMongolia_Release CMakeFiles/ZombieMongolia.dir/main.cpp.o CMakeFiles/ZombieMongolia.dir/src/Campaign.cpp.o CMakeFiles/ZombieMongolia.dir/src/CampaignData.cpp.o CMakeFiles/ZombieMongolia.dir/src/CharacterModel.cpp.o CMakeFiles/ZombieMongolia.dir/src/Environment.cpp.o CMakeFiles/ZombieMongolia.dir/src/Game.cpp.o CMakeFiles/ZombieMongolia.dir/src/Grenades.cpp.o CMakeFiles/ZombieMongolia.dir/src/Hud.cpp.o CMakeFiles/ZombieMongolia.dir/src/Input.cpp.o CMakeFiles/ZombieMongolia.dir/src/Humanoid.cpp.o CMakeFiles/ZombieMongolia.dir/src/Layout.cpp.o CMakeFiles/ZombieMongolia.dir/src/MeshBuilder.cpp.o CMakeFiles/ZombieMongolia.dir/src/Minimap.cpp.o CMakeFiles/ZombieMongolia.dir/src/Mission.cpp.o CMakeFiles/ZombieMongolia.dir/src/Mover.cpp.o CMakeFiles/ZombieMongolia.dir/src/Particles.cpp.o CMakeFiles/ZombieMongolia.dir/src/Player.cpp.o CMakeFiles/ZombieMongolia.dir/src/Polygon.cpp.o CMakeFiles/ZombieMongolia.dir/src/Procedural.cpp.o CMakeFiles/ZombieMongolia.dir/src/Progress.cpp.o CMakeFiles/ZombieMongolia.dir/src/Regions.cpp.o CMakeFiles/ZombieMongolia.dir/src/Shop.cpp.o CMakeFiles/ZombieMongolia.dir/src/Soldier.cpp.o CMakeFiles/ZombieMongolia.dir/src/Structures.cpp.o CMakeFiles/ZombieMongolia.dir/src/Team.cpp.o CMakeFiles/ZombieMongolia.dir/src/Terrain.cpp.o CMakeFiles/ZombieMongolia.dir/src/ThirdPersonCamera.cpp.o CMakeFiles/ZombieMongolia.dir/src/Tracers.cpp.o CMakeFiles/ZombieMongolia.dir/src/UiFont.cpp.o CMakeFiles/ZombieMongolia.dir/src/Vehicle.cpp.o CMakeFiles/ZombieMongolia.dir/src/Weapon.cpp.o CMakeFiles/ZombieMongolia.dir/src/World.cpp.o CMakeFiles/ZombieMongolia.dir/src/Zombie.cpp.o | _deps/raylib-build/raylib/libraylib.a || _deps/raylib-build/raylib/libraylib.a
+build libZombieMongolia.so: CXX_SHARED_LIBRARY_LINKER__ZombieMongolia_Release CMakeFiles/ZombieMongolia.dir/main.cpp.o CMakeFiles/ZombieMongolia.dir/src/Campaign.cpp.o CMakeFiles/ZombieMongolia.dir/src/CampaignData.cpp.o CMakeFiles/ZombieMongolia.dir/src/CharacterModel.cpp.o CMakeFiles/ZombieMongolia.dir/src/Environment.cpp.o CMakeFiles/ZombieMongolia.dir/src/FuelBarrels.cpp.o CMakeFiles/ZombieMongolia.dir/src/Game.cpp.o CMakeFiles/ZombieMongolia.dir/src/Grenades.cpp.o CMakeFiles/ZombieMongolia.dir/src/Hud.cpp.o CMakeFiles/ZombieMongolia.dir/src/Input.cpp.o CMakeFiles/ZombieMongolia.dir/src/Humanoid.cpp.o CMakeFiles/ZombieMongolia.dir/src/Layout.cpp.o CMakeFiles/ZombieMongolia.dir/src/MeshBuilder.cpp.o CMakeFiles/ZombieMongolia.dir/src/Minimap.cpp.o CMakeFiles/ZombieMongolia.dir/src/Mission.cpp.o CMakeFiles/ZombieMongolia.dir/src/Mover.cpp.o CMakeFiles/ZombieMongolia.dir/src/Net.cpp.o CMakeFiles/ZombieMongolia.dir/src/Particles.cpp.o CMakeFiles/ZombieMongolia.dir/src/Player.cpp.o CMakeFiles/ZombieMongolia.dir/src/Polygon.cpp.o CMakeFiles/ZombieMongolia.dir/src/Procedural.cpp.o CMakeFiles/ZombieMongolia.dir/src/Progress.cpp.o CMakeFiles/ZombieMongolia.dir/src/Regions.cpp.o CMakeFiles/ZombieMongolia.dir/src/Shop.cpp.o CMakeFiles/ZombieMongolia.dir/src/Soldier.cpp.o CMakeFiles/ZombieMongolia.dir/src/Structures.cpp.o CMakeFiles/ZombieMongolia.dir/src/Team.cpp.o CMakeFiles/ZombieMongolia.dir/src/Terrain.cpp.o CMakeFiles/ZombieMongolia.dir/src/ThirdPersonCamera.cpp.o CMakeFiles/ZombieMongolia.dir/src/Tracers.cpp.o CMakeFiles/ZombieMongolia.dir/src/UiFont.cpp.o CMakeFiles/ZombieMongolia.dir/src/UiStyle.cpp.o CMakeFiles/ZombieMongolia.dir/src/Vehicle.cpp.o CMakeFiles/ZombieMongolia.dir/src/Weapon.cpp.o CMakeFiles/ZombieMongolia.dir/src/World.cpp.o CMakeFiles/ZombieMongolia.dir/src/Zombie.cpp.o | _deps/raylib-build/raylib/libraylib.a _deps/enet-build/libenet.a || _deps/enet-build/libenet.a _deps/raylib-build/raylib/libraylib.a
   CONFIG = Release
   DEP_FILE = CMakeFiles\ZombieMongolia.dir\link.d
   LANGUAGE_COMPILE_FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -O3 -DNDEBUG
   LINK_FLAGS = -shared -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--no-undefined-version -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments  -Wl,--gc-sections  -u ANativeActivity_onCreate -Xlinker --dependency-file=CMakeFiles\ZombieMongolia.dir\link.d
-  LINK_LIBRARIES = -llog  -landroid  -lEGL  -lGLESv3  -lm  _deps/raylib-build/raylib/libraylib.a  -llog  -landroid  -lEGL  -lm  -lGLESv2  -lOpenSLES  -latomic  -lc  -latomic -lm
+  LINK_LIBRARIES = -llog  -landroid  -lEGL  -lGLESv3  -lm  _deps/raylib-build/raylib/libraylib.a  _deps/enet-build/libenet.a  -llog  -landroid  -lEGL  -lm  -lGLESv2  -lOpenSLES  -latomic  -lc  -latomic -lm
   OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
   POST_BUILD = cd .
   PRE_LINK = cd .
@@ -407,7 +437,7 @@ build libZombieMongolia.so: CXX_SHARED_LIBRARY_LINKER__ZombieMongolia_Release CM
 # Utility command for package
 
 build CMakeFiles/package.util: CUSTOM_COMMAND all
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cpack.exe --config ./CPackConfig.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cpack.exe --config ./CPackConfig.cmake"
   DESC = Run CPack packaging tool...
   pool = console
   restat = 1
@@ -419,7 +449,7 @@ build package: phony CMakeFiles/package.util
 # Utility command for package_source
 
 build CMakeFiles/package_source.util: CUSTOM_COMMAND
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cpack.exe --config ./CPackSourceConfig.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cpack.exe --config ./CPackSourceConfig.cmake"
   DESC = Run CPack packaging tool for source...
   pool = console
   restat = 1
@@ -431,7 +461,7 @@ build package_source: phony CMakeFiles/package_source.util
 # Utility command for edit_cache
 
 build CMakeFiles/edit_cache.util: CUSTOM_COMMAND
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cmake.exe -E echo "No interactive CMake dialog available.""
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cmake.exe -E echo "No interactive CMake dialog available.""
   DESC = No interactive CMake dialog available...
   restat = 1
 
@@ -442,7 +472,7 @@ build edit_cache: phony CMakeFiles/edit_cache.util
 # Utility command for rebuild_cache
 
 build CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cmake.exe --regenerate-during-build -SC:\ZombieMongolia -BC:\ZombieMongolia\build_android\native-armeabi-v7a"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cmake.exe --regenerate-during-build -SC:\ankhaa\ZombieMongolia -BC:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a"
   DESC = Running CMake to regenerate build system...
   pool = console
   restat = 1
@@ -460,7 +490,7 @@ build list_install_components: phony
 # Utility command for install
 
 build CMakeFiles/install.util: CUSTOM_COMMAND all
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cmake.exe -P cmake_install.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cmake.exe -P cmake_install.cmake"
   DESC = Install the project...
   pool = console
   restat = 1
@@ -472,7 +502,7 @@ build install: phony CMakeFiles/install.util
 # Utility command for install/local
 
 build CMakeFiles/install/local.util: CUSTOM_COMMAND all
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cmake.exe -DCMAKE_INSTALL_LOCAL_ONLY=1 -P cmake_install.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cmake.exe -DCMAKE_INSTALL_LOCAL_ONLY=1 -P cmake_install.cmake"
   DESC = Installing only the local directory...
   pool = console
   restat = 1
@@ -484,7 +514,7 @@ build install/local: phony CMakeFiles/install/local.util
 # Utility command for install/strip
 
 build CMakeFiles/install/strip.util: CUSTOM_COMMAND all
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cmake.exe -DCMAKE_INSTALL_DO_STRIP=1 -P cmake_install.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cmake.exe -DCMAKE_INSTALL_DO_STRIP=1 -P cmake_install.cmake"
   DESC = Installing the project stripped...
   pool = console
   restat = 1
@@ -493,7 +523,7 @@ build install/strip: phony CMakeFiles/install/strip.util
 
 # =============================================================================
 # Write statements declared in CMakeLists.txt:
-# C:/ZombieMongolia/CMakeLists.txt
+# C:/ankhaa/ZombieMongolia/CMakeLists.txt
 # =============================================================================
 
 
@@ -507,7 +537,7 @@ build _deps/raylib-build/uninstall: phony _deps/raylib-build/CMakeFiles/uninstal
 # Utility command for package
 
 build _deps/raylib-build/CMakeFiles/package.util: CUSTOM_COMMAND _deps/raylib-build/all
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cpack.exe --config ./CPackConfig.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cpack.exe --config ./CPackConfig.cmake"
   DESC = Run CPack packaging tool...
   pool = console
   restat = 1
@@ -519,7 +549,7 @@ build _deps/raylib-build/package: phony _deps/raylib-build/CMakeFiles/package.ut
 # Utility command for package_source
 
 build _deps/raylib-build/CMakeFiles/package_source.util: CUSTOM_COMMAND
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cpack.exe --config ./CPackSourceConfig.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cpack.exe --config ./CPackSourceConfig.cmake"
   DESC = Run CPack packaging tool for source...
   pool = console
   restat = 1
@@ -531,7 +561,7 @@ build _deps/raylib-build/package_source: phony _deps/raylib-build/CMakeFiles/pac
 # Utility command for edit_cache
 
 build _deps/raylib-build/CMakeFiles/edit_cache.util: CUSTOM_COMMAND
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build && C:\msys64\ucrt64\bin\cmake.exe -E echo "No interactive CMake dialog available.""
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build && C:\msys64\ucrt64\bin\cmake.exe -E echo "No interactive CMake dialog available.""
   DESC = No interactive CMake dialog available...
   restat = 1
 
@@ -542,7 +572,7 @@ build _deps/raylib-build/edit_cache: phony _deps/raylib-build/CMakeFiles/edit_ca
 # Utility command for rebuild_cache
 
 build _deps/raylib-build/CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build && C:\msys64\ucrt64\bin\cmake.exe --regenerate-during-build -SC:\ZombieMongolia -BC:\ZombieMongolia\build_android\native-armeabi-v7a"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build && C:\msys64\ucrt64\bin\cmake.exe --regenerate-during-build -SC:\ankhaa\ZombieMongolia -BC:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a"
   DESC = Running CMake to regenerate build system...
   pool = console
   restat = 1
@@ -560,7 +590,7 @@ build _deps/raylib-build/list_install_components: phony
 # Utility command for install
 
 build _deps/raylib-build/CMakeFiles/install.util: CUSTOM_COMMAND _deps/raylib-build/all
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build && C:\msys64\ucrt64\bin\cmake.exe -P cmake_install.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build && C:\msys64\ucrt64\bin\cmake.exe -P cmake_install.cmake"
   DESC = Install the project...
   pool = console
   restat = 1
@@ -572,7 +602,7 @@ build _deps/raylib-build/install: phony _deps/raylib-build/CMakeFiles/install.ut
 # Utility command for install/local
 
 build _deps/raylib-build/CMakeFiles/install/local.util: CUSTOM_COMMAND _deps/raylib-build/all
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build && C:\msys64\ucrt64\bin\cmake.exe -DCMAKE_INSTALL_LOCAL_ONLY=1 -P cmake_install.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build && C:\msys64\ucrt64\bin\cmake.exe -DCMAKE_INSTALL_LOCAL_ONLY=1 -P cmake_install.cmake"
   DESC = Installing only the local directory...
   pool = console
   restat = 1
@@ -584,7 +614,7 @@ build _deps/raylib-build/install/local: phony _deps/raylib-build/CMakeFiles/inst
 # Utility command for install/strip
 
 build _deps/raylib-build/CMakeFiles/install/strip.util: CUSTOM_COMMAND _deps/raylib-build/all
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build && C:\msys64\ucrt64\bin\cmake.exe -DCMAKE_INSTALL_DO_STRIP=1 -P cmake_install.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build && C:\msys64\ucrt64\bin\cmake.exe -DCMAKE_INSTALL_DO_STRIP=1 -P cmake_install.cmake"
   DESC = Installing the project stripped...
   pool = console
   restat = 1
@@ -596,11 +626,11 @@ build _deps/raylib-build/install/strip: phony _deps/raylib-build/CMakeFiles/inst
 # Custom command for _deps\raylib-build\CMakeFiles\uninstall
 
 build _deps/raylib-build/CMakeFiles/uninstall | ${cmake_ninja_workdir}_deps/raylib-build/CMakeFiles/uninstall: CUSTOM_COMMAND
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build && C:\msys64\ucrt64\bin\cmake.exe -P C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/cmake_uninstall.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build && C:\msys64\ucrt64\bin\cmake.exe -P C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/cmake_uninstall.cmake"
 
 # =============================================================================
 # Write statements declared in CMakeLists.txt:
-# C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/CMakeLists.txt
+# C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/CMakeLists.txt
 # =============================================================================
 
 # =============================================================================
@@ -612,72 +642,72 @@ build _deps/raylib-build/CMakeFiles/uninstall | ${cmake_ninja_workdir}_deps/rayl
 
 build cmake_object_order_depends_target_raylib: phony || .
 
-build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/raudio.c.o: C_COMPILER__raylib_unscanned_Release C$:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src/raudio.c || cmake_object_order_depends_target_raylib
+build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/raudio.c.o: C_COMPILER__raylib_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src/raudio.c || cmake_object_order_depends_target_raylib
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID
   DEP_FILE = _deps\raylib-build\raylib\CMakeFiles\raylib.dir\raudio.c.o.d
   FLAGS = -no-canonical-prefixes -Wa,--noexecstack -fstack-protector-strong -funwind-tables -ffunction-sections -fno-strict-aliasing -Werror=implicit-function-declaration -Werror=pointer-arith -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -std=gnu99 -fPIC
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   OBJECT_FILE_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   TARGET_SUPPORT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
 
-build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/rcore.c.o: C_COMPILER__raylib_unscanned_Release C$:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src/rcore.c || cmake_object_order_depends_target_raylib
+build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/rcore.c.o: C_COMPILER__raylib_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src/rcore.c || cmake_object_order_depends_target_raylib
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID
   DEP_FILE = _deps\raylib-build\raylib\CMakeFiles\raylib.dir\rcore.c.o.d
   FLAGS = -no-canonical-prefixes -Wa,--noexecstack -fstack-protector-strong -funwind-tables -ffunction-sections -fno-strict-aliasing -Werror=implicit-function-declaration -Werror=pointer-arith -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -std=gnu99 -fPIC
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   OBJECT_FILE_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   TARGET_SUPPORT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
 
-build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/rmodels.c.o: C_COMPILER__raylib_unscanned_Release C$:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src/rmodels.c || cmake_object_order_depends_target_raylib
+build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/rmodels.c.o: C_COMPILER__raylib_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src/rmodels.c || cmake_object_order_depends_target_raylib
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID
   DEP_FILE = _deps\raylib-build\raylib\CMakeFiles\raylib.dir\rmodels.c.o.d
   FLAGS = -no-canonical-prefixes -Wa,--noexecstack -fstack-protector-strong -funwind-tables -ffunction-sections -fno-strict-aliasing -Werror=implicit-function-declaration -Werror=pointer-arith -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -std=gnu99 -fPIC
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   OBJECT_FILE_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   TARGET_SUPPORT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
 
-build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/rshapes.c.o: C_COMPILER__raylib_unscanned_Release C$:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src/rshapes.c || cmake_object_order_depends_target_raylib
+build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/rshapes.c.o: C_COMPILER__raylib_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src/rshapes.c || cmake_object_order_depends_target_raylib
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID
   DEP_FILE = _deps\raylib-build\raylib\CMakeFiles\raylib.dir\rshapes.c.o.d
   FLAGS = -no-canonical-prefixes -Wa,--noexecstack -fstack-protector-strong -funwind-tables -ffunction-sections -fno-strict-aliasing -Werror=implicit-function-declaration -Werror=pointer-arith -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -std=gnu99 -fPIC
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   OBJECT_FILE_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   TARGET_SUPPORT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
 
-build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/rtext.c.o: C_COMPILER__raylib_unscanned_Release C$:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src/rtext.c || cmake_object_order_depends_target_raylib
+build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/rtext.c.o: C_COMPILER__raylib_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src/rtext.c || cmake_object_order_depends_target_raylib
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID
   DEP_FILE = _deps\raylib-build\raylib\CMakeFiles\raylib.dir\rtext.c.o.d
   FLAGS = -no-canonical-prefixes -Wa,--noexecstack -fstack-protector-strong -funwind-tables -ffunction-sections -fno-strict-aliasing -Werror=implicit-function-declaration -Werror=pointer-arith -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -std=gnu99 -fPIC
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   OBJECT_FILE_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   TARGET_SUPPORT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
 
-build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/rtextures.c.o: C_COMPILER__raylib_unscanned_Release C$:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src/rtextures.c || cmake_object_order_depends_target_raylib
+build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/rtextures.c.o: C_COMPILER__raylib_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src/rtextures.c || cmake_object_order_depends_target_raylib
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID
   DEP_FILE = _deps\raylib-build\raylib\CMakeFiles\raylib.dir\rtextures.c.o.d
   FLAGS = -no-canonical-prefixes -Wa,--noexecstack -fstack-protector-strong -funwind-tables -ffunction-sections -fno-strict-aliasing -Werror=implicit-function-declaration -Werror=pointer-arith -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -std=gnu99 -fPIC
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   OBJECT_FILE_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   TARGET_SUPPORT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
 
-build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/utils.c.o: C_COMPILER__raylib_unscanned_Release C$:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src/utils.c || cmake_object_order_depends_target_raylib
+build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/utils.c.o: C_COMPILER__raylib_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src/utils.c || cmake_object_order_depends_target_raylib
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID
   DEP_FILE = _deps\raylib-build\raylib\CMakeFiles\raylib.dir\utils.c.o.d
   FLAGS = -no-canonical-prefixes -Wa,--noexecstack -fstack-protector-strong -funwind-tables -ffunction-sections -fno-strict-aliasing -Werror=implicit-function-declaration -Werror=pointer-arith -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -std=gnu99 -fPIC
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   OBJECT_FILE_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   TARGET_SUPPORT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
@@ -687,7 +717,7 @@ build _deps/raylib-build/raylib/CMakeFiles/raylib.dir/C_/Android/sdk/ndk/26.3.11
   DEFINES = -DGRAPHICS_API_OPENGL_ES3 -DPLATFORM_ANDROID
   DEP_FILE = _deps\raylib-build\raylib\CMakeFiles\raylib.dir\C_\Android\sdk\ndk\26.3.11579264\sources\android\native_app_glue\android_native_app_glue.c.o.d
   FLAGS = -no-canonical-prefixes -Wa,--noexecstack -fstack-protector-strong -funwind-tables -ffunction-sections -fno-strict-aliasing -Werror=implicit-function-declaration -Werror=pointer-arith -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -std=gnu99 -fPIC
-  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
+  INCLUDES = -IC:/Android/sdk/ndk/26.3.11579264/sources/android/native_app_glue -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src/src
   OBJECT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
   OBJECT_FILE_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir\C_\Android\sdk\ndk\26.3.11579264\sources\android\native_app_glue
   TARGET_SUPPORT_DIR = _deps\raylib-build\raylib\CMakeFiles\raylib.dir
@@ -715,7 +745,7 @@ build _deps/raylib-build/raylib/libraylib.a: C_STATIC_LIBRARY_LINKER__raylib_Rel
 # Utility command for package
 
 build _deps/raylib-build/raylib/CMakeFiles/package.util: CUSTOM_COMMAND _deps/raylib-build/raylib/all
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cpack.exe --config ./CPackConfig.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cpack.exe --config ./CPackConfig.cmake"
   DESC = Run CPack packaging tool...
   pool = console
   restat = 1
@@ -727,7 +757,7 @@ build _deps/raylib-build/raylib/package: phony _deps/raylib-build/raylib/CMakeFi
 # Utility command for package_source
 
 build _deps/raylib-build/raylib/CMakeFiles/package_source.util: CUSTOM_COMMAND
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cpack.exe --config ./CPackSourceConfig.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cpack.exe --config ./CPackSourceConfig.cmake"
   DESC = Run CPack packaging tool for source...
   pool = console
   restat = 1
@@ -739,7 +769,7 @@ build _deps/raylib-build/raylib/package_source: phony _deps/raylib-build/raylib/
 # Utility command for edit_cache
 
 build _deps/raylib-build/raylib/CMakeFiles/edit_cache.util: CUSTOM_COMMAND
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build\raylib && C:\msys64\ucrt64\bin\cmake.exe -E echo "No interactive CMake dialog available.""
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build\raylib && C:\msys64\ucrt64\bin\cmake.exe -E echo "No interactive CMake dialog available.""
   DESC = No interactive CMake dialog available...
   restat = 1
 
@@ -750,7 +780,7 @@ build _deps/raylib-build/raylib/edit_cache: phony _deps/raylib-build/raylib/CMak
 # Utility command for rebuild_cache
 
 build _deps/raylib-build/raylib/CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build\raylib && C:\msys64\ucrt64\bin\cmake.exe --regenerate-during-build -SC:\ZombieMongolia -BC:\ZombieMongolia\build_android\native-armeabi-v7a"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build\raylib && C:\msys64\ucrt64\bin\cmake.exe --regenerate-during-build -SC:\ankhaa\ZombieMongolia -BC:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a"
   DESC = Running CMake to regenerate build system...
   pool = console
   restat = 1
@@ -768,7 +798,7 @@ build _deps/raylib-build/raylib/list_install_components: phony
 # Utility command for install
 
 build _deps/raylib-build/raylib/CMakeFiles/install.util: CUSTOM_COMMAND _deps/raylib-build/raylib/all
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build\raylib && C:\msys64\ucrt64\bin\cmake.exe -P cmake_install.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build\raylib && C:\msys64\ucrt64\bin\cmake.exe -P cmake_install.cmake"
   DESC = Install the project...
   pool = console
   restat = 1
@@ -780,7 +810,7 @@ build _deps/raylib-build/raylib/install: phony _deps/raylib-build/raylib/CMakeFi
 # Utility command for install/local
 
 build _deps/raylib-build/raylib/CMakeFiles/install/local.util: CUSTOM_COMMAND _deps/raylib-build/raylib/all
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build\raylib && C:\msys64\ucrt64\bin\cmake.exe -DCMAKE_INSTALL_LOCAL_ONLY=1 -P cmake_install.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build\raylib && C:\msys64\ucrt64\bin\cmake.exe -DCMAKE_INSTALL_LOCAL_ONLY=1 -P cmake_install.cmake"
   DESC = Installing only the local directory...
   pool = console
   restat = 1
@@ -792,7 +822,7 @@ build _deps/raylib-build/raylib/install/local: phony _deps/raylib-build/raylib/C
 # Utility command for install/strip
 
 build _deps/raylib-build/raylib/CMakeFiles/install/strip.util: CUSTOM_COMMAND _deps/raylib-build/raylib/all
-  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build\raylib && C:\msys64\ucrt64\bin\cmake.exe -DCMAKE_INSTALL_DO_STRIP=1 -P cmake_install.cmake"
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\raylib-build\raylib && C:\msys64\ucrt64\bin\cmake.exe -DCMAKE_INSTALL_DO_STRIP=1 -P cmake_install.cmake"
   DESC = Installing the project stripped...
   pool = console
   restat = 1
@@ -800,9 +830,224 @@ build _deps/raylib-build/raylib/CMakeFiles/install/strip.util: CUSTOM_COMMAND _d
 build _deps/raylib-build/raylib/install/strip: phony _deps/raylib-build/raylib/CMakeFiles/install/strip.util
 
 # =============================================================================
+# Write statements declared in CMakeLists.txt:
+# C:/ankhaa/ZombieMongolia/CMakeLists.txt
+# =============================================================================
+
+# =============================================================================
+# Object build statements for STATIC_LIBRARY target enet
+
+
+#############################################
+# Order-only phony target for enet
+
+build cmake_object_order_depends_target_enet: phony || .
+
+build _deps/enet-build/CMakeFiles/enet.dir/callbacks.c.o: C_COMPILER__enet_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/callbacks.c || cmake_object_order_depends_target_enet
+  CONFIG = Release
+  DEFINES = -DHAS_FCNTL=1 -DHAS_GETADDRINFO=1 -DHAS_GETHOSTBYADDR_R=1 -DHAS_GETHOSTBYNAME_R=1 -DHAS_GETNAMEINFO=1 -DHAS_INET_NTOP=1 -DHAS_INET_PTON=1 -DHAS_MSGHDR_FLAGS=1 -DHAS_POLL=1 -DHAS_SOCKLEN_T=1
+  DEP_FILE = _deps\enet-build\CMakeFiles\enet.dir\callbacks.c.o.d
+  FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -fPIC   -Wno-error
+  INCLUDES = -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include
+  OBJECT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  OBJECT_FILE_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  TARGET_SUPPORT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+
+build _deps/enet-build/CMakeFiles/enet.dir/compress.c.o: C_COMPILER__enet_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/compress.c || cmake_object_order_depends_target_enet
+  CONFIG = Release
+  DEFINES = -DHAS_FCNTL=1 -DHAS_GETADDRINFO=1 -DHAS_GETHOSTBYADDR_R=1 -DHAS_GETHOSTBYNAME_R=1 -DHAS_GETNAMEINFO=1 -DHAS_INET_NTOP=1 -DHAS_INET_PTON=1 -DHAS_MSGHDR_FLAGS=1 -DHAS_POLL=1 -DHAS_SOCKLEN_T=1
+  DEP_FILE = _deps\enet-build\CMakeFiles\enet.dir\compress.c.o.d
+  FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -fPIC   -Wno-error
+  INCLUDES = -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include
+  OBJECT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  OBJECT_FILE_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  TARGET_SUPPORT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+
+build _deps/enet-build/CMakeFiles/enet.dir/host.c.o: C_COMPILER__enet_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/host.c || cmake_object_order_depends_target_enet
+  CONFIG = Release
+  DEFINES = -DHAS_FCNTL=1 -DHAS_GETADDRINFO=1 -DHAS_GETHOSTBYADDR_R=1 -DHAS_GETHOSTBYNAME_R=1 -DHAS_GETNAMEINFO=1 -DHAS_INET_NTOP=1 -DHAS_INET_PTON=1 -DHAS_MSGHDR_FLAGS=1 -DHAS_POLL=1 -DHAS_SOCKLEN_T=1
+  DEP_FILE = _deps\enet-build\CMakeFiles\enet.dir\host.c.o.d
+  FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -fPIC   -Wno-error
+  INCLUDES = -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include
+  OBJECT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  OBJECT_FILE_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  TARGET_SUPPORT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+
+build _deps/enet-build/CMakeFiles/enet.dir/list.c.o: C_COMPILER__enet_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/list.c || cmake_object_order_depends_target_enet
+  CONFIG = Release
+  DEFINES = -DHAS_FCNTL=1 -DHAS_GETADDRINFO=1 -DHAS_GETHOSTBYADDR_R=1 -DHAS_GETHOSTBYNAME_R=1 -DHAS_GETNAMEINFO=1 -DHAS_INET_NTOP=1 -DHAS_INET_PTON=1 -DHAS_MSGHDR_FLAGS=1 -DHAS_POLL=1 -DHAS_SOCKLEN_T=1
+  DEP_FILE = _deps\enet-build\CMakeFiles\enet.dir\list.c.o.d
+  FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -fPIC   -Wno-error
+  INCLUDES = -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include
+  OBJECT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  OBJECT_FILE_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  TARGET_SUPPORT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+
+build _deps/enet-build/CMakeFiles/enet.dir/packet.c.o: C_COMPILER__enet_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/packet.c || cmake_object_order_depends_target_enet
+  CONFIG = Release
+  DEFINES = -DHAS_FCNTL=1 -DHAS_GETADDRINFO=1 -DHAS_GETHOSTBYADDR_R=1 -DHAS_GETHOSTBYNAME_R=1 -DHAS_GETNAMEINFO=1 -DHAS_INET_NTOP=1 -DHAS_INET_PTON=1 -DHAS_MSGHDR_FLAGS=1 -DHAS_POLL=1 -DHAS_SOCKLEN_T=1
+  DEP_FILE = _deps\enet-build\CMakeFiles\enet.dir\packet.c.o.d
+  FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -fPIC   -Wno-error
+  INCLUDES = -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include
+  OBJECT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  OBJECT_FILE_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  TARGET_SUPPORT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+
+build _deps/enet-build/CMakeFiles/enet.dir/peer.c.o: C_COMPILER__enet_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/peer.c || cmake_object_order_depends_target_enet
+  CONFIG = Release
+  DEFINES = -DHAS_FCNTL=1 -DHAS_GETADDRINFO=1 -DHAS_GETHOSTBYADDR_R=1 -DHAS_GETHOSTBYNAME_R=1 -DHAS_GETNAMEINFO=1 -DHAS_INET_NTOP=1 -DHAS_INET_PTON=1 -DHAS_MSGHDR_FLAGS=1 -DHAS_POLL=1 -DHAS_SOCKLEN_T=1
+  DEP_FILE = _deps\enet-build\CMakeFiles\enet.dir\peer.c.o.d
+  FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -fPIC   -Wno-error
+  INCLUDES = -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include
+  OBJECT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  OBJECT_FILE_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  TARGET_SUPPORT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+
+build _deps/enet-build/CMakeFiles/enet.dir/protocol.c.o: C_COMPILER__enet_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/protocol.c || cmake_object_order_depends_target_enet
+  CONFIG = Release
+  DEFINES = -DHAS_FCNTL=1 -DHAS_GETADDRINFO=1 -DHAS_GETHOSTBYADDR_R=1 -DHAS_GETHOSTBYNAME_R=1 -DHAS_GETNAMEINFO=1 -DHAS_INET_NTOP=1 -DHAS_INET_PTON=1 -DHAS_MSGHDR_FLAGS=1 -DHAS_POLL=1 -DHAS_SOCKLEN_T=1
+  DEP_FILE = _deps\enet-build\CMakeFiles\enet.dir\protocol.c.o.d
+  FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -fPIC   -Wno-error
+  INCLUDES = -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include
+  OBJECT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  OBJECT_FILE_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  TARGET_SUPPORT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+
+build _deps/enet-build/CMakeFiles/enet.dir/unix.c.o: C_COMPILER__enet_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/unix.c || cmake_object_order_depends_target_enet
+  CONFIG = Release
+  DEFINES = -DHAS_FCNTL=1 -DHAS_GETADDRINFO=1 -DHAS_GETHOSTBYADDR_R=1 -DHAS_GETHOSTBYNAME_R=1 -DHAS_GETNAMEINFO=1 -DHAS_INET_NTOP=1 -DHAS_INET_PTON=1 -DHAS_MSGHDR_FLAGS=1 -DHAS_POLL=1 -DHAS_SOCKLEN_T=1
+  DEP_FILE = _deps\enet-build\CMakeFiles\enet.dir\unix.c.o.d
+  FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -fPIC   -Wno-error
+  INCLUDES = -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include
+  OBJECT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  OBJECT_FILE_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  TARGET_SUPPORT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+
+build _deps/enet-build/CMakeFiles/enet.dir/win32.c.o: C_COMPILER__enet_unscanned_Release C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/win32.c || cmake_object_order_depends_target_enet
+  CONFIG = Release
+  DEFINES = -DHAS_FCNTL=1 -DHAS_GETADDRINFO=1 -DHAS_GETHOSTBYADDR_R=1 -DHAS_GETHOSTBYNAME_R=1 -DHAS_GETNAMEINFO=1 -DHAS_INET_NTOP=1 -DHAS_INET_PTON=1 -DHAS_MSGHDR_FLAGS=1 -DHAS_POLL=1 -DHAS_SOCKLEN_T=1
+  DEP_FILE = _deps\enet-build\CMakeFiles\enet.dir\win32.c.o.d
+  FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG  -fPIC   -Wno-error
+  INCLUDES = -IC:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-src/include
+  OBJECT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  OBJECT_FILE_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  TARGET_SUPPORT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+
+
+# =============================================================================
+# Link build statements for STATIC_LIBRARY target enet
+
+
+#############################################
+# Link the static library _deps\enet-build\libenet.a
+
+build _deps/enet-build/libenet.a: C_STATIC_LIBRARY_LINKER__enet_Release _deps/enet-build/CMakeFiles/enet.dir/callbacks.c.o _deps/enet-build/CMakeFiles/enet.dir/compress.c.o _deps/enet-build/CMakeFiles/enet.dir/host.c.o _deps/enet-build/CMakeFiles/enet.dir/list.c.o _deps/enet-build/CMakeFiles/enet.dir/packet.c.o _deps/enet-build/CMakeFiles/enet.dir/peer.c.o _deps/enet-build/CMakeFiles/enet.dir/protocol.c.o _deps/enet-build/CMakeFiles/enet.dir/unix.c.o _deps/enet-build/CMakeFiles/enet.dir/win32.c.o
+  CONFIG = Release
+  LANGUAGE_COMPILE_FLAGS = -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O3 -DNDEBUG
+  OBJECT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+  POST_BUILD = cd .
+  PRE_LINK = cd .
+  TARGET_FILE = _deps\enet-build\libenet.a
+  TARGET_PDB = enet.a.dbg
+  TARGET_SUPPORT_DIR = _deps\enet-build\CMakeFiles\enet.dir
+
+
+#############################################
+# Utility command for package
+
+build _deps/enet-build/CMakeFiles/package.util: CUSTOM_COMMAND _deps/enet-build/all
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cpack.exe --config ./CPackConfig.cmake"
+  DESC = Run CPack packaging tool...
+  pool = console
+  restat = 1
+
+build _deps/enet-build/package: phony _deps/enet-build/CMakeFiles/package.util
+
+
+#############################################
+# Utility command for package_source
+
+build _deps/enet-build/CMakeFiles/package_source.util: CUSTOM_COMMAND
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a && C:\msys64\ucrt64\bin\cpack.exe --config ./CPackSourceConfig.cmake"
+  DESC = Run CPack packaging tool for source...
+  pool = console
+  restat = 1
+
+build _deps/enet-build/package_source: phony _deps/enet-build/CMakeFiles/package_source.util
+
+
+#############################################
+# Utility command for edit_cache
+
+build _deps/enet-build/CMakeFiles/edit_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\enet-build && C:\msys64\ucrt64\bin\cmake.exe -E echo "No interactive CMake dialog available.""
+  DESC = No interactive CMake dialog available...
+  restat = 1
+
+build _deps/enet-build/edit_cache: phony _deps/enet-build/CMakeFiles/edit_cache.util
+
+
+#############################################
+# Utility command for rebuild_cache
+
+build _deps/enet-build/CMakeFiles/rebuild_cache.util: CUSTOM_COMMAND
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\enet-build && C:\msys64\ucrt64\bin\cmake.exe --regenerate-during-build -SC:\ankhaa\ZombieMongolia -BC:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a"
+  DESC = Running CMake to regenerate build system...
+  pool = console
+  restat = 1
+
+build _deps/enet-build/rebuild_cache: phony _deps/enet-build/CMakeFiles/rebuild_cache.util
+
+
+#############################################
+# Utility command for list_install_components
+
+build _deps/enet-build/list_install_components: phony
+
+
+#############################################
+# Utility command for install
+
+build _deps/enet-build/CMakeFiles/install.util: CUSTOM_COMMAND _deps/enet-build/all
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\enet-build && C:\msys64\ucrt64\bin\cmake.exe -P cmake_install.cmake"
+  DESC = Install the project...
+  pool = console
+  restat = 1
+
+build _deps/enet-build/install: phony _deps/enet-build/CMakeFiles/install.util
+
+
+#############################################
+# Utility command for install/local
+
+build _deps/enet-build/CMakeFiles/install/local.util: CUSTOM_COMMAND _deps/enet-build/all
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\enet-build && C:\msys64\ucrt64\bin\cmake.exe -DCMAKE_INSTALL_LOCAL_ONLY=1 -P cmake_install.cmake"
+  DESC = Installing only the local directory...
+  pool = console
+  restat = 1
+
+build _deps/enet-build/install/local: phony _deps/enet-build/CMakeFiles/install/local.util
+
+
+#############################################
+# Utility command for install/strip
+
+build _deps/enet-build/CMakeFiles/install/strip.util: CUSTOM_COMMAND _deps/enet-build/all
+  COMMAND = C:\Windows\system32\cmd.exe /C "cd /D C:\ankhaa\ZombieMongolia\build_android\native-armeabi-v7a\_deps\enet-build && C:\msys64\ucrt64\bin\cmake.exe -DCMAKE_INSTALL_DO_STRIP=1 -P cmake_install.cmake"
+  DESC = Installing the project stripped...
+  pool = console
+  restat = 1
+
+build _deps/enet-build/install/strip: phony _deps/enet-build/CMakeFiles/install/strip.util
+
+# =============================================================================
 # Target aliases.
 
 build ZombieMongolia: phony libZombieMongolia.so
+
+build enet: phony _deps/enet-build/libenet.a
+
+build libenet.a: phony _deps/enet-build/libenet.a
 
 build libraylib.a: phony _deps/raylib-build/raylib/libraylib.a
 
@@ -816,21 +1061,28 @@ build uninstall: phony _deps/raylib-build/uninstall
 # =============================================================================
 
 #############################################
-# Folder: C:/ZombieMongolia/build_android/native-armeabi-v7a
+# Folder: C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a
 
-build all: phony libZombieMongolia.so _deps/raylib-build/all
+build all: phony libZombieMongolia.so _deps/raylib-build/all _deps/enet-build/all
 
 # =============================================================================
 
 #############################################
-# Folder: C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build
+# Folder: C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-build
+
+build _deps/enet-build/all: phony _deps/enet-build/libenet.a
+
+# =============================================================================
+
+#############################################
+# Folder: C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build
 
 build _deps/raylib-build/all: phony _deps/raylib-build/raylib/all
 
 # =============================================================================
 
 #############################################
-# Folder: C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/raylib
+# Folder: C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/raylib
 
 build _deps/raylib-build/raylib/all: phony _deps/raylib-build/raylib/libraylib.a
 
@@ -841,14 +1093,14 @@ build _deps/raylib-build/raylib/all: phony _deps/raylib-build/raylib/libraylib.a
 #############################################
 # Re-run CMake if any of its inputs changed.
 
-build build.ninja C$:/ZombieMongolia/build_android/native-armeabi-v7a/cmake_install.cmake C$:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/cmake_install.cmake C$:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/raylib/cmake_install.cmake C$:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/CTestTestfile.cmake C$:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/raylib/CTestTestfile.cmake: RERUN_CMAKE | C$:/Android/sdk/ndk/26.3.11579264/build/cmake/android-legacy.toolchain.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/android.toolchain.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/flags.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/hooks/pre/Android-Clang.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/hooks/pre/Android-Initialize.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/hooks/pre/Android.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/platforms.cmake C$:/ZombieMongolia/CMakeLists.txt C$:/msys64/ucrt64/share/cmake/Modules/CMakeCInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCXXInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCheckCompilerFlagCommonPatterns.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCommonLanguageInclude.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeDependentOption.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeGenericSystem.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeInitializeConfigs.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeLanguageInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInitialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/CPack.cmake C$:/msys64/ucrt64/share/cmake/Modules/CPackComponent.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckCCompilerFlag.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckCSourceCompiles.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/CMakeCommonCompilerMacros.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/Clang-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/Clang-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/Clang.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/ExternalProject/shared_internal_commands.cmake C$:/msys64/ucrt64/share/cmake/Modules/FetchContent.cmake C$:/msys64/ucrt64/share/cmake/Modules/FetchContent/CMakeLists.cmake.in C$:/msys64/ucrt64/share/cmake/Modules/FindGit.cmake C$:/msys64/ucrt64/share/cmake/Modules/FindPackageHandleStandardArgs.cmake C$:/msys64/ucrt64/share/cmake/Modules/FindPackageMessage.cmake C$:/msys64/ucrt64/share/cmake/Modules/GNUInstallDirs.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCXXLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCommonLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckCommon.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckCompilerFlag.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckFlagCommonConfig.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckSourceCompiles.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/LLD-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/LLD-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/LLD.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Clang-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Clang-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Clang.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Initialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Android-LLD-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Android-LLD-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-LLD-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-LLD-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-LLD.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linux-Initialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linux.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/UnixPaths.cmake C$:/msys64/ucrt64/share/cmake/Templates/CPackConfig.cmake.in CMakeCache.txt CMakeFiles/4.4.4/CMakeCCompiler.cmake CMakeFiles/4.4.4/CMakeCXXCompiler.cmake CMakeFiles/4.4.4/CMakeSystem.cmake _deps/raylib-src/CMakeLists.txt _deps/raylib-src/CMakeOptions.txt _deps/raylib-src/cmake/AddIfFlagCompiles.cmake _deps/raylib-src/cmake/CompileDefinitions.cmake _deps/raylib-src/cmake/CompilerFlags.cmake _deps/raylib-src/cmake/EnumOption.cmake _deps/raylib-src/cmake/GlfwImport.cmake _deps/raylib-src/cmake/InstallConfigurations.cmake _deps/raylib-src/cmake/JoinPaths.cmake _deps/raylib-src/cmake/LibraryConfigurations.cmake _deps/raylib-src/cmake/LibraryPathToLinkerFlags.cmake _deps/raylib-src/cmake/PackConfigurations.cmake _deps/raylib-src/cmake/ParseConfigHeader.cmake _deps/raylib-src/cmake/PopulateConfigVariablesLocally.cmake _deps/raylib-src/cmake/Uninstall.cmake _deps/raylib-src/cmake/raylib-config-version.cmake _deps/raylib-src/raylib.pc.in _deps/raylib-src/src/CMakeLists.txt
+build build.ninja C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/cmake_install.cmake C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/cmake_install.cmake C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/raylib/cmake_install.cmake C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-build/cmake_install.cmake C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/CTestTestfile.cmake C$:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/raylib/CTestTestfile.cmake: RERUN_CMAKE | C$:/Android/sdk/ndk/26.3.11579264/build/cmake/android-legacy.toolchain.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/android.toolchain.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/flags.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/hooks/pre/Android-Clang.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/hooks/pre/Android-Initialize.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/hooks/pre/Android.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/platforms.cmake C$:/ankhaa/ZombieMongolia/CMakeLists.txt C$:/msys64/ucrt64/share/cmake/Modules/CMakeCInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCXXInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCheckCompilerFlagCommonPatterns.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCommonLanguageInclude.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeDependentOption.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeGenericSystem.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeInitializeConfigs.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeLanguageInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInitialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/CPack.cmake C$:/msys64/ucrt64/share/cmake/Modules/CPackComponent.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckCCompilerFlag.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckCSourceCompiles.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckCXXSourceCompiles.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckFunctionExists.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckIncludeFile.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckIncludeFileCXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckSourceCompiles.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckStructHasMember.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckTypeSize.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/CMakeCommonCompilerMacros.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/Clang-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/Clang-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/Clang.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/ExternalProject/shared_internal_commands.cmake C$:/msys64/ucrt64/share/cmake/Modules/FetchContent.cmake C$:/msys64/ucrt64/share/cmake/Modules/FetchContent/CMakeLists.cmake.in C$:/msys64/ucrt64/share/cmake/Modules/FindGit.cmake C$:/msys64/ucrt64/share/cmake/Modules/FindPackageHandleStandardArgs.cmake C$:/msys64/ucrt64/share/cmake/Modules/FindPackageMessage.cmake C$:/msys64/ucrt64/share/cmake/Modules/GNUInstallDirs.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCXXLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCommonLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckCommon.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckCompilerFlag.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckFlagCommonConfig.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckSourceCompiles.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/LLD-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/LLD-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/LLD.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Clang-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Clang-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Clang.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Initialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Android-LLD-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Android-LLD-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-LLD-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-LLD-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-LLD.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linux-Initialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linux.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/UnixPaths.cmake C$:/msys64/ucrt64/share/cmake/Templates/CPackConfig.cmake.in CMakeCache.txt CMakeFiles/4.4.4/CMakeCCompiler.cmake CMakeFiles/4.4.4/CMakeCXXCompiler.cmake CMakeFiles/4.4.4/CMakeSystem.cmake _deps/enet-src/CMakeLists.txt _deps/raylib-src/CMakeLists.txt _deps/raylib-src/CMakeOptions.txt _deps/raylib-src/cmake/AddIfFlagCompiles.cmake _deps/raylib-src/cmake/CompileDefinitions.cmake _deps/raylib-src/cmake/CompilerFlags.cmake _deps/raylib-src/cmake/EnumOption.cmake _deps/raylib-src/cmake/GlfwImport.cmake _deps/raylib-src/cmake/InstallConfigurations.cmake _deps/raylib-src/cmake/JoinPaths.cmake _deps/raylib-src/cmake/LibraryConfigurations.cmake _deps/raylib-src/cmake/LibraryPathToLinkerFlags.cmake _deps/raylib-src/cmake/PackConfigurations.cmake _deps/raylib-src/cmake/ParseConfigHeader.cmake _deps/raylib-src/cmake/PopulateConfigVariablesLocally.cmake _deps/raylib-src/cmake/Uninstall.cmake _deps/raylib-src/cmake/raylib-config-version.cmake _deps/raylib-src/raylib.pc.in _deps/raylib-src/src/CMakeLists.txt
   pool = console
 
 
 #############################################
 # A missing CMake input file is not an error.
 
-build C$:/Android/sdk/ndk/26.3.11579264/build/cmake/android-legacy.toolchain.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/android.toolchain.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/flags.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/hooks/pre/Android-Clang.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/hooks/pre/Android-Initialize.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/hooks/pre/Android.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/platforms.cmake C$:/ZombieMongolia/CMakeLists.txt C$:/msys64/ucrt64/share/cmake/Modules/CMakeCInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCXXInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCheckCompilerFlagCommonPatterns.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCommonLanguageInclude.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeDependentOption.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeGenericSystem.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeInitializeConfigs.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeLanguageInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInitialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/CPack.cmake C$:/msys64/ucrt64/share/cmake/Modules/CPackComponent.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckCCompilerFlag.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckCSourceCompiles.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/CMakeCommonCompilerMacros.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/Clang-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/Clang-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/Clang.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/ExternalProject/shared_internal_commands.cmake C$:/msys64/ucrt64/share/cmake/Modules/FetchContent.cmake C$:/msys64/ucrt64/share/cmake/Modules/FetchContent/CMakeLists.cmake.in C$:/msys64/ucrt64/share/cmake/Modules/FindGit.cmake C$:/msys64/ucrt64/share/cmake/Modules/FindPackageHandleStandardArgs.cmake C$:/msys64/ucrt64/share/cmake/Modules/FindPackageMessage.cmake C$:/msys64/ucrt64/share/cmake/Modules/GNUInstallDirs.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCXXLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCommonLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckCommon.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckCompilerFlag.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckFlagCommonConfig.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckSourceCompiles.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/LLD-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/LLD-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/LLD.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Clang-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Clang-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Clang.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Initialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Android-LLD-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Android-LLD-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-LLD-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-LLD-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-LLD.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linux-Initialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linux.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/UnixPaths.cmake C$:/msys64/ucrt64/share/cmake/Templates/CPackConfig.cmake.in CMakeCache.txt CMakeFiles/4.4.4/CMakeCCompiler.cmake CMakeFiles/4.4.4/CMakeCXXCompiler.cmake CMakeFiles/4.4.4/CMakeSystem.cmake _deps/raylib-src/CMakeLists.txt _deps/raylib-src/CMakeOptions.txt _deps/raylib-src/cmake/AddIfFlagCompiles.cmake _deps/raylib-src/cmake/CompileDefinitions.cmake _deps/raylib-src/cmake/CompilerFlags.cmake _deps/raylib-src/cmake/EnumOption.cmake _deps/raylib-src/cmake/GlfwImport.cmake _deps/raylib-src/cmake/InstallConfigurations.cmake _deps/raylib-src/cmake/JoinPaths.cmake _deps/raylib-src/cmake/LibraryConfigurations.cmake _deps/raylib-src/cmake/LibraryPathToLinkerFlags.cmake _deps/raylib-src/cmake/PackConfigurations.cmake _deps/raylib-src/cmake/ParseConfigHeader.cmake _deps/raylib-src/cmake/PopulateConfigVariablesLocally.cmake _deps/raylib-src/cmake/Uninstall.cmake _deps/raylib-src/cmake/raylib-config-version.cmake _deps/raylib-src/raylib.pc.in _deps/raylib-src/src/CMakeLists.txt: phony
+build C$:/Android/sdk/ndk/26.3.11579264/build/cmake/android-legacy.toolchain.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/android.toolchain.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/flags.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/hooks/pre/Android-Clang.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/hooks/pre/Android-Initialize.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/hooks/pre/Android.cmake C$:/Android/sdk/ndk/26.3.11579264/build/cmake/platforms.cmake C$:/ankhaa/ZombieMongolia/CMakeLists.txt C$:/msys64/ucrt64/share/cmake/Modules/CMakeCInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCXXInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCheckCompilerFlagCommonPatterns.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeCommonLanguageInclude.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeDependentOption.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeGenericSystem.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeInitializeConfigs.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeLanguageInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/CMakeSystemSpecificInitialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/CPack.cmake C$:/msys64/ucrt64/share/cmake/Modules/CPackComponent.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckCCompilerFlag.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckCSourceCompiles.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckCXXSourceCompiles.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckFunctionExists.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckIncludeFile.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckIncludeFileCXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckSourceCompiles.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckStructHasMember.cmake C$:/msys64/ucrt64/share/cmake/Modules/CheckTypeSize.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/CMakeCommonCompilerMacros.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/Clang-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/Clang-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/Clang.cmake C$:/msys64/ucrt64/share/cmake/Modules/Compiler/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/ExternalProject/shared_internal_commands.cmake C$:/msys64/ucrt64/share/cmake/Modules/FetchContent.cmake C$:/msys64/ucrt64/share/cmake/Modules/FetchContent/CMakeLists.cmake.in C$:/msys64/ucrt64/share/cmake/Modules/FindGit.cmake C$:/msys64/ucrt64/share/cmake/Modules/FindPackageHandleStandardArgs.cmake C$:/msys64/ucrt64/share/cmake/Modules/FindPackageMessage.cmake C$:/msys64/ucrt64/share/cmake/Modules/GNUInstallDirs.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCXXLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CMakeCommonLinkerInformation.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckCommon.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckCompilerFlag.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckFlagCommonConfig.cmake C$:/msys64/ucrt64/share/cmake/Modules/Internal/CheckSourceCompiles.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/LLD-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/LLD-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Linker/LLD.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Clang-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Clang-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Clang.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android-Initialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Android.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Android-LLD-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Android-LLD-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-GNU.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-LLD-C.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-LLD-CXX.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linker/Linux-LLD.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linux-Initialize.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/Linux.cmake C$:/msys64/ucrt64/share/cmake/Modules/Platform/UnixPaths.cmake C$:/msys64/ucrt64/share/cmake/Templates/CPackConfig.cmake.in CMakeCache.txt CMakeFiles/4.4.4/CMakeCCompiler.cmake CMakeFiles/4.4.4/CMakeCXXCompiler.cmake CMakeFiles/4.4.4/CMakeSystem.cmake _deps/enet-src/CMakeLists.txt _deps/raylib-src/CMakeLists.txt _deps/raylib-src/CMakeOptions.txt _deps/raylib-src/cmake/AddIfFlagCompiles.cmake _deps/raylib-src/cmake/CompileDefinitions.cmake _deps/raylib-src/cmake/CompilerFlags.cmake _deps/raylib-src/cmake/EnumOption.cmake _deps/raylib-src/cmake/GlfwImport.cmake _deps/raylib-src/cmake/InstallConfigurations.cmake _deps/raylib-src/cmake/JoinPaths.cmake _deps/raylib-src/cmake/LibraryConfigurations.cmake _deps/raylib-src/cmake/LibraryPathToLinkerFlags.cmake _deps/raylib-src/cmake/PackConfigurations.cmake _deps/raylib-src/cmake/ParseConfigHeader.cmake _deps/raylib-src/cmake/PopulateConfigVariablesLocally.cmake _deps/raylib-src/cmake/Uninstall.cmake _deps/raylib-src/cmake/raylib-config-version.cmake _deps/raylib-src/raylib.pc.in _deps/raylib-src/src/CMakeLists.txt: phony
 
 
 #############################################

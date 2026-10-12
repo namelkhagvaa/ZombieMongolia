@@ -1,0 +1,3 @@
+C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/enet-subbuild/CMakeFiles/enet-populate.dir
+C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/enet-subbuild/CMakeFiles/edit_cache.dir
+C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/enet-subbuild/CMakeFiles/rebuild_cache.dir

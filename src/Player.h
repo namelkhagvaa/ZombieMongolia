@@ -47,6 +47,8 @@ public:
     // Эхлэх цэгт, бүрэн амьтай буцаана.
     void Reset(float newMaxHealth);
     void Teleport(Vector3 newPosition);
+    // Хурдыг хөндөхгүйгээр хэвтээ байрлалыг засна (саадаас түлхэх).
+    void Nudge(float x, float z) { position.x = x; position.z = z; }
     // Багийн өөр гишүүн рүү шилжих: түүний байрлал, харах зүг, амийг авна.
     void Assume(Vector3 newPosition, float newFacing, float newHealth, float newMaxHealth);
     // Гадаад төрх (удирдаж буй гишүүнээс хамаарна).
@@ -66,8 +68,8 @@ public:
         demoReload = reloadProgress;
     }
 
-    // Буудах үед биеэ камерын зүг рүү шууд эргүүлнэ.
-    void AimAt(float yaw);
+    // Буудах үед биеэ эргүүлж, бууг дээш доош хазайлгаж ертөнцийн энэ цэг (хараа) рүү чиглүүлнэ.
+    void AimAtPoint(Vector3 target);
     Vector3 MuzzlePosition() const;
     // Буудсан мөчид дуудна: буу ухарч, гар татагдана.
     void OnFired() { recoil = 1.0f; }
@@ -76,10 +78,19 @@ public:
     // Хутгаар хатгах, гранат шидэх хөдөлгөөнийг эхлүүлнэ.
     void StartAction(float duration);
     float Facing() const { return facing; }
+    // 1-р этгээдийн гар, бууг зурахад
+    HeldItem Held() const { return held; }
+    float Recoil() const { return recoil; }
+    float AimPitch() const { return aimPitch; }
+    float WalkPhase() const { return walkCycle; }
+    float ReloadProgress() const { return reload; }
+    float ActionProgress() const { return action; }
 
     // Шат, цонх зэрэг гарцыг туулж эхэлнэ: дуустал удирдлага түр зогсоно.
     void StartTraverse(const Passage& passage);
     bool IsTraversing() const { return traversing; }
+    // Давж буй замын зүг: камер үүний ард байрлана (2 давхраас буухад гадна талаас цонх руу харна).
+    float TraverseFacing() const { return traverse.facing; }
 
     Stance GetStance() const { return stance; }
     void SetStance(Stance newStance) { stance = newStance; }
@@ -112,6 +123,7 @@ private:
     float walkCycle = 0.0f;    // хөл гарын савлалтын үе
     float aimTimer = 0.0f;     // >0 үед хөдөлгөөн биеийг эргүүлэхгүй
     float aimPose = 0.0f;      // 0 = зэвсгээ бэлэн барьсан .. 1 = онилсон (зөөлөн шилжинэ)
+    float aimPitch = 0.0f;     // онилгооны босоо өнцөг, радиан (+ = дээш)
     Stance stance = Stance::Stand;
     float crouchPose = 0.0f;   // 0 = босоо .. 1 = суусан (зөөлөн шилжинэ)
     float pronePose = 0.0f;    // 0 = босоо .. 1 = хэвтсэн
@@ -122,6 +134,7 @@ private:
     float traverseDuration = 1.0f;
     float reload = -1.0f;
     float recoil = 0.0f;       // 1 = дөнгөж буудсан, 0 руу буурна
+    float landing = 0.0f;      // өндрөөс буусны дараа 1 -> 0: өвдгөө нугалж цохилтоо зөөлрүүлнэ
     float action = 0.0f;       // 1 -> 0: хатгах / шидэх хөдөлгөөний явц
     float actionDuration = 0.3f;
     HeldItem held = HeldItem::Rifle;
@@ -134,6 +147,8 @@ private:
 
     // Биеийг зурах, сум гарах цэгийг тооцох суурь (хөлийн түвшин).
     Vector3 BodyBase() const;
+    // Бууны эргэх цэг (мөр), биеийн орон зайд.
+    Vector3 GunPivot() const;
     float health = 100.0f;
     float maxHealth = 100.0f;
     float timeSinceHit = 10.0f;

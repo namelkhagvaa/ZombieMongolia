@@ -3,10 +3,12 @@
 #include "Campaign.h"
 #include "Config.h"
 #include "Environment.h"
+#include "FuelBarrels.h"
 #include "Grenades.h"
 #include "Input.h"
 #include "Minimap.h"
 #include "Mission.h"
+#include "Net.h"
 #include "Particles.h"
 #include "Player.h"
 #include "Progress.h"
@@ -59,6 +61,7 @@ struct LaunchOptions
     int viewHeight = 0;       // >0 бол тоглоомыг ийм өндөртэй дотоод зурагт зураад сунгана (--view-height N)
     int stance = 0;           // 1 = суусан, 2 = хэвтсэн байдлаар эхэлнэ (--stance N)
     int hold = 0;             // 1..5 бол тэр товчны зэвсгийг буудалгүйгээр барина (--hold N)
+    bool coopTest = false;    // туршилтын горимд ч сүлжээг ажиллуулна (--coop)
     bool scope = false;       // тасралтгүй онилно: мэргэн буудагчийн дуран харааг шалгахад (--scope)
     bool autoPlay = false;    // даалгавруудыг автоматаар гүйцэтгэнэ (--autoplay)
     int stopAfter = 0;        // автомат тоглолт энэ тооны даалгаврын дараа зогсоно (--stop-after N)
@@ -102,6 +105,9 @@ private:
     void SpawnVehicles();
     void UpdateVehicles(float dt);
     void UpdateShooting();
+    // Дэлгэцийн төвийн хараа туссан ертөнцийн цэг.
+    Vector3 CrosshairTarget() const;
+    Vector3 EffectMuzzle() const;
     void UseKnife(Ray aim, float cameraDistance);
     void FireGun(Ray aim, float cameraDistance);
     void ThrowGrenade(Ray aim);
@@ -160,6 +166,63 @@ private:
     Mission mission;           // үеийн даалгаврууд
     bool journalOpen = false;  // Q: даалгаврын журнал нээлттэй (тоглоом түр зогссон)
     int missionKills = 0;
+    bool nearRecruitStation = false; // элсүүлэх цэгийн дэргэд (E дарж цэрэг авна)
+    // Зомби устгахад дээр нь хөвөх "+N" зоос
+    struct CoinPopup
+    {
+        Vector3 position;
+        int coins;
+        float age;
+    };
+    std::vector<CoinPopup> coinPopups;
+    FuelBarrels barrels; // бензинтэй торхнууд
+
+    // --- Хамтарсан тоглолт (Wi-Fi) ---
+    struct RemoteFigure
+    {
+        Vector3 position = { 0.0f, 0.0f, 0.0f }, target = { 0.0f, 0.0f, 0.0f };
+        float facing = 0.0f, targetFacing = 0.0f, speed = 0.0f, aimPitch = 0.0f, walk = 0.0f;
+        uint8_t held = 0, member = 0, flags = 0;
+        bool alive = true;
+    };
+    Net::Session net;
+    std::vector<Net::Event> netEvents;
+    bool coopGuest = false;         // өөр хүний тоглолтод зочноор нэгдсэн
+    bool guestPlaced = false;       // зочин: хостын дэргэд гарч ирсэн
+    float guestRespawnTimer = 0.0f;
+    bool joinRequestPending = false; // хост: хариу өгөөгүй хүсэлт
+    std::string joinRequester;
+    bool remoteActive = false;      // хост: зочин холбогдсон
+    RemoteFigure guestFigure;       // хост дээрх зочин
+    RemoteFigure hostFigure;        // зочин дээрх хост
+    std::vector<RemoteFigure> hostSoldiers;
+    Net::Snapshot guestView;        // зочин: хостын сүүлийн мэдээлэл (даалгаврын бичиг г.м.)
+    float coopSendTimer = 0.0f;
+    bool waitingForReply = false;   // зочин: хүсэлт илгээгээд хүлээж байна
+    float waitTimer = 0.0f;
+    std::string coopStatus;         // газрын зураг: сүүлийн мэдээ ("Татгалзлаа" г.м.)
+    std::string noticeText;
+
+    void SetNotice(const std::string& text, float seconds);
+    std::string PlayerName() const;
+    void UpdateNetwork(float dt);
+    void UpdateCoopMission(float dt);
+    void SendHostSnapshot(float dt);
+    void StartCoopGuest(int province);
+    void LeaveCoop();
+    void UpdateCoopMap();
+    void DrawCoopMap() const;
+    void DrawCoopOverlay() const;
+    Rectangle CoopButtonRect(int row) const;
+    void ObjectiveTexts(std::string& objective, std::string& detail) const;
+    Net::AvatarState LocalAvatar() const;
+    void UpdateRemoteFigure(RemoteFigure& figure, const Net::AvatarState& state, float dt, bool snap);
+    void AdvanceRemoteFigure(RemoteFigure& figure, float dt) const;
+    void DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& look) const;
+    std::vector<ZombieHorde::KillReward> killRewardBuffer;
+    void DrawCoinPopups() const;
+    float recruitNoticeTimer = 0.0f;
+    const char* recruitNotice = nullptr;
     int lastReward = 0;
 
     bool showDebug = false;

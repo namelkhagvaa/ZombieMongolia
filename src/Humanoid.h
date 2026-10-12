@@ -76,14 +76,22 @@ struct HumanoidPose
     float breath = 0.0f;    // -1..1: амьсгалын үе; цээж тэлж, мөр өргөгдөнө
     float gunKick = 0.0f;   // бууны ухралт, метр
     bool hideItem = false;  // гарт барьсан зүйлийг зурахгүй (гранат шидэгдсэний дараа)
+    // Гараар ямар нэг зүйлээс барих (цонхны тавцан, хүрээ): grip > 0 үед гар shoulder/elbow-ийн өнцгөөс
+    // gripPoint руу (хөлийн орон зайд, метрээр; [0] баруун, [1] зүүн) шилжинэ. Гар хоосон, seated үед.
+    float grip = 0.0f;
+    Vector3 gripPoint[2] = {};
+    // seated үед: хөл нугарахад биеийг доошлуулж, доод талын хөлийн ул хөлийн түвшинд (газар, тавцан) хүрнэ.
+    bool plantFeet = false;
 
     // Төлөв: гаднаас оруулсан загварын хөдөлгөөний найруулагч (CharacterModel) үүнээс бүтэн биеийн
     // байрлалыг өөрөө тооцно (хөл газарт тулах, зэвсэг бүрийн зогсолт, дайралт, шидэлт).
     float walkPhase = 0.0f;       // алхааны үе, радиан
     float moveAmount = 0.0f;      // 0 зогссон, 1 алхаа, >1 гүйлт
+    float speed = 0.0f;           // газраар явах хурд, м/с: алхамын уртыг үүнээс тооцож хөл гулсахгүй
     float time = 0.0f;            // секунд (тайван зогсолтын хөдөлгөөнд)
     float recoil = 0.0f;          // 1 = дөнгөж буудсан
     float aim = 0.0f;             // 0 = зэвсгээ бэлэн барьсан, 1 = онилж буй
+    float aimPitch = 0.0f;        // онилсон бууны босоо өнцөг, градус (+ = дээш); aim-аар жинлэнэ
     float actionProgress = -1.0f; // хатгах / шидэх хөдөлгөөний явц 0..1; -1 = хөдөлгөөнгүй
     bool grounded = true;
     bool seated = false;          // унаанд сууж яваа: хөлийн өнцгийг гаднаас өгсөн
@@ -100,6 +108,25 @@ struct HumanoidPose
 //  action     - 1 -> 0: хутгаар хатгах эсвэл гранат шидэх хөдөлгөөний явц (0 = хөдөлгөөнгүй)
 HumanoidPose MakeSoldierPose(float walkCycle, float moveAmount, bool grounded, float time, float recoil,
                              HeldItem held = HeldItem::Rifle, float action = 0.0f);
+
+// Хурдаас хамаарах алхааны хэлбэр (хүний алхаа, гүйлтийн хэмжилтэд ойртуулсан).
+struct HumanoidGait
+{
+    float run = 0.0f;       // 0 = алхаа (нэг хөл үргэлж газарт), 1 = гүйлт (хоёр хөл газраас хөндийрөх агшинтай)
+    float duty = 0.6f;      // мөчлөгийн хэдэн хэсэгт хөл газарт тулах вэ
+    float frequency = 0.0f; // нэг хөлийн бүтэн мөчлөг (хоёр алхам) секундэд хэд
+    float contact = 0.0f;   // хөл газарт тулж байх хооронд бие хэдэн метр урагшлах вэ
+};
+HumanoidGait HumanoidGaitFor(float speed);
+// walkCycle-ийг нэмэгдүүлэх хурд (радиан/с). Алхамын урт мөн үүнээс хамаардаг тул бүх дүр үүнийг ашиглана.
+float HumanoidGaitRate(float speed);
+
+// 1-р этгээдийн камерт: дэлгэцийн баруун доор гар ба барьсан зэвсэг (Counter-Strike маягийн).
+// recoil 0..1, walkPhase алхааны үе, moveAmount 0..1, reload 0..1 (-1 = үгүй), action 1 -> 0 (хатгах / шидэх).
+void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float walkPhase, float moveAmount, float reload,
+                   float action);
+// 1-р этгээдийн үед сумны мөр, амны гал гарах цэг (ертөнцөд).
+Vector3 ViewModelMuzzle(const Camera3D& camera, HeldItem held);
 
 // Барьж буй зүйлийн амны (сум гарах цэгийн) орон нутгийн байрлал.
 Vector3 HumanoidMuzzleFor(HeldItem held);

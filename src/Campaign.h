@@ -45,4 +45,7 @@ public:
 
 private:
     int selected = 0;
+    // Давхар товшилт: сүүлийн товшсон аймаг ба цаг
+    int lastClicked = -1;
+    double lastClickTime = -1.0;
 };

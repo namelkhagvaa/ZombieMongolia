@@ -1,4 +1,4 @@
-# Install script for directory: C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src
+# Install script for directory: C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -44,13 +44,13 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/raylib/cmake_install.cmake")
+  include("C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/raylib/cmake_install.cmake")
 
 endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/install_local_manifest.txt"
+  file(WRITE "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/install_local_manifest.txt"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()

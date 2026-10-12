@@ -50,6 +50,20 @@ public:
     // Жигд бус найман талст: чулуу, бут.
     void Blob(Vector3 center, Vector3 radii, Color color, Rng& rng, float colorJitter = 0.08f);
 
+    // Чулуу: хоёр давхар жигд бус цагираг, хавтгайвтар орой (найман талстаас дугуйвтар, бодит).
+    void Rock(Vector3 center, Vector3 radii, Color color, Rng& rng);
+
+    // Ирмэгүүдийг bevel хэмжээгээр налуу тайрсан хайрцаг: машины их бие, тагнаас хурц өнцөг арилгана.
+    void BevelBox(Vector3 center, Vector3 size, float bevel, Color color);
+    // a -> b хоёр цэгийн хоорондох (конус) хоолой: хөл, хүзүү, яндан, сэрээ, дугуйн тэнхлэг.
+    void Tube(Vector3 a, Vector3 b, float radiusA, float radiusB, int sides, Color color, bool caps = true);
+    // Эллипсоид: морины их бие, толгой, түлшний сав, гэрэл.
+    void Ellipsoid(Vector3 center, Vector3 radii, int rings, int segments, Color color);
+
+    // Угсарсан гурвалжнуудыг rlgl-ийн одоогийн матрицаар шууд зурна (хөдөлдөг объект: унаа, морь, дугуй).
+    // Shader нь ертөнцийн байрлалаас гэрэл тооцдог тул DrawMesh-ийн хувиргалтын оронд үүнийг ашиглана.
+    void DrawImmediate() const;
+
     int TriangleCount() const { return (int)(vertices.size() / 9); }
     bool Empty() const { return vertices.empty(); }
 

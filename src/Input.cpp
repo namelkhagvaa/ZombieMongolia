@@ -1,6 +1,7 @@
 #include "Input.h"
 
 #include "UiFont.h"
+#include "UiStyle.h"
 #include "raymath.h"
 #include "rlgl.h"
 
@@ -64,6 +65,8 @@ namespace
         bool round;
         bool highlighted; // идэвхтэй төлөв (сонгогдсон зэвсэг, асаалттай онилгоо)
         bool dim;         // үхсэн гишүүн гэх мэт
+        int icon = -1;    // >= 0 бол бичвэрийн оронд зэвсгийн дүрс (WeaponType)
+        int check = -1;   // >= 0 бол чагттай товч: 1 = чагтлагдсан, 0 = үгүй
     };
     std::vector<Button> buttons;
 
@@ -96,7 +99,7 @@ namespace
     void Add(Rectangle area, const char* label, Kind kind, int key, bool round = true, bool highlighted = false,
              bool dim = false)
     {
-        buttons.push_back({ area, label, kind, key, round, highlighted, dim });
+        buttons.push_back({ area, label, kind, key, round, highlighted, dim, -1, -1 });
     }
 
     // Нээлттэй дэлгэцэд тохирох товчлууруудын байрлалыг бүтээнэ (харагдацын координатаар).
@@ -119,6 +122,10 @@ namespace
             {
                 Add(Circle(w - 350.0f, h - 130.0f, 38.0f), "СУУХ", Kind::Key, KEY_C, true, state.stance == 1);
                 Add(Circle(w - 334.0f, h - 228.0f, 38.0f), "ХЭВТЭХ", Kind::Key, KEY_Z, true, state.stance == 2);
+                // Зүүн гарын эрхий хуруунд: хүрдийн дээр тогтсон байрлалтай хоёр дахь буудах товч
+                // (хүрдээс хамаарахгүй; товч хүрдийн бүсээс түрүүлж шалгагдана).
+                // Хүрдийн (төв нь доороос 190, радиус ~80) шууд дээр; намхан дэлгэцэд дээд талын товчнуудаас доош.
+                Add(Circle(110.0f, std::max(h - 340.0f, 215.0f), 52.0f), "БУУДАХ", Kind::Fire, 0);
             }
 
             // --- Нөхцөлт үйлдлүүд: зөвхөн боломжтой үед гарна ---
@@ -134,12 +141,13 @@ namespace
             }
 
             // --- Доод голд: зэвсгүүд ---
-            const float slotW = 92.0f, slotH = 50.0f, gap = 8.0f;
+            const float slotW = 92.0f, slotH = 56.0f, gap = 8.0f;
             const float total = (float)state.weaponCount * slotW + (float)(state.weaponCount - 1) * gap;
             for (int i = 0; i < state.weaponCount; ++i)
             {
                 Add({ (w - total) * 0.5f + (float)i * (slotW + gap), h - slotH - 10.0f, slotW, slotH }, state.weaponNames[i],
                     Kind::Key, KEY_ONE + i, false, i == state.weaponCurrent);
+                buttons.back().icon = state.weaponTypes[i];
             }
 
             // --- Баруун дээд: жижиг газрын зураг (товшиход бүтэн зураг), зүүн талд нь баг ---
@@ -155,8 +163,20 @@ namespace
             }
 
             // --- Зүүн дээд, даалгаврын мөрийн доор: журнал, буцах ---
-            Add({ 20.0f, 100.0f, 130.0f, 42.0f }, "ДААЛГАВАР", Kind::Key, KEY_Q, false);
-            Add({ 160.0f, 100.0f, 130.0f, 42.0f }, "УХРАХ", Kind::Key, KEY_TAB, false);
+            Add({ 16.0f, 112.0f, 130.0f, 42.0f }, "ДААЛГАВАР", Kind::Key, KEY_Q, false);
+            Add({ 154.0f, 112.0f, 130.0f, 42.0f }, "УХРАХ", Kind::Key, KEY_TAB, false);
+            // Автомат онилгоо: чагтлагдсан бол хараа ойрын зомби руу өөрөө татагдана, үгүй бол өөрөө онилно.
+            Add({ 292.0f, 112.0f, 200.0f, 42.0f }, "АВТО ОНИЛГОО", Kind::Key, KEY_T, false, state.aimAssist);
+            buttons.back().check = state.aimAssist ? 1 : 0;
+            if (state.joinRequest)
+            {
+                // Хамтарсан тоглолтын хүсэлт (дэлгэцийн дээд голын картын доор)
+                Add({ w * 0.5f - 230.0f, 150.0f, 220.0f, 50.0f }, "ЗӨВШӨӨРӨХ", Kind::Key, KEY_Y, false, true);
+                Add({ w * 0.5f + 10.0f, 150.0f, 220.0f, 50.0f }, "ТАТГАЛЗАХ", Kind::Key, KEY_N, false);
+            }
+            // Камерын горим: 1-р этгээд (зөвхөн гар, буу) / 3-р этгээд (бүтэн бие)
+            Add({ 500.0f, 112.0f, 150.0f, 42.0f }, state.firstPerson ? "КАМЕР: 1-Р" : "КАМЕР: 3-Р", Kind::Key, KEY_V, false,
+                state.firstPerson);
             break;
         }
 
@@ -169,13 +189,12 @@ namespace
 
         case TouchScreen::CampaignMap:
         {
-            // Дэлгүүрийн 1..5 ба эхлүүлэх товч: дэлгэцийн доод ирмэгээр
+            // Дэлгүүрийн 1..5 товч: дэлгэцийн доод ирмэгээр (аймгийг хоёр товшиж эхлүүлнэ)
             static const char* const numbers[] = { "1", "2", "3", "4", "5" };
             for (int i = 0; i < 5; ++i)
             {
                 Add({ 20.0f + (float)i * 78.0f, h - 70.0f, 68.0f, 54.0f }, numbers[i], Kind::Key, KEY_ONE + i, false);
             }
-            Add({ w - 250.0f, h - 76.0f, 230.0f, 60.0f }, "ЭХЛЭХ", Kind::Key, KEY_ENTER, false, true);
             break;
         }
 
@@ -550,10 +569,11 @@ void InDrawTouch(const TouchState& state)
         return;
     }
 
-    const Color fill = { 16, 18, 22, 110 };
-    const Color edge = { 236, 232, 220, 150 };
-    const Color accent = { 240, 196, 80, 235 };
-    const Color text = { 240, 236, 224, 235 };
+    const Color fill = { 12, 16, 22, 140 };
+    const Color fillActive = { 60, 46, 14, 190 };
+    const Color edge = { 255, 255, 255, 60 };
+    const Color accent = Ui::kAccent;
+    const Color text = Ui::kText;
 
     for (const Button& button : buttons)
     {
@@ -562,31 +582,75 @@ void InDrawTouch(const TouchState& state)
             continue; // жижиг газрын зураг өөрөө зурагдсан: дээр нь зөвхөн товших талбар
         }
 
+        // Дарагдаж буй товч бага зэрэг жижгэрч, тодорно.
+        bool pressed = false;
+        for (const Finger& finger : fingers)
+        {
+            if (finger.id >= 0 && finger.role == Role::Button && &buttons[(size_t)finger.button] == &button) pressed = true;
+        }
         const Color outline = button.highlighted ? accent : edge;
         const Vector2 center = { button.area.x + button.area.width * 0.5f, button.area.y + button.area.height * 0.5f };
         if (button.round)
         {
-            const float radius = button.area.width * 0.5f;
-            DrawCircleV(center, radius, button.highlighted ? Color{ 90, 70, 20, 150 } : fill);
-            DrawRing(center, radius - 3.0f, radius, 0.0f, 360.0f, 40, outline);
+            const float radius = button.area.width * 0.5f * (pressed ? 0.94f : 1.0f);
             if (button.kind == Kind::Fire)
             {
-                DrawCircleV(center, radius * 0.42f, { 200, 60, 50, 170 }); // галын товч: улаан цөм
+                // Галын товч: улаан градиент, гэрэлтсэн хүрээ
+                DrawCircleGradient((int)center.x, (int)center.y, radius, { 220, 70, 56, (unsigned char)(pressed ? 230 : 190) },
+                                   { 120, 24, 20, (unsigned char)(pressed ? 230 : 170) });
+                DrawRing(center, radius - 2.0f, radius, 0.0f, 360.0f, 48, { 255, 160, 140, 160 });
+                DrawRing(center, radius * 0.5f - 1.5f, radius * 0.5f, 0.0f, 360.0f, 32, { 255, 220, 210, 120 });
+            }
+            else
+            {
+                DrawCircleV(center, radius, button.highlighted || pressed ? fillActive : fill);
+                DrawRing(center, radius - (button.highlighted ? 2.5f : 1.5f), radius, 0.0f, 360.0f, 48, outline);
             }
         }
         else
         {
-            DrawRectangleRounded(button.area, 0.25f, 6, button.highlighted ? Color{ 90, 70, 20, 170 } : fill);
-            DrawRectangleRoundedLinesEx(button.area, 0.25f, 6, 2.0f, outline);
+            const float radius = std::min(button.area.height * 0.5f, 14.0f);
+            const float roundness = 2.0f * radius / std::min(button.area.width, button.area.height);
+            DrawRectangleRounded(button.area, roundness, 8, button.highlighted || pressed ? fillActive : fill);
+            DrawRectangleRoundedLinesEx(button.area, roundness, 8, button.highlighted ? 2.0f : 1.0f, outline);
         }
 
-        if (button.label && button.label[0])
+        if (button.icon >= 0)
         {
-            int size = button.round ? 17 : 20;
-            while (size > 12 && UiMeasure(button.label, size) > (int)button.area.width - 10) --size;
-            const int textWidth = UiMeasure(button.label, size);
-            UiTextShadow(button.label, (int)(center.x - (float)textWidth * 0.5f), (int)(center.y - (float)size * 0.5f), size,
-                         button.dim ? Color{ 236, 96, 80, 235 } : button.highlighted ? accent : text);
+            // Зэвсгийн товч: дүрс, доор нь жижиг нэр
+            const Color tint = button.highlighted ? accent : text;
+            Ui::WeaponIcon(button.icon, { button.area.x + 10.0f, button.area.y + 6.0f, button.area.width - 20.0f, 28.0f }, tint);
+            const char* name = button.label;
+            if (name[0] >= '0' && name[0] <= '9' && name[1] == ' ') name += 2;
+            int size = 11;
+            while (size > 8 && Ui::MeasureBold(name, size) > (int)button.area.width - 8) --size;
+            Ui::TextBold(name, (int)(center.x - (float)Ui::MeasureBold(name, size) * 0.5f), (int)(button.area.y + button.area.height) - size - 7,
+                         size, button.highlighted ? accent : Ui::kTextDim);
+        }
+        else if (button.check >= 0)
+        {
+            // Чагттай товч: зүүн талд хайрцаг, баруун талд бичвэр
+            const Rectangle boxArea = { button.area.x + 12.0f, center.y - 10.0f, 20.0f, 20.0f };
+            DrawRectangleRounded(boxArea, 0.3f, 6, button.check ? accent : Color{ 255, 255, 255, 30 });
+            DrawRectangleRoundedLinesEx(boxArea, 0.3f, 6, 1.5f, button.check ? accent : edge);
+            if (button.check)
+            {
+                const Color tick = { 30, 22, 6, 255 };
+                DrawLineEx({ boxArea.x + 4.0f, boxArea.y + 10.0f }, { boxArea.x + 8.5f, boxArea.y + 15.0f }, 3.0f, tick);
+                DrawLineEx({ boxArea.x + 8.5f, boxArea.y + 15.0f }, { boxArea.x + 16.0f, boxArea.y + 5.0f }, 3.0f, tick);
+            }
+            int size = 16;
+            while (size > 11 && Ui::MeasureBold(button.label, size) > (int)button.area.width - 52) --size;
+            Ui::TextShadow(button.label, (int)boxArea.x + 30, (int)(center.y - (float)size * 0.55f), size,
+                           button.check ? accent : text, true);
+        }
+        else if (button.label && button.label[0])
+        {
+            int size = button.round ? 16 : 18;
+            while (size > 11 && Ui::MeasureBold(button.label, size) > (int)button.area.width - 12) --size;
+            const int textWidth = Ui::MeasureBold(button.label, size);
+            Ui::TextShadow(button.label, (int)(center.x - (float)textWidth * 0.5f), (int)(center.y - (float)size * 0.55f), size,
+                           button.dim ? Ui::kDanger : button.highlighted ? accent : text, true);
         }
     }
 
@@ -598,9 +662,21 @@ void InDrawTouch(const TouchState& state)
         {
             knob = { stickCenter.x + move.x * kStickRadius, stickCenter.y - move.y * kStickRadius };
         }
-        DrawCircleV(stickCenter, kStickRadius, { 16, 18, 22, 70 });
-        DrawRing(stickCenter, kStickRadius - 3.0f, kStickRadius, 0.0f, 360.0f, 48, InSprint() ? accent : edge);
-        DrawCircleV(knob, 34.0f, { 236, 232, 220, stickActive ? (unsigned char)170 : (unsigned char)90 });
+        DrawCircleV(stickCenter, kStickRadius, { 12, 16, 22, 80 });
+        DrawRing(stickCenter, kStickRadius - 2.0f, kStickRadius, 0.0f, 360.0f, 64, InSprint() ? accent : edge);
+        // Чиглэлийн жижиг сумнууд
+        for (int i = 0; i < 4; ++i)
+        {
+            const float a = (float)i * PI * 0.5f;
+            const Vector2 dir = { std::cos(a), std::sin(a) };
+            const Vector2 tip = { stickCenter.x + dir.x * (kStickRadius - 10.0f), stickCenter.y + dir.y * (kStickRadius - 10.0f) };
+            const Vector2 side = { -dir.y * 6.0f, dir.x * 6.0f };
+            const Vector2 back = { tip.x - dir.x * 8.0f, tip.y - dir.y * 8.0f };
+            DrawTriangle(tip, { back.x - side.x, back.y - side.y }, { back.x + side.x, back.y + side.y }, { 255, 255, 255, 70 });
+            DrawTriangle(tip, { back.x + side.x, back.y + side.y }, { back.x - side.x, back.y - side.y }, { 255, 255, 255, 70 });
+        }
+        DrawCircleV(knob, 34.0f, { 255, 255, 255, stickActive ? (unsigned char)150 : (unsigned char)70 });
+        DrawRing(knob, 32.0f, 34.0f, 0.0f, 360.0f, 48, InSprint() ? accent : Color{ 255, 255, 255, 120 });
     }
     else if (state.screen == TouchScreen::Journal || state.screen == TouchScreen::Result)
     {

@@ -1,9 +1,10 @@
 {
 	"InstallScripts" : 
 	[
-		"C:/ZombieMongolia/build_android/native-armeabi-v7a/cmake_install.cmake",
-		"C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/cmake_install.cmake",
-		"C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/raylib/cmake_install.cmake"
+		"C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/cmake_install.cmake",
+		"C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/cmake_install.cmake",
+		"C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build/raylib/cmake_install.cmake",
+		"C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-build/cmake_install.cmake"
 	],
 	"Parallel" : false
 }

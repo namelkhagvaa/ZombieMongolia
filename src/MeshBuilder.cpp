@@ -3,6 +3,7 @@
 #include "Input.h"
 
 #include "raymath.h"
+#include "rlgl.h"
 
 #include <algorithm>
 #include <cmath>
@@ -144,6 +145,166 @@ void MeshBuilder::Blob(Vector3 center, Vector3 radii, Color color, Rng& rng, flo
         const Vector3 b = ring[(i + 1) % 4];
         Triangle(a, b, py, JitterColor(color, rng, colorJitter));
         Triangle(b, a, ny, JitterColor(ScaleColor(color, 0.8f), rng, colorJitter));
+    }
+}
+
+void MeshBuilder::Rock(Vector3 center, Vector3 radii, Color color, Rng& rng)
+{
+    const int sides = 7;
+    Vector3 lower[sides], upper[sides];
+    const float twist = rng.Range(0.0f, 2.0f * PI);
+    for (int i = 0; i < sides; ++i)
+    {
+        const float a = twist + 2.0f * PI * (float)i / (float)sides;
+        const float r = rng.Range(0.8f, 1.12f);
+        lower[i] = { center.x + std::cos(a) * radii.x * r, center.y - radii.y * 0.35f, center.z + std::sin(a) * radii.z * r };
+        const float b = a + PI / (float)sides;
+        const float u = rng.Range(0.5f, 0.75f);
+        upper[i] = { center.x + std::cos(b) * radii.x * u, center.y + radii.y * rng.Range(0.45f, 0.7f),
+                     center.z + std::sin(b) * radii.z * u };
+    }
+    const Vector3 top = { center.x + radii.x * rng.Range(-0.15f, 0.15f), center.y + radii.y * rng.Range(0.85f, 1.0f),
+                          center.z + radii.z * rng.Range(-0.15f, 0.15f) };
+    const Vector3 bottom = { center.x, center.y - radii.y, center.z };
+    const Color dark = ScaleColor(color, 0.78f);
+    for (int i = 0; i < sides; ++i)
+    {
+        const int j = (i + 1) % sides;
+        Triangle(lower[i], upper[i], lower[j], JitterColor(color, rng, 0.06f));
+        Triangle(lower[j], upper[i], upper[j], JitterColor(color, rng, 0.06f));
+        Triangle(upper[i], top, upper[j], JitterColor(ScaleColor(color, 1.08f), rng, 0.05f));
+        Triangle(lower[j], bottom, lower[i], dark);
+    }
+}
+
+void MeshBuilder::BevelBox(Vector3 center, Vector3 size, float bevel, Color color)
+{
+    // Булан бүрийг гурван цэгээр (тэнхлэг бүрийн дагуу bevel-ээр дотогш) солино:
+    // 6 үндсэн тал, 12 налуу ирмэг, 8 булангийн гурвалжин.
+    const float hx = size.x * 0.5f, hy = size.y * 0.5f, hz = size.z * 0.5f;
+    bevel = std::min({ bevel, hx * 0.9f, hy * 0.9f, hz * 0.9f });
+    const Color edge = ScaleColor(color, 0.92f);
+    auto P = [&](float sx, float sy, float sz, int inset) {
+        // inset: аль тэнхлэгийн дагуу дотогш (0 = x, 1 = y, 2 = z) ороогүй хувилбар; бусад хоёр нь дотогш.
+        const float x = sx * (inset == 0 ? hx : hx - bevel);
+        const float y = sy * (inset == 1 ? hy : hy - bevel);
+        const float z = sz * (inset == 2 ? hz : hz - bevel);
+        return Vector3{ center.x + x, center.y + y, center.z + z };
+    };
+    // Тал бүр: тэр тэнхлэгийн дагуу гадна байх 4 булангийн цэг
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        for (float s : { -1.0f, 1.0f })
+        {
+            Vector3 c[4];
+            const float u[4] = { -1, 1, 1, -1 }, v[4] = { -1, -1, 1, 1 };
+            for (int k = 0; k < 4; ++k)
+            {
+                float sx = 0, sy = 0, sz = 0;
+                if (axis == 0) { sx = s; sy = u[k]; sz = v[k]; }
+                if (axis == 1) { sy = s; sz = u[k]; sx = v[k]; }
+                if (axis == 2) { sz = s; sx = u[k]; sy = v[k]; }
+                c[k] = P(sx, sy, sz, axis);
+            }
+            if (s > 0) Quad(c[0], c[1], c[2], c[3], color);
+            else Quad(c[0], c[3], c[2], c[1], color);
+        }
+    }
+    // Ирмэгүүд: хоёр тэнхлэгийн тэмдэг тогтмол, гурав дахь нь дагуу
+    for (int along = 0; along < 3; ++along)
+    {
+        const int a = (along + 1) % 3, b = (along + 2) % 3;
+        for (float sa : { -1.0f, 1.0f })
+        {
+            for (float sb : { -1.0f, 1.0f })
+            {
+                float s0[3], s1[3];
+                s0[along] = -1; s1[along] = 1;
+                s0[a] = s1[a] = sa;
+                s0[b] = s1[b] = sb;
+                const Vector3 p0 = P(s0[0], s0[1], s0[2], a), p1 = P(s1[0], s1[1], s1[2], a);
+                const Vector3 q0 = P(s0[0], s0[1], s0[2], b), q1 = P(s1[0], s1[1], s1[2], b);
+                if (sa * sb > 0) Quad(p0, p1, q1, q0, edge);
+                else Quad(p0, q0, q1, p1, edge);
+            }
+        }
+    }
+    // Булангууд
+    for (float sx : { -1.0f, 1.0f })
+    {
+        for (float sy : { -1.0f, 1.0f })
+        {
+            for (float sz : { -1.0f, 1.0f })
+            {
+                const Vector3 a = P(sx, sy, sz, 0), b = P(sx, sy, sz, 1), c = P(sx, sy, sz, 2);
+                if (sx * sy * sz > 0) Triangle(a, b, c, edge);
+                else Triangle(a, c, b, edge);
+            }
+        }
+    }
+}
+
+void MeshBuilder::Tube(Vector3 a, Vector3 b, float radiusA, float radiusB, int sides, Color color, bool caps)
+{
+    const Vector3 axis = Vector3Subtract(b, a);
+    const float length = Vector3Length(axis);
+    if (length < 1e-4f) return;
+    const Vector3 dir = Vector3Scale(axis, 1.0f / length);
+    // Тэнхлэгт перпендикуляр хоёр нэгж вектор
+    const Vector3 helper = std::fabs(dir.y) < 0.9f ? Vector3{ 0.0f, 1.0f, 0.0f } : Vector3{ 1.0f, 0.0f, 0.0f };
+    const Vector3 u = Vector3Normalize(Vector3CrossProduct(dir, helper));
+    const Vector3 v = Vector3CrossProduct(dir, u);
+    for (int i = 0; i < sides; ++i)
+    {
+        const float a0 = 2.0f * PI * (float)i / (float)sides, a1 = 2.0f * PI * (float)(i + 1) / (float)sides;
+        const Vector3 r0 = Vector3Add(Vector3Scale(u, std::cos(a0)), Vector3Scale(v, std::sin(a0)));
+        const Vector3 r1 = Vector3Add(Vector3Scale(u, std::cos(a1)), Vector3Scale(v, std::sin(a1)));
+        const Vector3 pa0 = Vector3Add(a, Vector3Scale(r0, radiusA)), pa1 = Vector3Add(a, Vector3Scale(r1, radiusA));
+        const Vector3 pb0 = Vector3Add(b, Vector3Scale(r0, radiusB)), pb1 = Vector3Add(b, Vector3Scale(r1, radiusB));
+        Quad(pa0, pa1, pb1, pb0, color);
+        if (caps)
+        {
+            if (radiusA > 0.0f) Triangle(a, pa1, pa0, color);
+            if (radiusB > 0.0f) Triangle(b, pb0, pb1, color);
+        }
+    }
+}
+
+void MeshBuilder::Ellipsoid(Vector3 center, Vector3 radii, int rings, int segments, Color color)
+{
+    auto point = [&](int ring, int segment) {
+        const float theta = PI * (float)ring / (float)rings;            // 0 = дээд туйл
+        const float phi = 2.0f * PI * (float)segment / (float)segments;
+        return Vector3{ center.x + radii.x * std::sin(theta) * std::sin(phi), center.y + radii.y * std::cos(theta),
+                        center.z + radii.z * std::sin(theta) * std::cos(phi) };
+    };
+    for (int r = 0; r < rings; ++r)
+    {
+        for (int s = 0; s < segments; ++s)
+        {
+            const Vector3 a = point(r, s), b = point(r + 1, s), c = point(r + 1, s + 1), d = point(r, s + 1);
+            if (r == 0) Triangle(a, b, c, color);
+            else if (r == rings - 1) Triangle(a, b, d, color);
+            else Quad(a, b, c, d, color);
+        }
+    }
+}
+
+void MeshBuilder::DrawImmediate() const
+{
+    const int count = (int)(vertices.size() / 3);
+    const int chunk = 3000; // rlgl-ийн batch-д багтаахаар хэсэгчилнэ (3-т хуваагдана)
+    for (int start = 0; start < count; start += chunk)
+    {
+        const int end = std::min(count, start + chunk);
+        rlCheckRenderBatchLimit(end - start);
+        rlBegin(RL_TRIANGLES);
+        for (int i = start; i < end; ++i)
+        {
+            rlColor4ub(colors[(size_t)i * 4], colors[(size_t)i * 4 + 1], colors[(size_t)i * 4 + 2], colors[(size_t)i * 4 + 3]);
+            rlVertex3f(vertices[(size_t)i * 3], vertices[(size_t)i * 3 + 1], vertices[(size_t)i * 3 + 2]);
+        }
+        rlEnd();
     }
 }
 

@@ -1,0 +1,2 @@
+// Windows exe-ийн икон (tools\make_icons.ps1 нь assets\app.ico-г үүсгэнэ)
+IDI_ICON1 ICON "../assets/app.ico"

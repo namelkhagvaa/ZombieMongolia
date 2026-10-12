@@ -1,8 +1,8 @@
-if(NOT EXISTS "C:/ZombieMongolia/build_android/native-arm64-v8a/install_manifest.txt")
-  message(FATAL_ERROR "Cannot find install manifest: C:/ZombieMongolia/build_android/native-arm64-v8a/install_manifest.txt")
+if(NOT EXISTS "C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/install_manifest.txt")
+  message(FATAL_ERROR "Cannot find install manifest: C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/install_manifest.txt")
 endif()
 
-file(READ "C:/ZombieMongolia/build_android/native-arm64-v8a/install_manifest.txt" files)
+file(READ "C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/install_manifest.txt" files)
 string(REGEX REPLACE "\n" ";" files "${files}")
 foreach(file ${files})
   message(STATUS "Uninstalling $ENV{DESTDIR}${file}")

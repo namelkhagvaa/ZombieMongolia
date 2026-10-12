@@ -97,6 +97,10 @@ int main(int argc, char** argv)
         {
             options.hold = std::atoi(argv[++i]);
         }
+        else if (std::strcmp(argv[i], "--coop") == 0)
+        {
+            options.coopTest = true;
+        }
         else if (std::strcmp(argv[i], "--scope") == 0)
         {
             options.scope = true;

@@ -8,6 +8,7 @@
 #include "Mover.h"
 #include "Procedural.h"
 #include "UiFont.h"
+#include "UiStyle.h"
 #include "raymath.h"
 
 #include <algorithm>
@@ -943,16 +944,15 @@ void Mission::DrawJournal() const
     const int width = 960, height = 640;
     const int left = (screenWidth - width) / 2, top = (screenHeight - height) / 2;
 
-    const Color panel = { 24, 28, 34, 240 };
-    const Color text = { 236, 232, 220, 255 };
-    const Color dim = { 150, 150, 146, 255 };
+    const Color text = Ui::kText;
+    const Color dim = Ui::kTextDim;
 
-    DrawRectangle(0, 0, screenWidth, screenHeight, Fade(BLACK, 0.55f));
-    DrawRectangle(left, top, width, height, panel);
-    DrawRectangleLinesEx({ (float)left, (float)top, (float)width, (float)height }, 2.0f, kMarker);
+    DrawRectangle(0, 0, screenWidth, screenHeight, Fade({ 6, 8, 12, 255 }, 0.7f));
+    Ui::Panel({ (float)left, (float)top, (float)width, (float)height }, { 14, 18, 26, 235 }, 18.0f);
 
     int y = top + 20;
-    UiText("ДААЛГАВРЫН ЖУРНАЛ", left + 28, y, 34, kMarker);
+    Ui::TextBold("ДААЛГАВРЫН ЖУРНАЛ", left + 28, y, 30, text);
+    DrawRectangle(left + 28, y + 40, 60, 3, kMarker);
     char header[128];
     std::snprintf(header, sizeof(header), "%s \xE2\x80\x94 ҮЕ %02d / %02d", stage->provinceName, province + 1,
                   (int)Provinces().size());
@@ -976,13 +976,13 @@ void Mission::DrawJournal() const
         // Одоо хийх ёстой даалгаврыг онцолно.
         if (i == focus)
         {
-            DrawRectangle(left + 16, y - 4, width - 32, blockHeight - 6, Fade(kMarker, 0.14f));
-            DrawRectangle(left + 16, y - 4, 5, blockHeight - 6, kMarker);
+            Ui::PanelAccent({ (float)left + 16.0f, (float)y - 6.0f, (float)width - 32.0f, (float)blockHeight - 4.0f }, kMarker,
+                            Fade(kMarker, 0.12f));
         }
 
         // Тэмдэглэгээний нүд: биелсэн бол ногоон зөв тэмдэг
         const Rectangle box = { (float)left + 34.0f, (float)y + 4.0f, 26.0f, 26.0f };
-        DrawRectangleLinesEx(box, 2.0f, done ? kDoneGreen : locked ? dim : kMarker);
+        Ui::Outline(box, done ? kDoneGreen : locked ? dim : kMarker, 2.0f, 6.0f);
         if (done)
         {
             DrawLineEx({ box.x + 5.0f, box.y + 14.0f }, { box.x + 11.0f, box.y + 20.0f }, 3.0f, kDoneGreen);
@@ -992,11 +992,11 @@ void Mission::DrawJournal() const
         char title[160];
         std::snprintf(title, sizeof(title), "%d. %s", i + 1, def.title);
         const Color titleColor = done ? kDoneGreen : locked ? dim : text;
-        UiText(title, left + 74, y, 26, titleColor);
+        Ui::TextBold(title, left + 74, y, 24, titleColor);
 
         // Төлөв: баруун талд
         const char* status = done ? "БИЕЛСЭН" : locked ? "ТҮГЖЭЭТЭЙ" : (i == focus ? "ОДОО ХИЙХ" : "ИДЭВХТЭЙ");
-        UiText(status, left + width - 34 - UiMeasure(status, 18), y + 5, 18, titleColor);
+        Ui::Chip(status, left + width - 34, y - 2, titleColor, done ? kDoneGreen : locked ? dim : kMarker, true);
 
         const int lines = DrawWrapped(def.description, left + 74, y + 32, 20, width - 74 - 40, locked ? dim : text);
 

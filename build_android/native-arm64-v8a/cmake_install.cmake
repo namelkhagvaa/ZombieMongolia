@@ -1,4 +1,4 @@
-# Install script for directory: C:/ZombieMongolia
+# Install script for directory: C:/ankhaa/ZombieMongolia
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -44,13 +44,18 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("C:/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-build/cmake_install.cmake")
+  include("C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/raylib-build/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/_deps/enet-build/cmake_install.cmake")
 endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "C:/ZombieMongolia/build_android/native-arm64-v8a/install_local_manifest.txt"
+  file(WRITE "C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/install_local_manifest.txt"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()
 if(CMAKE_INSTALL_COMPONENT)
@@ -66,6 +71,6 @@ else()
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "C:/ZombieMongolia/build_android/native-arm64-v8a/${CMAKE_INSTALL_MANIFEST}"
+  file(WRITE "C:/ankhaa/ZombieMongolia/build_android/native-arm64-v8a/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()

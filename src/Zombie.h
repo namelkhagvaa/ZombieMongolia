@@ -2,6 +2,7 @@
 
 #include "Campaign.h"
 #include "Mover.h"
+#include "Net.h"
 #include "World.h"
 #include "raylib.h"
 
@@ -64,6 +65,12 @@ struct Zombie
     float limp = 0.0f;     // 0..1 баруун хөлөө чирэх хэмжээ
     int armStyle = 0;      // гараа барих хэлбэр
 
+    // Хамтарсан тоглолт: тогтмол дугаар (хостын), зочин дээр хостоос ирсэн байрлал руу зөөлөн хөдөлнө.
+    uint32_t id = 0;
+    Vector3 netTarget = { 0.0f, 0.0f, 0.0f };
+    float netFacing = 0.0f;
+    float netSeen = 0.0f; // зочин: сүүлд snapshot-д орсноос хойш
+
     bool IsAlive() const { return health > 0.0f; }
     float Radius() const { return 0.4f * scale; }
     float Height() const { return 1.92f * scale; } // толгойн оройг оруулаад
@@ -109,8 +116,38 @@ public:
     // launch = true бол зомби шууд үхэж, push (унааны хурдны вектор) чиглэлд агаарт шидэгдэнэ.
     int Ram(Vector3 center, float radius, float damage, bool launch, Vector3 push);
 
+    // --- Хамтарсан тоглолт ---
+    // Хост: хоёр дахь тоглогч (зочин) — зомбинууд түүнийг ч бай болгоно; цохисон хохирлыг цуглуулна.
+    void SetRemoteTarget(bool active, Vector3 position) { remoteActive = active; remotePosition = position; }
+    float TakeRemoteDamage() { const float d = remoteDamage; remoteDamage = 0.0f; return d; }
+    // Хост: зочны сум. Үхвэл true, coins-д шагнал, position-д байрлал.
+    bool DamageById(uint32_t id, float amount, int& coins, Vector3& position);
+    // Хост: зочинд илгээх ойрын зомбинууд
+    void CollectStates(Vector3 around, float radius, std::vector<Net::ZombieState>& out) const;
+    // Зочин: зомбинууд хостоос ирсэн мэдээллээр л хөдөлнө, хохирол хүлээж авахгүй (хост тооцно).
+    void SetPuppet(bool active) { puppet = active; }
+    bool IsPuppet() const { return puppet; }
+    void ApplySnapshot(const std::vector<Net::ZombieState>& states, const MissionParams& mission);
+    void UpdatePuppets(float dt);
+
+    // Бүх зомбины хөдөлгөөний хурдны үржүүлэгч (устгасан тоогоор өснө: Game тохируулна).
+    void SetSpeedMultiplier(float multiplier) { speedMultiplier = multiplier; }
+    float SpeedMultiplier() const { return speedMultiplier; }
+
     // Сүүлд авснаас хойш устгасан зомбины шагналыг авч тэглэнэ.
     void TakeRewards(int& coins, int& kills);
+
+    // Устгагдсан зомби бүрийн байрлал ба шагнал (дээр нь "+N" зоос хөвүүлэхэд).
+    struct KillReward
+    {
+        Vector3 position;
+        int coins;
+    };
+    void TakeKillRewards(std::vector<KillReward>& out)
+    {
+        out.insert(out.end(), killRewards.begin(), killRewards.end());
+        killRewards.clear();
+    }
 
     int AliveCount() const;
     int Count() const { return (int)zombies.size(); } // цогцсыг оруулаад
@@ -133,6 +170,13 @@ private:
     std::vector<Zombie> zombies; // үхсэн нь хэдэн секунд газар хэвтээд арилна
     int pendingCoins = 0;
     int pendingKills = 0;
+    float speedMultiplier = 1.0f;
+    uint32_t nextId = 0;
+    bool puppet = false;
+    bool remoteActive = false;
+    Vector3 remotePosition = { 0.0f, 0.0f, 0.0f };
+    float remoteDamage = 0.0f;
+    std::vector<KillReward> killRewards;
     float navClock = 0.0f; // орох гарцыг дахин сонгох хугацааг тоолно
     int pendingSmallKills = 0; // алхагч + гүйгч
     int pendingBigKills = 0;   // том зомби (аварга орохгүй)

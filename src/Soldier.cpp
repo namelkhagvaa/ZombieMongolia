@@ -1,5 +1,6 @@
 #include "Soldier.h"
 
+#include "CharacterModel.h"
 #include "Humanoid.h"
 #include "Team.h"
 #include "Zombie.h"
@@ -32,6 +33,13 @@ namespace
     const float kFighterEngage = 30.0f, kFighterNear = 6.5f, kFighterFar = 17.0f;
     const float kSniperEngage = 62.0f, kSniperNear = 17.0f, kSniperFar = 50.0f;
 
+    // Элсүүлсэн цэргүүд: удирдагчийн эргэн тойронд харуул хийнэ (наалдаж дагахгүй).
+    const float kGuardMin = 6.0f, kGuardMax = 12.0f; // харуулын байрны зай удирдагчаас
+    const float kGuardRelocate = 10.0f;  // удирдагч байр сонгосон цэгээсээ ийм холдвол шинэ байр сонгоно
+    const float kGuardStroll = 2.2f;     // байр солихдоо алхах хурд, м/с (ойрхон байвал)
+    const float kRecruitEngage = 22.0f, kRecruitNear = 5.0f, kRecruitFar = 14.0f;
+    const float kRecruitLeash = 26.0f;   // удирдагчаас ийм холдвол тулаанаа орхино
+
     float Random01()
     {
         return (float)GetRandomValue(0, 1000) / 1000.0f;
@@ -52,6 +60,7 @@ namespace
         look.vest = { 62, 68, 48, 255 };
         look.skin = { 210, 164, 124, 255 };
         look.held = HeldItem::Rifle;
+        look.model = kCharacterFighter1; // assetsighter1 загвар (байхгүй бол кодоор үүсгэсэн дүрс)
         return look;
     }
 }
@@ -60,6 +69,38 @@ Vector3 SoldierSquad::SlotPosition(int index, Vector3 playerPosition, float radi
 {
     const float angle = 2.0f * PI * (float)index / (float)std::max(1, Total()) + PI * 0.25f;
     return { playerPosition.x + std::sin(angle) * radius, 0.0f, playerPosition.z + std::cos(angle) * radius };
+}
+
+void SoldierSquad::ChooseGuardPost(int index, Vector3 playerPosition, const World& world)
+{
+    // Цэрэг бүр өөрийн хэсгийг (тойргийн тэнцүү хэсэг) хамгаална: хамт бөөгнөрөхгүй, бүх талыг ажиглана.
+    Soldier& soldier = soldiers[(size_t)index];
+    const float sector = 2.0f * PI / (float)std::max(1, Total());
+    soldier.guardAnchor = playerPosition;
+    soldier.guardTimer = 7.0f + 7.0f * Random01();
+    // Чөлөөтэй байр олдохгүй бол (давчуу газар) удирдагчийн ойрхон байрандаа зогсоно.
+    soldier.guardPost = SlotPosition(index, playerPosition, kFollowDistance);
+    soldier.guardWatch = std::atan2(soldier.guardPost.x - playerPosition.x, soldier.guardPost.z - playerPosition.z);
+    for (int attempt = 0; attempt < 6; ++attempt)
+    {
+        const float angle = sector * ((float)index + 0.2f + 0.6f * Random01()) + PI * 0.25f;
+        const float radius = kGuardMin + (kGuardMax - kGuardMin) * Random01();
+        Vector3 post = { playerPosition.x + std::sin(angle) * radius, playerPosition.y,
+                         playerPosition.z + std::cos(angle) * radius };
+        if (!world.InsideBoundary(post.x, post.z))
+        {
+            continue;
+        }
+        Vector3 free = post;
+        world.ResolveHorizontal(free, kRadius, kHeight, 0.3f);
+        if (HorizontalDistance(free, post) > 0.5f || world.InteriorAt(free.x, free.z) >= 0)
+        {
+            continue; // хана, хашаа, барилга дотор биш
+        }
+        soldier.guardPost = free;
+        soldier.guardWatch = angle; // удирдагчаас гадагш ажиглана
+        break;
+    }
 }
 
 void SoldierSquad::Reset(int count, Vector3 around, const World& world)
@@ -129,11 +170,12 @@ void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, Zombie
         const int ownRoom = world.InteriorAt(pos.x, pos.z);
 
         // --- Багийн гишүүн: зомби ойртвол тоглогчийг дагахаа больж, өөрөө байр сонгон байлдана ---
+        // --- Элсүүлсэн цэрэг ч мөн адил: харуулын байрнаасаа зомби руу бие даан байр сонгон байлдана ---
         int enemyIndex = -1;
         const bool mounted = soldier.riding >= 0 || soldier.boarding;
-        if (teammate && !mounted && HorizontalDistance(pos, playerPosition) < kTeamLeash)
+        if (!mounted && HorizontalDistance(pos, playerPosition) < (teammate ? kTeamLeash : kRecruitLeash))
         {
-            enemyIndex = horde.Nearest(pos, sniper ? kSniperEngage : kFighterEngage);
+            enemyIndex = horde.Nearest(pos, sniper ? kSniperEngage : teammate ? kFighterEngage : kRecruitEngage);
         }
         soldier.fighting = enemyIndex >= 0;
 
@@ -149,7 +191,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, Zombie
         {
             // Суух хэрэгсэл рүүгээ гүйнэ.
             MoveToward(soldier.mover, soldier.boardPoint, kCatchUpSpeed, dt, world, kRadius, kHeight, 0.0f);
-            soldier.walkCycle += dt * (4.5f + kCatchUpSpeed * 0.9f);
+            soldier.walkCycle += dt * HumanoidGaitRate(kCatchUpSpeed);
             soldier.moveAmount = kCatchUpSpeed / kWalkSpeed;
             soldier.moving = true;
             soldier.routeFrom = soldier.routeTo = -2;
@@ -160,8 +202,8 @@ void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, Zombie
         {
             const Vector3 enemy = horde.At(enemyIndex).mover.position;
             const float enemyDistance = HorizontalDistance(pos, enemy);
-            const float nearLimit = sniper ? kSniperNear : kFighterNear;
-            const float farLimit = sniper ? kSniperFar : kFighterFar;
+            const float nearLimit = sniper ? kSniperNear : teammate ? kFighterNear : kRecruitNear;
+            const float farLimit = sniper ? kSniperFar : teammate ? kFighterFar : kRecruitFar;
             const Vector3 away = enemyDistance > 0.01f
                                      ? Vector3{ (pos.x - enemy.x) / enemyDistance, 0.0f, (pos.z - enemy.z) / enemyDistance }
                                      : Vector3{ 1.0f, 0.0f, 0.0f };
@@ -219,7 +261,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, Zombie
             if (move)
             {
                 MoveToward(soldier.mover, point, speed, dt, world, kRadius, kHeight, 0.0f);
-                soldier.walkCycle += dt * (4.5f + speed * 0.9f);
+                soldier.walkCycle += dt * HumanoidGaitRate(speed);
                 soldier.moveAmount = speed / kWalkSpeed;
             }
 
@@ -232,7 +274,18 @@ void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, Zombie
         {
             // --- Тоглогчийг дагах ---
             // Багийн гишүүд нэлээн зайтай явж, байрнаасаа хангалттай холдсон үед л хөдөлнө.
-            Vector3 slot = SlotPosition(i, playerPosition, teammate ? kTeamSpacing : kFollowDistance);
+            // Элсүүлсэн цэргүүд гадаа удирдагчийн эргэн тойронд харуулын байр эзэлнэ: хэдэн секунд тутам,
+            // эсвэл удирдагч холдоход шинэ байр сонгоно. Барилга дотор удирдагчийн дэргэд байна.
+            const bool guarding = !teammate && playerRoom < 0;
+            if (guarding)
+            {
+                soldier.guardTimer -= dt;
+                if (soldier.guardTimer <= 0.0f || HorizontalDistance(soldier.guardAnchor, playerPosition) > kGuardRelocate)
+                {
+                    ChooseGuardPost(i, playerPosition, world);
+                }
+            }
+            Vector3 slot = guarding ? soldier.guardPost : SlotPosition(i, playerPosition, teammate ? kTeamSpacing : kFollowDistance);
 
             if (playerRoom >= 0)
             {
@@ -283,7 +336,9 @@ void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, Zombie
 
             const float toSlot = HorizontalDistance(pos, slot);
             const bool onRoute = ownRoom != playerRoom;
-            const float startDistance = teammate && playerRoom < 0 && !soldier.moving ? kTeamStartFollow : 1.2f;
+            const float startDistance = teammate && playerRoom < 0 && !soldier.moving ? kTeamStartFollow
+                                      : guarding && !soldier.moving                    ? 1.5f
+                                                                                       : guarding ? 0.5f : 1.2f;
             soldier.moving = onRoute || toSlot > startDistance;
 
             // Гацсан эсэх: зорилтдоо ойртохгүй хэдэн секунд болбол (хашаа, хана тойрч чадахгүй)
@@ -311,10 +366,18 @@ void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, Zombie
             }
             else if (soldier.moving)
             {
-                const float speed = toSlot > 8.0f ? kCatchUpSpeed : kWalkSpeed;
+                // Харуулын байр солихдоо ойрхон бол тайван алхана, хол бол гүйнэ.
+                const float speed = guarding ? (toSlot > 20.0f ? kCatchUpSpeed : toSlot > 7.0f ? kWalkSpeed : kGuardStroll)
+                                             : (toSlot > 8.0f ? kCatchUpSpeed : kWalkSpeed);
                 MoveToward(soldier.mover, target, speed, dt, world, kRadius, kHeight, 0.0f);
-                soldier.walkCycle += dt * (4.5f + speed * 0.9f);
+                soldier.walkCycle += dt * HumanoidGaitRate(speed);
                 soldier.moveAmount = speed / kWalkSpeed;
+            }
+            else if (guarding)
+            {
+                // Байрандаа: гадагш харж, эргэн тойрноо аажим ажиглана.
+                const float scan = soldier.guardWatch + 0.7f * std::sin((float)GetTime() * 0.35f + (float)i * 1.7f);
+                soldier.mover.facing += std::remainder(scan - soldier.mover.facing, 2.0f * PI) * std::min(1.0f, 2.5f * dt);
             }
         }
 
@@ -398,7 +461,8 @@ void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, Zombie
 void SoldierSquad::Damage(int index, float amount)
 {
     Soldier& soldier = soldiers[index];
-    soldier.health -= amount;
+    // Элсүүлсэн жирийн цэрэг багийн гишүүдээс сул: хохирлыг 1.5 дахин авна.
+    soldier.health -= soldier.member < 0 ? amount * 1.5f : amount;
     if (soldier.health <= 0.0f)
     {
         soldier.health = 0.0f;
@@ -422,6 +486,7 @@ void SoldierSquad::Draw(Vector3 viewPosition, bool showColliders) const
         HumanoidPose pose = MakeSoldierPose(soldier.walkCycle, soldier.moving ? soldier.moveAmount : 0.0f, true,
                                             (float)GetTime() + soldier.walkCycle, soldier.recoil, look.held);
         pose.aim = soldier.aimPose;
+        pose.speed = soldier.moving ? soldier.moveAmount * kWalkSpeed : 0.0f;
 
         if (soldier.alive && soldier.riding >= 0)
         {

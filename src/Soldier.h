@@ -33,6 +33,11 @@ struct Soldier
     bool shifting = false;     // сонгосон байр руугаа шилжиж яваа
     bool fighting = false;     // зомбитой бие даан байлдаж байгаа (тоглогчийг дагахгүй)
     float blockedTime = 0.0f;  // бай харагдахгүй (хана, толгод халхалсан) өнгөрсөн хугацаа
+    // Элсүүлсэн цэргийн харуул: удирдагчийн эргэн тойронд сонгосон байр, гадагш ажиглах зүг
+    Vector3 guardPost = { 0.0f, 0.0f, 0.0f };
+    Vector3 guardAnchor = { 0.0f, 0.0f, 0.0f }; // байр сонгох үеийн удирдагчийн байрлал
+    float guardTimer = 0.0f;   // шинэ байр сонгох хүртэлх хугацаа
+    float guardWatch = 0.0f;   // ажиглах зүг, радиан
     // Унаа: тоглогч унаа унахад багийн гишүүд ойрын хэрэгсэл рүү очиж сууна (Game удирдана).
     int riding = -1;           // сууж яваа хэрэгслийн индекс; -1 = явган
     bool boarding = false;     // boardPoint дахь хэрэгсэл рүү гүйж яваа
@@ -43,7 +48,8 @@ struct Soldier
     bool alive = true;
 };
 
-// Элсүүлсэн цэргүүд: тоглогчийг дагаж, ойрын зомбийг буудна.
+// Элсүүлсэн цэргүүд: удирдагчийн эргэн тойронд харуул хамгаалалтын байр эзэлж, зомбитой бие даан байлдана.
+// Багийн гишүүд: удирдагчийг зайтай дагаж, түүнд ойртсон зомбийг түрүүлж буудна.
 class SoldierSquad
 {
 public:
@@ -71,6 +77,8 @@ public:
 
 private:
     Vector3 SlotPosition(int index, Vector3 playerPosition, float radius) const;
+    // Элсүүлсэн цэргийн дараагийн харуулын байр: өөрийн хэсэг (сектор) дотор, удирдагчаас 6-12 м.
+    void ChooseGuardPost(int index, Vector3 playerPosition, const World& world);
 
     std::vector<Soldier> soldiers;
 };

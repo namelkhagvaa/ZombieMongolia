@@ -18,18 +18,18 @@ project(raylib-populate NONE)
 
 # Pass through things we've already detected in the main project to avoid
 # paying the cost of redetecting them again in ExternalProject_Add()
-set(GIT_EXECUTABLE [==[C:/Program Files/Git/ucrt64/bin/git.exe]==])
+set(GIT_EXECUTABLE [==[C:/Program Files/Git/cmd/git.exe]==])
 set(Git_VERSION [==[2.56.0.windows.2]==])
 set_property(GLOBAL PROPERTY _CMAKE_FindGit_GIT_EXECUTABLE_VERSION
-  [==[C:/Program Files/Git/ucrt64/bin/git.exe;2.56.0.windows.2]==]
+  [==[C:/Program Files/Git/cmd/git.exe;2.56.0.windows.2]==]
 )
 
 
 include(ExternalProject)
 ExternalProject_Add(raylib-populate
                      "UPDATE_DISCONNECTED" "False" "GIT_REPOSITORY" "https://github.com/raysan5/raylib.git" "EXTERNALPROJECT_INTERNAL_ARGUMENT_SEPARATOR" "GIT_TAG" "5.5"
-                    SOURCE_DIR          "C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src"
-                    BINARY_DIR          "C:/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build"
+                    SOURCE_DIR          "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-src"
+                    BINARY_DIR          "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/raylib-build"
                     CONFIGURE_COMMAND   ""
                     BUILD_COMMAND       ""
                     INSTALL_COMMAND     ""

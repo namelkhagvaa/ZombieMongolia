@@ -64,6 +64,22 @@ void main()
 }
 )";
 
+    // Хөдөлдөг объект (унаа, морь): mesh нь GPU-д нэг удаа хуулагдаж, байрлал, эргэлтээ matModel-оор авна.
+    // Гэрэл, манангийн тооцоо нь орчны shader-тэй ижил (ертөнцийн байрлалаар).
+    const char* kPropVertexShader = R"(in vec3 vertexPosition;
+in vec4 vertexColor;
+uniform mat4 mvp;
+uniform mat4 matModel;
+out vec3 fragPosition;
+out vec4 fragColor;
+void main()
+{
+    fragPosition = vec3(matModel * vec4(vertexPosition, 1.0));
+    fragColor = vertexColor;
+    gl_Position = mvp * vec4(vertexPosition, 1.0);
+}
+)";
+
     // Ястай загварууд: оройн normal-тай тул гэрэлтүүлэг нь гөлгөр, өнгө нь текстураас.
     const char* kCharacterVertexShader = R"(in vec3 vertexPosition;
 in vec2 vertexTexCoord;
@@ -235,6 +251,20 @@ Environment::Environment()
         SetShaderValue(characterShader, characterDensity, &kFogDensity, SHADER_UNIFORM_FLOAT);
     }
 
+    propShader = LoadVersionedShader(kPropVertexShader, kFragmentShader);
+    propViewPosLocation = GetShaderLocation(propShader, "viewPos");
+    SetVec3(propShader, "sunDirection", Vector3Normalize(kSunDirection));
+    SetVec3(propShader, "sunLight", kSunLight);
+    SetVec3(propShader, "ambientLight", kAmbient);
+    SetVec3(propShader, "fogColor", ToVector(kSkyHorizon));
+    const int propDensity = GetShaderLocation(propShader, "fogDensity");
+    if (propDensity >= 0)
+    {
+        SetShaderValue(propShader, propDensity, &kFogDensity, SHADER_UNIFORM_FLOAT);
+    }
+    propMaterial = LoadMaterialDefault();
+    propMaterial.shader = propShader;
+
     mountains = BuildMountains();
 }
 
@@ -246,6 +276,7 @@ Environment::~Environment()
     {
         UnloadShader(characterShader);
     }
+    UnloadMaterial(propMaterial); // shader-ийг мөн чөлөөлнө
 }
 
 void Environment::DrawSky(const Camera3D& camera) const
@@ -289,6 +320,10 @@ void Environment::Begin(const Camera3D& camera) const
     if (characterViewPosLocation >= 0)
     {
         SetShaderValue(characterShader, characterViewPosLocation, &camera.position, SHADER_UNIFORM_VEC3);
+    }
+    if (propViewPosLocation >= 0)
+    {
+        SetShaderValue(propShader, propViewPosLocation, &camera.position, SHADER_UNIFORM_VEC3);
     }
     BeginShaderMode(shader);
 }

@@ -107,6 +107,24 @@ namespace
         c.solved[(size_t)bone] = 1;
     }
 
+    // joint-ын доорх бүх ясыг (жишээ нь мөрний доорх шуу, бугуй, хуруу) дахин тооцохоор тэмдэглэнэ: мөчийг нэг удаа
+    // байрлуулсны дараа дахин (IK-аар) байрлуулахад хүүхэд яснууд хуучин байрлалаа санаж үлдэхээс сэргийлнэ.
+    void Unsolve(Character& c, Joint joint)
+    {
+        const int root = c.joints[joint];
+        for (int bone = 0; bone < (int)c.solved.size(); ++bone)
+        {
+            for (int parent = c.model.bones[bone].parent; parent >= 0; parent = c.model.bones[parent].parent)
+            {
+                if (parent == root)
+                {
+                    c.solved[(size_t)bone] = 0;
+                    break;
+                }
+            }
+        }
+    }
+
     // Ясыг эцгийнхээ эргэлт дээр нэмж extra-аар эргүүлнэ (extra нь загварын тэнхлэгүүдээр).
     void Turn(Character& c, Joint joint, Quaternion extra)
     {
@@ -504,12 +522,26 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
     // --- Төлөв ---
     const bool onFoot = !direct && pose.grounded && !pose.seated && pose.fall <= 0.0f && pose.spin == 0.0f;
     const float move = onFoot ? std::min(pose.moveAmount, 1.0f) : 0.0f;                       // 0 зогссон .. 1 алхаа
-    const float run = onFoot ? std::clamp(pose.moveAmount - 1.0f, 0.0f, 0.6f) / 0.6f : 0.0f;  // 0 алхаа .. 1 гүйлт
+    const float run = onFoot ? std::clamp(pose.moveAmount - 1.0f, 0.0f, 0.6f) / 0.6f : 0.0f;  // 0 ердийн .. 1 хурдан гүйлт
+    // Алхааны хэлбэр бодит хурдаас: алхам урт нь газраар явах хурдтай яг таарч, хөл гулсахгүй.
+    const HumanoidGait gait = HumanoidGaitFor(onFoot ? pose.speed : 0.0f);
+    const float stride = std::min(1.0f, pose.speed / 1.2f) * (onFoot ? 1.0f : 0.0f); // бага хурдад алхаа аажим жижгэрнэ
+    // Нэг хөлийн мөчлөгийг "урд -> хойно -> урд" долгион болгоно: 1 = хамгийн урд (газарт хүрэх мөч),
+    // -1 = хамгийн хойно (газраас салах мөч). Гар, ташаа энэ долгионоор хөлтэй эсрэг савлана.
+    auto legWave = [&](float cycle) {
+        const float c = cycle < gait.duty ? 0.5f * cycle / gait.duty : 0.5f + 0.5f * (cycle - gait.duty) / (1.0f - gait.duty);
+        return std::cos(2.0f * PI * c);
+    };
+    float rightCycle = pose.walkPhase / (2.0f * PI);
+    rightCycle -= std::floor(rightCycle);
+    const float rightWave = legWave(rightCycle);
     const float still = 1.0f - move;
     const float time = pose.time;
     const float phase = pose.walkPhase;
     const float recoil = pose.recoil;
     const float aim = twoHanded || pistol ? std::clamp(pose.aim, 0.0f, 1.0f) : 0.0f;
+    // Онилсон буу хараа руу дээш доош хазайна (мөрөө тойрон).
+    const float aimPitch = pose.aimPitch * aim;
     const float progress = pose.actionProgress;
     const float prone = onFoot ? std::clamp(pose.prone, 0.0f, 1.0f) : 0.0f;
     const float crouch = onFoot ? std::clamp(pose.crouch, 0.0f, 1.0f) * (1.0f - prone) : 0.0f;
@@ -533,18 +565,25 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
     const float weight = std::sin(time * 0.55f);
 
     // --- Ташаа ---
-    const float gaitYaw = move * (6.0f + 5.0f * run) * std::sin(phase);
+    // Ташаа урд гарсан хөлийн талаараа урагш эргэнэ (гүйхэд их бие эсрэгээр эргэж тэнцвэржүүлнэ).
+    const float gaitYaw = stride * (5.0f + 4.0f * gait.run + 3.0f * run) * rightWave;
     const float hipYaw = gaitYaw - 12.0f * stance * (twoHanded ? aim : 0.0f) - 16.0f * (knife ? still : 0.0f) + 30.0f * thrust +
                          24.0f * wind - 22.0f * release;
     const float hipRoll = move * 1.4f * std::cos(phase) + idle * 1.6f * weight;
     // Ташааны өндөр. Хөл бараг тэнийсэн байдаг тул хэдхэн см доошлоход л өвдөг их нугарна: алхаанд маш бага.
     // Хоёр хөл урагш хойш салсан мөчид хамгийн доор, нэг хөл дээрээ тулсан мөчид хамгийн дээр байна.
     // (Үндсэн хувиргалтын pose.bob нь эсрэг үетэй тул түүнийг энд хүчингүй болгоно.)
-    const float drop = move * (0.008f + 0.02f * run + (0.026f + 0.02f * run) * std::fabs(std::cos(phase))) + pose.bob +
+    // Алхаа: тулсан хөл дээгүүр бие "урвуу дүүжин" шиг дээш гарна (хөл дундаа байхад хамгийн өндөр).
+    // Гүйлт: хөл газарт буухад бие пүрш шиг доош суугаад, хоёр хөл хөндийрөх агшинд хамгийн өндөрт хүрнэ.
+    const float bounceWave = std::cos(4.0f * PI * (rightCycle - 0.5f * gait.duty));
+    const float bounce = stride * Lerp(0.022f, -(0.04f + 0.015f * run), gait.run) * bounceWave;
+    const float drop = stride * (0.012f + 0.035f * gait.run) - bounce + pose.bob +
                        0.02f * stance + 0.1f * thrust + 0.04f * wind + 0.04f * release +
                        // Суух: ташаа өвдөгний түвшинд хүртэл доошилно (алхахад бага зэрэг өндийнө).
                        crouch * (0.4f - 0.05f * move);
-    const float sway = move * 0.014f * std::cos(phase) + idle * 0.022f * weight;
+    // Жин тулсан хөл рүүгээ шилжинэ (хөл дундаа байх мөчид хамгийн их; баруун тал нь -X).
+    const float sway = -stride * (0.02f - 0.012f * gait.run) * std::cos(2.0f * PI * (rightCycle - 0.5f * gait.duty)) +
+                       idle * 0.022f * weight;
     const float advance = 0.2f * thrust - 0.07f * wind + 0.12f * release;
 
     // Хэвтэж байхад ташаа алхааны эргэлтгүй; мөлхөхөд л хоёр тийш бага зэрэг найгана.
@@ -552,8 +591,25 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
     const Quaternion hipRotation = onFoot ? QuaternionMultiply(AxisAngle(0.0f, 1.0f, 0.0f, hipYaw * upright + crawlRoll),
                                                                AxisAngle(0.0f, 0.0f, 1.0f, hipRoll * upright))
                                           : QuaternionIdentity();
-    Place(c, Hips, hipRotation,
-          onFoot ? Vector3Scale({ sway * upright, -drop * upright, advance * upright }, 1.0f / s) : Vector3{ 0.0f, 0.0f, 0.0f });
+    Vector3 hipOffset = onFoot ? Vector3Scale({ sway * upright, -drop * upright, advance * upright }, 1.0f / s) : Vector3{ 0.0f, 0.0f, 0.0f };
+    if (!onFoot && pose.plantFeet)
+    {
+        // Хөлийн өнцгөөр (доорх "Унаа, үсрэлт" хэсэгтэй ижил) шагай ташаанаас хэр доор байхыг загварын жинхэнэ
+        // ясны уртаар тооцож, хамгийн доод шагай зогсож байх үеийнхээ өндөрт хүртэл биеийг доошлуулна.
+        float lowest = 0.0f;
+        for (int side = 0; side < 2; ++side)
+        {
+            const Joint upper = side == 0 ? RightUpLeg : LeftUpLeg;
+            const Joint lower = side == 0 ? RightLeg : LeftLeg;
+            const Joint foot = side == 0 ? RightFoot : LeftFoot;
+            const float hip = pose.hip[side] * DEG2RAD, knee = pose.knee[side] * DEG2RAD;
+            const float reach = BoneLength(c, upper, lower) * std::cos(hip) + BoneLength(c, lower, foot) * std::cos(hip - knee);
+            lowest = std::max(lowest, reach * std::cos(pose.legSpread * DEG2RAD));
+        }
+        const float standing = c.bind[(size_t)c.joints[RightUpLeg]].y - c.bind[(size_t)c.joints[RightFoot]].y;
+        hipOffset.y -= standing - lowest;
+    }
+    Place(c, Hips, hipRotation, hipOffset);
 
     // --- Нуруу, цээж, толгой ---
     float lean = pose.lean;
@@ -562,7 +618,7 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
     float headYaw = 0.0f, headPitch = pose.headPitch, headRoll = pose.headRoll;
     if (onFoot)
     {
-        lean = move * (3.0f + 11.0f * run) + stance * 7.0f + 16.0f * thrust - 12.0f * wind + 24.0f * release -
+        lean = move * (3.0f + 5.0f * gait.run + 7.0f * run) + stance * 7.0f + 16.0f * thrust - 12.0f * wind + 24.0f * release -
                recoil * (twoHanded ? 3.0f : 1.5f) + idle * 1.2f * std::sin(time * 0.4f);
         roll = move * 2.0f * std::sin(phase) - idle * 1.5f * weight;
 
@@ -572,7 +628,7 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
 
         // Толгой: харц урагшаа тогтвортой; тайван үед эргэн тойрноо аажим харна, онилоход бууны бөгс рүү хазайна.
         headYaw = idle * (1.0f - aim) * 16.0f * std::sin(time * 0.33f + 1.3f * std::sin(time * 0.17f));
-        headPitch = -lean * 0.55f + (twoHanded ? 6.0f * aim : 0.0f) + idle * 2.0f * std::sin(time * 0.23f);
+        headPitch = -lean * 0.55f + (twoHanded ? 6.0f * aim : 0.0f) - 0.6f * aimPitch + idle * 2.0f * std::sin(time * 0.23f);
         headRoll = (twoHanded ? -7.0f * aim : 0.0f) - roll * 0.6f;
 
         // Суусан: урагш бөхийнө. Хэвтсэн: цээжээ тохойгоороо өргөж (нуруу хойш нумарна), толгойгоо өргөж урагш харна.
@@ -623,29 +679,45 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
             const Quaternion shin = QuaternionMultiply(thigh, AxisAngle(1.0f, 0.0f, 0.0f, pose.knee[side]));
             Aim(c, upper, lower, Rotate(thigh, down));
             Aim(c, lower, foot, Rotate(shin, down));
+            if (pose.seated)
+            {
+                // Суусан, бөхийсөн, авирч буй үед тавхай газар / тавцантай хэвтээ (шилбийг дагаж хазайвал
+                // өвдөг нугарахад гутлын хошуу тавцангаас доош цухуйна).
+                Orient(c, foot, AxisAngle(0.0f, 1.0f, 0.0f, -outward * c.toeOut[side] * 0.8f));
+            }
             continue;
         }
 
         const Vector3 ankleRest = Vector3Scale(c.bind[(size_t)c.joints[foot]], s);
 
-        // Алхааны мөчлөг: эхний 60% нь тулах үе (тавхай газраар хойш гулсана), үлдсэн нь урагш зөөх үе.
+        // Алхааны мөчлөг: эхний duty хэсэгт тавхай газарт тулж, бие урагшлахын хэрээр яг тэр хурдаар хойш
+        // шилжинэ (газраар гулсахгүй); үлдсэн хэсэгт хөл агаараар урагш зөөгдөнө. Тавхай ташааны арай урд
+        // буугаад, арай хойно газраас салдаг.
         float cycle = (phase + (side == 0 ? 0.0f : PI)) / (2.0f * PI);
         cycle -= std::floor(cycle);
-        const float stride = move * (0.55f + 0.5f * run) * (1.0f - 0.4f * crouch);
+        const float reachForward = 0.42f * gait.contact, reachBack = 0.58f * gait.contact;
         float step = 0.0f, lift = 0.0f, pitch = 0.0f;
-        if (cycle < 0.6f)
+        if (cycle < gait.duty)
         {
-            const float t = cycle / 0.6f;
-            step = stride * (0.5f - t);
-            pitch = move * 24.0f * Smooth((t - 0.7f) / 0.3f); // түлхэх үед өсгий өргөгдөнө
+            const float t = cycle / gait.duty;
+            step = reachForward - t * gait.contact;
+            // Алхахад өсгийгөөр буугаад (хуруу дээш) тавхай газарт налж, гүйхэд тавхайн дундаар буна.
+            // Түлхэх үед өсгий өргөгдөж, хуруун дээрээ үлдэнэ.
+            pitch = stride * (-16.0f * (1.0f - gait.run) * (1.0f - Smooth(t / 0.22f)) +
+                              (30.0f + 8.0f * gait.run) * Smooth((t - 0.5f) / 0.5f));
         }
         else
         {
-            const float t = (cycle - 0.6f) / 0.4f;
-            step = stride * (Smooth(t) - 0.5f);
-            lift = move * (0.08f + 0.12f * run) * std::sin(t * PI);
-            pitch = move * (24.0f - 42.0f * t);              // хуруугаа доош -> өсгийгөөр буух
+            const float t = (cycle - gait.duty) / (1.0f - gait.duty);
+            step = Lerp(-reachBack, reachForward, Smooth(t));
+            // Хөл газраас салмагц өвдөг нугарч өсгий дээш гарна: алхахад хуруу газар шүргэхгүй хэмжээнд,
+            // гүйхэд өсгий өгзөг рүү өргөгдөнө. Оргил нь зөөх үеийн эхний хагаст.
+            const float height = Lerp(0.1f, std::min(0.48f, 0.24f + 0.045f * (pose.speed - 3.0f)), gait.run);
+            lift = stride * height * std::sin(PI * std::pow(t, 0.65f));
+            pitch = stride * Lerp(34.0f, -12.0f * (1.0f - gait.run) - 3.0f, Smooth(t)); // хуруу доош -> буухад дээш
         }
+        // Өсгий өргөгдөхөд шагай дээшилнэ (хурууны үзүүрээр тулна).
+        lift += 0.11f * std::sin(std::max(0.0f, pitch) * DEG2RAD);
 
         // Тавхайн хоорондох зай: загварын анхны зогсолт хөлөө алцайлгасан байдаг тул нарийсгана.
         // Зогсохдоо мөрний өргөнөөс нарийн, алхахдаа бараг нэг шугам дээр гишгэнэ.
@@ -699,8 +771,9 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         Aim(c, side == 0 ? RightForeArm : LeftForeArm, side == 0 ? RightHand : LeftHand, Rotate(chest, Rotate(elbow, down)));
     };
     // Алхаа, гүйлтийн үед чөлөөтэй гар хөлийн эсрэг савлана; гүйхэд тохой нугарна.
-    const float armSwing = move * (26.0f + 16.0f * run) * std::sin(phase);
-    const float armBend = 16.0f + move * (10.0f + 52.0f * run);
+    // Баруун хөл урд байхад баруун гар хойно. Гүйхэд тохой ~90° нугарна.
+    const float armSwing = stride * (24.0f + 10.0f * gait.run + 12.0f * run) * rightWave;
+    const float armBend = 16.0f + stride * (8.0f + 60.0f * std::max(0.9f * gait.run, run));
     float curl[2] = { 14.0f, 14.0f };
 
     if (twoHanded)
@@ -716,7 +789,7 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         const Quaternion gunRotation = QuaternionMultiply(
             heading, QuaternionMultiply(AxisAngle(0.0f, 1.0f, 0.0f, (12.0f + 22.0f * run) * low),
                                         AxisAngle(1.0f, 0.0f, 0.0f, 22.0f * low + breathSway - 3.5f * recoil -
-                                                                        16.0f * reloading * upright)));
+                                                                        16.0f * reloading * upright - aimPitch)));
         // Бөгсний үзүүр (бууны орон зайд) баруун мөрний урд доор байрлана.
         // (Хэвтсэн үед бөгс мөрний урд, биеийн тэнхлэгийн дагуу.)
         // (Пуужин харвагч: хоолойн доод тал мөрний орой дээр хэвтэнэ, хоолой нь мөрнөөс хойш цухуйна.)
@@ -763,7 +836,8 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         const float reloading = pose.reload >= 0.0f ? std::sin(pose.reload * PI) : 0.0f;
         const Vector3 grip = Mix(ready, aimed, extend * (1.0f - 0.5f * reloading));
         const Quaternion gunRotation = QuaternionMultiply(
-            heading, AxisAngle(1.0f, 0.0f, 0.0f, 26.0f * (1.0f - extend) - 16.0f * recoil + pose.breath - 30.0f * reloading));
+            heading, AxisAngle(1.0f, 0.0f, 0.0f, 26.0f * (1.0f - extend) - 16.0f * recoil + pose.breath - 30.0f * reloading -
+                                          aimPitch));
         frames.rightForearm = Frame(gunRotation, grip);
 
         reach(0, Vector3Add(grip, Rotate(gunRotation, { -0.015f, 0.0f, 0.0f })), Rotate(chest, { -0.8f, -1.0f, 0.0f }),
@@ -831,6 +905,19 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         {
             swing(0, pose.shoulder[0], pose.shoulderYaw[0], pose.elbow[0]);
             swing(1, pose.shoulder[1], pose.shoulderYaw[1], pose.elbow[1]);
+            if (pose.grip > 0.0f)
+            {
+                // Гар барих цэг рүү: тохой гадагш, хойш (тавцан түлхэх, хүрээнээс зүүгдэх).
+                for (int side = 0; side < 2; ++side)
+                {
+                    const Vector3 hand = Vector3Scale(JointPosition(c, side == 0 ? RightHand : LeftHand), s);
+                    const float outward = side == 0 ? -1.0f : 1.0f;
+                    Unsolve(c, side == 0 ? RightArm : LeftArm);
+                    reach(side, Mix(hand, pose.gripPoint[side], std::min(1.0f, pose.grip)),
+                          Rotate(chest, { 0.7f * outward, -0.6f, -0.6f }), { 0.0f, -1.0f, 0.0f }, false);
+                }
+                curl[0] = curl[1] = 50.0f * pose.grip + 14.0f;
+            }
         }
     }
 

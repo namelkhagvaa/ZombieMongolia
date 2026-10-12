@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/CMakeFiles/enet-populate"
+		},
+		{
+			"file" : "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/CMakeFiles/enet-populate.rule"
+		},
+		{
+			"file" : "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/CMakeFiles/enet-populate-complete.rule"
+		},
+		{
+			"file" : "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-build.rule"
+		},
+		{
+			"file" : "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-configure.rule"
+		},
+		{
+			"file" : "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-download.rule"
+		},
+		{
+			"file" : "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-install.rule"
+		},
+		{
+			"file" : "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-mkdir.rule"
+		},
+		{
+			"file" : "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-patch.rule"
+		},
+		{
+			"file" : "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-test.rule"
+		},
+		{
+			"file" : "C:/ankhaa/ZombieMongolia/build_android/native-armeabi-v7a/_deps/enet-subbuild/enet-populate-prefix/src/enet-populate-stamp/enet-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"enet-populate"
+		],
+		"name" : "enet-populate"
+	}
+}
