@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/ankhaa/ZombieMongolia/build/_deps/enet-subbuild/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

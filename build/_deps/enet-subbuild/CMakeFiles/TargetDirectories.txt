@@ -1,0 +1,3 @@
+C:/ankhaa/ZombieMongolia/build/_deps/enet-subbuild/CMakeFiles/enet-populate.dir
+C:/ankhaa/ZombieMongolia/build/_deps/enet-subbuild/CMakeFiles/edit_cache.dir
+C:/ankhaa/ZombieMongolia/build/_deps/enet-subbuild/CMakeFiles/rebuild_cache.dir

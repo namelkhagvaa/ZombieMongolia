@@ -1,0 +1,13 @@
+format 2
+coins 2325
+kills 7369
+damage 3
+fireRate 1
+magazine 1
+health 0
+soldiers 4
+aimAssist 0
+firstPerson 1
+netTag 9597
+liberated 1000000000000000000000
+stage 1 7 7 0 0 0 0 1245 117
