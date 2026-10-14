@@ -18,6 +18,9 @@ namespace
     const float kLatMin = 41.2f, kLatMax = 52.5f;
 
     const int kPanelX = 950;
+    const int kPanelWidth = 300;
+    // Аймгийн картын доорх довтлох товч (Update ба Draw хоёулаа ашиглана)
+    const Rectangle kAttackButton = { (float)kPanelX, 246.0f, (float)kPanelWidth, 46.0f };
 
     const Color kLiberated = { 60, 170, 80, 255 };
     const Color kAvailable = { 235, 190, 40, 255 };
@@ -124,9 +127,11 @@ MapScreen::Result MapScreen::Update(Progress& progress, bool& progressChanged)
     if (InKeyPressed(KEY_LEFT) || InKeyPressed(KEY_UP)) selected = (selected + count - 1) % count;
 
     bool doubleClicked = false;
+    bool attackPressed = false;
     if (InMousePressed(MOUSE_BUTTON_LEFT))
     {
         const Vector2 mouse = InPointer();
+        attackPressed = CheckCollisionPointRec(mouse, kAttackButton);
         for (int i = 0; i < count; ++i)
         {
             // Contains нь нүхийг хасдаг тул Төв дотор Улаанбаатарыг товшиход Улаанбаатар сонгогдоно.
@@ -152,7 +157,7 @@ MapScreen::Result MapScreen::Update(Progress& progress, bool& progressChanged)
         }
     }
 
-    if ((doubleClicked || InKeyPressed(KEY_ENTER)) && IsProvinceUnlocked(progress, selected))
+    if ((doubleClicked || attackPressed || InKeyPressed(KEY_ENTER)) && IsProvinceUnlocked(progress, selected))
     {
         return Result::StartMission;
     }
@@ -233,7 +238,7 @@ void MapScreen::Draw(const Progress& progress) const
     for (int i = 0; i < objectives; ++i) objectivesDone += (doneMask >> i) & 1u;
     if (free) objectivesDone = objectives;
 
-    const int panelX = kPanelX, panelWidth = 300;
+    const int panelX = kPanelX, panelWidth = kPanelWidth;
     int y = 84;
     {
         const Rectangle card = { (float)panelX, (float)y, (float)panelWidth, 150.0f };
@@ -249,11 +254,12 @@ void MapScreen::Draw(const Progress& progress) const
         y += 162;
     }
 
-    // Довтлох товч (2 товших / ENTER)
+    // Довтлох товч (дарах / 2 товших / ENTER)
     if (unlocked)
     {
-        const Rectangle button = { (float)panelX, (float)y, (float)panelWidth, 46.0f };
-        DrawRectangleRounded(button, 0.5f, 8, Fade(Ui::kAccent, 0.85f + 0.15f * pulse));
+        const Rectangle button = kAttackButton;
+        const bool hover = CheckCollisionPointRec(InPointer(), button);
+        DrawRectangleRounded(button, 0.5f, 8, hover ? RAYWHITE : Fade(Ui::kAccent, 0.85f + 0.15f * pulse));
         const char* label = "ДОВТЛОХ";
         Ui::TextBold(label, panelX + (panelWidth - Ui::MeasureBold(label, 20)) / 2, y + 11, 20, { 30, 22, 6, 255 });
         y += 58;
@@ -303,7 +309,7 @@ void MapScreen::Draw(const Progress& progress) const
         int x = 30;
         const int hy = (int)(kMapRect.y + kMapRect.height) + 22;
         const struct { const char* key; const char* text; } hints[] = {
-            { "← →", "аймаг сонгох" }, { "2× / ENTER", "довтлох" }, { "1–5", "сайжруулалт авах" }, { "ESC", "гарах" } };
+            { "← →", "аймаг сонгох" }, { "2× / ENTER", "довтлох" }, { "1–5", "сайжруулалт авах" }, { "ESC", "цэс" } };
         for (const auto& hint : hints)
         {
             x += Ui::KeyBadge(hint.key, x, hy, 14, Ui::kText) + 8;

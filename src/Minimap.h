@@ -15,8 +15,10 @@ constexpr int kMinimapMargin = 16;
 // Тоглогч төвд байх ба зураг камертай хамт эргэнэ (дээд тал = камерын харж буй зүг).
 // Зам, барилга, саад, цэргүүд (ногоон), зомбинууд (улаан) харагдана.
 // markers: идэвхтэй даалгавруудын байршил (шар ромбо; хүрээнээс гарсан бол ирмэг дээр).
+// medKits: эмнэлгийн хайрцгууд (улаан загалмай; хүрээнээс гарсан бол ирмэг дээр).
 void DrawMinimap(const World& world, const Player& player, float cameraYaw, const ZombieHorde& horde,
-                 const SoldierSquad& squad, const Garage& garage, const std::vector<Vector3>& markers);
+                 const SoldierSquad& squad, const Garage& garage, const std::vector<Vector3>& markers,
+                 const std::vector<Vector3>& medKits);
 
 // M товчоор нээгдэх бүтэн дэлгэцийн газрын зураг. Хойд зүг үргэлж дээшээ.
 // Хулганы дугуйгаар 100%..1000% томруулж, зүүн товчоор чирж зөөнө.
@@ -37,7 +39,8 @@ public:
     // Дугуй, чирэлт, C (тоглогч дээр төвлөрөх) оролтыг боловсруулна.
     void Update(const World& world, const Player& player);
     void Draw(const World& world, const Player& player, const ZombieHorde& horde, const SoldierSquad& squad,
-              const Garage& garage, const std::vector<Vector3>& markers, const char* title) const;
+              const Garage& garage, const std::vector<Vector3>& markers, const std::vector<Vector3>& medKits,
+              const char* title) const;
 
 private:
     float BaseScale(const World& world) const; // 100% үеийн пиксел / метр

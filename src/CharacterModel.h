@@ -43,5 +43,6 @@ struct CharacterFrames
 // Гар бууны үед rightForearm нь гар бууны орон зай (эх нь бариулын төв, +Z нь ам, +Y нь дээш).
 // direct: байрлалын өнцгүүдийг (гуя, өвдөг, мөр, тохой) найруулагчгүйгээр шууд хэрэглэнэ (зомби: өөрийн алхаатай).
 // tint: загварын өнгийг үржүүлнэ (нэг загвартай олон дүрийг ялгахад).
+// lowDetail: холын дүрд загварын хөнгөн хувилбар (ачаалахдаа оройг нүдээр бүлэглэж үүсгэсэн).
 CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem held, bool direct = false,
-                                   Color tint = WHITE);
+                                   Color tint = WHITE, bool lowDetail = false);

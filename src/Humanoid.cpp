@@ -892,7 +892,7 @@ void DrawHumanoid(Vector3 feet, float facing, float scale, const HumanoidPose& p
                                look.held == HeldItem::Launcher ||
                                look.held == HeldItem::Shotgun;
         const CharacterFrames frames = DrawCharacterModel(look.model, pose, look.held,
-                                                          look.kind == HumanoidKind::Zombie, look.modelTint);
+                                                          look.kind == HumanoidKind::Zombie, look.modelTint, look.lowDetail);
 
         if (twoHanded)
         {
@@ -1041,10 +1041,11 @@ namespace
 }
 
 void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float walkPhase, float moveAmount, float reload,
-                   float action)
+                   float action, float aim)
 {
-    // Алхахад найгах, буудахад ухрах, цэнэглэхэд доошлох
-    const float sway = std::min(1.0f, moveAmount);
+    // Алхахад найгах, буудахад ухрах, цэнэглэхэд доошлох (онилж байхад найгалт бараг алга)
+    aim = std::clamp(aim, 0.0f, 1.0f);
+    const float sway = std::min(1.0f, moveAmount) * (1.0f - 0.85f * aim);
     const float bobX = std::sin(walkPhase) * 0.012f * sway;
     const float bobY = -std::fabs(std::cos(walkPhase)) * 0.016f * sway;
     const float reloading = reload >= 0.0f ? std::sin(reload * PI) : 0.0f;
@@ -1060,10 +1061,13 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
         // Буу дэлгэцийн баруун доор, гол төмөр нь хараа руу бага зэрэг чиглэнэ (Counter-Strike маягийн).
         // Жинхэнэ хэмжээгээр (1.1 м) зурвал дэлгэцийг дүүргэнэ: 55% болгож, их бие нь (0.45 м) дэлгэцийн
         // баруун доор 0.38 м-т байрлана. Бөгс нь дэлгэцийн гадна үлдэнэ.
+        // Онилоход (aim) гол төмөр нь дэлгэцийн төвд, хараан доор ирнэ (x = 0); ар тал нь харааг халхлахгүй
+        // байхаар бага зэрэг урагш, доош байрлана.
         const bool launcher = held == HeldItem::Launcher;
         const float scale = 0.55f;
-        rlTranslatef(-0.04f, launcher ? -0.31f : -0.365f, 0.13f - 0.04f * recoil);
-        rlRotatef(3.0f, 0.0f, 1.0f, 0.0f);
+        rlTranslatef(Lerp(-0.04f, 0.132f, aim), Lerp(launcher ? -0.31f : -0.365f, launcher ? -0.25f : -0.25f, aim),
+                     Lerp(0.13f, 0.24f, aim) - 0.04f * recoil);
+        rlRotatef(3.0f * (1.0f - aim), 0.0f, 1.0f, 0.0f);
         rlScalef(scale, scale, scale);
         rlRotatef(-5.0f * recoil - 18.0f * reloading, 1.0f, 0.0f, 0.0f);
         rlRotatef(-25.0f * reloading, 0.0f, 0.0f, 1.0f);
@@ -1088,7 +1092,7 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
     else if (held == HeldItem::Pistol)
     {
         // Гар буу: хоёр гараар урагш сунган барина
-        rlTranslatef(-0.13f, -0.17f, 0.46f - 0.04f * recoil);
+        rlTranslatef(Lerp(-0.13f, 0.0f, aim), Lerp(-0.17f, -0.12f, aim), 0.46f - 0.06f * aim - 0.04f * recoil);
         rlRotatef(-14.0f * recoil - 30.0f * reloading, 1.0f, 0.0f, 0.0f);
         rlScalef(0.75f, 0.75f, 0.75f);
         DrawPistolUpright();
@@ -1111,12 +1115,13 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
     rlPopMatrix();
 }
 
-Vector3 ViewModelMuzzle(const Camera3D& camera, HeldItem held)
+Vector3 ViewModelMuzzle(const Camera3D& camera, HeldItem held, float aim)
 {
     const Matrix basis = ViewBasis(camera);
-    // Бууны амны цэг (-0.24, 0.32, 1.06) нь 55%-ийн хэмжээ ба шилжилтийн дараа
-    Vector3 local = { -0.17f, -0.19f, 0.72f }; // автомат, үрлэн буу, дурантай буу
-    if (held == HeldItem::Pistol) local = { -0.13f, -0.09f, 0.6f };
-    else if (held == HeldItem::Launcher) local = { -0.17f, -0.14f, 0.82f };
-    return Vector3Transform(local, basis);
+    aim = std::clamp(aim, 0.0f, 1.0f);
+    // Бууны амны цэг (-0.24, 0.32, 1.06) нь 55%-ийн хэмжээ ба шилжилтийн дараа; онилоход төв рүү шилжинэ.
+    Vector3 hip = { -0.17f, -0.19f, 0.72f }, sight = { 0.0f, -0.075f, 0.83f }; // автомат, үрлэн буу, дурантай буу
+    if (held == HeldItem::Pistol) { hip = { -0.13f, -0.09f, 0.6f }; sight = { 0.0f, -0.04f, 0.54f }; }
+    else if (held == HeldItem::Launcher) { hip = { -0.17f, -0.14f, 0.82f }; sight = { 0.0f, -0.08f, 0.93f }; }
+    return Vector3Transform(Vector3Lerp(hip, sight, aim), basis);
 }

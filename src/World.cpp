@@ -336,6 +336,28 @@ int World::NearestPassage(Vector3 position, float maxDistance) const
     return best;
 }
 
+bool World::InSafeRoom(float x, float z) const
+{
+    const int room = InteriorAt(x, z);
+    return room >= 0 && interiors[room].safe;
+}
+
+void World::KeepOutOfSafeRooms(Vector3& position, float radius) const
+{
+    for (const Interior& room : interiors)
+    {
+        if (!room.safe || room.round) continue;
+        // Ханын зузааныг (0.2 м) оруулж гадна талаас нь хэмжинэ.
+        // (+0.3 м: том зомбины гар, мөр ханаар нэвт харагдахгүй)
+        const float halfX = room.halfX + 0.5f + radius, halfZ = room.halfZ + 0.5f + radius;
+        const float dx = position.x - room.center.x, dz = position.z - room.center.y;
+        const float overX = halfX - std::fabs(dx), overZ = halfZ - std::fabs(dz);
+        if (overX <= 0.0f || overZ <= 0.0f) continue;
+        if (overX < overZ) position.x += dx < 0.0f ? -overX : overX;
+        else position.z += dz < 0.0f ? -overZ : overZ;
+    }
+}
+
 int World::InteriorAt(float x, float z) const
 {
     for (int i = 0; i < (int)interiors.size(); ++i)

@@ -16,7 +16,7 @@ namespace
     const float kFollowDistance = 2.6f; // тоглогчоос байрлах зай
     const float kWalkSpeed = 6.0f;
     const float kCatchUpSpeed = 9.5f;
-    const float kTeleportDistance = 45.0f;
+    const float kSprintSpeed = 12.0f;    // хол хоцорсон үед: тоглогчийн гүйлтээс (9.6 м/с) хурдан тул заавал гүйцнэ
     const float kFireRange = 20.0f;
     const float kFireInterval = 0.45f;
     const float kDamage = 14.0f;
@@ -38,6 +38,7 @@ namespace
     const float kGuardRelocate = 10.0f;  // удирдагч байр сонгосон цэгээсээ ийм холдвол шинэ байр сонгоно
     const float kGuardStroll = 2.2f;     // байр солихдоо алхах хурд, м/с (ойрхон байвал)
     const float kRecruitEngage = 22.0f, kRecruitNear = 5.0f, kRecruitFar = 14.0f;
+    const float kRecruitProtect = 24.0f; // удирдаж буй гишүүнд ийм ойртсон зомби руу элсүүлсэн цэрэг дайрна
     const float kRecruitLeash = 26.0f;   // удирдагчаас ийм холдвол тулаанаа орхино
 
     float Random01()
@@ -46,7 +47,7 @@ namespace
     }
 
     const float kFallTime = 0.6f;
-    const float kStuckTime = 4.0f; // ийм удаан ахицгүй байвал тоглогчийн дэргэд шилжинэ
+    const float kStuckTime = 4.0f; // ийм удаан ахицгүй байвал тойрох зүгээ сольж оролдоно
 
     HumanoidLook MakeLook()
     {
@@ -173,9 +174,13 @@ void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, Zombie
         // --- Элсүүлсэн цэрэг ч мөн адил: харуулын байрнаасаа зомби руу бие даан байр сонгон байлдана ---
         int enemyIndex = -1;
         const bool mounted = soldier.riding >= 0 || soldier.boarding;
-        if (!mounted && HorizontalDistance(pos, playerPosition) < (teammate ? kTeamLeash : kRecruitLeash))
+        const bool holding = soldier.holding && teammate && !mounted;
+        if (!mounted && !holding && HorizontalDistance(pos, playerPosition) < (teammate ? kTeamLeash : kRecruitLeash))
         {
-            enemyIndex = horde.Nearest(pos, sniper ? kSniperEngage : teammate ? kFighterEngage : kRecruitEngage);
+            // Элсүүлсэн цэрэг удирдаж буй гишүүнээ хамгаална: түүнд ойртсон зомбийг түрүүлж,
+            // дараа нь өөрийнхөө дэргэдэхийг.
+            if (!teammate) enemyIndex = horde.Nearest(playerPosition, kRecruitProtect);
+            if (enemyIndex < 0) enemyIndex = horde.Nearest(pos, sniper ? kSniperEngage : teammate ? kFighterEngage : kRecruitEngage);
         }
         soldier.fighting = enemyIndex >= 0;
 
@@ -183,6 +188,22 @@ void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, Zombie
         {
             // Унаанд сууж яваа: байрлал, харах зүгийг Game унаанаас нь авч тавьдаг.
             soldier.moving = false;
+            soldier.routeFrom = soldier.routeTo = -2;
+            soldier.stuckTimer = 0.0f;
+            soldier.bestDistance = 0.0f;
+        }
+        else if (holding)
+        {
+            // "Энд бай": байрандаа зогсоно (түлхэгдсэн бол буцаж ирнэ), доорх буудлага эндээс явагдана.
+            const float off = HorizontalDistance(pos, soldier.holdPoint);
+            soldier.moving = off > 0.8f;
+            if (soldier.moving)
+            {
+                const float speed = off > 6.0f ? kCatchUpSpeed : kWalkSpeed;
+                MoveToward(soldier.mover, soldier.holdPoint, speed, dt, world, kRadius, kHeight, 0.0f);
+                soldier.walkCycle += dt * HumanoidGaitRate(speed);
+                soldier.moveAmount = speed / kWalkSpeed;
+            }
             soldier.routeFrom = soldier.routeTo = -2;
             soldier.stuckTimer = 0.0f;
             soldier.bestDistance = 0.0f;
@@ -342,9 +363,11 @@ void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, Zombie
             soldier.moving = onRoute || toSlot > startDistance;
 
             // Гацсан эсэх: зорилтдоо ойртохгүй хэдэн секунд болбол (хашаа, хана тойрч чадахгүй)
-            // тоглогчийн дэргэдэх байрандаа шилжинэ. Цэргүүд жинхэнэ зам хайдаггүй тул энэ нь баталгаа болно.
+            // тойрох зүгээ сольж оролдоно (доор). Цэргүүд жинхэнэ зам хайдаггүй тул энэ нь баталгаа болно.
             const float remaining = HorizontalDistance(pos, target);
-            if (!soldier.moving || remaining < soldier.bestDistance - 0.4f || remaining > soldier.bestDistance + 6.0f)
+            const bool progressed = remaining < soldier.bestDistance - 0.4f;
+            if (!soldier.moving || progressed) soldier.stuckCount = 0;
+            if (!soldier.moving || progressed || remaining > soldier.bestDistance + 6.0f)
             {
                 soldier.bestDistance = remaining; // ахиц гарсан (эсвэл зорилт өөрчлөгдсөн)
                 soldier.stuckTimer = 0.0f;
@@ -355,20 +378,41 @@ void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, Zombie
             }
             const bool stuck = soldier.stuckTimer > kStuckTime;
 
-            if (toSlot > kTeleportDistance || stuck)
+            // Тоглогчийн дэргэд гэнэт гарч ирэхгүй: заавал араас нь гүйж гүйцнэ.
+            // Гацвал эхлээд нөгөө талаар нь удаан тойрно. Гурав дахь удаа ч гацвал (хашаанд бүрэн хаагдсан)
+            // тоглогчийн дэргэд биш, 12-25 м цаана, түүн рүү чиглэсэн шугам дээр тавьж, тэндээс гүйлгэнэ.
+            if (stuck)
             {
                 soldier.stuckTimer = 0.0f;
-                soldier.bestDistance = 0.0f;
-                soldier.routeFrom = soldier.routeTo = -2;
-                pos = slot;
-                pos.y = playerPosition.y;
-                world.ResolveHorizontal(pos, kRadius, kHeight, 0.0f);
+                soldier.bestDistance = remaining;
+                ++soldier.stuckCount;
+                if (soldier.stuckCount < 3)
+                {
+                    soldier.mover.detourSign = -soldier.mover.detourSign;
+                    soldier.mover.detourTimer = 2.5f;
+                }
+                else
+                {
+                    soldier.stuckCount = 0;
+                    soldier.routeFrom = soldier.routeTo = -2;
+                    const float away = std::max(0.01f, HorizontalDistance(pos, playerPosition));
+                    const float back = std::clamp(away * 0.5f, 12.0f, 25.0f);
+                    Vector3 spot = { playerPosition.x + (pos.x - playerPosition.x) / away * back, playerPosition.y,
+                                     playerPosition.z + (pos.z - playerPosition.z) / away * back };
+                    world.ResolveHorizontal(spot, kRadius, kHeight, 0.0f);
+                    if (world.InteriorAt(spot.x, spot.z) < 0 && world.InsideBoundary(spot.x, spot.z))
+                    {
+                        spot.y = world.GroundHeight(spot.x, spot.z);
+                        pos = spot;
+                    }
+                }
             }
-            else if (soldier.moving)
+            if (soldier.moving)
             {
-                // Харуулын байр солихдоо ойрхон бол тайван алхана, хол бол гүйнэ.
-                const float speed = guarding ? (toSlot > 20.0f ? kCatchUpSpeed : toSlot > 7.0f ? kWalkSpeed : kGuardStroll)
-                                             : (toSlot > 8.0f ? kCatchUpSpeed : kWalkSpeed);
+                // Харуулын байр солихдоо ойрхон бол тайван алхана, хол бол гүйнэ; хол хоцорсон бол бүр хурдан.
+                const float catchUp = toSlot > 25.0f ? kSprintSpeed : kCatchUpSpeed;
+                const float speed = guarding ? (toSlot > 20.0f ? catchUp : toSlot > 7.0f ? kWalkSpeed : kGuardStroll)
+                                             : (toSlot > 8.0f ? catchUp : kWalkSpeed);
                 MoveToward(soldier.mover, target, speed, dt, world, kRadius, kHeight, 0.0f);
                 soldier.walkCycle += dt * HumanoidGaitRate(speed);
                 soldier.moveAmount = speed / kWalkSpeed;
@@ -399,8 +443,9 @@ void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, Zombie
 
         // Багийн гишүүд удирдаж буй гишүүнээ хамгаална: түүнд хамгийн ойр зомбийг түрүүлж буудна.
         int targetIndex = -1;
-        if (teammate)
+        if (!holding)
         {
+            // Удирдаж буй гишүүнд ойртсон зомбийг түрүүлж буудна (байрандаа үлдсэн гишүүн өөрийнхөө орчныг).
             targetIndex = horde.Nearest(playerPosition, kGuardRadius);
             if (targetIndex >= 0 && HorizontalDistance(pos, horde.At(targetIndex).mover.position) > fireRange)
             {
@@ -451,6 +496,8 @@ void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, Zombie
                 horde.Damage(targetIndex, damage);
                 horde.AlertAround(pos, 70.0f); // буун дуунд зомби сэрнэ
                 tracers.Add(muzzle, chest, sniper ? RAYWHITE : ORANGE);
+                ++soldier.shots;
+                soldier.shotEnd = chest;
                 particles.Flash(muzzle, ray.direction);
                 particles.Blood(chest, Vector3Negate(ray.direction), 4);
             }
@@ -462,7 +509,7 @@ void SoldierSquad::Damage(int index, float amount)
 {
     Soldier& soldier = soldiers[index];
     // Элсүүлсэн жирийн цэрэг багийн гишүүдээс сул: хохирлыг 1.5 дахин авна.
-    soldier.health -= soldier.member < 0 ? amount * 1.5f : amount;
+    soldier.health -= soldier.member < 0 ? amount * 1.5f : amount / kTeamToughness;
     if (soldier.health <= 0.0f)
     {
         soldier.health = 0.0f;
@@ -504,8 +551,11 @@ void SoldierSquad::Draw(Vector3 viewPosition, bool showColliders) const
             pose.bob = 0.0f;
             pose.seated = true;
             pose.aim = soldier.aimPose;
-            DrawHumanoid({ soldier.seat.x, soldier.seat.y - 0.9f, soldier.seat.z }, soldier.mover.facing, 1.0f, pose, look,
-                         detailed);
+            // Буудахдаа бие бай руу эргэнэ (±120 градус), ташаа хөл нь унааны зүгт.
+            const float twist = std::clamp(std::remainder(soldier.mover.facing - soldier.seatHeading, 2.0f * PI), -2.1f, 2.1f);
+            pose.seatTwist = -twist * RAD2DEG;
+            DrawHumanoid({ soldier.seat.x, soldier.seat.y - 0.9f, soldier.seat.z }, soldier.seatHeading + twist, 1.0f, pose,
+                         look, detailed);
             continue;
         }
 

@@ -5,6 +5,8 @@
 #include "World.h"
 #include "raylib.h"
 
+#include <algorithm>
+
 // Унаа унасан үеийн суудлын хэлбэр
 enum class RideStyle
 {
@@ -46,6 +48,12 @@ public:
 
     // Эхлэх цэгт, бүрэн амьтай буцаана.
     void Reset(float newMaxHealth);
+    // Амийн дээд хэмжээг өөрчилнө (нэмэгдсэн хэмжээгээр амь нэмэгдэнэ).
+    void SetMaxHealth(float newMaxHealth)
+    {
+        health = std::max(1.0f, health + newMaxHealth - maxHealth);
+        maxHealth = newMaxHealth;
+    }
     void Teleport(Vector3 newPosition);
     // Хурдыг хөндөхгүйгээр хэвтээ байрлалыг засна (саадаас түлхэх).
     void Nudge(float x, float z) { position.x = x; position.z = z; }
@@ -144,6 +152,7 @@ private:
     float demoDirection = 0.0f, demoReload = -1.0f;
     RideStyle rideStyle = RideStyle::None;
     Vector3 seat = { 0.0f, 0.0f, 0.0f }; // унаа унасан үеийн ташааны байрлал
+    float rideHeading = 0.0f;            // унааны зүг (бие онилсон зүг рүү эргэхэд ташаа, хөл энэ зүгт)
 
     // Биеийг зурах, сум гарах цэгийг тооцох суурь (хөлийн түвшин).
     Vector3 BodyBase() const;

@@ -3,6 +3,7 @@
 #include "Input.h"
 
 #include "Humanoid.h"
+#include "Mover.h"
 #include "Team.h"
 #include "raymath.h"
 
@@ -228,6 +229,12 @@ void Player::AimAtPoint(Vector3 target)
 
     const float horizontal = std::sqrt((target.x - from.x) * (target.x - from.x) + (target.z - from.z) * (target.z - from.z));
     const float limit = 1.1f - 0.75f * pronePose; // хэвтсэн үед буу их өргөгдөхгүй
+    if (IsRiding())
+    {
+        // Унаан дээр зөвхөн их бие эргэнэ: унааны зүгээс ±120 градусаас хэтрэхгүй.
+        const float twist = std::clamp(std::remainder(yaw - rideHeading, 2.0f * PI), -2.1f, 2.1f);
+        yaw = rideHeading + twist;
+    }
     facing = yaw;
     aimPitch = horizontal > 0.6f ? std::clamp(std::atan2(target.y - from.y, horizontal), -limit, limit) : 0.0f;
     aimTimer = 0.4f;
@@ -268,6 +275,7 @@ void Player::Ride(float dt, Vector3 ground, Vector3 seatHip, float heading, Ride
     grounded = true;
     seat = seatHip;
     rideStyle = style;
+    rideHeading = heading;
 
     // Онилж буудаагүй үед унааны явж буй зүг рүү харна.
     if (aimTimer <= 0.0f)
@@ -303,7 +311,7 @@ void Player::StartAction(float duration)
 
 void Player::TakeDamage(float amount)
 {
-    health = std::max(0.0f, health - amount);
+    health = std::max(0.0f, health - amount / kTeamToughness);
     timeSinceHit = 0.0f;
 }
 
@@ -505,6 +513,7 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
         pose.seated = true;
         pose.aim = aimPose;
         pose.aimPitch = aimPitch * RAD2DEG;
+        pose.seatTwist = std::remainder(rideHeading - facing, 2.0f * PI) * RAD2DEG; // ташаа, хөл унааны зүгт
         DrawHumanoid(BodyBase(), facing, 1.0f, pose, look);
         return;
     }
@@ -519,19 +528,60 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
         pose.seated = true;
         pose.time = (float)GetTime();
         const float t = std::min(1.0f, traverseTime / traverseDuration);
-        const float swing = std::sin(walkCycle);
         if (traverse.kind == PassageKind::LadderUp || traverse.kind == PassageKind::LadderDown)
         {
-            // Шат: гар хөл ээлжлэн дээш доош
-            pose.shoulder[0] = 140.0f + 28.0f * swing;
-            pose.shoulder[1] = 140.0f - 28.0f * swing;
-            pose.elbow[0] = 50.0f - 30.0f * swing;
-            pose.elbow[1] = 50.0f + 30.0f * swing;
-            pose.hip[0] = 38.0f - 30.0f * swing;
-            pose.hip[1] = 38.0f + 30.0f * swing;
-            pose.knee[0] = 60.0f - 38.0f * swing;
-            pose.knee[1] = 60.0f + 38.0f * swing;
-            pose.lean = 6.0f;
+            // Шат: гар гишгүүрээс барина. Гишгүүр 0.35 м тутамд (Structures.cpp). Гар бүр нэг гишгүүрийг барьж
+            // бие 0.7 м өгсөхөд дараагийн (2 гишгүүрийн дээрх) гишгүүр рүү шилжинэ; хоёр гар ээлжилнэ.
+            const float kRung = 0.35f;
+            const bool up = traverse.kind == PassageKind::LadderUp;
+            const Vector3 bottom = up ? traverse.from : traverse.to;
+            const Vector3 forward = { std::sin(facing), 0.0f, std::cos(facing) };
+            const Vector3 bodyRight = { -std::cos(facing), 0.0f, std::sin(facing) };
+            const Vector3 ladder = Vector3Add(bottom, Vector3Scale(forward, traverse.wall - 0.05f)); // гишгүүрийн урд тал
+            const float railTop = std::max(traverse.from.y, traverse.to.y) + 0.75f;
+
+            // Дээд үзүүрт тавцан руу гарах алхам (step: 0 = шатан дээр .. 1 = тавцан дээр зогссон).
+            // Update-ийн замтай ижил: өгсөхөд сүүлийн 20%, буухад эхний 20% нь хэвтээ алхам.
+            const float split = up ? 0.8f : 0.2f;
+            const float step = up ? std::clamp((t - split) / (1.0f - split), 0.0f, 1.0f) : std::clamp(1.0f - t / split, 0.0f, 1.0f);
+            auto smooth = [](float x) { x = std::clamp(x, 0.0f, 1.0f); return x * x * (3.0f - 2.0f * x); };
+            // Гар: эхлээд шатны хоёр хажуугийн модны орой дээр тулж (биеэ түлхэн гаргана), дараа нь аажим суллана.
+            const float toRails = smooth(step / 0.3f);
+            pose.grip = 1.0f - smooth((step - 0.55f) / 0.4f);
+
+            const float sn = std::sin(facing), cs = std::cos(facing);
+            for (int side = 0; side < 2; ++side)
+            {
+                const float u = (position.y + (float)side * kRung) / (2.0f * kRung);
+                const float cycle = std::floor(u), frac = u - cycle;
+                const float held = cycle * 2.0f * kRung - (float)side * kRung + 1.75f;
+                const float move = std::clamp((frac - 0.75f) / 0.25f, 0.0f, 1.0f);
+                const float blend = move * move * (3.0f - 2.0f * move);
+                const float y = std::min(railTop, held + 2.0f * kRung * blend);
+                // Гишгүүр солих үед гар бага зэрэг хойш татагдана.
+                Vector3 point = Vector3Add(ladder, Vector3Scale(forward, -0.1f * std::sin(PI * blend)));
+                point = Vector3Add(point, Vector3Scale(bodyRight, side == 0 ? 0.17f : -0.17f));
+                point.y = y;
+                // Шатны хажуугийн модны орой (тавцангаас 0.8 м дээш)
+                Vector3 rail = Vector3Add(ladder, Vector3Scale(bodyRight, side == 0 ? 0.25f : -0.25f));
+                rail.y = railTop - 0.05f;
+                point = Vector3Lerp(point, rail, toRails);
+                const Vector3 d = Vector3Subtract(point, position);
+                pose.gripPoint[side] = { d.x * cs - d.z * sn, d.y - pose.bob, d.x * sn + d.z * cs };
+                // Суллах үед гар доошоо, биеийн хажууд (толгой дээгүүр өргөгдөхгүй)
+                pose.shoulder[side] = Lerp(150.0f, 8.0f, step);
+                pose.elbow[side] = Lerp(30.0f, 18.0f, step);
+                pose.shoulderYaw[side] = 8.0f;
+            }
+
+            // Хөл: авирсан өндөртэй уялдаж ээлжлэн дээш гишгэнэ; тавцан руу гарахад нэг хөлөөрөө алхаж зогсоно.
+            const float legSwing = std::sin(position.y / (2.0f * kRung) * 2.0f * PI) * (1.0f - step);
+            const float stride = std::sin(PI * step);
+            pose.hip[0] = Lerp(45.0f + 30.0f * legSwing, 35.0f * stride, step);
+            pose.hip[1] = Lerp(45.0f - 30.0f * legSwing, -10.0f * stride, step);
+            pose.knee[0] = Lerp(70.0f + 40.0f * legSwing, 45.0f * stride, step);
+            pose.knee[1] = Lerp(70.0f - 40.0f * legSwing, 15.0f * stride, step);
+            pose.lean = Lerp(4.0f, 16.0f * stride, step); // давж гарахдаа урагш бөхийнө
         }
         else
         {

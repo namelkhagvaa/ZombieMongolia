@@ -24,11 +24,24 @@ namespace
     const float kMountDistance = 2.2f;    // унааны ирмэгээс ийм зайд F дарж сууна
     const float kDoorDistance = 2.4f;     // хаалганы төвөөс ийм зайд F дарж нээж хаана
     const float kPassageDistance = 1.3f;  // шат, цонхны эхлэх цэгээс ийм зайд F дарж туулна
-    const float kRecruitDistance = 3.2f;  // элсүүлэх цэгээс ийм зайд E дарна
-    // 500 зомби устгах тутам зомбины хурд 2 дахин нэмэгдэнэ; тоглох боломжтой байхын тулд 4 дахинаар хязгаарлана.
-    const int kKillsPerSpeedup = 500;
-    const float kMaxZombieSpeedMultiplier = 4.0f;
+    // 1000 зомби устгах тутам зомбины хурд 1.5 дахин нэмэгдэнэ; тоглох боломжтой байхын тулд 3 дахинаар хязгаарлана.
+    const int kKillsPerSpeedup = 1000;
+    const float kZombieSpeedupStep = 1.5f;
+    const float kMaxZombieSpeedMultiplier = 3.0f;
     const int kRecruitCost = 300;         // нэг цэрэг элсүүлэх үнэ, зоос
+    const int kGrenadeCost = 80;          // дэлгүүр: 4 гранат
+    const int kHealCost = 100;            // дэлгүүр: багийн гурван гишүүний амийг 100% болгох
+
+    // Даалгаврын үеийн дэлгүүрийн бараа (цэсний дараалал = 1..7 товч).
+    enum class ShopOffer { Recruit, Damage, FireRate, Magazine, Grenades, Heal, MaxHealth, Count };
+
+    // Цэсний мөрүүдийн байрлал: зурах ба товшилт шалгах хоёр үүнийг ашиглана.
+    const float kShopPanelWidth = 620.0f, kShopRowHeight = 52.0f, kShopTop = 150.0f;
+    Rectangle ShopRow(int index)
+    {
+        const float x = ((float)ViewWidth() - kShopPanelWidth) * 0.5f + 20.0f;
+        return { x, kShopTop + (float)index * (kShopRowHeight + 6.0f), kShopPanelWidth - 40.0f, kShopRowHeight };
+    }
 
     // Гарцын үйлдлийн нэр: [0] гарын заавар, [1] мэдрэгчтэй дэлгэцийн товчлуур.
     const char* PassageLabel(PassageKind kind, bool touch)
@@ -73,7 +86,8 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
 #else
     InitWindow(config.screenWidth, config.screenHeight, "Zombie Mongolia");
     // Цонхны икон (tools\make_icons.ps1 үүсгэнэ): exe-ийн хажуу эсвэл төслийн assets хавтсаас
-    for (const char* path : { "assets/window_icon.png", "../assets/window_icon.png" })
+    const std::string installed = std::string(GetApplicationDirectory()) + "assets/window_icon.png";
+    for (const char* path : { "assets/window_icon.png", "../assets/window_icon.png", installed.c_str() })
     {
         if (!FileExists(path)) continue;
         Image icon = LoadImage(path);
@@ -117,6 +131,10 @@ Game::Game(const LaunchOptions& launchOptions)
     }
     config.touchAimAssist = progress.aimAssist;
     mapScreen.SelectNextTarget(progress);
+#if !defined(__ANDROID__)
+    // Компьютер: хадгалсан сонголтоор бүтэн дэлгэц (туршилтын горимд цонхоор).
+    if (progress.fullscreen && !options.screenshotPath && !options.touch) SetFullscreen(true);
+#endif
 }
 
 Game::~Game()
@@ -180,6 +198,13 @@ void Game::Run()
             fullMap.SetZoom(options.fullMapZoom);
         }
         journalOpen = options.journal;
+        if (options.shop) OpenShop();
+        if (options.pause) OpenPause();
+        if (options.airstrike)
+        {
+            airstrike.Start(player.Position(), camera.Yaw()); // туршилт: бөмбөгдөлтийн кино
+            state = GameState::Airstrike;
+        }
 
         if (options.soldiers > 0)
         {
@@ -326,20 +351,48 @@ void Game::Run()
         // ESC (утсан дээр "буцах" товч): нээлттэй цонхыг (даалгаврын журнал, газрын зураг) хаана; цонхгүй бол гарна.
         if (InKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_BACK))
         {
-            if (journalOpen)
+            if (paused)
+            {
+                ClosePause();
+            }
+            else if (journalOpen)
             {
                 CloseJournal();
+            }
+            else if (shopOpen)
+            {
+                CloseShop();
             }
             else if (fullMap.IsOpen())
             {
                 fullMap.Close();
                 LockCursor();
             }
-            else
+            else if (benchmark)
             {
-                if (benchmark) TraceLog(LOG_INFO, "BENCH: stopped early by the ESC key at frame %d", frame);
+                TraceLog(LOG_INFO, "BENCH: stopped early by the ESC key at frame %d", frame);
                 break;
             }
+            else
+            {
+                OpenPause(); // тоглоомын цэс: шууд гарахгүй
+            }
+        }
+#if !defined(__ANDROID__)
+        if (IsKeyPressed(KEY_F11)) SetFullscreen(!progress.fullscreen);
+#endif
+        if (paused)
+        {
+            UpdatePauseMenu();
+            if (quitRequested) break;
+            // Ганцаараа: тоглоом түр зогсоно. Хамтарсан тоглолтод нөгөө тоглогч үргэлжлүүлж байгаа тул ертөнц
+            // хөдөлсөөр (snapshot, зомби), зөвхөн энэ тоглогчийн оролт хаагдана.
+            if (!(net.Connected() && (coopGuest || remoteActive)))
+            {
+                Draw();
+                continue;
+            }
+            InSetMuted(true);
         }
 
         switch (state)
@@ -350,6 +403,11 @@ void Game::Run()
         case GameState::Playing:
             // Q: даалгаврын журнал. M: бүтэн дэлгэцийн газрын зураг. Аль нэг нь нээлттэй үед тоглоом түр зогсож,
             // хулганы заагч гарч ирнэ; камер эргэхгүй, буудлага явагдахгүй.
+            if (shopOpen)
+            {
+                UpdateShopMenu(); // дэлгүүрийн цэс: тоглоом түр зогсоно
+                break;
+            }
             if (InKeyPressed(KEY_Q) && !fullMap.IsOpen())
             {
                 if (journalOpen)
@@ -389,12 +447,16 @@ void Game::Run()
                 UpdateMission(dt);
             }
             break;
+        case GameState::Airstrike:
+            UpdateAirstrike(dt);
+            break;
         case GameState::Won:
         case GameState::Lost:
             tracers.Update(dt);
             if (InKeyPressed(KEY_ENTER)) ReturnToMap();
             break;
         }
+        InSetMuted(false);
 
         Draw();
     }
@@ -417,7 +479,7 @@ void Game::HandleSettingsInput()
     if (InKeyPressed(KEY_I)) config.invertY = !config.invertY;
     // F1, F2, F3 нь багийн гишүүд рүү шилжих товч болсон тул тусламж, шалгах горим өөр товчинд.
     if (InKeyPressed(KEY_F4)) showDebug = !showDebug;
-    if (InKeyPressed(KEY_H)) showHelp = !showHelp;
+    if (InKeyPressed(KEY_F10)) showHelp = !showHelp; // (H нь "энд бай" тушаал)
 }
 
 // ---------------------------------------------------------------- Газрын зураг
@@ -463,6 +525,7 @@ void Game::StartMission(int index)
     // Энэ үеийн суурин, отрууд: аймаг бүрд байшингууд, зохион байгуулалт нь өөр.
     world.BuildSettlements(index);
     missionKills = 0;
+    medKitKills = 0;
     lastReward = 0;
 
     player.Reset(config.playerBaseHealth + kHealthPerLevel * (float)progress.healthLevel);
@@ -475,6 +538,9 @@ void Game::StartMission(int index)
                                                     : member == 1 ? Loadout::Heavy : Loadout::Fighter);
     }
     activeMember = 0;
+    aimToggled = false;
+    progress.firstPerson = false; // даалгавар бүр 3-р этгээдийн камераар эхэлнэ (V-ээр 1-р этгээд рүү шилжинэ)
+    for (bool& mark : holdMark) mark = false;
     arsenal = arsenals[0];
     player.SetLook(TeamMemberLook(0));
     grenades.Clear();
@@ -483,6 +549,7 @@ void Game::StartMission(int index)
     particles.Clear();
     fullMap.Close();
     barrels.Spawn(world, index); // аймаг бүрт өөр байрлалд
+    medKits.Clear();
     world.Stream(player.Position(), true); // эхлэх цэгийн орчмын газрыг бүгдийг нь нэг дор бэлтгэнэ
     world.CloseAllDoors();
     SpawnVehicles();
@@ -501,6 +568,7 @@ void Game::StartMission(int index)
     }
     mission.Start(index, params, world, stageSave);
     journalOpen = false;
+    shopOpen = false;
 
     LockCursor(); // хулганыг цонхонд түгжиж, камерт ашиглана
     state = GameState::Playing;
@@ -571,8 +639,19 @@ bool Game::SwitchMember(int target, bool leaveDead)
     body.riding = -1;
     body.boarding = false;
     body.seatStyle = 0;
+    // "Энд бай" тэмдэгтэй гишүүнийг орхивол тэр яг энэ байрнаасаа байлдана; удирдлагаа авсан гишүүн чөлөөтэй.
+    body.holding = holdMark[activeMember] && !leaveDead;
+    body.holdPoint = oldPosition;
+    holdMark[activeMember] = false;
+    holdMark[target] = false;
 
     activeMember = target;
+    aimToggled = false; // шинэ гишүүн онилоогүй байдлаар эхэлнэ
+    // Элсүүлсэн цэргүүд шинэ удирдагчийн эргэн тойронд шууд байр сонгоно (түүнийг хамгаална).
+    for (Soldier& soldier : squad.All())
+    {
+        if (soldier.member < 0) soldier.guardTimer = 0.0f;
+    }
     arsenal = arsenals[target];
     player.SetLook(TeamMemberLook(target));
     player.SetHeld(HeldFor(arsenal.Current()));
@@ -652,7 +731,7 @@ void Game::UpdateShooting()
 Vector3 Game::EffectMuzzle() const
 {
     // 1-р этгээдийн үед сумны мөр, амны гал дэлгэц дээрх бууны амнаас гарна.
-    return camera.IsFirstPerson() ? ViewModelMuzzle(camera.Get(), player.Held()) : player.MuzzlePosition();
+    return camera.IsFirstPerson() ? ViewModelMuzzle(camera.Get(), player.Held(), camera.AimBlend()) : player.MuzzlePosition();
 }
 
 Vector3 Game::CrosshairTarget() const
@@ -705,6 +784,13 @@ void Game::UseKnife(Ray aim, float cameraDistance)
 
     // Биед 5, толгойд 2 удаа хатгахад үхнэ (зомбины төрлөөс үл хамаарна).
     horde.DamageFraction(target, head ? kKnifeHeadFraction : kKnifeBodyFraction);
+    if (coopGuest)
+    {
+        // Зочин: хутганы хохирлыг хост тооцно (DamageFraction-тэй ижил томьёо)
+        const Zombie& zombie = horde.At(target);
+        const float fraction = (head ? kKnifeHeadFraction : kKnifeBodyFraction) * (zombie.boss ? 0.12f : 1.0f);
+        net.SendHit(zombie.id, zombie.maxHealth * fraction + 0.01f, head);
+    }
     particles.Blood(point, Vector3Negate(aim.direction), head ? 10 : 6);
 }
 
@@ -747,6 +833,7 @@ void Game::FireGun(Ray aim, float cameraDistance)
         const float distance = hit.index >= 0 ? hit.distance : wallDistance;
         const Vector3 end = Vector3Add(ray.position, Vector3Scale(ray.direction, distance));
         tracers.Add(muzzle, end, hit.headshot ? RED : YELLOW);
+        if (pellet == 0) localShotEnd = end; // хамтарсан тоглолт: нөгөө талд сумны мөр зурна
 
         if (hit.index >= 0)
         {
@@ -770,6 +857,7 @@ void Game::FireGun(Ray aim, float cameraDistance)
     const Vector3 rightSide = { -std::cos(facing), 0.0f, std::sin(facing) };
     const Vector3 forward = { std::sin(facing), 0.0f, std::cos(facing) };
     player.OnFired();
+    ++localShots;
     particles.Flash(muzzle, Vector3Normalize(Vector3Add(aim.direction, forward)));
     particles.Shell(Vector3Add(muzzle, Vector3Scale(forward, -0.4f)), rightSide);
 }
@@ -786,6 +874,7 @@ void Game::FireLauncher(Ray aim, float cameraDistance)
     const Vector3 muzzle = EffectMuzzle();
     const Vector3 direction = Vector3Normalize(Vector3Subtract(target, muzzle));
     grenades.Launch(muzzle, Vector3Scale(direction, kRocketSpeed));
+    if (net.Connected() && (coopGuest || remoteActive)) net.SendProjectile(1, muzzle, Vector3Scale(direction, kRocketSpeed));
     horde.AlertAround(player.Position(), 130.0f);
 
     // Харвалтын гал урд, ард хоёр талаас; хүчтэй ухралт
@@ -806,6 +895,7 @@ void Game::ThrowGrenade(Ray aim)
     Vector3 velocity = Vector3Scale(aim.direction, 15.0f);
     velocity.y += 5.0f;
     grenades.Throw(from, velocity);
+    if (net.Connected() && (coopGuest || remoteActive)) net.SendProjectile(0, from, velocity);
 }
 
 void Game::SpawnVehicles()
@@ -872,7 +962,8 @@ Game::Interaction Game::FindInteraction() const
     Interaction result;
     const Vector3 position = player.Position();
 
-    const int vehicle = garage.Nearest(position, kMountDistance);
+    int vehicle = garage.Nearest(position, kMountDistance);
+    if (vehicle >= 0 && garage.At(vehicle).occupied) vehicle = -1; // нөгөө тоглогч (эсвэл түүний баг) сууж яваа
     const int door = world.NearestDoor(position, kDoorDistance);
 
     float vehicleDistance = 1e9f, doorDistance = 1e9f;
@@ -925,11 +1016,18 @@ void Game::UpdateVehicles(float dt)
             const Interaction target = FindInteraction();
             if (target.vehicle >= 0)
             {
+                garage.ClearRemote(target.vehicle); // одооноос өөрөө жолоодно (сүлжээний байрлалыг дагахгүй)
                 garage.Mount(target.vehicle);
             }
             else if (target.door >= 0)
             {
                 world.SetDoorOpen(target.door, !world.IsDoorOpen(target.door));
+                if (coopGuest)
+                {
+                    net.SendDoor(target.door, world.IsDoorOpen(target.door));
+                    pendingDoor = target.door;
+                    pendingDoorTimer = 1.0f;
+                }
             }
             else if (target.passage >= 0)
             {
@@ -1018,7 +1116,7 @@ void Game::UpdateTeamRiding(float dt)
         const Soldier* reference = nullptr;
         for (const Soldier& soldier : all)
         {
-            if (soldier.alive && soldier.member >= 0 && !reference) reference = &soldier;
+            if (soldier.alive && soldier.member >= 0 && !soldier.holding && !reference) reference = &soldier;
         }
         if (!reference)
         {
@@ -1029,7 +1127,7 @@ void Game::UpdateTeamRiding(float dt)
         for (int i = 0; i < garage.Count(); ++i)
         {
             const float distance = HorizontalDistance(reference->mover.position, garage.At(i).position);
-            if (i != garage.Driven() && distance < best)
+            if (i != garage.Driven() && !garage.At(i).occupied && distance < best)
             {
                 best = distance;
                 teamVehicle = i;
@@ -1050,9 +1148,9 @@ void Game::UpdateTeamRiding(float dt)
     int aboard = 0, waiting = 0;
     for (Soldier& soldier : all)
     {
-        if (!soldier.alive || soldier.member < 0)
+        if (!soldier.alive || soldier.member < 0 || soldier.holding)
         {
-            continue;
+            continue; // "энд бай" тушаалтай гишүүн байрандаа үлдэнэ
         }
         if (soldier.riding < 0)
         {
@@ -1075,6 +1173,7 @@ void Game::UpdateTeamRiding(float dt)
             const bool passenger = aboard > 0;
             soldier.mover.position = vehicle.position;
             soldier.mover.facing = vehicle.heading;
+            soldier.seatHeading = vehicle.heading;
             soldier.seat = garage.SeatWorld(teamVehicle, passenger);
             soldier.seatStyle = spec.enclosed ? 3
                               : vehicle.type == VehicleType::Horse ? 2
@@ -1193,6 +1292,12 @@ void Game::UpdateMission(float dt)
 
     const bool enclosed = garage.IsDriving() && SpecFor(garage.At(garage.Driven()).type).enclosed;
     const float cameraExtra = garage.IsDriving() ? SpecFor(garage.At(garage.Driven()).type).cameraExtra : 0.0f;
+    // H: "Энд бай" — удирдаж буй гишүүнийг тэмдэглэнэ; өөр гишүүн рүү (F1-F3) шилжихэд тэр байрандаа үлдэж байлдана.
+    if (InKeyPressed(KEY_H) && !coopGuest && !garage.IsDriving())
+    {
+        holdMark[activeMember] = !holdMark[activeMember];
+        SetNotice(holdMark[activeMember] ? "ЭНД БАЙНА — өөр гишүүн рүү шилжинэ үү (F1-F3)" : "ЭНД БАЙХ ТУШААЛ ЦУЦЛАГДЛАА", 2.5f);
+    }
     // F1, F2, F3: багийн гишүүд рүү шилжинэ.
     for (int member = 0; member < kTeamSize; ++member)
     {
@@ -1203,7 +1308,11 @@ void Game::UpdateMission(float dt)
     }
 
     const bool forceAim = options.screenshotPath && options.scope; // туршилтын горим
-    const bool aiming = (InMouseDown(MOUSE_BUTTON_RIGHT) || forceAim) && !enclosed;
+    // Онилгоо: баруун товч дарахад асч, дахин дарахад унтарна (утасны "ОНИЛОХ" товч ч мөн адил).
+    if (!InTouchMode() && !paused && IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) aimToggled = !aimToggled;
+    if (enclosed || player.IsTraversing()) aimToggled = false;
+    const bool aimInput = InTouchMode() ? InMouseDown(MOUSE_BUTTON_RIGHT) : aimToggled;
+    const bool aiming = (aimInput || forceAim) && !enclosed;
     // Мэргэн буудагч дурантай буугаараа шагайхад дуран хараа гарна (явган үед).
     const bool scoped = aiming && arsenal.Current() == WeaponType::Sniper && !garage.IsDriving();
     const bool firearm = arsenal.Current() != WeaponType::Knife && arsenal.Current() != WeaponType::Grenade;
@@ -1260,6 +1369,11 @@ void Game::UpdateMission(float dt)
         const Vehicle& driven = garage.At(garage.Driven());
         barrels.Ram(driven.position, SpecFor(driven.type).radius, std::fabs(driven.speed));
     }
+    if (!coopGuest && guestVehicle >= 0 && guestVehicle < garage.Count())
+    {
+        const Vehicle& remote = garage.At(guestVehicle); // зочны унаа (хост дэлбэлж, зочинд мэдэгдэнэ)
+        barrels.Ram(remote.position, SpecFor(remote.type).radius, std::fabs(remote.speed));
+    }
     barrels.Update(dt, horde, player, squad, particles);
     if (!garage.IsDriving())
     {
@@ -1281,15 +1395,15 @@ void Game::UpdateMission(float dt)
     progress.kills += kills;
     missionKills += kills;
 
-    // Зомбины хурд: тухайн аймгийн үед устгасан тоо (хадгалагдана) 500 тутамд 2 дахин
+    // Зомбины хурд: тухайн аймгийн үед устгасан тоо (хадгалагдана) 1000 тутамд 1.5 дахин
     if (!coopGuest)
     {
         const int stageKills = mission.KilledSmall() + mission.KilledBig();
         const int level = stageKills / kKillsPerSpeedup;
-        const float multiplier = std::min(kMaxZombieSpeedMultiplier, std::pow(2.0f, (float)level));
+        const float multiplier = std::min(kMaxZombieSpeedMultiplier, std::pow(kZombieSpeedupStep, (float)level));
         if (multiplier > horde.SpeedMultiplier() + 0.01f && state == GameState::Playing && missionFrame > 2)
         {
-            recruitNotice = multiplier >= kMaxZombieSpeedMultiplier ? "ЗОМБИНУУД ХАМГИЙН ХУРДАН БОЛЛОО!" : "ЗОМБИНУУД 2 ДАХИН ХУРДАН БОЛЛОО!";
+            recruitNotice = multiplier >= kMaxZombieSpeedMultiplier ? "ЗОМБИНУУД ХАМГИЙН ХУРДАН БОЛЛОО!" : "ЗОМБИНУУД ХУРДСАЛАА!";
             recruitNoticeTimer = 2.5f;
         }
         horde.SetSpeedMultiplier(multiplier);
@@ -1301,6 +1415,20 @@ void Game::UpdateMission(float dt)
     for (const ZombieHorde::KillReward& reward : killRewardBuffer)
     {
         coinPopups.push_back({ reward.position, reward.coins, 0.0f });
+        // 100 устгалт тутам сүүлчийн зомбины байрнаас эмнэлгийн хайрцаг унана
+        if (++medKitKills % MedKits::kKillsPerKit == 0)
+        {
+            medKits.Drop(world, reward.position);
+            recruitNotice = "ЭМНЭЛЭГ УНАЛАА! — газрын зураг дээрх улаан загалмай";
+            recruitNoticeTimer = 3.0f;
+        }
+    }
+    Vector3 pickedKit = {};
+    if (medKits.Update(dt, player, squad, &pickedKit))
+    {
+        if (coopGuest) net.SendPickup(pickedKit);
+        recruitNotice = "АМЬ 100% БОЛЛОО";
+        recruitNoticeTimer = 2.0f;
     }
     for (CoinPopup& popup : coinPopups) popup.age += dt;
     coinPopups.erase(std::remove_if(coinPopups.begin(), coinPopups.end(), [](const CoinPopup& p) { return p.age > 1.4f; }),
@@ -1339,29 +1467,14 @@ void Game::UpdateMission(float dt)
             interact = false; // заасан тооны даалгаврын дараа зогсоно (хадгалалтыг шалгахад)
         }
     }
-    // --- Цэрэг элсүүлэх цэг: E дарж 300 зоосоор нэг цэрэг багт нэмнэ (тоо хязгааргүй, тухайн даалгаврын турш) ---
+    // --- Дэлгүүр: дотор нь орж E дарахад цэс нээгдэнэ (цэрэг, зэвсэг, гранат, амь зоосоор) ---
     recruitNoticeTimer = std::max(0.0f, recruitNoticeTimer - dt);
-    nearRecruitStation = !garage.IsDriving() && !player.IsTraversing() &&
-                         HorizontalDistance(player.Position(), { kRecruitStation.x, 0.0f, kRecruitStation.y }) < kRecruitDistance;
-    if (nearRecruitStation && interact)
+    inShop = !garage.IsDriving() && !player.IsTraversing() && world.InSafeRoom(player.Position().x, player.Position().z);
+    if (inShop && interact)
     {
         interact = false; // даалгаврын объекттой давхар харилцахгүй
-        if (progress.coins >= kRecruitCost)
-        {
-            progress.coins -= kRecruitCost;
-            const float angle = (float)(squad.Total() % 8) * 0.785f;
-            Vector3 spot = { kRecruitStation.x + std::sin(angle) * 2.5f, 0.0f, kRecruitStation.y + 1.5f + std::cos(angle) * 1.5f };
-            world.ResolveHorizontal(spot, 0.4f, 1.8f, 0.0f);
-            spot.y = world.GroundHeight(spot.x, spot.z);
-            squad.Add(spot, PI);
-            recruitNotice = "ШИНЭ ЦЭРЭГ БАГТ НЭГДЛЭЭ";
-            Save();
-        }
-        else
-        {
-            recruitNotice = "ЗООС ХҮРЭЛЦЭХГҮЙ";
-        }
-        recruitNoticeTimer = 2.2f;
+        OpenShop();
+        return;
     }
 
     const bool autoStopped = options.autoPlay && options.stopAfter > 0 && mission.CompletedCount() >= options.stopAfter;
@@ -1376,7 +1489,8 @@ void Game::UpdateMission(float dt)
         Save(); // даалгаврын явц шууд хадгалагдана
     }
 
-    // Бүх даалгавар биелж, үеийн зомбины нөөц бүхэлдээ устгагдсан: аймаг чөлөөлөгдөнө.
+    // Бүх даалгавар биелж, үеийн нөөц (2500 жижиг, 500 том зомби) устгагдсан: аймаг чөлөөлөгдөнө.
+    // Холбоогоор онгоц дуудаж үлдсэн зомбийг бөмбөгдөх богино кино явж, дуусахад ялалтын дэлгэц гарна.
     // (Автомат туршилт нөөцийг заагаагүй бол зөвхөн даалгаврын логикийг шалгана.)
     const bool quotaRequired = !(options.screenshotPath && options.autoPlay) || options.quotaSmall >= 0;
     if (mission.IsComplete() && (mission.QuotaMet() || !quotaRequired))
@@ -1390,10 +1504,179 @@ void Game::UpdateMission(float dt)
         }
         progress.stages[(size_t)provinceIndex] = StageSave{}; // дараагийн удаа шинээр эхэлнэ
         Save();
+        journalOpen = false;
+        shopOpen = false;
+        fullMap.Close();
+        airstrike.Start(player.Position(), camera.Yaw());
+        if (net.Connected() && remoteActive) net.SendAirstrike(player.Position(), camera.Yaw()); // зочин ч үзнэ
+        state = GameState::Airstrike;
+    }
+}
+
+void Game::UpdateAirstrike(float dt)
+{
+    if (coopGuest)
+    {
+        // Зочин: зомбинуудын үхлийг хостын snapshot-оос авна; кино дуусахад хост MissionWon илгээнэ.
+        player.Heal(1.0e6f);
+        airstrike.Update(dt, world, horde, particles);
+        UpdateCoopMission(dt);
+        particles.Update(dt, world);
+        tracers.Update(dt);
+        return;
+    }
+    UpdateCoopMission(dt); // хост: зочны дүрийг хөдөлгөсөөр
+
+    // Кино: багийнхан үхэхгүй (амийг дүүргэнэ), зомби, цэргүүд хөдөлсөөр (үхэх хөдөлгөөн харагдана).
+    player.Heal(1.0e6f);
+    for (Soldier& soldier : squad.All())
+    {
+        if (soldier.alive) soldier.health = soldier.maxHealth;
+    }
+    airstrike.Update(dt, world, horde, particles);
+    horde.Update(dt, world, player, squad);
+    squad.Update(dt, world, player.Position(), horde, tracers, particles);
+    particles.Update(dt, world);
+    tracers.Update(dt);
+    int kills = 0;
+    horde.TakeRewards(progress.coins, kills);
+    progress.kills += kills;
+    missionKills += kills;
+    killRewardBuffer.clear();
+    horde.TakeKillRewards(killRewardBuffer); // кинонд зоосны бичиг харуулахгүй
+    SendHostSnapshot(dt);
+
+    if (airstrike.Finished() || InKeyPressed(KEY_ENTER) || (InTouchMode() && InMousePressed(MOUSE_BUTTON_LEFT)))
+    {
+        if (!airstrike.Finished()) airstrike.Skip();
+        airstrike.Update(0.0f, world, horde, particles); // үлдсэн зомбийг устгана
+        airstrike.Stop();
+        Save();
         if (net.Connected() && remoteActive) net.SendMissionWon(params.reward);
         state = GameState::Won;
     }
 }
+
+// ---------------------------------------------------------------- Тоглоомын цэс (ESC)
+namespace
+{
+    enum class PauseItem { Resume, Fullscreen, Map, Quit };
+
+    // Одоогийн төлөвт харагдах мөрүүд (газрын зураг дээр "Газрын зураг руу буцах" байхгүй; утсан дээр бүтэн дэлгэц байхгүй).
+    int PauseItems(bool playing, PauseItem* out)
+    {
+        int count = 0;
+        out[count++] = PauseItem::Resume;
+#if !defined(__ANDROID__)
+        if (!InTouchMode()) out[count++] = PauseItem::Fullscreen;
+#endif
+        if (playing) out[count++] = PauseItem::Map;
+        out[count++] = PauseItem::Quit;
+        return count;
+    }
+
+    Rectangle PauseRow(int index, int count)
+    {
+        const float width = 420.0f, height = 60.0f, gap = 12.0f;
+        const float total = (float)count * height + (float)(count - 1) * gap;
+        const float top = ((float)ViewHeight() - total) * 0.5f + 30.0f;
+        return { ((float)ViewWidth() - width) * 0.5f, top + (float)index * (height + gap), width, height };
+    }
+}
+
+void Game::OpenPause()
+{
+    paused = true;
+    EnableCursor();
+}
+
+void Game::ClosePause()
+{
+    paused = false;
+    if (state == GameState::Playing && !journalOpen && !shopOpen && !fullMap.IsOpen()) LockCursor();
+}
+
+void Game::SetFullscreen(bool enabled)
+{
+#if !defined(__ANDROID__)
+    // Хүрээгүй бүтэн цонх (alt-tab хурдан). UI 1280x720-д зориулсан тул бүтэн дэлгэцэд 720 өндөртэй
+    // дотоод зургаар зурж, дэлгэцэнд сунгана (газрын зураг, HUD-ийн байрлал ижил хэвээр).
+    if (enabled != IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE)) ToggleBorderlessWindowed();
+    ViewShutdown();
+    // Өргөн нь 1280-аас багагүй (16:10, 4:3 дэлгэцэд газрын зургийн баруун самбар тасрахгүй).
+    const int fitHeight = (int)std::ceil(1280.0 * GetScreenHeight() / std::max(1, GetScreenWidth()));
+    ViewInit(enabled ? std::max(720, fitHeight) : options.viewHeight);
+#endif
+    progress.fullscreen = enabled;
+    Save();
+}
+
+void Game::UpdatePauseMenu()
+{
+    PauseItem items[4];
+    const int count = PauseItems(state == GameState::Playing, items);
+    int chosen = -1;
+    for (int i = 0; i < count; ++i)
+    {
+        if (InKeyPressed(KEY_ONE + i) || (InMousePressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(InPointer(), PauseRow(i, count))))
+        {
+            chosen = i;
+        }
+    }
+    if (chosen < 0) return;
+
+    switch (items[chosen])
+    {
+    case PauseItem::Resume: ClosePause(); break;
+    case PauseItem::Fullscreen: SetFullscreen(!progress.fullscreen); break;
+    case PauseItem::Map:
+        paused = false;
+        ReturnToMap();
+        break;
+    case PauseItem::Quit:
+        Save();
+        quitRequested = true;
+        break;
+    }
+}
+
+void Game::DrawPauseMenu() const
+{
+    const int width = ViewWidth(), height = ViewHeight();
+    DrawRectangle(0, 0, width, height, Fade(BLACK, 0.55f));
+
+    PauseItem items[4];
+    const int count = PauseItems(state == GameState::Playing, items);
+    const Rectangle first = PauseRow(0, count), last = PauseRow(count - 1, count);
+    const Rectangle panel = { first.x - 30.0f, first.y - 90.0f, first.width + 60.0f, last.y + last.height - first.y + 150.0f };
+    Ui::PanelAccent(panel, Ui::kAccent);
+    const char* title = "ЦЭС";
+    Ui::TextBold(title, (int)(panel.x + (panel.width - (float)Ui::MeasureBold(title, 30)) * 0.5f), (int)panel.y + 26, 30, Ui::kText);
+
+    const Vector2 pointer = InPointer();
+    for (int i = 0; i < count; ++i)
+    {
+        const Rectangle row = PauseRow(i, count);
+        const char* label = "";
+        switch (items[i])
+        {
+        case PauseItem::Resume: label = "Үргэлжлүүлэх"; break;
+        case PauseItem::Fullscreen: label = progress.fullscreen ? "Бүтэн дэлгэц: ТИЙМ" : "Бүтэн дэлгэц: ҮГҮЙ"; break;
+        case PauseItem::Map: label = "Газрын зураг руу буцах"; break;
+        case PauseItem::Quit: label = "Тоглоомоос гарах"; break;
+        }
+        const bool hover = !InTouchMode() && CheckCollisionPointRec(pointer, row);
+        const bool danger = items[i] == PauseItem::Quit;
+        Ui::Panel(row, hover ? Fade(danger ? Ui::kDanger : Ui::kAccent, 0.25f) : Ui::kPanelSoft, 12.0f);
+        if (!InTouchMode()) Ui::KeyBadge(TextFormat("%d", i + 1), (int)row.x + 16, (int)row.y + 17, 16, Ui::kTextDim);
+        Ui::TextBold(label, (int)(row.x + (row.width - (float)Ui::MeasureBold(label, 22)) * 0.5f), (int)row.y + 17, 22,
+                     danger ? Ui::kDanger : Ui::kText);
+    }
+    const char* help = InTouchMode() ? "Мөрийг товшино уу" : "ESC — үргэлжлүүлэх    F11 — бүтэн дэлгэц";
+    Ui::Text(help, (int)(panel.x + (panel.width - (float)Ui::Measure(help, 15)) * 0.5f), (int)(last.y + last.height) + 22, 15,
+             Ui::kTextDim);
+}
+
 
 void Game::CloseJournal()
 {
@@ -1408,7 +1691,9 @@ void Game::CloseJournal()
 
 void Game::DrawMission() const
 {
-    const Camera3D& view = camera.Get();
+    const bool cinematic = state == GameState::Airstrike;
+    const Camera3D strikeView = airstrike.GetCamera();
+    const Camera3D& view = cinematic ? strikeView : camera.Get();
     const Material& material = environment.GetMaterial();
 
     environment.DrawSky(view); // 2D: тэнгэр, нар
@@ -1424,11 +1709,13 @@ void Game::DrawMission() const
     mission.Draw(view.position);
     squad.Draw(view.position, showDebug);
     horde.Draw(view.position, config.characterDrawDistance, showDebug);
-    if (!camera.IsScoped() && !camera.IsFirstPerson())
+    if (cinematic || (!camera.IsScoped() && !camera.IsFirstPerson()))
     {
         player.Draw(config, showDebug); // дуран хараа, 1-р этгээдийн үед өөрийн бие харагдахгүй
     }
+    airstrike.Draw();
     barrels.Draw(view.position);
+    medKits.Draw(view.position);
     if (remoteActive && !coopGuest) DrawRemoteFigure(guestFigure, TeamMemberLook(guestFigure.member));
     if (coopGuest && guestPlaced)
     {
@@ -1439,10 +1726,10 @@ void Game::DrawMission() const
     grenades.Draw();
     rlDrawRenderBatchActive(); // дүрүүдийг хагас тунгалаг хашаанаас өмнө зурж дуусгана
     world.DrawTransparent(view, material);
-    if (camera.IsFirstPerson() && player.IsAlive())
+    if (!cinematic && camera.IsFirstPerson() && player.IsAlive())
     {
         DrawViewModel(view, player.Held(), player.Recoil(), player.WalkPhase(), player.HorizontalSpeed() / config.walkSpeed,
-                      player.ReloadProgress(), player.ActionProgress());
+                      player.ReloadProgress(), player.ActionProgress(), camera.AimBlend());
     }
     environment.End();
 
@@ -1450,6 +1737,7 @@ void Game::DrawMission() const
     tracers.Draw();
     particles.DrawUnlit();
     barrels.DrawUnlit(view.position);
+    medKits.DrawUnlit(view.position);
     if (state == GameState::Playing)
     {
         mission.DrawBeacons(world, view.position);
@@ -1497,7 +1785,9 @@ void Game::DrawMission() const
             const int index = squad.FindMember(member);
             entry.alive = index >= 0 && squad.All()[(size_t)index].alive;
             entry.health = entry.alive ? (int)std::ceil(squad.All()[(size_t)index].health) : 0;
+            if (entry.alive && squad.All()[(size_t)index].holding) entry.tag = "БАЙРАНДАА";
         }
+        if (entry.active && holdMark[member]) entry.tag = "ЭНД БАЙНА";
     }
     for (const Soldier& soldier : squad.All())
     {
@@ -1556,12 +1846,10 @@ void Game::DrawMission() const
     info.prompt = mission.Prompt();
     info.notice = mission.Notice();
     static char recruitPrompt[96];
-    if (nearRecruitStation && state == GameState::Playing)
+    if (inShop && !shopOpen && state == GameState::Playing)
     {
-        if (progress.coins >= kRecruitCost)
-            std::snprintf(recruitPrompt, sizeof(recruitPrompt), "%sЦэрэг элсүүлэх — %d зоос", InTouchMode() ? "" : "E — ", kRecruitCost);
-        else
-            std::snprintf(recruitPrompt, sizeof(recruitPrompt), "Цэрэг элсүүлэх: %d зоос хэрэгтэй (танд %d)", kRecruitCost, progress.coins);
+        std::snprintf(recruitPrompt, sizeof(recruitPrompt), "%sДэлгүүр — цэрэг, зэвсэг, амь (%d зоос)",
+                      InTouchMode() ? "" : "E — ", progress.coins);
         info.prompt = recruitPrompt;
     }
     if (recruitNoticeTimer > 0.0f && recruitNotice)
@@ -1612,7 +1900,7 @@ void Game::DrawMission() const
 
     if (fullMap.IsOpen())
     {
-        fullMap.Draw(world, player, horde, squad, garage, markers, info.provinceName);
+        fullMap.Draw(world, player, horde, squad, garage, markers, medKits.Positions(), info.provinceName);
         return;
     }
 
@@ -1621,9 +1909,14 @@ void Game::DrawMission() const
         DrawMissionCompleted();
         return;
     }
+    if (cinematic)
+    {
+        airstrike.DrawOverlay(); // кинонд HUD харуулахгүй
+        return;
+    }
 
     DrawCoinPopups();
-    DrawMinimap(world, player, camera.Yaw(), horde, squad, garage, markers);
+    DrawMinimap(world, player, camera.Yaw(), horde, squad, garage, markers, medKits.Positions());
     DrawHud(config, player, info, showDebug);
     DrawCoopOverlay();
 
@@ -1631,6 +1924,226 @@ void Game::DrawMission() const
     {
         mission.DrawJournal();
     }
+    if (shopOpen)
+    {
+        DrawShopMenu();
+    }
+}
+
+// ---------------------------------------------------------------- Дэлгүүр (даалгаврын үеийн)
+namespace
+{
+    const char* ShopOfferName(ShopOffer offer)
+    {
+        switch (offer)
+        {
+        case ShopOffer::Recruit: return "Цэрэг элсүүлэх";
+        case ShopOffer::Damage: return "Зэвсгийн хүч";
+        case ShopOffer::FireRate: return "Буудах хурд";
+        case ShopOffer::Magazine: return "Сумны багтаамж";
+        case ShopOffer::Grenades: return "Гранат +4";
+        case ShopOffer::Heal: return "Амь 100% (бүх баг)";
+        case ShopOffer::MaxHealth: return "Амийн дээд хэмжээ";
+        default: return "";
+        }
+    }
+
+    // Зэвсэг, амийн сайжруулалт газрын зургийн дэлгүүртэй нэг түвшинг хуваалцана (Shop.h).
+    bool OfferUpgrade(ShopOffer offer, ShopItem& item)
+    {
+        switch (offer)
+        {
+        case ShopOffer::Damage: item = ShopItem::Damage; return true;
+        case ShopOffer::FireRate: item = ShopItem::FireRate; return true;
+        case ShopOffer::Magazine: item = ShopItem::Magazine; return true;
+        case ShopOffer::MaxHealth: item = ShopItem::Health; return true;
+        default: return false;
+        }
+    }
+}
+
+void Game::OpenShop()
+{
+    shopOpen = true;
+    shopMessage = nullptr;
+    EnableCursor();
+}
+
+void Game::CloseShop()
+{
+    shopOpen = false;
+    LockCursor();
+}
+
+void Game::UpdateShopMenu()
+{
+    if (InKeyPressed(KEY_E))
+    {
+        CloseShop();
+        return;
+    }
+    for (int i = 0; i < (int)ShopOffer::Count; ++i)
+    {
+        if (InKeyPressed(KEY_ONE + i) || (InMousePressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(InPointer(), ShopRow(i))))
+        {
+            BuyShopOffer(i);
+            break;
+        }
+    }
+}
+
+void Game::BuyShopOffer(int index)
+{
+    const ShopOffer offer = (ShopOffer)index;
+    ShopItem item = ShopItem::Count;
+    if (OfferUpgrade(offer, item))
+    {
+        if (ShopLevel(progress, item) >= ShopMaxLevel(item))
+        {
+            shopMessage = "Хамгийн дээд түвшинд хүрсэн";
+            return;
+        }
+        if (!ShopBuy(progress, item))
+        {
+            shopMessage = "ЗООС ХҮРЭЛЦЭХГҮЙ";
+            return;
+        }
+        if (item == ShopItem::Health)
+        {
+            // Удирдаж буй ба дагаж буй гишүүдийн амийн дээд хэмжээ нэмэгдэнэ.
+            const float newMax = config.playerBaseHealth + kHealthPerLevel * (float)progress.healthLevel;
+            const float gain = newMax - player.MaxHealth();
+            player.SetMaxHealth(newMax);
+            for (Soldier& soldier : squad.All())
+            {
+                if (soldier.member < 0) continue;
+                soldier.maxHealth = newMax;
+                if (soldier.alive) soldier.health += gain;
+            }
+            shopMessage = "АМИЙН ДЭЭД ХЭМЖЭЭ НЭМЭГДЛЭЭ";
+        }
+        else
+        {
+            // Багийн гурван гишүүний зэвсэгт шууд үйлчилнэ (сум хөндөхгүй).
+            for (Arsenal& memberArsenal : arsenals) memberArsenal.SetLevels(progress.weapon);
+            arsenal.SetLevels(progress.weapon);
+            shopMessage = "ЗЭВСЭГ САЙЖИРЛАА";
+        }
+        Save();
+        return;
+    }
+
+    if (offer == ShopOffer::Recruit && coopGuest)
+    {
+        shopMessage = "Зочин цэрэг элсүүлэх боломжгүй";
+        return;
+    }
+    const int cost = offer == ShopOffer::Recruit ? kRecruitCost : offer == ShopOffer::Grenades ? kGrenadeCost : kHealCost;
+    if (progress.coins < cost)
+    {
+        shopMessage = "ЗООС ХҮРЭЛЦЭХГҮЙ";
+        return;
+    }
+    switch (offer)
+    {
+    case ShopOffer::Recruit:
+    {
+        // Дэлгүүрийн дотор, хаалганы дэргэд гарч ирээд тоглогчийг дагана.
+        const float angle = (float)(squad.Total() % 8) * 0.785f;
+        Vector3 spot = { kShopCenter.x + std::sin(angle) * 2.0f, 0.0f, kShopCenter.y + 1.2f + std::cos(angle) * 0.8f };
+        world.ResolveHorizontal(spot, 0.4f, 1.8f, 0.0f);
+        spot.y = world.GroundHeight(spot.x, spot.z);
+        squad.Add(spot, 0.0f);
+        shopMessage = "ШИНЭ ЦЭРЭГ БАГТ НЭГДЛЭЭ";
+        break;
+    }
+    case ShopOffer::Grenades:
+        for (Arsenal& memberArsenal : arsenals) memberArsenal.AddGrenades(4);
+        arsenal.AddGrenades(4);
+        shopMessage = "ГРАНАТ НЭМЭГДЛЭЭ";
+        break;
+    case ShopOffer::Heal:
+    {
+        bool hurt = player.Health() < player.MaxHealth();
+        for (const Soldier& soldier : squad.All())
+        {
+            hurt = hurt || (soldier.member >= 0 && soldier.alive && soldier.health < soldier.maxHealth);
+        }
+        if (!hurt)
+        {
+            shopMessage = "Багийн амь аль хэдийн дүүрэн";
+            return;
+        }
+        player.Heal(player.MaxHealth());
+        for (Soldier& soldier : squad.All())
+        {
+            if (soldier.member >= 0 && soldier.alive) soldier.health = soldier.maxHealth;
+        }
+        shopMessage = "АМЬ 100% БОЛЛОО";
+        break;
+    }
+    default:
+        return;
+    }
+    progress.coins -= cost;
+    Save();
+}
+
+void Game::DrawShopMenu() const
+{
+    const int width = ViewWidth(), height = ViewHeight();
+    DrawRectangle(0, 0, width, height, Fade(BLACK, 0.45f));
+
+    const int count = (int)ShopOffer::Count;
+    const Rectangle first = ShopRow(0), last = ShopRow(count - 1);
+    const Rectangle panel = { first.x - 20.0f, kShopTop - 96.0f, kShopPanelWidth, last.y + last.height - kShopTop + 172.0f };
+    Ui::PanelAccent(panel, Ui::kAccent);
+    Ui::TextBold("ДЭЛГҮҮР", (int)panel.x + 20, (int)panel.y + 18, 30, Ui::kText);
+    Ui::Text("Цуглуулсан зоосоороо худалдаж ав", (int)panel.x + 20, (int)panel.y + 56, 16, Ui::kTextDim);
+    Ui::Chip(TextFormat("%d", progress.coins), (int)(panel.x + panel.width) - 20, (int)panel.y + 22, Ui::kAccent, Ui::kAccent, true);
+
+    const Vector2 pointer = InPointer();
+    for (int i = 0; i < count; ++i)
+    {
+        const ShopOffer offer = (ShopOffer)i;
+        const Rectangle row = ShopRow(i);
+
+        // Үнэ, түвшин, боломжтой эсэх
+        ShopItem item = ShopItem::Count;
+        const bool upgrade = OfferUpgrade(offer, item);
+        const int level = upgrade ? ShopLevel(progress, item) : 0;
+        const int maxLevel = upgrade ? ShopMaxLevel(item) : 0;
+        const bool maxed = upgrade && level >= maxLevel;
+        const int cost = upgrade ? ShopCost(progress, item)
+                       : offer == ShopOffer::Recruit ? kRecruitCost : offer == ShopOffer::Grenades ? kGrenadeCost : kHealCost;
+        const bool affordable = !maxed && progress.coins >= cost;
+
+        const bool hover = !InTouchMode() && CheckCollisionPointRec(pointer, row);
+        Ui::Panel(row, hover && affordable ? Fade(Ui::kAccent, 0.22f) : Ui::kPanelSoft, 10.0f);
+        Ui::KeyBadge(TextFormat("%d", i + 1), (int)row.x + 12, (int)row.y + 13, 16, affordable ? Ui::kAccent : Ui::kTextDim);
+        Ui::TextBold(ShopOfferName(offer), (int)row.x + 54, (int)row.y + (upgrade ? 6 : 14), 20, maxed ? Ui::kTextDim : Ui::kText);
+        if (upgrade)
+        {
+            for (int k = 0; k < maxLevel; ++k)
+            {
+                DrawRectangleRounded({ row.x + 54.0f + (float)k * 16.0f, row.y + 34.0f, 12.0f, 7.0f }, 1.0f, 4,
+                                     k < level ? Ui::kAccent : Color{ 255, 255, 255, 40 });
+            }
+        }
+        const char* price = maxed ? "MAX" : TextFormat("%d", cost);
+        const int priceWidth = Ui::MeasureBold(price, 22);
+        Ui::TextBold(price, (int)(row.x + row.width) - 18 - priceWidth, (int)row.y + 13, 22,
+                     maxed ? Ui::kGood : affordable ? Ui::kAccent : Ui::kDanger);
+        if (!maxed) Ui::Coin({ row.x + row.width - 34.0f - (float)priceWidth, row.y + row.height * 0.5f }, 9.0f);
+    }
+
+    const int footerY = (int)(last.y + last.height) + 16;
+    if (shopMessage)
+    {
+        Ui::TextBold(shopMessage, (int)panel.x + 20, footerY, 20, Ui::kAccent);
+    }
+    const char* help = InTouchMode() ? "Мөрийг товшиж авна" : "1–7 эсвэл товшиж авна    E / ESC — хаах";
+    Ui::Text(help, (int)panel.x + 20, footerY + 30, 16, Ui::kTextDim);
 }
 
 void Game::DrawMissionCompleted() const
@@ -1685,6 +2198,11 @@ TouchState Game::MakeTouchState() const
 
     TouchState touch;
     touch.minimapSize = kMinimapSize;
+    if (paused)
+    {
+        touch.screen = TouchScreen::Pause;
+        return touch;
+    }
     if (state == GameState::Map)
     {
         touch.screen = TouchScreen::CampaignMap;
@@ -1695,7 +2213,9 @@ TouchState Game::MakeTouchState() const
         touch.screen = TouchScreen::Result;
         return touch;
     }
-    touch.screen = journalOpen ? TouchScreen::Journal : fullMap.IsOpen() ? TouchScreen::FullMap : TouchScreen::Gameplay;
+    touch.screen = journalOpen ? TouchScreen::Journal
+                 : shopOpen    ? TouchScreen::Shop
+                 : fullMap.IsOpen() ? TouchScreen::FullMap : TouchScreen::Gameplay;
 
     touch.weaponCount = arsenal.SlotCount();
     touch.weaponNames = IsSniperMember(activeMember) ? sniperWeapons : activeMember == 1 ? heavyWeapons : fighterWeapons;
@@ -1706,6 +2226,8 @@ TouchState Game::MakeTouchState() const
     touch.aimAssist = config.touchAimAssist;
     touch.firstPerson = progress.firstPerson;
     touch.joinRequest = joinRequestPending && !coopGuest;
+    touch.showHold = !coopGuest && !garage.IsDriving();
+    touch.holdMarked = holdMark[activeMember];
     touch.stance = player.GetStance() == Stance::Crouch ? 1 : player.GetStance() == Stance::Prone ? 2 : 0;
 
     for (int member = 0; member < kTeamSize; ++member)
@@ -1742,9 +2264,9 @@ TouchState Game::MakeTouchState() const
     {
         touch.actLabel = "ҮЙЛДЭЛ ХИЙХ";
     }
-    if (nearRecruitStation)
+    if (inShop)
     {
-        touch.actLabel = "ЦЭРЭГ ЭЛСҮҮЛЭХ";
+        touch.actLabel = "ДЭЛГҮҮР";
     }
     return touch;
 }
@@ -1798,6 +2320,7 @@ void Game::Draw() const
     {
         DrawMission();
     }
+    if (paused) DrawPauseMenu();
     InDrawTouch(touchState);
     ViewEnd();
     EndDrawing();
@@ -1835,8 +2358,35 @@ void Game::UpdateRemoteFigure(RemoteFigure& figure, const Net::AvatarState& stat
     figure.member = state.member;
     figure.flags = state.flags;
     figure.alive = (state.flags & Net::kAlive) != 0;
-    if (snap || Vector3Distance(figure.position, figure.target) > 6.0f) figure.position = figure.target;
+    figure.aiming = (state.flags & Net::kAiming) != 0;
+    figure.vehicle = (state.flags & Net::kRiding) ? state.vehicle : -1;
+    if (snap || Vector3Distance(figure.position, figure.target) > 6.0f)
+    {
+        figure.position = figure.target;
+        figure.synced = false; // үсэрсэн (өөр цэрэг байж магадгүй): хуучин сумыг зурахгүй
+    }
+    ShowRemoteShots(figure, state.shots, state.shotEnd);
     (void)dt;
+}
+
+void Game::ShowRemoteShots(RemoteFigure& figure, uint8_t shots, Vector3 shotEnd)
+{
+    // Шинэ сум бүрд: амнаас туссан цэг рүү сумны мөр, амны гал; дүр нь ухарч, буугаа онилно.
+    const int fresh = figure.synced ? (uint8_t)(shots - figure.shots) : 0;
+    figure.shots = shots;
+    figure.synced = true;
+    if (fresh <= 0 || !figure.alive) return;
+
+    figure.facing = figure.targetFacing; // буудах зүг рүү шууд эргэнэ
+    const Vector3 muzzle = HumanoidLocalToWorld(figure.position, figure.facing, HumanoidMuzzleFor((HeldItem)figure.held));
+    const Vector3 direction = Vector3Normalize(Vector3Subtract(shotEnd, muzzle));
+    for (int i = 0; i < std::min(fresh, 3); ++i)
+    {
+        tracers.Add(muzzle, shotEnd, (HeldItem)figure.held == HeldItem::Sniper ? RAYWHITE : YELLOW);
+    }
+    particles.Flash(muzzle, direction);
+    figure.recoil = 1.0f;
+    figure.aimTimer = 1.2f;
 }
 
 void Game::AdvanceRemoteFigure(RemoteFigure& figure, float dt) const
@@ -1844,6 +2394,8 @@ void Game::AdvanceRemoteFigure(RemoteFigure& figure, float dt) const
     figure.position = Vector3Lerp(figure.position, figure.target, std::min(1.0f, 12.0f * dt));
     figure.facing += std::remainder(figure.targetFacing - figure.facing, 2.0f * PI) * std::min(1.0f, 12.0f * dt);
     figure.walk += dt * HumanoidGaitRate(figure.speed);
+    figure.recoil = std::max(0.0f, figure.recoil - dt * 9.0f);
+    figure.aimTimer = std::max(0.0f, figure.aimTimer - dt);
 }
 
 void Game::DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& baseLook) const
@@ -1851,6 +2403,38 @@ void Game::DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& base
     HumanoidLook look = baseLook;
     look.held = (HeldItem)figure.held;
     HumanoidPose pose;
+    // Унаан дээр: суудал дээр сууна (бүхээгтэй унаанд харагдахгүй).
+    int seatStyle = figure.seatStyle;
+    Vector3 seat = Vector3Add(figure.position, figure.seatOffset);
+    float facing = figure.facing;
+    float seatHeading = facing;
+    if (figure.alive && figure.vehicle >= 0 && figure.vehicle < garage.Count())
+    {
+        const Vehicle& vehicle = garage.At(figure.vehicle);
+        seatStyle = SpecFor(vehicle.type).enclosed ? 3 : vehicle.type == VehicleType::Horse ? 2 : 1;
+        seat = garage.SeatWorld(figure.vehicle, false);
+        seatHeading = vehicle.heading;
+        // Онилж буудаж байвал бие тэр зүг рүү (±120 градус), үгүй бол унааны зүгт.
+        const bool aiming = figure.aiming || figure.aimTimer > 0.0f;
+        facing = aiming ? vehicle.heading + std::clamp(std::remainder(figure.facing - vehicle.heading, 2.0f * PI), -2.1f, 2.1f)
+                        : vehicle.heading;
+    }
+    if (figure.alive && seatStyle > 0)
+    {
+        if (seatStyle == 3) return;
+        pose = MakeSoldierPose(0.0f, 0.0f, true, (float)GetTime(), figure.recoil, look.held);
+        const bool saddle = seatStyle == 2, bed = seatStyle == 4;
+        pose.hip[0] = pose.hip[1] = saddle ? 34.0f : bed ? 82.0f : 74.0f;
+        pose.knee[0] = pose.knee[1] = saddle ? 46.0f : bed ? 60.0f : 84.0f;
+        pose.legSpread = saddle ? 24.0f : bed ? 6.0f : 13.0f;
+        pose.lean += saddle ? 4.0f : bed ? 0.0f : 14.0f;
+        pose.bob = 0.0f;
+        pose.seated = true;
+        pose.aim = figure.aiming || figure.aimTimer > 0.0f ? 1.0f : 0.0f;
+        pose.seatTwist = std::remainder(seatHeading - facing, 2.0f * PI) * RAD2DEG;
+        DrawHumanoid({ seat.x, seat.y - 0.9f, seat.z }, facing, 1.0f, pose, look, true);
+        return;
+    }
     if (!figure.alive)
     {
         pose = MakeSoldierPose(0.0f, 0.0f, true, (float)GetTime(), 0.0f, look.held);
@@ -1858,9 +2442,9 @@ void Game::DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& base
     }
     else
     {
-        pose = MakeSoldierPose(figure.walk, figure.speed / config.walkSpeed, true, (float)GetTime(), 0.0f, look.held);
+        pose = MakeSoldierPose(figure.walk, figure.speed / config.walkSpeed, true, (float)GetTime(), figure.recoil, look.held);
         pose.speed = figure.speed;
-        pose.aim = (figure.flags & Net::kAiming) ? 1.0f : 0.0f;
+        pose.aim = figure.aiming || figure.aimTimer > 0.0f ? 1.0f : 0.0f;
         pose.aimPitch = figure.aimPitch * RAD2DEG;
         pose.crouch = (figure.flags & Net::kCrouch) ? 1.0f : 0.0f;
         pose.prone = (figure.flags & Net::kProne) ? 1.0f : 0.0f;
@@ -1874,15 +2458,26 @@ Net::AvatarState Game::LocalAvatar() const
     Net::AvatarState state;
     state.position = player.Position();
     state.facing = player.Facing();
-    state.aimPitch = 0.0f;
+    state.aimPitch = player.AimPitch();
     state.speed = player.HorizontalSpeed();
     state.held = (uint8_t)player.Held();
     state.member = (uint8_t)activeMember;
     state.flags = (uint8_t)((player.IsAlive() ? Net::kAlive : 0) | (player.GetStance() == Stance::Crouch ? Net::kCrouch : 0) |
                             (player.GetStance() == Stance::Prone ? Net::kProne : 0) |
                             (player.Recoil() > 0.5f ? Net::kFired : 0) | (player.IsRiding() ? Net::kRiding : 0) |
-                            (InMouseDown(MOUSE_BUTTON_RIGHT) ? Net::kAiming : 0));
+                            ((InTouchMode() ? InMouseDown(MOUSE_BUTTON_RIGHT) : aimToggled) ? Net::kAiming : 0));
     state.health = player.Health();
+    state.shots = localShots;
+    state.shotEnd = localShotEnd;
+    if (garage.IsDriving())
+    {
+        const Vehicle& vehicle = garage.At(garage.Driven());
+        state.vehicle = (int8_t)garage.Driven();
+        state.vehiclePosition = vehicle.position;
+        state.vehicleHeading = vehicle.heading;
+        state.vehicleSpeed = vehicle.speed;
+        state.vehicleSteer = vehicle.steer;
+    }
     return state;
 }
 
@@ -1959,12 +2554,40 @@ void Game::UpdateNetwork(float dt)
         case Net::Msg::GuestState:
             if (!remoteActive) UpdateRemoteFigure(guestFigure, event.avatar, dt, true);
             else UpdateRemoteFigure(guestFigure, event.avatar, dt, false);
-            remoteActive = true;
-            if (event.avatar.flags & Net::kFired)
+            remoteActive = true; // буудлагыг UpdateRemoteFigure тоолуураар харуулна
             {
-                const Vector3 muzzle = HumanoidLocalToWorld(guestFigure.position, guestFigure.facing,
-                                                            HumanoidMuzzleFor((HeldItem)guestFigure.held));
-                particles.Flash(muzzle, { std::sin(guestFigure.facing), 0.0f, std::cos(guestFigure.facing) });
+                // Зочны жолоодож буй унааг энд хөдөлгөнө (хост, түүний баг сууж чадахгүй).
+                const int vehicle = event.avatar.vehicle;
+                const int next = vehicle >= 0 && vehicle < garage.Count() && vehicle != garage.Driven() ? vehicle : -1;
+                if (guestVehicle >= 0 && guestVehicle != next) garage.ClearRemote(guestVehicle);
+                guestVehicle = next;
+                if (guestVehicle >= 0)
+                {
+                    garage.SetRemote(guestVehicle, event.avatar.vehiclePosition, event.avatar.vehicleHeading,
+                                     event.avatar.vehicleSpeed, event.avatar.vehicleSteer, true);
+                }
+            }
+            break;
+        case Net::Msg::GuestDoor:
+            if (!coopGuest && (int)event.id < world.DoorCount()) world.SetDoorOpen((int)event.id, event.accepted);
+            break;
+        case Net::Msg::GuestPickup:
+            if (!coopGuest) medKits.RemoveNear(event.position, 2.5f);
+            break;
+        case Net::Msg::Projectile:
+            // Нөгөө тоглогчийн гранат, пуужин: зөвхөн харагдана (хохирлыг шидсэн тал / хост тооцно).
+            if (event.id == 1) grenades.Launch(event.position, event.velocity, true);
+            else grenades.Throw(event.position, event.velocity, true);
+            break;
+        case Net::Msg::AirstrikeStart:
+            if (coopGuest && state == GameState::Playing)
+            {
+                journalOpen = false;
+                shopOpen = false;
+                fullMap.Close();
+                airstrike.Start(event.position, event.radius);
+                airstrike.SetSkippable(false);
+                state = GameState::Airstrike;
             }
             break;
         case Net::Msg::GuestHit:
@@ -2015,8 +2638,9 @@ void Game::UpdateNetwork(float dt)
             if (coopGuest) barrels.Trigger((int)event.id);
             break;
         case Net::Msg::MissionWon:
-            if (coopGuest && state == GameState::Playing)
+            if (coopGuest && (state == GameState::Playing || state == GameState::Airstrike))
             {
+                airstrike.Stop();
                 lastReward = 0;
                 if (!progress.liberated[provinceIndex])
                 {
@@ -2042,6 +2666,7 @@ void Game::UpdateNetwork(float dt)
                 SetNotice(joinRequester + " тоглолтоос гарлаа", 2.5f);
                 remoteActive = false;
                 joinRequestPending = false;
+                guestFigure = RemoteFigure{};
                 horde.SetRemoteTarget(false, {});
             }
             else if (waitingForReply)
@@ -2080,6 +2705,11 @@ void Game::UpdateCoopMission(float dt)
         {
             remoteActive = false;
         }
+        if (!remoteActive && guestVehicle >= 0)
+        {
+            garage.ClearRemote(guestVehicle); // зочин гарсан: унаа зогсож үлдэнэ
+            guestVehicle = -1;
+        }
         if (remoteActive)
         {
             AdvanceRemoteFigure(guestFigure, dt);
@@ -2105,9 +2735,28 @@ void Game::UpdateCoopMission(float dt)
             a.speed = s.speed;
             a.held = (uint8_t)(s.member == kSniperMember ? HeldItem::Sniper : HeldItem::Rifle);
             a.member = (uint8_t)std::max<int>(0, s.member);
-            a.flags = s.alive ? Net::kAlive : 0;
+            a.flags = (uint8_t)((s.alive ? Net::kAlive : 0) | (s.aiming ? Net::kAiming : 0));
+            a.shots = s.shots;
+            a.shotEnd = s.shotEnd;
             UpdateRemoteFigure(hostSoldiers[i], a, dt, false);
+            hostSoldiers[i].seatStyle = s.vehicle >= 0 ? s.seatStyle : 0;
+            hostSoldiers[i].seatOffset = Vector3Subtract(s.seat, s.position);
         }
+        // Унаа: хост бүх унааг хөдөлгөнө, зөвхөн зочны өөрийн жолоодож буйг энд тооцно.
+        for (const Net::VehicleState& v : snapshot.vehicles)
+        {
+            if ((int)v.index >= garage.Count() || (int)v.index == garage.Driven()) continue;
+            if ((int)garage.At(v.index).type != (int)v.type) continue; // (ертөнц таарахгүй бол хөндөхгүй)
+            garage.SetRemote(v.index, v.position, v.heading, v.speed, v.steer, v.occupied != 0);
+        }
+        // Хаалга: хостынхтой ижил (сая өөрөө өөрчилсөн хаалгыг хост хүлээн авах хүртэл хөндөхгүй)
+        for (int i = 0; i < std::min(snapshot.doorCount, world.DoorCount()); ++i)
+        {
+            if (i == pendingDoor && pendingDoorTimer > 0.0f) continue;
+            const bool open = (snapshot.doors[(size_t)(i / 8)] >> (i % 8)) & 1u;
+            if (open != world.IsDoorOpen(i)) world.SetDoorOpen(i, open);
+        }
+        medKits.Replace(snapshot.medKits);
         if (!guestPlaced)
         {
             // Эхний snapshot: хостын хажууд гарч ирнэ
@@ -2120,6 +2769,7 @@ void Game::UpdateCoopMission(float dt)
             world.Stream(spot, true);
         }
     }
+    pendingDoorTimer = std::max(0.0f, pendingDoorTimer - dt);
     horde.UpdatePuppets(dt);
     AdvanceRemoteFigure(hostFigure, dt);
     for (RemoteFigure& figure : hostSoldiers) AdvanceRemoteFigure(figure, dt);
@@ -2173,9 +2823,35 @@ void Game::SendHostSnapshot(float dt)
         s.speed = soldier.moving ? soldier.moveAmount * 6.0f : 0.0f;
         s.member = (int8_t)soldier.member;
         s.alive = soldier.alive ? 1 : 0;
-        if (soldier.riding >= 0) continue; // унаанд сууж яваа цэргийг харуулахгүй (энгийн байлгах)
+        s.aiming = soldier.aimPose > 0.5f ? 1 : 0;
+        s.shots = soldier.shots;
+        s.shotEnd = soldier.shotEnd;
+        s.vehicle = (int8_t)soldier.riding;
+        s.seatStyle = (uint8_t)soldier.seatStyle;
+        s.seat = soldier.seat;
         snapshot.soldiers.push_back(s);
     }
+    for (int i = 0; i < garage.Count(); ++i)
+    {
+        const Vehicle& vehicle = garage.At(i);
+        Net::VehicleState v;
+        v.index = (uint8_t)i;
+        v.type = (uint8_t)vehicle.type;
+        v.position = vehicle.position;
+        v.heading = vehicle.heading;
+        v.speed = vehicle.speed;
+        v.steer = vehicle.steer;
+        v.occupied = (i == garage.Driven() || i == teamVehicle) ? 1 : 0;
+        snapshot.vehicles.push_back(v);
+        if (snapshot.vehicles.size() >= 255) break;
+    }
+    snapshot.doorCount = world.DoorCount();
+    snapshot.doors.assign((size_t)(snapshot.doorCount + 7) / 8, 0);
+    for (int i = 0; i < snapshot.doorCount; ++i)
+    {
+        if (world.IsDoorOpen(i)) snapshot.doors[(size_t)(i / 8)] |= (uint8_t)(1u << (i % 8));
+    }
+    snapshot.medKits = medKits.Positions();
     horde.CollectStates(guestFigure.position, kCoopViewRadius, snapshot.zombies);
     ObjectiveTexts(snapshot.objective, snapshot.detail);
     snapshot.hordeSmall = mission.QuotaSmall() - mission.KilledSmall();

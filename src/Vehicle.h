@@ -46,6 +46,11 @@ struct Vehicle
     float pitch = 0.0f;     // газрын налууг дагасан хазайлт, радиан
     float animation = 0.0f; // дугуйн эргэлт (радиан, 1 м радиустай дугуйнд) / морины давхилтын үе
     float steer = 0.0f;     // жолооны байрлал -1..1 (эерэг = баруун тийш), зөөлөн шилжинэ
+    // Хамтарсан тоглолт: нөгөө тоглогч (эсвэл хостын баг) жолоодож буй хэрэгслийг сүлжээгээр хөдөлгөнө.
+    bool remote = false;    // байрлалыг сүлжээнээс авна (өөрөө тооцохгүй)
+    bool occupied = false;  // нөгөө тал сууж яваа: энэ талын тоглогч, баг сууж болохгүй
+    Vector3 netPosition = { 0.0f, 0.0f, 0.0f };
+    float netHeading = 0.0f, netSpeed = 0.0f, netSteer = 0.0f;
 };
 
 // Талбар дээрх бүх тээврийн хэрэгсэл ба тоглогчийн унаж буй нэг.
@@ -62,6 +67,9 @@ public:
     }
 
     int Count() const { return (int)vehicles.size(); }
+    // Хамтарсан тоглолт: сүлжээнээс ирсэн төлөв (зөөлөн дагана). occupied: нөгөө тал сууж яваа.
+    void SetRemote(int index, Vector3 position, float heading, float speed, float steer, bool occupied);
+    void ClearRemote(int index);
     const Vehicle& At(int index) const { return vehicles[index]; }
 
     // position-д хамгийн ойр, maxDistance доторх хэрэгсэл; -1 = байхгүй.

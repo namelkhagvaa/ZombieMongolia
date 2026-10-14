@@ -10,6 +10,7 @@ extern "C" struct android_app* GetAndroidApp(void); // raylib-ийн Android д�
 #include "raylib.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 #include <string>
 
@@ -22,6 +23,23 @@ namespace
 #if defined(__ANDROID__)
         // Апп-ын дотоод хадгалах сан (зөвхөн энэ апп унших, бичих эрхтэй).
         return std::string(GetAndroidApp()->activity->internalDataPath) + "/savegame.txt";
+#elif defined(_WIN32)
+        // Хэрэглэгчийн хавтас (%LOCALAPPDATA%\ZombieMongolia): Program Files-д суулгасан үед exe-ийн хавтсанд
+        // бичих эрхгүй. Хуучин хувилбар exe-ийн хажууд хадгалдаг байсан тул тэр файл байвал анх удаа хуулна.
+        if (!overridePath.empty()) return overridePath;
+        const char* local = std::getenv("LOCALAPPDATA");
+        if (!local || !*local) return std::string(GetApplicationDirectory()) + "savegame.txt";
+        const std::string folder = std::string(local) + "\\ZombieMongolia";
+        if (!DirectoryExists(folder.c_str())) MakeDirectory(folder.c_str());
+        const std::string path = folder + "\\savegame.txt";
+        const std::string legacy = std::string(GetApplicationDirectory()) + "savegame.txt";
+        if (!FileExists(path.c_str()) && FileExists(legacy.c_str()))
+        {
+            std::ifstream from(legacy, std::ios::binary);
+            std::ofstream to(path, std::ios::binary);
+            to << from.rdbuf();
+        }
+        return path;
 #else
         return overridePath.empty() ? std::string(GetApplicationDirectory()) + "savegame.txt" : overridePath;
 #endif
@@ -99,6 +117,7 @@ bool LoadProgress(Progress& progress, int provinceCount)
         else if (key == "health") progress.healthLevel = std::clamp(value, 0, kMaxHealthLevel);
         else if (key == "soldiers") progress.soldiers = std::clamp(value, 0, kMaxSoldiers);
         else if (key == "aimAssist") progress.aimAssist = value != 0;
+        else if (key == "fullscreen") progress.fullscreen = value != 0;
         else if (key == "firstPerson") progress.firstPerson = value != 0;
         else if (key == "netTag") progress.netTag = value;
         else if (key == "format") format = value;
@@ -135,6 +154,7 @@ bool SaveProgress(const Progress& progress)
     file << "soldiers " << progress.soldiers << '\n';
     file << "aimAssist " << (progress.aimAssist ? 1 : 0) << '\n';
     file << "firstPerson " << (progress.firstPerson ? 1 : 0) << '\n';
+    file << "fullscreen " << (progress.fullscreen ? 1 : 0) << '\n';
     file << "netTag " << progress.netTag << '\n';
 
     file << "liberated ";

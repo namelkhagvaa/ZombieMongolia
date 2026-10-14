@@ -109,6 +109,18 @@ int main(int argc, char** argv)
         {
             options.journal = true;
         }
+        else if (std::strcmp(argv[i], "--shop") == 0)
+        {
+            options.shop = true;
+        }
+        else if (std::strcmp(argv[i], "--airstrike") == 0)
+        {
+            options.airstrike = true;
+        }
+        else if (std::strcmp(argv[i], "--pause") == 0)
+        {
+            options.pause = true;
+        }
         else if (std::strcmp(argv[i], "--autoplay") == 0)
         {
             options.autoPlay = true;

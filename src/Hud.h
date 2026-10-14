@@ -31,6 +31,7 @@ struct HudInfo
         int health = 0;
         bool alive = true;
         bool active = false; // тоглогчийн удирдаж буй гишүүн
+        const char* tag = nullptr; // картын зүүн талд: "БАЙРАНДАА" (энд бай) г.м.
     };
     TeamEntry team[3]; // F1, F2, F3
     int teamCount = 3;

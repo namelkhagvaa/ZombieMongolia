@@ -33,6 +33,7 @@ struct Progress
     int soldiers = 0;
     bool aimAssist = false;      // утсан дээр автомат онилгоо (тохиргоо)
     bool firstPerson = false;
+    bool fullscreen = true;      // компьютер: бүтэн дэлгэцээр тоглох (F11 / цэс)
     int netTag = 0;              // хамтарсан тоглолтод харагдах дугаар (1000..9999)    // камер: 1-р этгээд (зөвхөн гар, буу) эсвэл 3-р этгээд (бүтэн бие)
     std::vector<bool> liberated; // аймаг бүрээр
 

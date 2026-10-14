@@ -30,6 +30,7 @@ namespace
     const Color kPlayer = { 250, 220, 90, 255 };
     const Color kVehicle = { 90, 190, 240, 255 };
     const Color kObjective = { 250, 214, 70, 255 };
+    const Color kMedKit = { 220, 30, 36, 255 };
 
     // Газрын зургийн харагдац: ертөнцийн аль цэг дэлгэцийн хаана, ямар масштаб, эргэлтээр буух вэ.
     struct MapView
@@ -154,6 +155,32 @@ namespace
         }
     }
 
+    // Эмнэлгийн хайрцаг: лугшдаг цагаан дөрвөлжин дээр улаан загалмай. Хүрээнээс гарсан бол ирмэг дээр наагдана.
+    void DrawMedKits(const MapView& view, const std::vector<Vector3>& medKits, float markerScale)
+    {
+        const Vector2 center = view.Center();
+        const float limitX = view.area.width * 0.5f - 10.0f;
+        const float limitY = view.area.height * 0.5f - 10.0f;
+        const float pulse = 0.5f + 0.5f * std::sin((float)GetTime() * 5.0f);
+        for (const Vector3& kit : medKits)
+        {
+            Vector2 p = view.ToScreen(kit.x, kit.z);
+            const float dx = p.x - center.x, dy = p.y - center.y;
+            const float overflow = std::max(std::fabs(dx) / limitX, std::fabs(dy) / limitY);
+            if (overflow > 1.0f)
+            {
+                p = { center.x + dx / overflow, center.y + dy / overflow };
+            }
+            const float half = (6.0f + 1.5f * pulse) * markerScale;
+            DrawCircleV(p, half * 2.0f, Fade(kMedKit, 0.25f * pulse));
+            DrawRectangleV({ p.x - half - 1.5f, p.y - half - 1.5f }, { half * 2.0f + 3.0f, half * 2.0f + 3.0f }, BLACK);
+            DrawRectangleV({ p.x - half, p.y - half }, { half * 2.0f, half * 2.0f }, RAYWHITE);
+            const float arm = half * 0.8f, thick = half * 0.32f;
+            DrawRectangleV({ p.x - arm, p.y - thick }, { arm * 2.0f, thick * 2.0f }, kMedKit);
+            DrawRectangleV({ p.x - thick, p.y - arm }, { thick * 2.0f, arm * 2.0f }, kMedKit);
+        }
+    }
+
     void DrawMarkers(const MapView& view, const Player& player, const ZombieHorde& horde, const SoldierSquad& squad,
                      bool clampToEdge, float markerScale)
     {
@@ -222,7 +249,8 @@ namespace
 // ---------------------------------------------------------------- Жижиг зураг
 
 void DrawMinimap(const World& world, const Player& player, float cameraYaw, const ZombieHorde& horde,
-                 const SoldierSquad& squad, const Garage& garage, const std::vector<Vector3>& markers)
+                 const SoldierSquad& squad, const Garage& garage, const std::vector<Vector3>& markers,
+                 const std::vector<Vector3>& medKits)
 {
     const float size = (float)kMinimapSize;
     MapView view;
@@ -240,6 +268,7 @@ void DrawMinimap(const World& world, const Player& player, float cameraYaw, cons
     DrawVehicles(view, garage, 1.0f);
     DrawObjectives(view, markers, 1.0f);
     DrawMarkers(view, player, horde, squad, true, 1.0f);
+    DrawMedKits(view, medKits, 1.0f);
     DrawRectangleLinesEx(view.area, 1.0f, Ui::kBorder);
 
     // Хойд зүгийн (+Z) тэмдэг хүрээн дээр
@@ -325,7 +354,8 @@ void FullMap::Update(const World& world, const Player& player)
 }
 
 void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& horde, const SoldierSquad& squad,
-                   const Garage& garage, const std::vector<Vector3>& markers, const char* title) const
+                   const Garage& garage, const std::vector<Vector3>& markers, const std::vector<Vector3>& medKits,
+                   const char* title) const
 {
     const int width = ViewWidth();
     const int height = ViewHeight();
@@ -345,7 +375,7 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     BeginScissorMode((int)view.area.x, (int)view.area.y, (int)view.area.width, (int)view.area.height);
     const struct { float x, z; const char* name; } places[] = {
         { 28.0f, 34.0f, "СУУРИН" },  { -52.0f, 2.0f, "ЗАСТАВ" }, { 38.0f, -13.0f, "ШАТАХУУН ТҮГЭЭХ ГАЗАР" },
-        { 10.0f, 70.0f, "АГУУЛАХ" }, { kRecruitStation.x, kRecruitStation.y - 4.0f, "ЦЭРЭГ ЭЛСҮҮЛЭХ" },
+        { 10.0f, 70.0f, "АГУУЛАХ" }, { kShopCenter.x, kShopCenter.y + 5.5f, "ДЭЛГҮҮР" },
     };
     for (const auto& place : places)
     {
@@ -359,6 +389,7 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     DrawVehicles(view, garage, 1.3f);
     DrawObjectives(view, markers, 1.5f);
     DrawMarkers(view, player, horde, squad, true, 1.5f);
+    DrawMedKits(view, medKits, 1.5f);
     DrawRectangleLinesEx(view.area, 1.0f, Ui::kBorder);
 
     // Гарчиг, томруулалт, тайлбар
@@ -371,10 +402,11 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     const int legendY = height - 40;
     int x = (int)view.area.x;
     DrawLegendEntry(x, legendY, kPlayer, "та");
-    DrawLegendEntry(x + 70, legendY, kZombie, "зомби");
-    DrawLegendEntry(x + 170, legendY, kSoldier, "цэрэг");
-    DrawLegendEntry(x + 270, legendY, kVehicle, "унаа");
-    DrawLegendEntry(x + 360, legendY, kObjective, "даалгавар");
+    DrawLegendEntry(x + 60, legendY, kZombie, "зомби");
+    DrawLegendEntry(x + 150, legendY, kSoldier, "цэрэг");
+    DrawLegendEntry(x + 240, legendY, kVehicle, "унаа");
+    DrawLegendEntry(x + 320, legendY, kObjective, "даалгавар");
+    DrawLegendEntry(x + 450, legendY, kMedKit, "эмнэлэг");
     const char* help = "Хулганы дугуй — томруулах (100–1000%)    Чирэх — зөөх    C — өөр дээрээ төвлөрүүлэх    M — хаах";
     UiText(help, width - (int)view.area.x - UiMeasure(help, 18), legendY, 18, kFrame);
 }

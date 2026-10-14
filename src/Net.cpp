@@ -72,12 +72,17 @@ namespace Net
         {
             w.V3(a.position); w.F(a.facing); w.F(a.aimPitch); w.F(a.speed);
             w.U8(a.held); w.U8(a.member); w.U8(a.flags); w.F(a.health);
+            w.U8(a.shots); w.V3(a.shotEnd);
+            w.U8((uint8_t)a.vehicle); w.V3(a.vehiclePosition); w.F(a.vehicleHeading); w.F(a.vehicleSpeed); w.F(a.vehicleSteer);
         }
         AvatarState ReadAvatar(Reader& r)
         {
             AvatarState a;
             a.position = r.V3(); a.facing = r.F(); a.aimPitch = r.F(); a.speed = r.F();
             a.held = r.U8(); a.member = r.U8(); a.flags = r.U8(); a.health = r.F();
+            a.shots = r.U8(); a.shotEnd = r.V3();
+            a.vehicle = (int8_t)r.U8(); a.vehiclePosition = r.V3(); a.vehicleHeading = r.F(); a.vehicleSpeed = r.F();
+            a.vehicleSteer = r.F();
             return a;
         }
 
@@ -429,6 +434,12 @@ namespace Net
                 so.speed = r.F();
                 so.member = (int8_t)r.U8();
                 so.alive = r.U8();
+                so.aiming = r.U8();
+                so.shots = r.U8();
+                so.shotEnd = r.V3();
+                so.vehicle = (int8_t)r.U8();
+                so.seatStyle = r.U8();
+                so.seat = r.V3();
                 s.soldiers.push_back(so);
             }
             const int zombies = r.U16();
@@ -442,6 +453,24 @@ namespace Net
                 z.facing = r.F();
                 s.zombies.push_back(z);
             }
+            const int vehicles = r.U16();
+            for (int i = 0; i < vehicles && r.ok; ++i)
+            {
+                VehicleState v;
+                v.index = r.U8();
+                v.type = r.U8();
+                v.position = r.V3();
+                v.heading = r.F();
+                v.speed = r.F();
+                v.steer = r.F();
+                v.occupied = r.U8();
+                s.vehicles.push_back(v);
+            }
+            s.doorCount = r.U16();
+            const int doorBytes = (s.doorCount + 7) / 8;
+            for (int i = 0; i < doorBytes && r.ok; ++i) s.doors.push_back(r.U8());
+            const int kits = r.U8();
+            for (int i = 0; i < kits && r.ok; ++i) s.medKits.push_back(r.V3());
             s.objective = r.Str();
             s.detail = r.Str();
             s.hordeSmall = r.I32();
@@ -460,6 +489,22 @@ namespace Net
         case Msg::KillReward:
             e.amount = (float)r.I32();
             e.position = r.V3();
+            break;
+        case Msg::GuestDoor:
+            e.id = r.U16();
+            e.accepted = r.U8() != 0;
+            break;
+        case Msg::GuestPickup:
+            e.position = r.V3();
+            break;
+        case Msg::Projectile:
+            e.id = r.U8();
+            e.position = r.V3();
+            e.velocity = r.V3();
+            break;
+        case Msg::AirstrikeStart:
+            e.position = r.V3();
+            e.radius = r.F();
             break;
         case Msg::BarrelExploded:
             e.id = r.U32();
@@ -538,12 +583,23 @@ namespace Net
         for (const SoldierState& so : s.soldiers)
         {
             w.V3(so.position); w.F(so.facing); w.F(so.speed); w.U8((uint8_t)so.member); w.U8(so.alive);
+            w.U8(so.aiming); w.U8(so.shots); w.V3(so.shotEnd);
+            w.U8((uint8_t)so.vehicle); w.U8(so.seatStyle); w.V3(so.seat);
         }
         w.U16((uint16_t)s.zombies.size());
         for (const ZombieState& z : s.zombies)
         {
             w.U32(z.id); w.U8(z.type); w.U8(z.flags); w.V3(z.position); w.F(z.facing);
         }
+        w.U16((uint16_t)s.vehicles.size());
+        for (const VehicleState& v : s.vehicles)
+        {
+            w.U8(v.index); w.U8(v.type); w.V3(v.position); w.F(v.heading); w.F(v.speed); w.F(v.steer); w.U8(v.occupied);
+        }
+        w.U16((uint16_t)s.doorCount);
+        for (uint8_t bits : s.doors) w.U8(bits);
+        w.U8((uint8_t)std::min<size_t>(s.medKits.size(), 255));
+        for (size_t i = 0; i < s.medKits.size() && i < 255; ++i) w.V3(s.medKits[i]);
         w.Str(s.objective);
         w.Str(s.detail);
         w.I32(s.hordeSmall);
@@ -582,6 +638,42 @@ namespace Net
         Writer w;
         w.U8((uint8_t)Msg::MissionWon);
         w.I32(reward);
+        Send(w.data, true);
+    }
+
+    void Session::SendDoor(int index, bool open)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::GuestDoor);
+        w.U16((uint16_t)index);
+        w.U8(open ? 1 : 0);
+        Send(w.data, true);
+    }
+
+    void Session::SendPickup(Vector3 position)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::GuestPickup);
+        w.V3(position);
+        Send(w.data, true);
+    }
+
+    void Session::SendProjectile(int kind, Vector3 from, Vector3 velocity)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::Projectile);
+        w.U8((uint8_t)kind);
+        w.V3(from);
+        w.V3(velocity);
+        Send(w.data, true);
+    }
+
+    void Session::SendAirstrike(Vector3 center, float heading)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::AirstrikeStart);
+        w.V3(center);
+        w.F(heading);
         Send(w.data, true);
     }
 }

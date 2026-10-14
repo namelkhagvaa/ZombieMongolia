@@ -3,7 +3,9 @@
 #include "Campaign.h"
 #include "Config.h"
 #include "Environment.h"
+#include "Airstrike.h"
 #include "FuelBarrels.h"
+#include "MedKits.h"
 #include "Grenades.h"
 #include "Input.h"
 #include "Minimap.h"
@@ -25,6 +27,7 @@ enum class GameState
 {
     Map,     // газрын зураг + дэлгүүр
     Playing, // даалгавар
+    Airstrike, // даалгавар биелсэн: онгоц үлдсэн зомбийг бөмбөгдөх богино кино (дараа нь Won)
     Won,     // аймаг чөлөөлөгдсөн
     Lost     // тоглогч үхсэн
 };
@@ -49,6 +52,9 @@ struct LaunchOptions
     int ride = 0;             // 1..4: жийп, мотоцикл, гурван дугуйт, морийг унаж шууд урагш явна (--ride N)
     float timeScale = 1.0f;   // туршилтад тоглоомын цагийг хурдасгана (--timescale X)
     bool journal = false;     // даалгаврын журналыг нээлттэй эхлүүлнэ (--journal)
+    bool shop = false;        // дэлгүүрийн цэсийг нээлттэй эхлүүлнэ (--shop)
+    bool airstrike = false;   // бөмбөгдөлтийн киног шууд эхлүүлнэ (--airstrike)
+    bool pause = false;       // тоглоомын цэсийг нээлттэй эхлүүлнэ (--pause)
     int member = 0;           // 1..3 бол тэр багийн гишүүн рүү шилжиж эхэлнэ (--member N)
     bool demo = false;        // дүрийн байрлалыг тогтооно (--demo move phase aim action)
     float demoMove = 0.0f, demoPhase = 0.0f, demoAim = 0.0f, demoAction = -1.0f;
@@ -126,6 +132,17 @@ private:
     void StartMission(int provinceIndex);
     void ReturnToMap();
     void CloseJournal();
+    void OpenPause();
+    void ClosePause();
+    void UpdatePauseMenu();
+    void DrawPauseMenu() const;
+    void SetFullscreen(bool enabled);
+    void UpdateAirstrike(float dt);
+    void OpenShop();
+    void CloseShop();
+    void UpdateShopMenu();
+    void BuyShopOffer(int index);
+    void DrawShopMenu() const;
 
     // Мэдрэгчтэй дэлгэцийн товчлууруудад хэрэгтэй төлөв (аль дэлгэц нээлттэй, зэвсэг, баг, боломжит үйлдлүүд).
     TouchState MakeTouchState() const;
@@ -166,7 +183,15 @@ private:
     Mission mission;           // үеийн даалгаврууд
     bool journalOpen = false;  // Q: даалгаврын журнал нээлттэй (тоглоом түр зогссон)
     int missionKills = 0;
-    bool nearRecruitStation = false; // элсүүлэх цэгийн дэргэд (E дарж цэрэг авна)
+    int medKitKills = 0; // эмнэлгийн хайрцаг унахад тоолох устгалт
+    bool inShop = false;   // дэлгүүр дотор (E дарж цэс нээнэ)
+    bool paused = false;   // ESC: тоглоомын цэс (үргэлжлүүлэх, бүтэн дэлгэц, газрын зураг, гарах)
+    bool quitRequested = false;
+    bool aimToggled = false; // компьютер: баруун товчоор онилгоог асааж / унтраана (дахин дарахад болино)
+    // H ("Энд бай"): удирдаж буй гишүүнийг тэмдэглэнэ; өөр гишүүн рүү шилжихэд тэр байрандаа үлдэж байлдана.
+    bool holdMark[3] = { false, false, false };
+    bool shopOpen = false; // дэлгүүрийн цэс нээлттэй (тоглоом түр зогсоно)
+    const char* shopMessage = nullptr; // цэсний доод мөрөнд: сүүлийн худалдан авалтын үр дүн
     // Зомби устгахад дээр нь хөвөх "+N" зоос
     struct CoinPopup
     {
@@ -176,6 +201,8 @@ private:
     };
     std::vector<CoinPopup> coinPopups;
     FuelBarrels barrels; // бензинтэй торхнууд
+    MedKits medKits;     // 100 устгалт тутам унах эмнэлгийн хайрцаг
+    Airstrike airstrike; // үе давахад онгоцны бөмбөгдөлтийн кино
 
     // --- Хамтарсан тоглолт (Wi-Fi) ---
     struct RemoteFigure
@@ -184,7 +211,20 @@ private:
         float facing = 0.0f, targetFacing = 0.0f, speed = 0.0f, aimPitch = 0.0f, walk = 0.0f;
         uint8_t held = 0, member = 0, flags = 0;
         bool alive = true;
+        uint8_t shots = 0;        // сүүлд харуулсан буудлагын тоолуур
+        bool synced = false;      // тоолуурыг анх авсан эсэх (эхний мэдээнд хуучин сумыг зурахгүй)
+        float recoil = 0.0f;      // 1 = дөнгөж буудсан
+        float aimTimer = 0.0f;    // >0 үед буугаа онилсон байрлалтай (буудсаны дараа хэсэг хугацаа)
+        bool aiming = false;      // нөгөө тал онилж байна
+        int vehicle = -1;         // тоглогч: жолоодож буй унаа (-1 = явган)
+        uint8_t seatStyle = 0;    // цэрэг: унаан дээрх суудал (3 = бүхээг, харагдахгүй)
+        Vector3 seatOffset = { 0.0f, 0.0f, 0.0f }; // цэрэг: байрлалаас суудал хүртэл
     };
+    int guestVehicle = -1;        // хост: зочны жолоодож буй унаа
+    int pendingDoor = -1;         // зочин: сая өөрөө нээсэн/хаасан хаалга (хост хүлээн авах хүртэл snapshot-оор дарахгүй)
+    float pendingDoorTimer = 0.0f;
+    uint8_t localShots = 0;       // энэ тоглогчийн буудсан сумны тоолуур (хамтарсан тоглолтод илгээнэ)
+    Vector3 localShotEnd = { 0.0f, 0.0f, 0.0f };
     Net::Session net;
     std::vector<Net::Event> netEvents;
     bool coopGuest = false;         // өөр хүний тоглолтод зочноор нэгдсэн
@@ -217,6 +257,7 @@ private:
     void ObjectiveTexts(std::string& objective, std::string& detail) const;
     Net::AvatarState LocalAvatar() const;
     void UpdateRemoteFigure(RemoteFigure& figure, const Net::AvatarState& state, float dt, bool snap);
+    void ShowRemoteShots(RemoteFigure& figure, uint8_t shots, Vector3 shotEnd);
     void AdvanceRemoteFigure(RemoteFigure& figure, float dt) const;
     void DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& look) const;
     std::vector<ZombieHorde::KillReward> killRewardBuffer;
@@ -226,6 +267,6 @@ private:
     int lastReward = 0;
 
     bool showDebug = false;
-    bool showHelp = false; // H: товчнуудын тайлбар (анхнаасаа нуугдсан: дэлгэц цэвэрхэн)
+    bool showHelp = false; // F10: товчнуудын тайлбар (анхнаасаа нуугдсан: дэлгэц цэвэрхэн)
     TouchState touchState;
 };

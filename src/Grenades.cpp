@@ -15,15 +15,18 @@ namespace
     const float kPlayerMaxDamage = 45.0f; // өөрийн гранатад хэт ойр байвал
 }
 
-void Grenades::Throw(Vector3 from, Vector3 velocity)
+void Grenades::Throw(Vector3 from, Vector3 velocity, bool visual)
 {
-    grenades.push_back({ from, velocity, kFuseTime });
+    Grenade grenade = { from, velocity, kFuseTime };
+    grenade.visual = visual;
+    grenades.push_back(grenade);
 }
 
-void Grenades::Launch(Vector3 from, Vector3 velocity)
+void Grenades::Launch(Vector3 from, Vector3 velocity, bool visual)
 {
     Grenade rocket = { from, velocity, 4.0f }; // юунд ч тусахгүй бол 4 секундийн дараа агаарт дэлбэрнэ
     rocket.rocket = true;
+    rocket.visual = visual;
     grenades.push_back(rocket);
 }
 
@@ -66,6 +69,12 @@ void Grenades::Update(float dt, const World& world, ZombieHorde& horde, Player& 
             if (impact || grenade.fuse <= 0.0f)
             {
                 grenade.fuse = 0.0f;
+                if (grenade.visual)
+                {
+                    particles.Explosion(grenade.position);
+                    particles.Explosion(Vector3Add(grenade.position, { 0.0f, 0.8f, 0.0f }));
+                    continue;
+                }
                 horde.Explode(grenade.position, kRocketRadius, kRocketMaxDamage);
                 blasts.push_back({ grenade.position, kRocketRadius, kRocketMaxDamage });
                 const Vector3 chest = { player.Position().x, player.Position().y + 1.1f, player.Position().z };
@@ -108,7 +117,11 @@ void Grenades::Update(float dt, const World& world, ZombieHorde& horde, Player& 
             grenade.velocity.z *= 0.6f;
         }
 
-        if (grenade.fuse <= 0.0f)
+        if (grenade.fuse <= 0.0f && grenade.visual)
+        {
+            particles.Explosion(grenade.position);
+        }
+        else if (grenade.fuse <= 0.0f)
         {
             horde.Explode(grenade.position, kGrenadeRadius, kGrenadeMaxDamage);
             blasts.push_back({ grenade.position, kGrenadeRadius, kGrenadeMaxDamage });

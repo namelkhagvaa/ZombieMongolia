@@ -32,6 +32,7 @@ public:
     void SetTraversing(bool active) { traversing = active; }
 
     const Camera3D& Get() const { return camera; }
+    float AimBlend() const { return aimBlend; } // 0 = ердийн, 1 = бүрэн онилсон
     float Yaw() const { return yaw; }
     float Pitch() const { return pitch; }
     // Харах чиглэлийг гаднаас бага зэрэг эргүүлнэ (онилгооны туслах); хязгаарыг Update барина.

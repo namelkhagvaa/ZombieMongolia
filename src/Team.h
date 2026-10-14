@@ -6,6 +6,8 @@
 // Тоглогч нэг гишүүнийг удирдаж, үлдсэн хоёр нь түүнийг дагаж, хамгаална (SoldierSquad).
 constexpr int kTeamSize = 3;
 constexpr int kSniperMember = 2;
+// Багийн гишүүд хохирлыг ийм дахин бага авна: амь 100% хэвээр ч 5 дахин удаан үхнэ.
+constexpr float kTeamToughness = 5.0f;
 
 inline bool IsSniperMember(int member) { return member == kSniperMember; }
 

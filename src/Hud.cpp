@@ -210,6 +210,10 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
             const float ratio = entry.alive ? (float)entry.health / 100.0f : 0.0f;
             Ui::Bar({ (float)textX, (float)teamY + 29.0f, card.x + card.width - 12.0f - (float)textX, 6.0f }, ratio,
                     ratio > 0.35f ? Ui::kGood : Ui::kDanger);
+            if (entry.tag)
+            {
+                Ui::Chip(entry.tag, (int)card.x - 8, teamY + 2, Ui::kInfo, Ui::kInfo, true);
+            }
             teamY += cardHeight + 6;
         }
         if (info.squadTotal > 0)
@@ -311,7 +315,7 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         }
     }
 
-    // --- Удирдлага (H-ээр нуух) ---
+    // --- Удирдлага (F10-аар нээж, нуух) ---
     if (info.showHelp && !info.touch)
     {
         const char* help[][2] = {
@@ -319,7 +323,7 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
             { "Z", "хэвтэх" },         { "LMB", "буудах" },        { "RMB", "онилох" },           { "R", "цэнэглэх" },
             { "1–5", "зэвсэг" },       { "F1–F3", "гишүүн солих" }, { "F", "унах / хаалга / цонх" }, { "E", "үйлдэл" },
             { "Q", "журнал" },         { "M", "газрын зураг" },    { "TAB", "ухрах" },            { "V", "камер 1-р / 3-р" },
-            { "H", "тусламж нуух" },
+            { "H", "энд бай (гишүүн)" }, { "F10", "тусламж нуух" },
         };
         const int columns = 2, rowHeight = 26;
         const int rows = (int)(sizeof(help) / sizeof(help[0]) + columns - 1) / columns;

@@ -589,6 +589,30 @@ int Garage::Nearest(Vector3 position, float maxDistance) const
     return best;
 }
 
+void Garage::SetRemote(int index, Vector3 position, float heading, float speed, float steer, bool occupied)
+{
+    if (index < 0 || index >= Count()) return;
+    Vehicle& vehicle = vehicles[(size_t)index];
+    if (!vehicle.remote || HorizontalDistance(vehicle.position, position) > 8.0f)
+    {
+        vehicle.position = position; // анх удаа эсвэл хэт хоцорсон: шууд байрлуулна
+        vehicle.heading = heading;
+    }
+    vehicle.remote = true;
+    vehicle.occupied = occupied;
+    vehicle.netPosition = position;
+    vehicle.netHeading = heading;
+    vehicle.netSpeed = speed;
+    vehicle.netSteer = steer;
+}
+
+void Garage::ClearRemote(int index)
+{
+    if (index < 0 || index >= Count()) return;
+    vehicles[(size_t)index].remote = false;
+    vehicles[(size_t)index].occupied = false;
+}
+
 void Garage::Dismount()
 {
     driven = -1;
@@ -636,6 +660,29 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
         Vehicle& vehicle = vehicles[i];
         const VehicleSpec& spec = SpecFor(vehicle.type);
         const bool byPlayer = i == driven;
+        if (vehicle.remote && !byPlayer)
+        {
+            // Сүлжээгээр хөдөлгөгдөж буй хэрэгсэл: байрлалыг зөөлөн дагаж, дугуй эргүүлнэ; жолоодож буй бол зомбийг
+            // дайрна (хост дээр л үйлчилнэ: зочны зомбинууд хохирол авдаггүй).
+            const VehicleSpec& remoteSpec = SpecFor(vehicle.type);
+            const float follow = std::min(1.0f, 10.0f * dt);
+            vehicle.position.x += (vehicle.netPosition.x - vehicle.position.x) * follow;
+            vehicle.position.z += (vehicle.netPosition.z - vehicle.position.z) * follow;
+            vehicle.position.y = world.GroundHeight(vehicle.position.x, vehicle.position.z);
+            vehicle.heading += std::remainder(vehicle.netHeading - vehicle.heading, 2.0f * PI) * follow;
+            vehicle.speed = vehicle.netSpeed;
+            vehicle.steer += (vehicle.netSteer - vehicle.steer) * follow;
+            vehicle.animation += vehicle.speed * dt * (vehicle.type == VehicleType::Horse ? 1.1f : 1.0f);
+            const float speed = std::fabs(vehicle.speed);
+            if (vehicle.occupied && speed > 4.0f)
+            {
+                const float impact = speed * remoteSpec.ramDamage;
+                const float sign = vehicle.speed >= 0.0f ? 1.0f : -1.0f;
+                const Vector3 push = { std::sin(vehicle.heading) * speed * sign, 0.0f, std::cos(vehicle.heading) * speed * sign };
+                horde.Ram(vehicle.position, remoteSpec.radius + 0.5f, impact * dt * 6.0f, impact > 40.0f, push);
+            }
+            continue;
+        }
         const bool controlled = byPlayer || i == escort; // тоглогч эсвэл багийн гишүүн жолоодож байгаа
         const float steerInput = byPlayer ? steer : escortSteer;
         if (!controlled && vehicle.speed == 0.0f)

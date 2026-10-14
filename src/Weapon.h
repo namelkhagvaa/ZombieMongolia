@@ -68,6 +68,8 @@ class Arsenal
 public:
     // Түвшнийг тохируулж, бүх зэвсгийг дүүргэнэ (даалгаврын эхэнд).
     void Configure(const WeaponLevels& newLevels, Loadout newLoadout = Loadout::Fighter);
+    // Даалгаврын дундуур сайжруулалт авахад: түвшинг шинэчилж, сумыг хөндөхгүй.
+    void SetLevels(const WeaponLevels& newLevels) { levels = newLevels; }
 
     // Гарын 1.. товчнуудад харгалзах зэвсгүүд (бүрдлээс хамаарна).
     int SlotCount() const;

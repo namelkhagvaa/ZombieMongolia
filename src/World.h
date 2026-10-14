@@ -89,6 +89,7 @@ public:
         return std::sqrt(dx * dx + dz * dz);
     }
     void SetDoorOpen(int index, bool open);
+    int DoorCount() const { return (int)doors.size(); }
     void CloseAllDoors();
     // Хаалганы эргэх хөдөлгөөнийг шинэчилнэ.
     void UpdateDoors(float dt);
@@ -96,6 +97,10 @@ public:
     void PoundDoors(Vector3 position, float dt);
     // (x, z) цэг аль барилгын дотор байгаа; -1 = гадаа.
     int InteriorAt(float x, float z) const;
+    // Дэлгүүр (safe) дотор байгаа эсэх.
+    bool InSafeRoom(float x, float z) const;
+    // Дэлгүүр дотор орсон (radius-аар давхцсан) бол хамгийн ойрын ханын гадна тал руу түлхэнэ (зомбид).
+    void KeepOutOfSafeRooms(Vector3& position, float radius) const;
     const Interior& GetInterior(int index) const { return interiors[index]; }
     // Ойрын хаалгануудыг зурна (BeginMode3D + орчны shader дотор).
     void DrawDoors(Vector3 viewPosition) const;

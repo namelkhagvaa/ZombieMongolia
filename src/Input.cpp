@@ -161,6 +161,12 @@ namespace
                 Add({ w - map - 16.0f - 232.0f, 16.0f + (float)i * 52.0f, 220.0f, 44.0f }, memberLabels[i], Kind::Key,
                     KEY_F1 + i, false, member.active, !member.alive);
             }
+            if (state.showHold)
+            {
+                // Багийн товчнуудын доор: удирдаж буй гишүүнийг байранд нь үлдээнэ (дараа нь өөр гишүүн рүү шилжинэ).
+                Add({ w - map - 16.0f - 232.0f, 16.0f + 3.0f * 52.0f, 220.0f, 44.0f }, "ЭНД БАЙ", Kind::Key, KEY_H, false,
+                    state.holdMarked);
+            }
 
             // --- Зүүн дээд, даалгаврын мөрийн доор: журнал, буцах ---
             Add({ 16.0f, 112.0f, 130.0f, 42.0f }, "ДААЛГАВАР", Kind::Key, KEY_Q, false);
@@ -177,6 +183,8 @@ namespace
             // Камерын горим: 1-р этгээд (зөвхөн гар, буу) / 3-р этгээд (бүтэн бие)
             Add({ 500.0f, 112.0f, 150.0f, 42.0f }, state.firstPerson ? "КАМЕР: 1-Р" : "КАМЕР: 3-Р", Kind::Key, KEY_V, false,
                 state.firstPerson);
+            // Тоглоомын цэс (ESC-тэй адил): үргэлжлүүлэх, газрын зураг руу буцах, гарах
+            Add({ 658.0f, 112.0f, 100.0f, 42.0f }, "ЦЭС", Kind::Key, KEY_ESCAPE, false);
             break;
         }
 
@@ -197,6 +205,13 @@ namespace
             }
             break;
         }
+
+        case TouchScreen::Pause:
+            break; // мөрийг товшино (Game шалгана)
+
+        case TouchScreen::Shop:
+            Add({ w - 196.0f, 20.0f, 176.0f, 60.0f }, "ХААХ", Kind::Key, KEY_E, false, true);
+            break;
 
         case TouchScreen::Journal:
         case TouchScreen::Result:
@@ -495,18 +510,31 @@ float InStrafeScale()
     return stickTurns ? kStickStrafe : 1.0f;
 }
 
+namespace
+{
+    bool muted = false;
+}
+
+void InSetMuted(bool value)
+{
+    muted = value;
+}
+
 bool InKeyDown(int key)
 {
+    if (muted) return false;
     return IsKeyDown(key) || (key >= 0 && key < kKeyCount && virtualDown[key]);
 }
 
 bool InKeyPressed(int key)
 {
+    if (muted) return false;
     return IsKeyPressed(key) || (key >= 0 && key < kKeyCount && virtualPressed[key]);
 }
 
 bool InMouseDown(int button)
 {
+    if (muted) return false;
     if (touchMode)
     {
         return button == MOUSE_BUTTON_LEFT ? (fireDown || pointerDown) : button == MOUSE_BUTTON_RIGHT ? aimLatched : false;
@@ -516,6 +544,7 @@ bool InMouseDown(int button)
 
 bool InMousePressed(int button)
 {
+    if (muted) return false;
     if (touchMode)
     {
         return button == MOUSE_BUTTON_LEFT && (firePressed || pointerPressed);
@@ -525,11 +554,13 @@ bool InMousePressed(int button)
 
 Vector2 InLookDelta()
 {
+    if (muted) return { 0.0f, 0.0f };
     return touchMode ? look : GetMouseDelta();
 }
 
 float InWheel()
 {
+    if (muted) return 0.0f;
     return touchMode ? wheel : GetMouseWheelMove();
 }
 
@@ -550,6 +581,7 @@ void InSetTestMove(Vector2 axis)
 
 Vector2 InMoveAxis()
 {
+    if (muted) return { 0.0f, 0.0f };
     Vector2 axis = { (float)IsKeyDown(KEY_D) - (float)IsKeyDown(KEY_A), (float)IsKeyDown(KEY_W) - (float)IsKeyDown(KEY_S) };
     axis = Vector2Add(Vector2Add(axis, move), testMove);
     const float length = Vector2Length(axis);
@@ -558,6 +590,7 @@ Vector2 InMoveAxis()
 
 bool InSprint()
 {
+    if (muted) return false;
     // Хүрдийг захад нь хүртэл урагш түлхвэл гүйнэ.
     return IsKeyDown(KEY_LEFT_SHIFT) || (move.y > 0.5f && Vector2Length(move) > 0.93f);
 }

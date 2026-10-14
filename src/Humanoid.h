@@ -44,6 +44,7 @@ struct HumanoidLook
     float bulk = 1.0f; // биеийн өргөний үржүүлэгч
     int model = -1;    // гаднаас оруулсан 3D загварын дугаар (CharacterModel.h); -1 = кодоор үүсгэсэн дүрс
     Color modelTint = { 255, 255, 255, 255 }; // загварын өнгийг үржүүлнэ (ижил загвартай дүрүүдийг ялгахад)
+    bool lowDetail = false; // холын дүр: загварын хөнгөн (цөөн гурвалжинтай) хувилбараар зурна
 
     // Зөвхөн зомби
     bool missingLeftArm = false; // зүүн гар тохойноос доош байхгүй
@@ -82,6 +83,9 @@ struct HumanoidPose
     Vector3 gripPoint[2] = {};
     // seated үед: хөл нугарахад биеийг доошлуулж, доод талын хөлийн ул хөлийн түвшинд (газар, тавцан) хүрнэ.
     bool plantFeet = false;
+    // seated үед: ташаа, хөлийг биеийн харах зүгээс ийм өнцгөөр (градус, эерэг = +X тийш) эргүүлнэ. Унаан дээр
+    // буудахад бие (цээж, гар) онилсон зүг рүү, ташаа хөл нь унааны зүгт үлдэнэ.
+    float seatTwist = 0.0f;
 
     // Төлөв: гаднаас оруулсан загварын хөдөлгөөний найруулагч (CharacterModel) үүнээс бүтэн биеийн
     // байрлалыг өөрөө тооцно (хөл газарт тулах, зэвсэг бүрийн зогсолт, дайралт, шидэлт).
@@ -123,10 +127,11 @@ float HumanoidGaitRate(float speed);
 
 // 1-р этгээдийн камерт: дэлгэцийн баруун доор гар ба барьсан зэвсэг (Counter-Strike маягийн).
 // recoil 0..1, walkPhase алхааны үе, moveAmount 0..1, reload 0..1 (-1 = үгүй), action 1 -> 0 (хатгах / шидэх).
+// aim 0..1: онилох (баруун товч) үед буу дэлгэцийн төвд, гол төмөр нь хараатай нэг шугамд ирнэ.
 void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float walkPhase, float moveAmount, float reload,
-                   float action);
+                   float action, float aim = 0.0f);
 // 1-р этгээдийн үед сумны мөр, амны гал гарах цэг (ертөнцөд).
-Vector3 ViewModelMuzzle(const Camera3D& camera, HeldItem held);
+Vector3 ViewModelMuzzle(const Camera3D& camera, HeldItem held, float aim = 0.0f);
 
 // Барьж буй зүйлийн амны (сум гарах цэгийн) орон нутгийн байрлал.
 Vector3 HumanoidMuzzleFor(HeldItem held);

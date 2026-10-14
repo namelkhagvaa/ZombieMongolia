@@ -40,6 +40,7 @@ FetchContent_MakeAvailable(enet)
 
 set(GAME_SOURCES
     main.cpp
+    src/Airstrike.cpp
     src/Campaign.cpp
     src/CampaignData.cpp
     src/CharacterModel.cpp
@@ -51,6 +52,7 @@ set(GAME_SOURCES
     src/Input.cpp
     src/Humanoid.cpp
     src/Layout.cpp
+    src/MedKits.cpp
     src/MeshBuilder.cpp
     src/Minimap.cpp
     src/Mission.cpp
@@ -95,6 +97,10 @@ target_include_directories(ZombieMongolia PRIVATE src ${enet_SOURCE_DIR}/include
 target_link_libraries(ZombieMongolia PRIVATE raylib enet)
 if(WIN32)
     target_link_libraries(ZombieMongolia PRIVATE ws2_32 winmm)
+    # Суулгагчаар өөр компьютерт тараахад: MinGW-ийн C++ сангуудыг exe-д шингээнэ (libstdc++, libgcc DLL хэрэггүй),
+    # консол цонх гаргахгүй.
+    target_link_options(ZombieMongolia PRIVATE -static)
+    set_target_properties(ZombieMongolia PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
 
 if(NOT MSVC)

@@ -56,7 +56,8 @@ public:
     bool IsComplete() const;
 
     // Үеийн зомбины нөөц: ийм тооны зомби л гарч ирнэ; бүгдийг устгасны дараа шинээр гарахгүй.
-    // Үе давахын тулд бүх даалгавар биелсэн, нөөц бүхэлдээ устгагдсан байх ёстой.
+    // Үе давахын тулд бүх даалгавар биелж, нөөц бүхэлдээ устгагдсан байх ёстой; дараа нь онгоц газрын
+    // зураг дээр үлдсэн зомбийг бөмбөгдөх кино явна (Airstrike).
     void SetQuota(int small, int big)
     {
         quotaSmall = small;
@@ -108,7 +109,7 @@ private:
     MissionParams params = {};
     int province = 0;
     std::vector<ObjectiveState> states;
-    int quotaSmall = 5000;  // алхагч + гүйгч
+    int quotaSmall = 2500;  // алхагч + гүйгч
     int quotaBig = 500;     // том зомби
     int aliveSmall = 0;     // одоо амьд байгаа (frame бүрд шинэчлэгдэнэ)
     int aliveBig = 0;

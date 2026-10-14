@@ -1470,11 +1470,13 @@ namespace
         {
             s.solid.Box({ ladderX, y, ladderZ }, { 0.05f, 0.05f, 0.5f }, timber);
         }
-        const float ground = s.terrain.HeightAt(ladderX - 0.7f, ladderZ);
-        const Vector3 bottom = { ladderX - 0.6f, ground, ladderZ };
+        // Авирагч шатнаас kGap зайд босоо дээшилнэ (гар нь гишгүүрт хүрнэ); wall = доод цэгээс шат хүртэлх зай.
+        const float kGap = 0.42f;
+        const float ground = s.terrain.HeightAt(ladderX - kGap, ladderZ);
+        const Vector3 bottom = { ladderX - kGap, ground, ladderZ };
         const Vector3 top = { cx - 0.9f, deck + 0.1f, ladderZ };
-        s.passages.push_back({ bottom, top, PassageKind::LadderUp, PI * 0.5f });   // +X зүг (цамхаг руу) харна
-        s.passages.push_back({ top, bottom, PassageKind::LadderDown, PI * 0.5f });
+        s.passages.push_back({ bottom, top, PassageKind::LadderUp, PI * 0.5f, kGap });   // +X зүг (цамхаг руу) харна
+        s.passages.push_back({ top, bottom, PassageKind::LadderDown, PI * 0.5f, kGap });
 
         s.Shadow(cx - 1.6f, cz - 1.6f, cx + 1.6f, cz + 1.6f, deck, deck + 1.2f);
         s.Shadow(cx - 1.95f, cz - 1.95f, cx + 1.95f, cz + 1.95f, 6.4f, 6.9f);
@@ -1529,53 +1531,128 @@ namespace
         s.Shadow(x - 0.05f, z - 0.05f, x + 0.05f, z + 0.05f, 0.0f, 7.0f);
     }
 
-    // Цэрэг элсүүлэх цэг: майхны өмнөх саравчтай ширээ, ард нь самбар, жижиг далбаа (Layout.h: kRecruitStation).
-    void RecruitDesk(Scene& s, float cx, float cz)
+    // Дэлгүүр (Layout.h: kShopCenter): 2 давхар байшинтай ижил суурьтай, өндөр нэг давхар, цонхгүй.
+    // +Z талд өргөн хаалгатай, дээр нь шар хаяг. Дотор нь лангуу, тавиурууд. Зомби дотогш орохгүй (Interior::safe).
+    void ShopBuilding(Scene& s, float cx, float cz)
     {
-        const Color table = { 120, 84, 52, 255 };
-        const Color board = { 46, 70, 44, 255 };
-        const Color stripe = { 236, 190, 50, 255 };
-        // Ширээ: тавцан, дөрвөн хөл, дээр нь цаас, бал
-        s.solid.Box({ cx, 0.78f, cz }, { 2.0f, 0.06f, 0.8f }, table);
-        for (float dx : { -0.92f, 0.92f })
-        {
-            for (float dz : { -0.34f, 0.34f })
+        const float w = 9.0f, d = 7.5f;
+        const float wallHeight = 3.8f, thick = 0.2f;
+        const float doorWidth = 1.6f, doorHeight = 2.5f;
+        const Color wall = { 214, 200, 170, 255 };
+        const Color trim = { 150, 40, 36, 255 };
+        const Color sign = { 240, 190, 40, 255 };
+
+        auto wallPiece = [&](int face, float from, float to, float y0, float y1, bool collide) {
+            const float mid = (from + to) * 0.5f, length = to - from, inset = thick * 0.5f;
+            Vector3 center, size;
+            switch (face)
             {
-                s.solid.Box({ cx + dx, 0.38f, cz + dz }, { 0.06f, 0.76f, 0.06f }, ScaleColor(table, 0.7f));
+            case 0: center = { cx + w * 0.5f - inset, (y0 + y1) * 0.5f, cz + mid }; size = { thick, y1 - y0, length }; break;
+            case 1: center = { cx - w * 0.5f + inset, (y0 + y1) * 0.5f, cz + mid }; size = { thick, y1 - y0, length }; break;
+            case 2: center = { cx + mid, (y0 + y1) * 0.5f, cz + d * 0.5f - inset }; size = { length, y1 - y0, thick }; break;
+            default: center = { cx + mid, (y0 + y1) * 0.5f, cz - d * 0.5f + inset }; size = { length, y1 - y0, thick }; break;
+            }
+            s.solid.Box(center, size, wall);
+            if (collide) s.Collider(center, size);
+        };
+
+        s.solid.Box({ cx, 0.04f, cz }, { w + 0.3f, 0.08f, d + 0.3f }, kConcrete);                  // суурь
+        s.solid.Box({ cx, 0.09f, cz }, { w - thick, 0.03f, d - thick }, { 120, 116, 108, 255 }); // шал
+
+        // Хана: гурван тал цул, +Z талд голдоо хаалганы нээлхий
+        wallPiece(0, -d * 0.5f, d * 0.5f, 0.0f, wallHeight, true);
+        wallPiece(1, -d * 0.5f, d * 0.5f, 0.0f, wallHeight, true);
+        wallPiece(3, -w * 0.5f, w * 0.5f, 0.0f, wallHeight, true);
+        wallPiece(2, -w * 0.5f, -doorWidth * 0.5f, 0.0f, wallHeight, true);
+        wallPiece(2, doorWidth * 0.5f, w * 0.5f, 0.0f, wallHeight, true);
+        wallPiece(2, -doorWidth * 0.5f, doorWidth * 0.5f, doorHeight, wallHeight, false);
+
+        // Хаалга ба дотор тал (safe: зомби орохгүй)
+        const float wallZ = cz + d * 0.5f - thick * 0.5f;
+        Door leaf = {};
+        leaf.hinge = { cx - doorWidth * 0.5f, 0.05f, wallZ };
+        leaf.width = doorWidth;
+        leaf.height = doorHeight - 0.05f;
+        leaf.closedYaw = PI * 0.5f;
+        leaf.openYaw = 0.0f; // гадагш (+Z)
+        leaf.color = { 70, 90, 110, 255 };
+        Interior room = {};
+        room.center = { cx, cz };
+        room.halfX = w * 0.5f - thick;
+        room.halfZ = d * 0.5f - thick;
+        room.round = false;
+        room.doorOutside = { cx, wallZ + 1.5f };
+        room.doorInside = { cx, wallZ - 1.2f };
+        room.safe = true;
+        s.Entrance(leaf, room);
+
+        // Гадна тал: доод бараан тууз, дээд улаан тууз, хаалганы дээрх том шар хаяг (зоосны дүрстэй)
+        const float front = cz + d * 0.5f + 0.03f;
+        const Color plinth = ScaleColor(wall, 0.6f);
+        s.solid.Box({ cx, 0.2f, front }, { w + 0.08f, 0.4f, 0.06f }, plinth);
+        s.solid.Box({ cx, 0.2f, cz - d * 0.5f - 0.03f }, { w + 0.08f, 0.4f, 0.06f }, plinth);
+        s.solid.Box({ cx - w * 0.5f - 0.03f, 0.2f, cz }, { 0.06f, 0.4f, d + 0.08f }, plinth);
+        s.solid.Box({ cx + w * 0.5f + 0.03f, 0.2f, cz }, { 0.06f, 0.4f, d + 0.08f }, plinth);
+        s.solid.Box({ cx, wallHeight - 0.25f, front }, { w + 0.1f, 0.3f, 0.06f }, trim);
+        s.solid.Box({ cx, wallHeight - 0.25f, cz - d * 0.5f - 0.03f }, { w + 0.1f, 0.3f, 0.06f }, trim);
+        s.solid.Box({ cx - w * 0.5f - 0.03f, wallHeight - 0.25f, cz }, { 0.06f, 0.3f, d + 0.1f }, trim);
+        s.solid.Box({ cx + w * 0.5f + 0.03f, wallHeight - 0.25f, cz }, { 0.06f, 0.3f, d + 0.1f }, trim);
+        s.solid.Box({ cx, wallHeight + 0.55f, front + 0.05f }, { 5.2f, 1.1f, 0.14f }, sign);
+        s.solid.Box({ cx, wallHeight + 0.55f, front + 0.13f }, { 5.0f, 0.12f, 0.04f }, trim);
+        for (float x : { -1.8f, 1.8f })
+        {
+            // Зоосны дүрс: хаяган дээр наасан хоёр алтан дөрвөлжин (дотор нь бараан тэмдэг)
+            s.solid.Box({ cx + x, wallHeight + 0.55f, front + 0.14f }, { 0.7f, 0.7f, 0.04f }, { 200, 140, 20, 255 });
+            s.solid.Box({ cx + x, wallHeight + 0.55f, front + 0.17f }, { 0.12f, 0.45f, 0.02f }, { 120, 80, 10, 255 });
+        }
+        // Хаалганы дээрх саравч
+        s.solid.Box({ cx, doorHeight + 0.25f, front + 0.6f }, { doorWidth + 1.2f, 0.1f, 1.2f }, trim);
+
+        // Хавтгай дээвэр, хашлага
+        const float roofBase = wallHeight;
+        const Color parapet = ScaleColor(wall, 0.88f);
+        s.solid.Box({ cx, roofBase + 0.12f, cz }, { w + 0.5f, 0.24f, d + 0.5f }, { 96, 96, 100, 255 });
+        s.solid.Box({ cx, roofBase + 0.44f, cz - d * 0.5f - 0.15f }, { w + 0.5f, 0.4f, 0.2f }, parapet);
+        s.solid.Box({ cx - w * 0.5f - 0.15f, roofBase + 0.44f, cz }, { 0.2f, 0.4f, d + 0.5f }, parapet);
+        s.solid.Box({ cx + w * 0.5f + 0.15f, roofBase + 0.44f, cz }, { 0.2f, 0.4f, d + 0.5f }, parapet);
+        s.solid.Box({ cx, roofBase - 0.03f, cz }, { w - thick, 0.05f, d - thick }, { 230, 228, 220, 255 }); // тааз
+
+        // --- Дотор: арын хананы дагуу лангуу, ард нь тавиур; хажуугийн хананд зэвсгийн тавиур, эмийн шүүгээ ---
+        const float back = cz - d * 0.5f + thick;
+        const Color wood = { 120, 84, 52, 255 };
+        Furniture(s, { cx, 0.55f, back + 1.7f }, { 4.4f, 1.1f, 0.7f }, wood);                        // лангуу
+        s.solid.Box({ cx, 1.12f, back + 1.7f }, { 4.5f, 0.05f, 0.8f }, ScaleColor(wood, 1.2f));
+        s.solid.Box({ cx - 1.4f, 1.24f, back + 1.7f }, { 0.4f, 0.2f, 0.3f }, { 40, 40, 44, 255 });    // касс
+        s.solid.Box({ cx + 1.2f, 1.2f, back + 1.65f }, { 0.5f, 0.12f, 0.35f }, { 200, 140, 20, 255 }); // зоосны сав
+        Furniture(s, { cx, 1.2f, back + 0.25f }, { 6.0f, 2.4f, 0.45f }, ScaleColor(wood, 0.8f));       // тавиур
+        for (int row = 0; row < 3; ++row)
+        {
+            for (int i = 0; i < 7; ++i)
+            {
+                const int k = (i + row) % 3;
+                const Color box = k == 0 ? kOlive : k == 1 ? Color{ 150, 120, 70, 255 } : Color{ 90, 96, 70, 255 };
+                s.solid.Box({ cx - 2.55f + 0.85f * (float)i, 0.55f + 0.7f * (float)row, back + 0.5f }, { 0.6f, 0.4f, 0.12f }, box);
             }
         }
-        s.solid.Box({ cx - 0.4f, 0.82f, cz }, { 0.42f, 0.02f, 0.3f }, { 232, 228, 214, 255 });
-        s.solid.Box({ cx + 0.3f, 0.83f, cz + 0.05f }, { 0.3f, 0.04f, 0.22f }, { 52, 60, 46, 255 }); // хавтас
-        // Саравч: дөрвөн шон, налуу брезент
-        for (float dx : { -1.3f, 1.3f })
+        // Зэвсгийн тавиур (-X хана): бараан буунууд босоо
+        const float left = cx - w * 0.5f + thick;
+        Furniture(s, { left + 0.2f, 1.1f, cz }, { 0.3f, 2.2f, 3.0f }, ScaleColor(wood, 0.7f));
+        for (int i = 0; i < 6; ++i)
         {
-            s.solid.Cylinder({ cx + dx, 0.0f, cz - 0.9f }, 0.05f, 0.05f, 2.6f, 6, kMetal);
-            s.solid.Cylinder({ cx + dx, 0.0f, cz + 0.9f }, 0.05f, 0.05f, 2.3f, 6, kMetal);
+            s.solid.Box({ left + 0.4f, 1.15f, cz - 1.2f + 0.48f * (float)i }, { 0.08f, 1.1f, 0.12f }, { 40, 42, 40, 255 });
+            s.solid.Box({ left + 0.42f, 0.7f, cz - 1.2f + 0.48f * (float)i }, { 0.1f, 0.25f, 0.2f }, { 70, 50, 34, 255 });
         }
-        s.solid.SetTransform(MatrixMultiply(MatrixMultiply(MatrixTranslate(-cx, -2.45f, -cz), MatrixRotateX(-9.0f * DEG2RAD)),
-                                            MatrixTranslate(cx, 2.45f, cz)));
-        s.solid.Box({ cx, 2.45f, cz }, { 2.9f, 0.05f, 2.0f }, kOlive);
-        s.solid.Box({ cx, 2.36f, cz + 1.0f }, { 2.9f, 0.18f, 0.03f }, stripe); // урд хормой
-        s.solid.ResetTransform();
-        // Самбар: ширээний ард, хоёр шон дээр; шар хүрээ, дотор нь алтан од ба далбаа
-        const float bz = cz - 1.2f;
-        for (float dx : { -0.9f, 0.9f }) s.solid.Box({ cx + dx, 1.25f, bz }, { 0.08f, 2.5f, 0.08f }, ScaleColor(table, 0.6f));
-        s.solid.Box({ cx, 1.85f, bz }, { 2.0f, 1.1f, 0.06f }, stripe);
-        s.solid.Box({ cx, 1.85f, bz + 0.01f }, { 1.86f, 0.96f, 0.06f }, board);
-        const Color red = { 190, 44, 48, 255 }, blue = { 20, 96, 166, 255 };
-        s.solid.Box({ cx - 0.5f, 1.85f, bz + 0.05f }, { 0.22f, 0.5f, 0.02f }, red);
-        s.solid.Box({ cx - 0.28f, 1.85f, bz + 0.05f }, { 0.22f, 0.5f, 0.02f }, blue);
-        s.solid.Box({ cx - 0.06f, 1.85f, bz + 0.05f }, { 0.22f, 0.5f, 0.02f }, red);
-        for (int i = 0; i < 3; ++i)
-        {
-            s.solid.Box({ cx + 0.45f, 1.66f + 0.18f * (float)i, bz + 0.05f }, { 0.6f, 0.06f, 0.02f }, stripe); // "бичиг"
-        }
-        // Сандал
-        s.solid.Box({ cx, 0.45f, cz - 0.7f }, { 0.45f, 0.05f, 0.45f }, ScaleColor(table, 0.8f));
-        s.solid.Box({ cx, 0.22f, cz - 0.7f }, { 0.35f, 0.45f, 0.35f }, ScaleColor(table, 0.6f));
-        s.Collider({ cx, 0.45f, cz }, { 2.0f, 0.9f, 0.8f });
-        s.Collider({ cx, 1.25f, bz }, { 2.0f, 2.5f, 0.15f });
-        s.Shadow(cx - 1.45f, cz - 1.0f, cx + 1.45f, cz + 1.0f, 0.0f, 2.4f);
+        // Эмийн шүүгээ (+X хана): цагаан, улаан загалмайтай
+        const float right = cx + w * 0.5f - thick;
+        Furniture(s, { right - 0.3f, 1.0f, cz }, { 0.5f, 2.0f, 2.2f }, { 236, 236, 230, 255 });
+        s.solid.Box({ right - 0.56f, 1.4f, cz }, { 0.02f, 0.5f, 0.15f }, { 210, 30, 36, 255 });
+        s.solid.Box({ right - 0.56f, 1.4f, cz }, { 0.02f, 0.15f, 0.5f }, { 210, 30, 36, 255 });
+        // Таазны гэрэл
+        for (float x : { -2.0f, 2.0f }) s.solid.Box({ cx + x, wallHeight - 0.12f, cz }, { 1.2f, 0.06f, 0.2f }, { 250, 246, 220, 255 });
+
+        s.Collider({ cx, roofBase + 0.5f, cz }, { w, 1.0f, d });
+        Footprint(s, cx, cz, w, d);
+        s.Shadow(cx - w * 0.5f - 0.25f, cz - d * 0.5f - 0.25f, cx + w * 0.5f + 0.25f, cz + d * 0.5f + 0.25f, 0.0f, roofBase + 1.2f);
     }
 
     // ------------------------------------------------------------------ Жижиг зүйлс
@@ -1784,7 +1861,7 @@ namespace
         ChainFence(s, -64.0f, -29.0f, -43.0f, -29.0f);
 
         // Хуаран
-        RecruitDesk(s, kRecruitStation.x, kRecruitStation.y - 1.4f);
+        ShopBuilding(s, kShopCenter.x, kShopCenter.y);
         const Color canvas = style == 1 ? Color{ 92, 104, 120, 255 } : style == 2 ? Color{ 98, 94, 70, 255 } : kOlive;
         Tent(s, -49.5f, -17.0f, canvas);
         Tent(s, -43.0f, -17.0f, canvas);
