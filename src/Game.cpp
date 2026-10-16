@@ -510,7 +510,9 @@ void Game::HandleSettingsInput()
 
     if (InKeyPressed(KEY_I)) config.invertY = !config.invertY;
     // F1, F2, F3 нь багийн гишүүд рүү шилжих товч болсон тул тусламж, шалгах горим өөр товчинд.
-    if (InKeyPressed(KEY_F4)) showDebug = !showDebug;
+    // Шалгах горим (мөргөлдөх хүрээ): Ctrl+F4. Дан F4 нь F1–F3-ын хажууд тул санамсаргүй дарагддаг байсан.
+    const bool control = InKeyDown(KEY_LEFT_CONTROL) || InKeyDown(KEY_RIGHT_CONTROL);
+    if (control && InKeyPressed(KEY_F4)) showDebug = !showDebug;
     if (InKeyPressed(KEY_F10)) showHelp = !showHelp; // (H нь "энд бай" тушаал)
 }
 
