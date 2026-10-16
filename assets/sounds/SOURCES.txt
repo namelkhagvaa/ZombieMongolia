@@ -11,7 +11,7 @@ Zombie Mongolia — дууны эх сурвалж (бүгд CC0 / public domain
   "Zombie moans" by Darsycho — CC0
   https://opengameart.org/content/zombie-moans
 
-Дэлбэрэлт, цохилт, төмөр, мод (explosion, hit, crash, thud, hoof):
+Дэлбэрэлт, цохилт, төмөр, мод (explosion, hit, crash, thud):
   "100 CC0 SFX" by rubberduck — CC0
   https://opengameart.org/content/100-cc0-sfx
 
@@ -19,4 +19,14 @@ Zombie Mongolia — дууны эх сурвалж (бүгд CC0 / public domain
   "Racing car engine sound loops" by domasx2 — CC0
   https://opengameart.org/content/racing-car-engine-sound-loops
 
-Хутга, шидэх, сум цэнэглэх, дугуй чахирах, дэлбэрэлтийн нүргээн: кодоор нийлэгжүүлсэн (src/Audio.cpp).
+Сум цэнэглэх (reload):
+  "Gun Reload Sounds" by Joaken — CC0
+  https://opengameart.org/content/gun-reload-sounds
+  (assaultriflereload1.wav; эхний чимээгүйг тайрч, моно болгосон)
+
+Морины туурай (hoof, hoof_1 ... hoof_5):
+  "Horse Trotting" by KobatoGames — CC0
+  https://opengameart.org/content/horse-trotting
+  (Trot.ogg-оос тус тусдаа 6 цохилт хэрчиж, 90 Гц-ээс доош шүүсэн)
+
+Хутга, шидэх, дугуй чахирах, дэлбэрэлтийн нүргээн: кодоор нийлэгжүүлсэн (src/Audio.cpp).
