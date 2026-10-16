@@ -252,6 +252,18 @@ namespace
         }
     }
 
+    Ui::Icon ShopHudIconFor(ShopItem item)
+    {
+        switch (item)
+        {
+        case ShopItem::Damage: return Ui::Icon::UpgradeStrength;
+        case ShopItem::FireRate: return Ui::Icon::UpgradeSpeed;
+        case ShopItem::Magazine: return Ui::Icon::UpgradeInventory;
+        case ShopItem::Health: return Ui::Icon::UpgradeHealth;
+        default: return Ui::Icon::UpgradeDefense;
+        }
+    }
+
     // Аймгийн жижиг зураг: дэвсгэр зургийн аймаг бүрт өөр хэсэг.
     void DrawThumbnail(Rectangle box, int province)
     {
@@ -718,8 +730,10 @@ void MapScreen::Draw(const Progress& progress) const
         const Rectangle card = { (float)panelX + 8.0f, (float)y, (float)panelWidth - 16.0f, 40.0f };
         DrawRectangleRounded(card, 0.25f, 6, { 255, 255, 255, 12 });
         Ui::KeyBadge(TextFormat("%d", i + 1), panelX + 16, y + 8, 13, affordable ? kGold : Ui::kTextDim);
-        if (!DrawIcon(ShopIconFor(item), { (float)panelX + 40.0f, (float)y + 1.0f, 38.0f, 38.0f }, 0.62f,
-                      maxed ? Color{ 255, 255, 255, 170 } : WHITE))
+        // assets/huds-ийн сайжруулалтын икон; байхгүй бол assets/icons-ийнх, тэр нь ч байхгүй бол зурсан дүрс
+        const Color iconTint = maxed ? Color{ 255, 255, 255, 170 } : WHITE;
+        if (!Ui::DrawIcon(ShopHudIconFor(item), { (float)panelX + 41.0f, (float)y + 2.0f, 36.0f, 36.0f }, iconTint) &&
+            !DrawIcon(ShopIconFor(item), { (float)panelX + 40.0f, (float)y + 1.0f, 38.0f, 38.0f }, 0.62f, iconTint))
         {
             DrawRectangleRounded({ (float)panelX + 44.0f, (float)y + 6.0f, 28.0f, 28.0f }, 0.3f, 6, { 0, 0, 0, 90 });
             DrawShopIcon(item, { (float)panelX + 46.0f, (float)y + 8.0f, 24.0f, 24.0f }, maxed ? Ui::kTextDim : kGold);

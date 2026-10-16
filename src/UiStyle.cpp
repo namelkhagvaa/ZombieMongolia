@@ -124,6 +124,7 @@ namespace Ui
             "icon_settings", "icon_sound", "icon_fullscreen", "icon_pause", "icon_play", "icon_close", "icon_back", "icon_menu",
             "minimap_player", "minimap_zombie", "minimap_elite", "minimap_ally", "minimap_mission", "minimap_base", "minimap_vehicle",
             "minimap_horse", "minimap_supply", "minimap_tower",
+            "upgrade_strength", "upgrade_defense", "upgrade_health_capacity", "upgrade_inventory", "upgrade_speed",
         };
 
         Texture2D textures[(int)Icon::Count] = {};

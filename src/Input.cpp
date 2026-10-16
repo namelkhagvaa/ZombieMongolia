@@ -67,6 +67,7 @@ namespace
         bool dim;         // үхсэн гишүүн гэх мэт
         int icon = -1;    // >= 0 бол бичвэрийн оронд зэвсгийн дүрс (WeaponType)
         int check = -1;   // >= 0 бол чагттай товч: 1 = чагтлагдсан, 0 = үгүй
+        int uiIcon = -1;  // >= 0 бол бичвэрийн зүүн талд Ui::Icon (бичвэр хоосон бол зөвхөн икон)
     };
     std::vector<Button> buttons;
 
@@ -99,7 +100,7 @@ namespace
     void Add(Rectangle area, const char* label, Kind kind, int key, bool round = true, bool highlighted = false,
              bool dim = false)
     {
-        buttons.push_back({ area, label, kind, key, round, highlighted, dim, -1, -1 });
+        buttons.push_back({ area, label, kind, key, round, highlighted, dim, -1, -1, -1 });
     }
 
     // Нээлттэй дэлгэцэд тохирох товчлууруудын байрлалыг бүтээнэ (харагдацын координатаар).
@@ -170,6 +171,7 @@ namespace
 
             // --- Зүүн дээд, даалгаврын мөрийн доор: журнал, буцах ---
             Add({ 16.0f, 112.0f, 130.0f, 42.0f }, "ДААЛГАВАР", Kind::Key, KEY_Q, false);
+            buttons.back().uiIcon = (int)Ui::Icon::Mission;
             Add({ 154.0f, 112.0f, 130.0f, 42.0f }, "УХРАХ", Kind::Key, KEY_TAB, false);
             // Автомат онилгоо: чагтлагдсан бол хараа ойрын зомби руу өөрөө татагдана, үгүй бол өөрөө онилно.
             Add({ 292.0f, 112.0f, 200.0f, 42.0f }, "АВТО ОНИЛГОО", Kind::Key, KEY_T, false, state.aimAssist);
@@ -185,11 +187,13 @@ namespace
                 state.firstPerson);
             // Тоглоомын цэс (ESC-тэй адил): үргэлжлүүлэх, газрын зураг руу буцах, гарах
             Add({ 658.0f, 112.0f, 100.0f, 42.0f }, "ЦЭС", Kind::Key, KEY_ESCAPE, false);
+            buttons.back().uiIcon = (int)Ui::Icon::Menu;
             break;
         }
 
         case TouchScreen::FullMap:
             Add({ w - 96.0f, 20.0f, 76.0f, 60.0f }, "X", Kind::Key, KEY_M, false, true);
+            buttons.back().uiIcon = (int)Ui::Icon::Close;
             Add({ w - 96.0f, 100.0f, 76.0f, 60.0f }, "+", Kind::Wheel, 1, false);
             Add({ w - 96.0f, 170.0f, 76.0f, 60.0f }, "–", Kind::Wheel, -1, false);
             Add({ w - 96.0f, 250.0f, 76.0f, 60.0f }, "ТӨВ", Kind::Key, KEY_C, false);
@@ -677,12 +681,23 @@ void InDrawTouch(const TouchState& state)
             Ui::TextShadow(button.label, (int)boxArea.x + 30, (int)(center.y - (float)size * 0.55f), size,
                            button.check ? accent : text, true);
         }
+        else if (button.uiIcon >= 0 && Ui::HasIcon((Ui::Icon)button.uiIcon) && button.label && button.label[0] == 'X' && !button.label[1])
+        {
+            // "X" (хаах): бичвэрийн оронд икон
+            const float side = std::min(button.area.width, button.area.height) * 0.55f;
+            Ui::DrawIcon((Ui::Icon)button.uiIcon, { center.x - side * 0.5f, center.y - side * 0.5f, side, side });
+        }
         else if (button.label && button.label[0])
         {
+            // Икон (байвал) бичвэрийн зүүн талд, хоёулаа товчны төвд
+            const bool hasIcon = button.uiIcon >= 0 && Ui::HasIcon((Ui::Icon)button.uiIcon);
+            const int iconSpace = hasIcon ? 24 : 0;
             int size = button.round ? 16 : 18;
-            while (size > 11 && Ui::MeasureBold(button.label, size) > (int)button.area.width - 12) --size;
+            while (size > 11 && Ui::MeasureBold(button.label, size) + iconSpace > (int)button.area.width - 12) --size;
             const int textWidth = Ui::MeasureBold(button.label, size);
-            Ui::TextShadow(button.label, (int)(center.x - (float)textWidth * 0.5f), (int)(center.y - (float)size * 0.55f), size,
+            const float startX = center.x - (float)(textWidth + iconSpace) * 0.5f;
+            if (hasIcon) Ui::DrawIcon((Ui::Icon)button.uiIcon, { startX, center.y - 10.0f, 20.0f, 20.0f });
+            Ui::TextShadow(button.label, (int)startX + iconSpace, (int)(center.y - (float)size * 0.55f), size,
                            button.dim ? Ui::kDanger : button.highlighted ? accent : text, true);
         }
     }

@@ -55,6 +55,7 @@ namespace Ui
         Health, Armor, Ammo, AmmoLarge, AmmoClip, WeaponAutomatic, WeaponPistol, WeaponSniper, WeaponMelee, Grenade,
         Settings, Sound, Fullscreen, Pause, Play, Close, Back, Menu,
         MapPlayer, MapZombie, MapElite, MapAlly, MapMission, MapBase, MapVehicle, MapHorse, MapSupply, MapTower,
+        UpgradeStrength, UpgradeDefense, UpgradeHealth, UpgradeInventory, UpgradeSpeed,
         Count
     };
     bool HasIcon(Icon icon);

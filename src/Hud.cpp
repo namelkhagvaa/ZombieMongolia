@@ -299,6 +299,13 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
                          (int)card.y + 10, 14, Ui::kAccent);
         }
         Ui::Bar({ card.x + 14.0f, card.y + 42.0f, card.width - 28.0f, 8.0f }, healthRatio, barColor);
+
+        // Амь бага: картын дээр анхааруулгын чип (мэдрэгчтэй дэлгэцэд зүүн талд хүрд байдаг тул баруун ирмэгт)
+        if (healthRatio < 0.3f && player.IsAlive())
+        {
+            const int chipX = info.touch ? (int)(card.x + card.width) : (int)card.x;
+            Ui::IconChip(Ui::Icon::Warning, "АМЬ БАГА", chipX, (int)card.y - 40, Ui::kDanger, Ui::kDanger, info.touch);
+        }
     }
 
     // --- Баруун доод: зэвсэг ба сум (жижиг газрын зургийн дээр; мэдрэгчтэй дэлгэцэд доод голд) ---
@@ -320,7 +327,13 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
             bigColor = info.ammo == 0 ? Ui::kDanger : Ui::kText;
         }
         const int bigSize = info.reloading ? 20 : 34;
-        const int ammoIcon = info.usesAmmo && !info.reloading && Ui::HasIcon(Ui::Icon::AmmoClip) ? 30 : 0;
+        // Сумны икон: цэнэглэж байхад нөөц сум, дууссан бол анхааруулга, автоматад магазин, бусдад нэг сум
+        const int weaponType = info.slotWeapons[info.weaponSlot];
+        const Ui::Icon ammoPicture = info.reloading ? Ui::Icon::AmmoLarge
+                                     : info.ammo == 0 ? Ui::Icon::Warning
+                                     : weaponType == 2 ? Ui::Icon::AmmoClip
+                                                       : Ui::Icon::Ammo;
+        const int ammoIcon = info.usesAmmo && Ui::HasIcon(ammoPicture) ? 30 : 0;
         const int contentWidth = std::max(Ui::MeasureBold(weapon, 14),
                                           ammoIcon + Ui::MeasureBold(big, bigSize) + (small[0] ? Ui::Measure(small, 18) + 8 : 0));
         const int cardWidth = std::max(150, contentWidth + 32);
@@ -334,7 +347,8 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         if (big[0])
         {
             const int by = y + (info.reloading ? 38 : 28);
-            if (ammoIcon > 0) Ui::DrawIcon(Ui::Icon::AmmoClip, { (float)x + 13.0f, (float)by + 7.0f, 22.0f, 22.0f });
+            const float iconY = info.reloading ? (float)by - 1.0f : (float)by + 7.0f;
+            if (ammoIcon > 0) Ui::DrawIcon(ammoPicture, { (float)x + 13.0f, iconY, 22.0f, 22.0f });
             Ui::TextBold(big, x + 16 + ammoIcon, by, bigSize, bigColor);
             if (small[0])
             {

@@ -237,6 +237,39 @@ namespace
         }
     }
 
+    // Застав (бааз): Structures.cpp-ийн BuildCheckpoint-ийн төв, бүтэн зургийн "ЗАСТАВ" бичвэртэй ижил цэг.
+    constexpr Vector2 kOutpost = { -52.0f, 2.0f };
+
+    // Тогтмол газрууд: харуулын цамхаг (шатаар авирах цэг), застав. Талбайгаас гарсан бол зурахгүй.
+    // Икон байхгүй бол юу ч зурахгүй (зам, барилга нь өөрөө харагдана).
+    void DrawLandmarks(const MapView& view, const World& world, float markerScale, bool showBase)
+    {
+        const float left = view.area.x, right = view.area.x + view.area.width;
+        const float top = view.area.y, bottom = view.area.y + view.area.height;
+        auto inside = [&](Vector2 p, float half) {
+            return p.x > left + half && p.x < right - half && p.y > top + half && p.y < bottom - half;
+        };
+        const float tower = 17.0f * markerScale;
+        for (int i = 0; i < world.PassageCount(); ++i)
+        {
+            const Passage& passage = world.GetPassage(i);
+            if (passage.kind != PassageKind::LadderUp) continue;
+            const Vector2 p = view.ToScreen(passage.to.x, passage.to.z);
+            if (!inside(p, tower * 0.5f)) continue;
+            Ui::DrawIcon(Ui::Icon::MapTower, { p.x - tower * 0.5f, p.y - tower * 0.5f, tower, tower });
+        }
+        if (showBase)
+        {
+            const float base = 15.0f * markerScale;
+            const Vector2 p = view.ToScreen(kOutpost.x, kOutpost.y);
+            if (inside(p, base * 0.5f))
+            {
+                DrawCircleV(p, base * 0.6f, Fade(BLACK, 0.4f));
+                Ui::DrawIcon(Ui::Icon::MapBase, { p.x - base * 0.5f, p.y - base * 0.5f, base, base });
+            }
+        }
+    }
+
     void DrawMarkers(const MapView& view, const Player& player, const ZombieHorde& horde, const SoldierSquad& squad,
                      bool clampToEdge, float markerScale)
     {
@@ -334,6 +367,7 @@ void DrawMinimap(const World& world, const Player& player, float cameraYaw, cons
     Ui::Panel({ view.area.x - 6.0f, view.area.y - 6.0f, view.area.width + 12.0f, view.area.height + 12.0f }, Ui::kPanel, 12.0f);
     DrawRectangleRec(view.area, kOutside);
     DrawTerrainLayers(view, world, kBackground, kOutside);
+    DrawLandmarks(view, world, 1.0f, true);
     DrawVehicles(view, garage, 1.0f);
     DrawObjectives(view, markers, 1.0f);
     DrawMarkers(view, player, horde, squad, true, 1.0f);
@@ -349,6 +383,12 @@ void DrawMinimap(const World& world, const Player& player, float cameraYaw, cons
     DrawCircleV(north, 10.0f, Ui::kAccent);
     const int northWidth = Ui::MeasureBold("Х", 14);
     Ui::TextBold("Х", (int)north.x - northWidth / 2, (int)north.y - 8, 14, { 20, 16, 8, 255 });
+
+    // Луужин: зүүн дээд буланд, зүү нь хойд зүг рүү заана (зураг камертай хамт эргэдэг)
+    const float compass = 30.0f;
+    const Rectangle compassBox = { view.area.x + 4.0f, view.area.y + 4.0f, compass, compass };
+    DrawCircleV({ compassBox.x + compass * 0.5f, compassBox.y + compass * 0.5f }, compass * 0.5f, Fade(BLACK, 0.45f));
+    Ui::DrawIcon(Ui::Icon::Compass, compassBox, WHITE, cameraYaw * RAD2DEG);
 }
 
 // ---------------------------------------------------------------- Бүтэн дэлгэцийн зураг
@@ -439,11 +479,12 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     Ui::Panel({ view.area.x - 8.0f, view.area.y - 8.0f, view.area.width + 16.0f, view.area.height + 16.0f }, Ui::kPanel, 14.0f);
     DrawRectangleRec(view.area, kOutside);
     DrawTerrainLayers(view, world, kFullBackground, kOutside);
+    DrawLandmarks(view, world, 1.4f, false); // заставыг доор нь нэрийнх нь хажууд зурна
 
     // Газрын нэрс
     BeginScissorMode((int)view.area.x, (int)view.area.y, (int)view.area.width, (int)view.area.height);
     const struct { float x, z; const char* name; } places[] = {
-        { 28.0f, 34.0f, "СУУРИН" },  { -52.0f, 2.0f, "ЗАСТАВ" }, { 38.0f, -13.0f, "ШАТАХУУН ТҮГЭЭХ ГАЗАР" },
+        { 28.0f, 34.0f, "СУУРИН" },  { kOutpost.x, kOutpost.y, "ЗАСТАВ" }, { 38.0f, -13.0f, "ШАТАХУУН ТҮГЭЭХ ГАЗАР" },
         { 10.0f, 70.0f, "АГУУЛАХ" }, { kTownCenter.x, kTownCenter.y, "АЙМГИЙН ТӨВ" }, { kShopCenter.x, kShopCenter.y + 5.5f, "ДЭЛГҮҮР" },
         { airport::kTerminal.x, airport::kTerminal.y - 60.0f, world.GetLayout().AirfieldActive() ? "БУЯНТ-УХАА НИСЭХ БУУДАЛ" : nullptr },
     };
@@ -454,6 +495,11 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
         const int textWidth = UiMeasure(place.name, 16);
         UiText(place.name, (int)p.x - textWidth / 2 + 1, (int)p.y - 7, 16, Fade(BLACK, 0.8f));
         UiText(place.name, (int)p.x - textWidth / 2, (int)p.y - 8, 16, kFrame);
+        if (place.x == kOutpost.x && place.z == kOutpost.y)
+        {
+            // Застав (бааз): нэрийн зүүн талд икон
+            Ui::DrawIcon(Ui::Icon::MapBase, { p.x - (float)textWidth * 0.5f - 26.0f, p.y - 11.0f, 22.0f, 22.0f });
+        }
     }
     if (world.GetLayout().AirfieldActive())
     {
