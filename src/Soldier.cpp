@@ -1,5 +1,6 @@
 #include "Soldier.h"
 
+#include "Audio.h"
 #include "CharacterModel.h"
 #include "Humanoid.h"
 #include "Team.h"
@@ -529,6 +530,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
                 horde.Damage(targetIndex, damage);
                 horde.AlertAround(pos, 70.0f); // буун дуунд зомби сэрнэ
                 tracers.Add(muzzle, chest, sniper ? RAYWHITE : ORANGE);
+                Audio::Play(sniper ? Sfx::Sniper : Sfx::Rifle, muzzle, 0.5f);
                 ++soldier.shots;
                 soldier.shotEnd = chest;
                 particles.Flash(muzzle, ray.direction);

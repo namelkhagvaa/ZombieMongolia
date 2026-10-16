@@ -141,13 +141,15 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         const int x = 16, y = 16;
         const int titleSize = 15, objSize = 20, detailSize = 16;
         const char* objective = info.objective ? info.objective : "";
-        const int contentWidth = std::max({ Ui::MeasureBold(info.provinceName, titleSize) + 90,
+        const int iconSpace = Ui::HasIcon(Ui::Icon::Mission) ? 24 : 0; // гарчиг, зайн мөрийн өмнөх икон
+        const int contentWidth = std::max({ Ui::MeasureBold(info.provinceName, titleSize) + 90 + iconSpace,
                                             Ui::MeasureBold(objective, objSize),
-                                            info.objectiveDetail ? Ui::Measure(info.objectiveDetail, detailSize) : 0 });
+                                            info.objectiveDetail ? Ui::Measure(info.objectiveDetail, detailSize) + iconSpace : 0 });
         const int cardHeight = info.objective ? (info.objectiveDetail ? 86 : 64) : 40;
         const Rectangle card = { (float)x, (float)y, (float)contentWidth + 36.0f, (float)cardHeight };
         Ui::PanelAccent(card, Ui::kAccent);
-        Ui::TextBold(info.provinceName, x + 18, y + 10, titleSize, Ui::kTextDim);
+        Ui::DrawIcon(Ui::Icon::Mission, { (float)x + 17.0f, (float)y + 9.0f, 16.0f, 16.0f });
+        Ui::TextBold(info.provinceName, x + 18 + iconSpace, y + 10, titleSize, Ui::kTextDim);
         // FPS: картын баруун дээд буланд жижиг
         const int fps = GetFPS();
         const char* fpsText = TextFormat("%d FPS", fps);
@@ -158,7 +160,8 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
             Ui::TextBold(objective, x + 18, y + 32, objSize, Ui::kText);
             if (info.objectiveDetail)
             {
-                Ui::Text(info.objectiveDetail, x + 18, y + 60, detailSize, Ui::kAccent);
+                Ui::DrawIcon(Ui::Icon::Location, { (float)x + 17.0f, (float)y + 61.0f, 16.0f, 16.0f });
+                Ui::Text(info.objectiveDetail, x + 18 + iconSpace, y + 60, detailSize, Ui::kAccent);
             }
         }
     }
@@ -168,11 +171,11 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
     {
         const int y = info.touch ? 164 : (info.objective ? (info.objectiveDetail ? 112 : 90) : 66);
         int x = 16;
-        x += Ui::Chip(TextFormat("Зомби  %d", info.hordeSmall), x, y, Ui::kText, Ui::kDanger) + 8;
-        x += Ui::Chip(TextFormat("Том зомби  %d", info.hordeBig), x, y, Ui::kText, { 170, 60, 200, 255 }) + 8;
+        x += Ui::IconChip(Ui::Icon::Zombie, TextFormat("Зомби  %d", info.hordeSmall), x, y, Ui::kText, Ui::kDanger) + 8;
+        x += Ui::IconChip(Ui::Icon::ZombieElite, TextFormat("Том зомби  %d", info.hordeBig), x, y, Ui::kText, { 170, 60, 200, 255 }) + 8;
         if (info.zombieSpeed > 1.01f)
         {
-            Ui::Chip(TextFormat("Хурд ×%d", (int)(info.zombieSpeed + 0.5f)), x, y, Ui::kDanger, Ui::kDanger);
+            Ui::IconChip(Ui::Icon::SpeedBoost, TextFormat("Хурд ×%d", (int)(info.zombieSpeed + 0.5f)), x, y, Ui::kDanger, Ui::kDanger);
         }
     }
 
@@ -184,7 +187,12 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         DrawCircleV({ cx, cy }, r + 4.0f, Ui::kPanel);
         const Color ring = info.night ? Color{ 120, 150, 230, 255 } : Color{ 255, 196, 64, 255 };
         DrawRing({ cx, cy }, r + 1.0f, r + 4.0f, -90.0f, -90.0f + 360.0f * info.phaseProgress, 32, ring);
-        if (info.night)
+        const Ui::Icon phaseIcon = info.night ? Ui::Icon::TimeNight : info.phaseProgress > 0.8f ? Ui::Icon::TimeSunset : Ui::Icon::TimeDay;
+        if (Ui::DrawIcon(phaseIcon, { cx - 12.0f, cy - 12.0f, 24.0f, 24.0f }))
+        {
+            // зурган икон зурагдлаа
+        }
+        else if (info.night)
         {
             DrawCircleV({ cx, cy }, 10.0f, { 228, 232, 246, 255 });
             DrawCircleV({ cx + 5.0f, cy - 3.0f }, 9.0f, Ui::kPanel); // хавирган сар
@@ -202,29 +210,31 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         // Солигдох хүртэлх хугацаа: дугуйн зүүн талд
         const int seconds = (int)info.phaseLeft;
         const char* left = TextFormat("%d:%02d", seconds / 60, seconds % 60);
-        const int textWidth = Ui::MeasureBold(left, 15);
+        const int timerSpace = Ui::HasIcon(Ui::Icon::Timer) ? 20 : 0;
+        const int textWidth = Ui::MeasureBold(left, 15) + timerSpace;
         const float backX = textRight ? cx + r + 10.0f : cx - r - 12.0f - (float)textWidth - 14.0f;
         const Rectangle back = { backX, cy - 14.0f, (float)textWidth + 20.0f, 28.0f };
         Ui::Panel(back, Ui::kPanel, 14.0f);
-        Ui::TextBold(left, (int)back.x + 10, (int)cy - 9, 15, ring);
+        Ui::DrawIcon(Ui::Icon::Timer, { back.x + 8.0f, cy - 8.0f, 16.0f, 16.0f });
+        Ui::TextBold(left, (int)back.x + 10 + timerSpace, (int)cy - 9, 15, ring);
     };
 
     if (info.touch)
     {
         // Мэдрэгчтэй дэлгэц: баруун дээд буланд газрын зураг, баг байрладаг тул зоосыг дээд голд харуулна.
         const char* coins = TextFormat("%d", info.coins);
-        const int chipWidth = Ui::MeasureBold(coins, 18) + 40;
+        const int chipWidth = Ui::MeasureBold(coins, 18) + 46;
         // Дээд голд өдөр шөнийн заагч, зоос түүний зүүн талд
-        Ui::Chip(coins, width / 2 - 34 - chipWidth, 16, Ui::kAccent, Ui::kAccent);
+        Ui::IconChip(Ui::Icon::Currency, coins, width / 2 - 34 - chipWidth, 16, Ui::kAccent, Ui::kAccent);
         drawDayNight((float)width / 2.0f, 34.0f, true);
     }
     else
     {
         const int right = width - 16;
-        const int coinWidth = Ui::Chip(TextFormat("%d", info.coins), right, 16, Ui::kAccent, Ui::kAccent, true);
-        Ui::Coin({ (float)(right - coinWidth + 17), 32.0f }, 9.0f); // чипийн цэгийн оронд зоос
-        const int killsWidth =
-            Ui::Chip(TextFormat("Устгасан  %d", info.missionKills), right - coinWidth - 8, 16, Ui::kText, Ui::kDanger, true);
+        const int coinWidth = Ui::IconChip(Ui::Icon::Currency, TextFormat("%d", info.coins), right, 16, Ui::kAccent, Ui::kAccent, true);
+        if (!Ui::HasIcon(Ui::Icon::Currency)) Ui::Coin({ (float)(right - coinWidth + 17), 32.0f }, 9.0f); // чипийн цэгийн оронд зоос
+        const int killsWidth = Ui::IconChip(Ui::Icon::KillCount, TextFormat("Устгасан  %d", info.missionKills), right - coinWidth - 8,
+                                            16, Ui::kText, Ui::kDanger, true);
         (void)killsWidth;
         drawDayNight((float)width / 2.0f, 34.0f, true); // дэлгэцийн дээд голд
 
@@ -255,7 +265,8 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         }
         if (info.squadTotal > 0)
         {
-            Ui::Chip(TextFormat("Цэрэг  %d / %d", info.squadAlive, info.squadTotal), right, teamY, Ui::kText, Ui::kGood, true);
+            Ui::IconChip(Ui::Icon::Team, TextFormat("Цэрэг  %d / %d", info.squadAlive, info.squadTotal), right, teamY, Ui::kText,
+                         Ui::kGood, true);
             teamY += 40;
         }
         if (info.partnerName)
@@ -272,9 +283,12 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         const Color barColor = healthRatio > 0.6f ? Ui::kGood : healthRatio > 0.3f ? Ui::kAccent : Ui::kDanger;
         // Зүрхний тэмдэг: хоёр тойрог, гурвалжин
         const float hx = card.x + 26.0f, hy = card.y + 22.0f;
-        DrawCircleV({ hx - 5.0f, hy - 2.0f }, 6.0f, barColor);
-        DrawCircleV({ hx + 5.0f, hy - 2.0f }, 6.0f, barColor);
-        DrawTriangle({ hx - 11.0f, hy }, { hx, hy + 12.0f }, { hx + 11.0f, hy }, barColor);
+        if (!Ui::DrawIcon(Ui::Icon::Health, { hx - 11.0f, hy - 10.0f, 22.0f, 22.0f }))
+        {
+            DrawCircleV({ hx - 5.0f, hy - 2.0f }, 6.0f, barColor);
+            DrawCircleV({ hx + 5.0f, hy - 2.0f }, 6.0f, barColor);
+            DrawTriangle({ hx - 11.0f, hy }, { hx, hy + 12.0f }, { hx + 11.0f, hy }, barColor);
+        }
         Ui::TextBold(TextFormat("%d", (int)player.Health()), (int)card.x + 46, (int)card.y + 6, 26, Ui::kText);
         Ui::Text(TextFormat("/ %d", (int)player.MaxHealth()),
                  (int)card.x + 52 + Ui::MeasureBold(TextFormat("%d", (int)player.Health()), 26), (int)card.y + 13, 16,
@@ -306,8 +320,9 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
             bigColor = info.ammo == 0 ? Ui::kDanger : Ui::kText;
         }
         const int bigSize = info.reloading ? 20 : 34;
+        const int ammoIcon = info.usesAmmo && !info.reloading && Ui::HasIcon(Ui::Icon::AmmoClip) ? 30 : 0;
         const int contentWidth = std::max(Ui::MeasureBold(weapon, 14),
-                                          Ui::MeasureBold(big, bigSize) + (small[0] ? Ui::Measure(small, 18) + 8 : 0));
+                                          ammoIcon + Ui::MeasureBold(big, bigSize) + (small[0] ? Ui::Measure(small, 18) + 8 : 0));
         const int cardWidth = std::max(150, contentWidth + 32);
         const int cardHeight = big[0] ? 74 : 40;
         const int x = info.touch ? (width - cardWidth) / 2 : width - 16 - cardWidth;
@@ -319,10 +334,11 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         if (big[0])
         {
             const int by = y + (info.reloading ? 38 : 28);
-            Ui::TextBold(big, x + 16, by, bigSize, bigColor);
+            if (ammoIcon > 0) Ui::DrawIcon(Ui::Icon::AmmoClip, { (float)x + 13.0f, (float)by + 7.0f, 22.0f, 22.0f });
+            Ui::TextBold(big, x + 16 + ammoIcon, by, bigSize, bigColor);
             if (small[0])
             {
-                Ui::Text(small, x + 24 + Ui::MeasureBold(big, bigSize), by + bigSize - 22, 18, Ui::kTextDim);
+                Ui::Text(small, x + 24 + ammoIcon + Ui::MeasureBold(big, bigSize), by + bigSize - 22, 18, Ui::kTextDim);
             }
         }
     }

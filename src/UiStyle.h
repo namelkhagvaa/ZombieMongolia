@@ -46,4 +46,21 @@ namespace Ui
 
     // Алтан зоос: хүрээ, гүдгэр гадаргуу, дотор цагираг, ₮ тэмдэг, гялбаа. alpha 0..1.
     void Coin(Vector2 center, float radius, float alpha = 1.0f);
+
+    // --- Зурган иконууд (assets/huds, 128x128 PNG): анх зурахад ачаална ---
+    enum class Icon
+    {
+        TimeDay, TimeSunset, TimeNight, Compass, KillCount, Currency, Team, Timer,
+        Zombie, ZombieElite, SpeedBoost, Location, Mission, MissionComplete, Warning, Reward,
+        Health, Armor, Ammo, AmmoLarge, AmmoClip, WeaponAutomatic, WeaponPistol, WeaponSniper, WeaponMelee, Grenade,
+        Settings, Sound, Fullscreen, Pause, Play, Close, Back, Menu,
+        MapPlayer, MapZombie, MapElite, MapAlly, MapMission, MapBase, MapVehicle, MapHorse, MapSupply, MapTower,
+        Count
+    };
+    bool HasIcon(Icon icon);
+    // box-д (харьцаагаа хадгалан, төвд нь) зурна. rotation нь төвөө тойрсон эргэлт (градус, цагийн зүүний дагуу).
+    // Файл байхгүй бол юу ч зурахгүй, false буцаана.
+    bool DrawIcon(Icon icon, Rectangle box, Color tint = WHITE, float rotation = 0.0f);
+    // Chip шиг, гэхдээ өнгөт цэгийн оронд икон. Өргөнийг буцаана. Икон байхгүй бол dot-той энгийн Chip.
+    int IconChip(Icon icon, const char* text, int x, int y, Color textColor, Color dot, bool right = false);
 }

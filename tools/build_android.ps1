@@ -58,6 +58,22 @@ foreach ($abi in $Abis) {
 Copy-Item (Join-Path $root "assets\*_mesh.glb") (Join-Path $staging "assets")
 Copy-Item (Join-Path $root "assets\*_color.png") (Join-Path $staging "assets")
 Copy-Item (Join-Path $root "android\ui_font.ttf") (Join-Path $staging "assets")
+Copy-Item (Join-Path $root "assets\home_back.png") (Join-Path $staging "assets")
+Copy-Item (Join-Path $root "assets\splash.png") (Join-Path $staging "assets")
+New-Item -ItemType Directory -Force (Join-Path $staging "assets\icons") | Out-Null
+Copy-Item (Join-Path $root "assets\icons\*.png") (Join-Path $staging "assets\icons")
+# HUD-ийн иконууд
+New-Item -ItemType Directory -Force (Join-Path $staging "assets\huds") | Out-Null
+Copy-Item (Join-Path $root "assets\huds\*.png") (Join-Path $staging "assets\huds")
+# Газрын текстурууд (CC0)
+New-Item -ItemType Directory -Force (Join-Path $staging "assets\terrain") | Out-Null
+Copy-Item (Join-Path $root "assets\terrain\*.png") (Join-Path $staging "assets\terrain")
+# Унааны загварууд: бэлтгэсэн .vmesh ба текстур л (эх .glb хэт том)
+New-Item -ItemType Directory -Force (Join-Path $staging "assets\cars") | Out-Null
+Copy-Item (Join-Path $root "assets\cars\*.vmesh") (Join-Path $staging "assets\cars")
+Copy-Item (Join-Path $root "assets\cars\*_color.png") (Join-Path $staging "assets\cars")
+New-Item -ItemType Directory -Force (Join-Path $staging "assets\sounds") | Out-Null
+Copy-Item (Join-Path $root "assets\sounds\*.wav") (Join-Path $staging "assets\sounds")
 
 # --- 3. APK: багцлах, native санг нэмэх, зэрэгцүүлэх, гарын үсэг зурах ---
 $unsigned = Join-Path $out "unsigned.apk"

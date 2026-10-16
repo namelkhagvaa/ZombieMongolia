@@ -1,5 +1,6 @@
 #include "Particles.h"
 
+#include "Audio.h"
 #include "raymath.h"
 #include "rlgl.h"
 
@@ -97,6 +98,14 @@ void Particles::Flash(Vector3 at, Vector3 direction)
 
 void Particles::Explosion(Vector3 at)
 {
+    // Унаа гэмтээх төв (нэг дэлбэрэлтийн хоёр бөмбөлгийг нэг гэж тооцно)
+    bool known = false;
+    for (const Vector3& b : recentBlasts) known = known || Vector3Distance(b, at) < 2.5f;
+    if (!known)
+    {
+        recentBlasts.push_back(at);
+        Audio::Play(Sfx::Explosion, at, 1.0f, 0.9f + 0.2f * (float)GetRandomValue(0, 100) / 100.0f);
+    }
     blasts.push_back({ at, kBlastLife });
 
     // Тоос шороо: өргөн тархаж удаан сарнина

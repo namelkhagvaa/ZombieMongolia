@@ -152,7 +152,13 @@ bool HasHorseModel()
     return horse.loaded;
 }
 
-void DrawHorseModel(float animation, float gait, float steer, float seed)
+float HorseStridePhase(float animation)
+{
+    const float p = animation / (2.0f * PI);
+    return p - std::floor(p);
+}
+
+void DrawHorseModel(float animation, float gait, float steer, float seed, float gallop)
 {
     if (!horse.loaded) return;
     std::fill(horse.local.begin(), horse.local.end(), QuaternionIdentity());
@@ -160,11 +166,42 @@ void DrawHorseModel(float animation, float gait, float steer, float seed)
 
     // Загварын орон зай: урагш -X, дээш +Y. Z тэнхлэгийг тойрох эерэг эргэлт доош унжсан ясыг хойш (+X) савлуулна.
     const Vector3 side = { 0.0f, 0.0f, 1.0f }, up = { 0.0f, 1.0f, 0.0f };
-    for (const Leg& leg : kLegs)
+    // Давхилт (4 цохилттой, баруун хөлөөр тэргүүлсэн): хойд зүүн -> хойд баруун -> урд зүүн -> урд баруун,
+    // дараа нь бүх хөл агаарт (биеийн доор хумигдана). Алхмын үе p = 0..1 (HorseStridePhase).
+    static const float kGallopPhase[4] = { 0.35f, 0.45f, 0.0f, 0.1f }; // FL, FR, HL, HR
+    const float stride = HorseStridePhase(animation);
+    for (int index = 0; index < 4; ++index)
     {
+        const Leg& leg = kLegs[index];
+
+        // Хатирах үе: синус савлалт (хуучин хэв маяг)
         const float wave = animation + leg.phase * 2.0f * PI;
-        const float swing = std::sin(wave) * (leg.hind ? 0.42f : 0.55f) * gait;
-        const float lift = std::max(0.0f, std::cos(wave)) * gait; // урагш савлах үед хөлөө өргөж нугална
+        const float trotSwing = std::sin(wave) * (leg.hind ? 0.42f : 0.55f) * gait;
+        const float trotLift = std::max(0.0f, std::cos(wave)) * gait;
+
+        // Давхилт: туурай газарт (тулгуур, 38%) хөл шулуун, урагшаас хойш жигд түлхэнэ; газраас хөндийрөхдөө
+        // үеэ хүчтэй нугалж, хурдан урагш шидэгдэнэ.
+        float p = stride - kGallopPhase[index];
+        p -= std::floor(p);
+        const float duty = 0.38f;
+        const float forward = leg.hind ? 0.5f : 0.78f, back = leg.hind ? 0.78f : 0.5f;
+        float gallopSwing, gallopLift;
+        if (p < duty)
+        {
+            const float s = p / duty;
+            gallopSwing = forward + (-back - forward) * s;
+            gallopLift = 0.0f;
+        }
+        else
+        {
+            const float s = (p - duty) / (1.0f - duty);
+            const float eased = s * s * (3.0f - 2.0f * s);
+            gallopSwing = -back + (forward + back) * eased;
+            gallopLift = std::sin(PI * std::min(1.0f, s * 1.15f)) * (leg.hind ? 1.2f : 1.0f);
+        }
+
+        const float swing = trotSwing + (gallopSwing * gait - trotSwing) * gallop;
+        const float lift = trotLift + (gallopLift * gait - trotLift) * gallop;
         Turn(leg.upper, side, -swing);
         Turn(leg.middle, side, leg.hind ? -0.75f * lift : 0.95f * lift);
         Turn(leg.lower, side, 0.6f * lift);
@@ -180,7 +217,10 @@ void DrawHorseModel(float animation, float gait, float steer, float seed)
     const float graze = idle * (0.06f + 0.1f * std::sin(time * 0.47f + 0.5f));
     const float shake = idle * std::pow(std::max(0.0f, std::sin(time * 0.23f + seed)), 24.0f) * 0.12f * std::sin(time * 22.0f);
     Turn("Neck_0", up, -steer * 0.35f + look);
-    Turn("Neck_0", side, 0.05f + graze + gait * (0.12f + 0.08f * std::sin(animation * 2.0f + 0.6f)));
+    // Давхихад урд хөл газарт буух үед толгой доош дохиж, хойд хөл түлхэхэд өргөгдөнө (алхамд нэг удаа).
+    const float trotNod = 0.08f * std::sin(animation * 2.0f + 0.6f);
+    const float gallopNod = 0.17f * std::sin(2.0f * PI * (stride - 0.35f));
+    Turn("Neck_0", side, 0.05f + graze + gait * (0.12f + trotNod + (gallopNod - trotNod) * gallop));
     Turn("Head", side, idle * 0.05f * std::sin(time * 1.1f + 0.3f));
     Turn("Head", Vector3{ 1.0f, 0.0f, 0.0f }, shake);
     // Сүүл: хурдлах тусам өргөгдөж, хоёр тийш найгана.
@@ -236,5 +276,5 @@ void DrawHorseModel(float animation, float gait, float steer, float seed)
     rlRotatef(90.0f, 0.0f, 1.0f, 0.0f); // загварын -X (толгой) -> унааны +Z
     DrawMesh(mesh, horse.material, MatrixIdentity());
     rlPopMatrix();
-    rlEnableBackfaceCulling();
+    // Culling-ийг дахин асаахгүй: дуудагч (Garage::Draw) төгсгөлдөө өөрөө асаана.
 }

@@ -51,7 +51,7 @@ void ThirdPersonCamera::Update(float dt, const GameConfig& config, const World& 
     const Vector2 mouse = InLookDelta();
     yaw -= mouse.x * sensitivity;
     pitch += mouse.y * sensitivity * (config.invertY ? -1.0f : 1.0f);
-    pitch = Clamp(pitch, config.cameraMinPitch, config.cameraMaxPitch);
+    pitch = Clamp(pitch, riding ? 0.08f : config.cameraMinPitch, config.cameraMaxPitch);
 
     distance -= InWheel() * config.cameraZoomStep;
     distance = Clamp(distance, config.cameraMinDistance, config.cameraMaxDistance);
@@ -96,7 +96,9 @@ void ThirdPersonCamera::Update(float dt, const GameConfig& config, const World& 
     const float base = distance + rideDistance;
     float wanted = Lerp(base, std::min(base, config.aimDistance + rideDistance), aimBlend);
     wanted = Lerp(wanted, std::min(wanted, 2.6f), traverseBlend);
-    const float clipped = world.ClipDistance(target, back, wanted);
+    float clipped = world.ClipDistance(target, back, wanted);
+    // Унаа жолоодож байхад камер унааны их бие дотор орохгүй (ард нь толгод байсан ч)
+    if (riding) clipped = std::max(clipped, std::min(wanted, 2.0f + rideDistance * 0.7f));
 
     camera.target = target;
     camera.position = Vector3Add(target, Vector3Scale(back, clipped));

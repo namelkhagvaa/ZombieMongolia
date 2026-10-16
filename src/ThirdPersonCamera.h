@@ -30,6 +30,8 @@ public:
     // Ингэснээр камер давж буй замын ард байрлаж, цонхны нүхээр тоглогчийг харна (хананд наалдахгүй).
     void Guide(float targetYaw, float targetPitch, float dt);
     void SetTraversing(bool active) { traversing = active; }
+    // Унаа жолоодож байна: камер унааны доогуур орж дээш харахгүй, унааны дотор орохгүй.
+    void SetRiding(bool value) { riding = value; }
 
     const Camera3D& Get() const { return camera; }
     float AimBlend() const { return aimBlend; } // 0 = ердийн, 1 = бүрэн онилсон
@@ -53,6 +55,7 @@ private:
     float scopeBlend = 0.0f; // 0 = ердийн, 1 = дуран хараа
     float rideDistance = 0.0f; // унаа унасан үеийн нэмэлт зай (аажим өөрчлөгдөнө)
     bool traversing = false;
+    bool riding = false;
     bool firstPerson = false;
     float traverseBlend = 0.0f; // 0 = ердийн, 1 = давж буй үеийн ойрын камер
 };

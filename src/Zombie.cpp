@@ -1,5 +1,6 @@
 #include "Zombie.h"
 
+#include "Audio.h"
 #include "Humanoid.h"
 #include "Player.h"
 #include "CharacterModel.h"
@@ -664,6 +665,8 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
         {
             zombie.attackCooldown = kAttackInterval;
             zombie.attackAnim = kAttackAnimTime;
+            Audio::Play(zombie.boss ? Sfx::BossRoar : Sfx::ZombieAttack, Vector3Add(pos, { 0.0f, 1.6f * zombie.scale, 0.0f }), 0.65f,
+                        zombie.type == ZombieType::Brute ? 0.8f : 1.0f);
             if (target == kPlayer)
             {
                 player.TakeDamage(zombie.damage);
@@ -770,6 +773,8 @@ void ZombieHorde::Damage(int index, float amount)
     {
         zombie.health = 0.0f;
         zombie.deathTimer = 0.0f;
+        Audio::Play(zombie.boss ? Sfx::BossRoar : Sfx::ZombieDie, Vector3Add(zombie.mover.position, { 0.0f, 1.4f * zombie.scale, 0.0f }),
+                    0.9f, zombie.boss ? 0.7f : zombie.type == ZombieType::Brute ? 0.8f : 1.0f);
         pendingCoins += zombie.reward;
         ++pendingKills;
         if (killRewards.size() < 64)

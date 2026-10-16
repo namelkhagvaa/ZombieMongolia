@@ -22,6 +22,7 @@
 #include "Vehicle.h"
 #include "Weapon.h"
 #include "World.h"
+#include "Splash.h"
 #include "Zombie.h"
 
 enum class GameState
@@ -45,6 +46,9 @@ struct LaunchOptions
     int frames = 120; // хэмжих frame-ийн тоо (--frames N)
     int weather = -1; // туршилт: цаг агаарыг тогтоох (--weather 0..4)
     int graphics = -1; // туршилт: графикийн түвшин (--graphics 0..2)
+    int driftFrame = 0; // туршилт: энэ frame-ээс гар тоормос татаж баруун тийш эргэнэ (--drift N)
+    int crashTest = -1; // туршилт: унаж буй хэрэгслийн урд 25 м-т энэ дугаартай хэрэгслийг хөндлөн тавина
+    float rideHeading = -1000.0f; // туршилт: унааны чиглэл (градус), камераас тусдаа (--ride-heading)
     int zombies = 0;  // тоглогчийн урд шууд гаргах зомбины тоо (--zombies N)
     int soldiers = 0; // туршилтад багийн цэргийн тоо (--soldiers N)
     float cameraDistance = 0.0f; // >0 бол камерын зай (--zoom D)
@@ -155,12 +159,16 @@ private:
     void DrawMission() const;      // HUD ба 2D давхарга (3D зургийн дараа)
     void DrawMissionScene() const; // тэнгэр + 3D ертөнц
     void RenderShadows() const;    // нарны сүүдрийн зураг (frame бүрд, 3D-ээс өмнө)
+    void WatchPerformance(float dt); // удаан бол графикийг автоматаар бууруулна
+    void UpdateSounds(float dt, float throttle); // сонсогч, хөдөлгүүр, зомбины гинших дуу
     void DrawMissionCompleted() const;
 
     GameConfig config;
     LaunchOptions options;
     GameWindow window; // доорх гишүүдээс өмнө байх ёстой
+    SplashMark splashShaders{ 0.03f, "Графикийг бэлтгэж байна..." };
     mutable Environment environment; // зурах үед сүүдэр, дэлгэцийн эффектийн текстурт бичнэ
+    SplashMark splashWorld{ 0.2f, "Газар нутгийг бэлтгэж байна..." };
     World world;
     Player player;
     ThirdPersonCamera camera;
@@ -172,6 +180,7 @@ private:
     float teamBoardTimer = 0.0f; // суух гэж эхэлснээс хойших хугацаа
     float escortStuck = 0.0f;    // дагаж буй хэрэгсэл гацсан хугацаа
     Grenades grenades;
+    SplashMark splashVehicles{ 0.68f, "Тээврийн хэрэгслүүдийг бэлтгэж байна..." };
     Garage garage;
     ZombieHorde horde;
     SoldierSquad squad;
@@ -179,6 +188,15 @@ private:
     Particles particles;
     Precipitation precipitation; // бороо, цас, шороон шуурга
     float dustTimer = 0.0f;
+    float smokeTimer = 0.0f;
+    float groanTimer = 0.0f;
+    float driftTimer = 0.0f;
+    float screechTimer = 0.0f;
+    bool wasReloading = false;
+    float perfTime = 0.0f;   // график автоматаар бууруулах: хэмжилтийн хугацаа ба frame-ийн тоо
+    int perfFrames = 0;
+    float fuelCoinDebt = 0.0f;   // шатахуун түгээх газарт хийсэн бензин, засварын төлбөр (бүхэл зоос болтол)
+    bool fuelWarned = false;
 
     Progress progress;
     MapScreen mapScreen;

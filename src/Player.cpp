@@ -1,5 +1,6 @@
 #include "Player.h"
 
+#include "Audio.h"
 #include "Input.h"
 
 #include "Humanoid.h"
@@ -460,6 +461,7 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
         if (!wasGrounded && velocity.y < -5.5f)
         {
             landing = std::min(1.0f, -velocity.y / 9.0f);
+            Audio::Play(Sfx::Thud, position, std::min(1.0f, -velocity.y / 12.0f));
         }
         position.y = floorY;
         velocity.y = 0.0f;

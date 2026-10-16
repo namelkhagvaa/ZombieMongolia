@@ -1,0 +1,22 @@
+Zombie Mongolia — дууны эх сурвалж (бүгд CC0 / public domain)
+
+Буу (rifle, pistol, shotgun, sniper, launcher, explosion-ийн суурь):
+  The Free Firearm Sound Library — CC0
+  https://opengameart.org/content/the-free-firearm-sound-library
+  (AK-47, Walther PPQ, Mossberg 190, Mosin Nagant; tools/sfxprep.cpp-ээр хэрчиж, моно 44.1 кГц болгосон)
+
+Зомби (zombie_groan, zombie_attack, zombie_die, boss_roar):
+  "Zombie noises and moans" by ianzazz — CC0
+  https://opengameart.org/content/zombie-noises-and-moans
+  "Zombie moans" by Darsycho — CC0
+  https://opengameart.org/content/zombie-moans
+
+Дэлбэрэлт, цохилт, төмөр, мод (explosion, hit, crash, thud, hoof):
+  "100 CC0 SFX" by rubberduck — CC0
+  https://opengameart.org/content/100-cc0-sfx
+
+Хөдөлгүүр (engine, engine_high):
+  "Racing car engine sound loops" by domasx2 — CC0
+  https://opengameart.org/content/racing-car-engine-sound-loops
+
+Хутга, шидэх, сум цэнэглэх, дугуй чахирах, дэлбэрэлтийн нүргээн: кодоор нийлэгжүүлсэн (src/Audio.cpp).

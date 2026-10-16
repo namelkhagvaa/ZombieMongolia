@@ -39,6 +39,14 @@ Source: "..\build\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\*_mesh.glb"; DestDir: "{app}\assets"; Flags: ignoreversion
 Source: "..\assets\*_color.png"; DestDir: "{app}\assets"; Flags: ignoreversion
 Source: "..\assets\window_icon.png"; DestDir: "{app}\assets"; Flags: ignoreversion
+Source: "..\assets\home_back.png"; DestDir: "{app}\assets"; Flags: ignoreversion
+Source: "..\assets\splash.png"; DestDir: "{app}\assets"; Flags: ignoreversion
+Source: "..\assets\icons\*.png"; DestDir: "{app}\assets\icons"; Flags: ignoreversion
+Source: "..\assets\huds\*.png"; DestDir: "{app}\assets\huds"; Flags: ignoreversion
+Source: "..\assets\terrain\*.png"; DestDir: "{app}\assets\terrain"; Flags: ignoreversion
+Source: "..\assets\cars\*.vmesh"; DestDir: "{app}\assets\cars"; Flags: ignoreversion
+Source: "..\assets\cars\*_color.png"; DestDir: "{app}\assets\cars"; Flags: ignoreversion
+Source: "..\assets\sounds\*.wav"; DestDir: "{app}\assets\sounds"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"

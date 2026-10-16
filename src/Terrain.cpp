@@ -183,6 +183,11 @@ Color Terrain::GroundColor(int ix, int iz, Vector3 normal) const
     Color color = MixColor(kGrassLush, kGrassGreen, SmoothStep(0.30f, 0.50f, moisture));
     color = MixColor(color, kGrassDry, SmoothStep(0.50f, 0.72f, moisture));
 
+    // Дунд хэмжээний толбо: чийглэг бараан ногоон ба шар сүрлэн өвс ээлжилнэ
+    const float patch = Fbm(x * 0.034f + 19.0f, z * 0.034f + 5.0f, 2);
+    color = MixColor(color, { 80, 106, 58, 255 }, SmoothStep(0.6f, 0.78f, patch) * 0.55f);
+    color = MixColor(color, { 178, 164, 110, 255 }, SmoothStep(0.4f, 0.24f, patch) * 0.45f);
+
     // Нар тусдаг энгэр хуурай, ар (сүүдэртэй) энгэр ногоон
     const float sunFacing = normal.x * kSunDirection.x + normal.z * kSunDirection.z;
     color = MixColor(color, kGrassDry, std::clamp(sunFacing * 3.5f, 0.0f, 0.55f));
@@ -375,14 +380,16 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
 
         // Харгана: доороо бараан, дээшээ цайвар бөмбөлгүүд, ёроолоос хуурай мөчир цухуйна
         const float ground = HeightAt(x, z);
-        for (int part = 0; part < 4; ++part)
+        for (int part = 0; part < 6; ++part)
         {
-            const float px = x + rng.Range(-0.5f, 0.5f) * size;
-            const float pz = z + rng.Range(-0.5f, 0.5f) * size;
-            const float r = size * rng.Range(0.45f, 0.75f);
-            const bool upper = part >= 2;
-            builder.Blob({ px, ground + r * (upper ? 0.85f : 0.45f), pz }, { r, r * 0.7f, r },
-                         upper ? ScaleColor(color, 1.12f) : ScaleColor(color, 0.82f), rng, 0.12f);
+            const float angle = (float)part * 1.9f + rng.Range(0.0f, 0.6f);
+            const float spread = part == 0 ? 0.0f : size * 0.42f;
+            const float r = size * rng.Range(0.32f, 0.5f) * (part == 0 ? 1.25f : 1.0f);
+            const bool upper = part == 0 || part % 3 == 0;
+            Color leaf = JitterColor(upper ? ScaleColor(color, 1.12f) : ScaleColor(color, 0.86f), rng, 0.08f);
+            leaf.a = 235; // бага зэрэг найгана
+            builder.Ellipsoid({ x + std::cos(angle) * spread, ground + r * (upper ? 1.15f : 0.75f), z + std::sin(angle) * spread },
+                              { r, r * 0.8f, r }, 3, 6, leaf);
         }
         for (int twig = 0; twig < 3; ++twig)
         {

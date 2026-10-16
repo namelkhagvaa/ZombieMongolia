@@ -1,0 +1,8 @@
+Zombie Mongolia — газрын текстурын эх сурвалж (бүгд CC0 / public domain)
+
+ambientCG (https://ambientcg.com), CC0 1.0:
+  grass.png       <- Grass004  (1K Color)
+  grass_dirt.png  <- Ground037 (1K Color)
+  dirt.png        <- Ground054 (1K Color)
+  rock.png        <- Rock030   (1K Color)
+JPG-ээс PNG болгосон (raylib JPEG уншдаггүй).

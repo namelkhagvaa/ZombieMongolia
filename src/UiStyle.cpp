@@ -3,6 +3,7 @@
 #include "UiFont.h"
 
 #include <algorithm>
+#include <string>
 #include <utility>
 
 namespace Ui
@@ -112,6 +113,91 @@ namespace Ui
         return width;
     }
 
+    // --- Зурган иконууд ---
+    namespace
+    {
+        const char* kIconFiles[(int)Icon::Count] = {
+            "icon_time_day", "icon_time_sunset", "icon_time_night", "icon_compass", "icon_kill_count", "icon_currency", "icon_team", "icon_timer",
+            "icon_zombie", "icon_zombie_elite", "icon_speed_boost", "icon_location", "icon_mission", "icon_mission_complete", "icon_warning", "icon_reward",
+            "icon_health", "icon_armor", "icon_ammo", "icon_ammo_large", "icon_ammo_clip", "icon_weapon_automatic", "icon_weapon_pistol",
+            "icon_weapon_sniper", "icon_weapon_melee", "icon_grenade",
+            "icon_settings", "icon_sound", "icon_fullscreen", "icon_pause", "icon_play", "icon_close", "icon_back", "icon_menu",
+            "minimap_player", "minimap_zombie", "minimap_elite", "minimap_ally", "minimap_mission", "minimap_base", "minimap_vehicle",
+            "minimap_horse", "minimap_supply", "minimap_tower",
+        };
+
+        Texture2D textures[(int)Icon::Count] = {};
+        Rectangle bounds[(int)Icon::Count] = {}; // зургийн ил тод бус хэсэг (пикселээр)
+
+        const Texture2D& IconTexture(Icon icon)
+        {
+            static bool tried = false;
+            if (!tried)
+            {
+                tried = true;
+#if defined(__ANDROID__)
+                const std::string folder = "huds/"; // APK-ийн assets дотор
+#else
+                std::string folder = "assets/huds/";
+                const std::string application = GetApplicationDirectory();
+                for (const std::string& candidate : { std::string("assets/huds/"), application + "assets/huds/", application + "../assets/huds/" })
+                {
+                    if (DirectoryExists(candidate.c_str())) { folder = candidate; break; }
+                }
+#endif
+                for (int i = 0; i < (int)Icon::Count; ++i)
+                {
+                    const std::string path = folder + kIconFiles[i] + ".png";
+#if !defined(__ANDROID__)
+                    if (!FileExists(path.c_str())) continue;
+#endif
+                    Image image = LoadImage(path.c_str());
+                    if (image.data == nullptr) continue;
+                    bounds[i] = GetImageAlphaBorder(image, 0.1f);
+                    if (bounds[i].width <= 0.0f) bounds[i] = { 0.0f, 0.0f, (float)image.width, (float)image.height };
+                    textures[i] = LoadTextureFromImage(image);
+                    UnloadImage(image);
+                    if (textures[i].id == 0) continue;
+                    GenTextureMipmaps(&textures[i]); // 128 -> ~20 px: ирмэг шаржигнахгүй
+                    SetTextureFilter(textures[i], TEXTURE_FILTER_TRILINEAR);
+                }
+            }
+            return textures[(int)icon];
+        }
+    }
+
+    bool HasIcon(Icon icon)
+    {
+        return IconTexture(icon).id != 0;
+    }
+
+    bool DrawIcon(Icon icon, Rectangle box, Color tint, float rotation)
+    {
+        const Texture2D& texture = IconTexture(icon);
+        if (texture.id == 0) return false;
+        // Зургийн дүрстэй хэсгийг (хоосон захгүй) төвд нь дөрвөлжин болгож хайрцгийг дүүргэнэ
+        const Rectangle b = bounds[(int)icon];
+        const float side = std::min((float)texture.width, std::max(b.width, b.height) + 4.0f);
+        const float sx = std::clamp(b.x + b.width * 0.5f - side * 0.5f, 0.0f, (float)texture.width - side);
+        const float sy = std::clamp(b.y + b.height * 0.5f - side * 0.5f, 0.0f, (float)texture.height - side);
+        const float size = std::min(box.width, box.height);
+        const Rectangle dest = { box.x + box.width * 0.5f, box.y + box.height * 0.5f, size, size };
+        DrawTexturePro(texture, { sx, sy, side, side }, dest, { size * 0.5f, size * 0.5f }, rotation, tint);
+        return true;
+    }
+
+    int IconChip(Icon icon, const char* text, int x, int y, Color textColor, Color dot, bool right)
+    {
+        if (!HasIcon(icon)) return Chip(text, x, y, textColor, dot, right);
+        const int size = 18;
+        const int width = MeasureBold(text, size) + 24 + 22;
+        if (right) x -= width;
+        Panel({ (float)x, (float)y, (float)width, 32.0f }, kPanel, 16.0f);
+        DrawIcon(icon, { (float)x + 8.0f, (float)y + 6.0f, 20.0f, 20.0f });
+        TextBold(text, x + 12 + 22, y + 6, size, textColor);
+        return width;
+    }
+
     namespace
     {
         // Дүрсний орон зай: 100 x 40, баруун тийш харсан. Хайрцагт харьцаагаа хадгалан төвлөрнө.
@@ -141,6 +227,23 @@ namespace Ui
 
     void WeaponIcon(int type, Rectangle box, Color color)
     {
+        // Зурган икон байвал түүгээр (хутга, гар буу, автомат, гранат, дурантай буу); бусад нь доорх кодоор.
+        const Icon pictures[7] = { Icon::WeaponMelee, Icon::WeaponPistol, Icon::WeaponAutomatic, Icon::Count, Icon::Grenade,
+                                   Icon::WeaponSniper, Icon::Count };
+        if (type >= 0 && type < 7 && pictures[type] != Icon::Count && HasIcon(pictures[type]))
+        {
+            const Texture2D& texture = IconTexture(pictures[type]);
+            // Зургийн зөвхөн дүрстэй хэсгийг харьцаагаар нь хайрцагт багтаана
+            const Rectangle source = bounds[(int)pictures[type]];
+            const float fit = std::min(box.width / source.width, box.height / source.height);
+            const Rectangle dest = { box.x + (box.width - source.width * fit) * 0.5f, box.y + (box.height - source.height * fit) * 0.5f,
+                                     source.width * fit, source.height * fit };
+            // Цайвар зураг: өнгийн тодролоор (сонгогдсон = цагаан, бусад = бүдэг) гэрэлтүүлнэ
+            const int level = std::min(255, (int)std::max({ color.r, color.g, color.b }) + 20);
+            const Color tint = { (unsigned char)level, (unsigned char)level, (unsigned char)level, color.a };
+            DrawTexturePro(texture, source, dest, { 0.0f, 0.0f }, 0.0f, tint);
+            return;
+        }
         const float k = std::min(box.width / 100.0f, box.height / 40.0f);
         const IconSpace s = { box.x + (box.width - 100.0f * k) * 0.5f, box.y + (box.height - 40.0f * k) * 0.5f, k };
         const Color dim = Fade(color, 0.55f);

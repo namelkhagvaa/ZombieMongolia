@@ -11,4 +11,8 @@ bool HasHorseModel();
 // Унааны орон зайд (урагш +Z, туурай y = 0) зурна. animation: давхилтын үе (Vehicle::animation),
 // gait 0..1: хурд (0 = зогссон), steer -1..1: эргэх зүг рүү толгойгоо эргүүлнэ.
 // seed: морь бүрийн зогсолтын хөдөлгөөнийг (сүүл шарвах, толгой эргүүлэх) өөр хэмнэлтэй болгоно.
-void DrawHorseModel(float animation, float gait, float steer, float seed = 0.0f);
+// Давхилтын алхмын үе 0..1 (0 = хойд зүүн хөл газарт буух агшин). Бие, унаачийн дэгдэлтийг үүнтэй тааруулна.
+float HorseStridePhase(float animation);
+
+// gallop 0..1: хатирах -> давхих (хөлийн дараалал, савлалт өөрчлөгдөнө).
+void DrawHorseModel(float animation, float gait, float steer, float seed = 0.0f, float gallop = 0.0f);

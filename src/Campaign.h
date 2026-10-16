@@ -39,6 +39,7 @@ public:
     // Худалдан авалт хийгдсэн бол progressChanged = true.
     Result Update(Progress& progress, bool& progressChanged);
     void Draw(const Progress& progress) const;
+    void Preload() const; // дэвсгэр зураг, аймгуудын дүрсийг урьдчилан ачаална
 
     int Selected() const { return selected; }
     void Select(int provinceIndex) { selected = provinceIndex; }

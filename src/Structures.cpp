@@ -3848,7 +3848,7 @@ namespace
         int larches = 0, birches = 0, elms = 0, saxauls = 0;
         switch (s.region)
         {
-        case Region::Forest: larches = 1300; birches = 450; elms = 40; break;
+        case Region::Forest: larches = 2200; birches = 700; elms = 40; break;
         case Region::West: larches = 260; birches = 60; elms = 40; break;
         case Region::City: larches = 120; birches = 140; elms = 110; break;
         case Region::East: birches = 50; elms = 120; break;
@@ -3867,9 +3867,9 @@ namespace
                 {
                     // Ой: хойд (+Z) энгэр, ой бүхий толбо (noise), хэт эгц биш
                     const float grove = Fbm(x * 0.004f + 13.0f, z * 0.004f + 7.0f, 3);
-                    if (n.y < 0.8f || grove < (kind == 0 ? 0.5f : 0.46f)) continue;
-                    if (n.z < -0.05f && rng.Chance(0.8f)) continue;
-                    if (h < 6.0f && rng.Chance(0.6f)) continue;
+                    if (n.y < 0.75f || grove < (kind == 0 ? 0.42f : 0.40f)) continue;
+                    if (n.z < -0.05f && rng.Chance(0.5f)) continue; // ой ихэвчлэн хойд энгэрт
+                    if (h < 4.0f && rng.Chance(0.5f)) continue;
                     // Төгөл: ойр ойрхон
                     const int cluster = rng.Int(3, 7);
                     for (int k = 0; k < cluster && placed < count; ++k, ++placed)

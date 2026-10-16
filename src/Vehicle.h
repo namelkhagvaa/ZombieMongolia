@@ -12,7 +12,8 @@ enum class VehicleType
     Jeep,       // жийп: засмал зам дээр хамгийн хурдан, хээр талд удаан
     Motorcycle, // мотоцикл: хөнгөн, хурдан, эргэлт сайн
     Trike,      // гурван дугуйт ачааны мотоцикл: удаан боловч тогтвортой
-    Horse       // морь: зам хамаарахгүй, толгод сайн давна
+    Horse,      // морь: зам хамаарахгүй, толгод сайн давна; Shift дарахад давхина
+    Truck       // ачааны машин (ЗИЛ-131): удаан, хүнд, зомбийг бут цохино, багийг тэвшиндээ авч явна
 };
 
 // Тээврийн хэрэгслийн онцлог. Хурд нь доорх үзүүлэлт ба газрын гадаргуу, налуугаас хамаарна.
@@ -33,6 +34,9 @@ struct VehicleSpec
     bool enclosed;      // бүхээгтэй: жолооч харагдахгүй, буудаж чадахгүй
     Vector3 seat;       // жолоочийн ташааны орон нутгийн байрлал
     float cameraExtra;  // унасан үед камерыг холдуулах зай
+    float maxHealth;    // бүрэн бүтэн байдал (морьд: амь)
+    float fuelRange;    // дүүрэн савтай явах зай, км (0 = бензин хэрэггүй: морь)
+    float mass;         // мөргөлдөөнд: хүнд нь хөнгөнийг түлхэнэ (жийп = 1.6)
 };
 
 const VehicleSpec& SpecFor(VehicleType type);
@@ -44,8 +48,19 @@ struct Vehicle
     float heading;    // радиан, 0 = +Z
     float speed = 0.0f;     // урагш эерэг, м/с
     float pitch = 0.0f;     // газрын налууг дагасан хазайлт, радиан
+    float roll = 0.0f;      // хажуугийн налууг дагасан хазайлт (дугуйтай машин), радиан; эерэг = зүүн (+X) тал дээш
     float animation = 0.0f; // дугуйн эргэлт (радиан, 1 м радиустай дугуйнд) / морины давхилтын үе
     float steer = 0.0f;     // жолооны байрлал -1..1 (эерэг = баруун тийш), зөөлөн шилжинэ
+    // Эвдрэл, бензин: мөргөлт бүрд гэмтэнэ, 0 болбол эвдэрч (морь үхэж) дахин унах боломжгүй.
+    float health = 100.0f;
+    float fuel = 1.0f;          // 0..1 (сав дүүрэн = 1)
+    bool wrecked = false;
+    Vector2 knock = { 0.0f, 0.0f }; // мөргүүлж хажуу тийш шидэгдэх хурд (м/с), аажим унтарна
+    float spin = 0.0f;              // мөргүүлсний дараах эргэлт (рад/с)
+    float hurtTimer = 0.0f;         // сүүлд гэмтсэнээс хойш (HUD анивчих)
+    float slip = 0.0f;              // хажуу тийш гулсах хурд (м/с): дрифт, шарвалт
+    bool drifting = false;          // тоормос + эргэлтээр шарвуулж байна
+    float driftTimer = 0.0f;        // шарвалт дууссанаас хойш хий дарж үргэлжлүүлэх хугацаа
     // Хамтарсан тоглолт: нөгөө тоглогч (эсвэл хостын баг) жолоодож буй хэрэгслийг сүлжээгээр хөдөлгөнө.
     bool remote = false;    // байрлалыг сүлжээнээс авна (өөрөө тооцохгүй)
     bool occupied = false;  // нөгөө тал сууж яваа: энэ талын тоглогч, баг сууж болохгүй
@@ -95,8 +110,15 @@ public:
     Vector3 ReinWorld(int index, bool& hasRein) const;
 
     // throttle: -1..1 (S..W), steer: -1..1 (A..D). Унаагүй хэрэгсэл аяндаа зогсоно.
-    // Хурдтай явахдаа зомбийг дайрч гэмтээнэ.
-    void Update(float dt, const World& world, ZombieHorde& horde, float throttle, float steer, bool handbrake);
+    // Хурдтай явахдаа зомбийг дайрч гэмтээнэ. boost (Shift): морь давхина (үгүй бол хатирна).
+    void Update(float dt, const World& world, ZombieHorde& horde, float throttle, float steer, bool handbrake,
+                bool boost = false);
+
+    // Шатахуун түгээх газар: бензин нэмж (0..1 хувиар), засварлана. Нэмсэн хэмжээг буцаана.
+    float Refuel(int index, float amount);
+    float Repair(int index, float amount);
+    // Гадны хохирол (дэлбэрэлт г.м.)
+    void Damage(int index, float amount);
 
     // Явган хүнийг зогсож буй хэрэгсэл дундуур гарахаас сэргийлнэ.
     void PushOut(Vector3& position, float radius) const;
@@ -107,9 +129,12 @@ public:
     Vector3 SeatPosition() const;                           // жолоочийн ташааны ертөнцийн байрлал
 
     // material: орчны PropMaterial (унааны mesh-ийг GPU-д хадгалж зурна); nullptr бол шууд зурна.
-    void Draw(Vector3 viewPosition, float maxDistance, const Material* material = nullptr) const;
+    // shadowPass: сүүдрийн зураг (material нь гүний материал; текстуртай загварууд ч түүгээр зурагдана)
+    void Draw(Vector3 viewPosition, float maxDistance, const Material* material = nullptr, bool shadowPass = false) const;
 
 private:
+    void Collide(int index, const World& world);
+
     std::vector<Vehicle> vehicles;
     int driven = -1;
     int escort = -1;

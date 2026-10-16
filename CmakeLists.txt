@@ -41,7 +41,9 @@ FetchContent_MakeAvailable(enet)
 set(GAME_SOURCES
     main.cpp
     src/Airstrike.cpp
+    src/Audio.cpp
     src/Campaign.cpp
+    src/Splash.cpp
     src/CampaignData.cpp
     src/CharacterModel.cpp
     src/Environment.cpp
@@ -75,6 +77,7 @@ set(GAME_SOURCES
     src/UiFont.cpp
     src/UiStyle.cpp
     src/Vehicle.cpp
+    src/VehicleModel.cpp
     src/Weapon.cpp
     src/Weather.cpp
     src/World.cpp

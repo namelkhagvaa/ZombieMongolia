@@ -21,6 +21,8 @@ public:
     void Flash(Vector3 at, Vector3 direction);
     // Гранатын дэлбэрэлт: галт бөмбөлөг, тоос шороо, хэлтэрхий.
     void Explosion(Vector3 at);
+    // Сүүлийн дэлбэрэлтийн төвүүд (унаа гэмтээхэд): авсны дараа цэвэрлэгдэнэ.
+    void TakeExplosions(std::vector<Vector3>& out) { out.insert(out.end(), recentBlasts.begin(), recentBlasts.end()); recentBlasts.clear(); }
 
     void Update(float dt, const World& world);
     void Draw() const;      // гэрэлтүүлэгтэй хэсэг (shader дотор)
@@ -67,4 +69,5 @@ private:
     std::vector<Particle> particles;
     std::vector<MuzzleFlash> flashes;
     std::vector<Blast> blasts;
+    std::vector<Vector3> recentBlasts;
 };

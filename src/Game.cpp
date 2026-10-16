@@ -1,5 +1,7 @@
 #include "Game.h"
+#include "VehicleModel.h"
 
+#include "Audio.h"
 #include "Input.h"
 
 #include "CharacterModel.h"
@@ -18,6 +20,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+
+namespace
+{
+    const float kSoundLevels[4] = { 1.0f, 0.6f, 0.3f, 0.0f }; // ESC цэсний "Дуу" түвшнүүд
+}
 
 namespace
 {
@@ -104,6 +111,7 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
     SetTargetFPS(benchmark ? 0 : config.targetFps); // хэмжилтийн үед FPS-ийг хязгаарлахгүй
     SetExitKey(KEY_NULL); // ESC-ийг өөрсдөө боловсруулна: эхлээд нээлттэй цонхыг хаана, дараа нь л гарна
     LoadUiFont();
+    Splash::Begin(!benchmark); // туршилтын горимд эхлэлийн дэлгэцгүй
 
     // Ойрын хавтгайг холдуулснаар алсад гүний нарийвчлал сайжирна (зам, сүүдэр анивчихгүй).
     rlSetClipPlanes(0.25, 2800.0);
@@ -111,6 +119,7 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
 
 GameWindow::~GameWindow()
 {
+    Audio::Shutdown();
     UnloadUiFont();
     ViewShutdown();
     CloseWindow();
@@ -125,9 +134,16 @@ Game::Game(const LaunchOptions& launchOptions)
         SetSavePath(options.savePath); // туршилт: тусдаа хадгалалтын файл
     }
     SetCharacterBindPose(options.bindPose);
+    Splash::Step(0.7f, "Дүрүүдийг ачаалж байна...");
     LoadCharacterModels(environment.CharacterShader()); // байхгүй бол дүрүүд кодоор үүсгэсэн дүрсээрээ зурагдана
+    Splash::Step(0.84f, "Морьдыг ачаалж байна...");
     LoadHorseModel(environment.CharacterShader());      // байхгүй бол морь кодоор үүсгэсэн дүрсээрээ
+    LoadVehicleModels(environment.VehicleShader());     // байхгүй бол унаанууд кодоор угсарсан хэлбэрээрээ
+    Splash::Step(0.86f, "Дуу ачаалж байна...");
+    Audio::Init();
+    Splash::Step(0.94f, "Газрын зургийг бэлтгэж байна...");
     LoadProgress(progress, (int)Provinces().size());
+    Audio::SetVolume(progress.sound ? kSoundLevels[std::clamp(progress.soundLevel, 0, 3)] : 0.0f);
     environment.SetQuality(options.graphics >= 0 ? options.graphics : progress.graphics);
     if (progress.netTag < 1000 || progress.netTag > 9999)
     {
@@ -139,12 +155,15 @@ Game::Game(const LaunchOptions& launchOptions)
     // Компьютер: хадгалсан сонголтоор бүтэн дэлгэц (туршилтын горимд цонхоор).
     if (progress.fullscreen && !options.screenshotPath && !options.touch) SetFullscreen(true);
 #endif
+    mapScreen.Preload(); // дэвсгэр зураг, аймгуудын дүрс: эхний кадрыг гацаахгүй
+    Splash::Finish();
 }
 
 Game::~Game()
 {
     UnloadCharacterModels();
     UnloadHorseModel();
+    UnloadVehicleModels();
     Save();
 }
 
@@ -194,7 +213,13 @@ void Game::Run()
             if (options.hasPose)
             {
                 garage.Place(options.ride - 1, { options.x, world.GroundHeight(options.x, options.z), options.z },
-                             options.yawDegrees * DEG2RAD);
+                             (options.rideHeading > -999.0f ? options.rideHeading : options.yawDegrees) * DEG2RAD);
+                if (options.crashTest >= 0 && options.crashTest < garage.Count())
+                {
+                    const float h = (options.rideHeading > -999.0f ? options.rideHeading : options.yawDegrees) * DEG2RAD;
+                    const float tx = options.x + std::sin(h) * 25.0f, tz = options.z + std::cos(h) * 25.0f;
+                    garage.Place(options.crashTest, { tx, world.GroundHeight(tx, tz), tz }, h + PI * 0.5f);
+                }
             }
         }
         if (options.fullMapZoom > 0.0f)
@@ -521,6 +546,31 @@ void Game::ReturnToMap()
 
 namespace
 {
+    // Газрын өнгө: говь шаргал элсэрхэг, хойд ойт аймаг ногоон (Structures-ийн бүс нутагтай ижил)
+    float ProvinceDryness(int province)
+    {
+        switch (province)
+        {
+        case 4: case 6: case 9: case 11: case 16: case 17: case 18: return 0.9f; // говь
+        case 5: case 7: case 8: case 12: case 19: return 0.0f;                    // ойт
+        case 0: case 1: case 2: case 3: return 0.4f;                              // баруун
+        default: return 0.25f;
+        }
+    }
+
+    // Алсын уулсын өндөр: баруун (Алтай, Хангай) өндөр цастай, зүүн тал намхан
+    float ProvinceMountains(int province)
+    {
+        switch (province)
+        {
+        case 0: case 1: case 2: case 3: case 4: return 1.0f;           // Алтай
+        case 5: case 7: case 9: case 6: return 0.85f;                   // Хангай, Хөвсгөл
+        case 8: case 10: case 12: case 13: case 14: case 15: case 19: return 0.6f;
+        case 11: case 16: case 17: case 18: return 0.45f;              // говь
+        default: return 0.35f;                                          // зүүн тал
+        }
+    }
+
     // Аймгийн бүс нутгаас хамаарсан цаг агаар: говьд шороон шуурга, хойд уулархаг нутагт цас олонтой.
     WeatherKind PickWeather(int province, int forced)
     {
@@ -542,6 +592,7 @@ namespace
 
 void Game::StartMission(int index)
 {
+    const double startTime = GetTime();
     provinceIndex = index;
     params = MissionFor(index);
 
@@ -570,6 +621,11 @@ void Game::StartMission(int index)
     dayClock = 0.08f * kDayLength; // аймаг бүр өглөөгөөр эхэлнэ
     wasNight = false;
     environment.SetWeather(PickWeather(index, options.weather));
+    environment.SetDryness(ProvinceDryness(index));
+    environment.SetMountainScale(ProvinceMountains(index));
+    TraceLog(LOG_INFO, "MISSION: start setup %.2f s (graphics %d)", GetTime() - startTime, environment.Quality());
+    perfTime = -3.0f; // эхний секундүүдэд газар ачаалагддаг тул хэмжихгүй
+    perfFrames = 0;
     environment.SetTimeOfDay(dayClock / kDayLength);
     aimToggled = false;
     progress.firstPerson = true; // даалгавар бүр 1-р этгээдээр (зөвхөн зэвсэг харагдана) эхэлнэ; V-ээр 3-р этгээд рүү шилжинэ
@@ -752,12 +808,19 @@ void Game::UpdateShooting()
     // Дуран хараагаар харахад камер нүдэн дээр байгаа тул камер, тоглогч хоёрын хоорондох зай тэг.
     const float cameraDistance = camera.IsScoped() || camera.IsFirstPerson() ? 0.0f : targetDistance;
 
+    const Vector3 hand = Vector3Add(player.Position(), { 0.0f, 1.4f, 0.0f });
     switch (arsenal.Current())
     {
-    case WeaponType::Knife: UseKnife(aim, cameraDistance); break;
-    case WeaponType::Grenade: ThrowGrenade(aim); break;
-    case WeaponType::Launcher: FireLauncher(aim, cameraDistance); break;
-    default: FireGun(aim, cameraDistance); break;
+    case WeaponType::Knife: Audio::Play(Sfx::Knife, hand); UseKnife(aim, cameraDistance); break;
+    case WeaponType::Grenade: Audio::Play(Sfx::Throw, hand); ThrowGrenade(aim); break;
+    case WeaponType::Launcher: Audio::Play(Sfx::Launcher, hand); FireLauncher(aim, cameraDistance); break;
+    default:
+        Audio::Play(arsenal.Current() == WeaponType::Pistol ? Sfx::Pistol
+                    : arsenal.Current() == WeaponType::Shotgun ? Sfx::Shotgun
+                    : arsenal.Current() == WeaponType::Sniper ? Sfx::Sniper : Sfx::Rifle,
+                    hand, 0.9f);
+        FireGun(aim, cameraDistance);
+        break;
     }
 }
 
@@ -875,6 +938,7 @@ void Game::FireGun(Ray aim, float cameraDistance)
             if (coopGuest) net.SendHit(horde.At(hit.index).id, hit.headshot ? headshot : arsenal.Damage(), hit.headshot);
             horde.Damage(hit.index, hit.headshot ? headshot : arsenal.Damage());
             particles.Blood(end, Vector3Negate(ray.direction), hit.headshot ? 14 : (spec.pellets > 1 ? 3 : 7));
+            if (pellet == 0) Audio::Play(Sfx::Hit, end, hit.headshot ? 0.6f : 0.4f);
         }
         else if (wallDistance < reach)
         {
@@ -965,10 +1029,12 @@ void Game::SpawnVehicles()
     place(VehicleType::Motorcycle, -3.0f, 6.6f, 90.0f);
     place(VehicleType::Trike, -9.5f, 6.8f, 90.0f);
     place(VehicleType::Horse, 14.0f, 7.6f, 60.0f);
+    place(VehicleType::Truck, 22.0f, -14.0f, 90.0f); // ачааны машин: шатахуун түгээх газрын дэргэд
 
     // Талбараар тархсан нэмэлт унаа: суурин, шатахуун түгээх газар, цэргийн пост, малчдын отор
     place(VehicleType::Trike, 37.0f, -8.6f, -90.0f);
     place(VehicleType::Jeep, -40.0f, -13.0f, 0.0f);
+    place(VehicleType::Truck, -30.0f, 16.0f, -90.0f); // заставын цэргийн машин
     place(VehicleType::Motorcycle, 23.0f, 60.0f, 180.0f);
     int index = 0;
     for (const Vector2& camp : world.GetLayout().camps)
@@ -1021,6 +1087,80 @@ Game::Interaction Game::FindInteraction() const
     else if (vehicle >= 0 && vehicleDistance <= doorDistance) result.vehicle = vehicle;
     else if (door >= 0) result.door = door;
     return result;
+}
+
+void Game::UpdateSounds(float dt, float throttle)
+{
+    const Camera3D& view = camera.Get();
+    Audio::SetListener(view.position, Vector3Subtract(view.target, view.position));
+
+    // Сум цэнэглэж эхлэх агшин
+    const bool reloading = arsenal.IsReloading();
+    if (reloading && !wasReloading) Audio::Play(Sfx::Reload, Vector3Add(player.Position(), { 0.0f, 1.3f, 0.0f }), 0.8f);
+    wasReloading = reloading;
+
+    // Зомбинууд хааяа гинших, аварга нь архирна (ойрынх нь л)
+    groanTimer -= dt;
+    if (groanTimer <= 0.0f && horde.Count() > 0)
+    {
+        groanTimer = 1.6f + 2.2f * (float)GetRandomValue(0, 100) / 100.0f; // хааяа (ядаргаагүй)
+        for (int attempt = 0; attempt < 6; ++attempt)
+        {
+            const int index = GetRandomValue(0, horde.Count() - 1);
+            const Zombie& zombie = horde.At(index);
+            if (!zombie.IsAlive() || Vector3Distance(zombie.mover.position, view.position) > (zombie.boss ? 120.0f : 30.0f)) continue;
+            const Vector3 head = Vector3Add(zombie.mover.position, { 0.0f, 1.6f * zombie.scale, 0.0f });
+            if (zombie.boss) Audio::Play(Sfx::BossRoar, head, 1.0f, 1.0f);
+            else Audio::Play(Sfx::ZombieGroan, head, 0.55f, zombie.type == ZombieType::Brute ? 0.85f : zombie.type == ZombieType::Runner ? 1.1f : 1.0f);
+            break;
+        }
+    }
+
+    // Хөдөлгүүр: 0 = тоглогчийн унаа, 1 = ойрын бусад хөдөлж буй (багийн) унаа
+    auto engineOf = [](const Vehicle& v) {
+        if (v.wrecked || SpecFor(v.type).fuelRange <= 0.0f || v.fuel <= 0.0f) return EngineSound::Off;
+        switch (v.type)
+        {
+        case VehicleType::Motorcycle: return EngineSound::Moto;
+        case VehicleType::Trike: return EngineSound::Trike;
+        case VehicleType::Truck: return EngineSound::Truck;
+        default: return EngineSound::Car;
+        }
+    };
+    auto rpmOf = [](const Vehicle& v, float pedal) {
+        // Хурдлахад эргэлт жигд өснө (араа солихдоо огцом унахгүй: тасархай "дүх дүх" дуу гаргахгүй)
+        const float ratio = std::clamp(std::fabs(v.speed) / SpecFor(v.type).topSpeed, 0.0f, 1.0f);
+        return std::clamp(0.08f + 0.8f * std::pow(ratio, 0.7f) + 0.12f * pedal, 0.0f, 1.0f);
+    };
+    int nearest = -1;
+    float nearestDistance = 80.0f;
+    for (int i = 0; i < garage.Count(); ++i)
+    {
+        const Vehicle& v = garage.At(i);
+        // Тоглогчийн унаа ба араас дагаж яваа багийн унаа: давхар хөдөлгүүрийн дуу гаргахгүй
+        if (i == garage.Driven() || i == garage.Escort() || std::fabs(v.speed) < 0.5f || engineOf(v) == EngineSound::Off) continue;
+        const float d = Vector3Distance(v.position, view.position);
+        if (d < nearestDistance) { nearestDistance = d; nearest = i; }
+    }
+    if (garage.IsDriving())
+    {
+        const Vehicle& v = garage.At(garage.Driven());
+        const float pedal = std::fabs(throttle);
+        Audio::SetEngine(0, engineOf(v), rpmOf(v, pedal), pedal, v.position);
+    }
+    else
+    {
+        Audio::SetEngine(0, EngineSound::Off, 0.0f, 0.0f, view.position);
+    }
+    if (nearest >= 0)
+    {
+        const Vehicle& v = garage.At(nearest);
+        Audio::SetEngine(1, engineOf(v), rpmOf(v, 0.6f), 0.6f, v.position);
+    }
+    else
+    {
+        Audio::SetEngine(1, EngineSound::Off, 0.0f, 0.0f, view.position);
+    }
 }
 
 void Game::UpdateVehicles(float dt)
@@ -1079,8 +1219,124 @@ void Game::UpdateVehicles(float dt)
         steer = axis.x;
         handbrake = InKeyDown(KEY_SPACE);
         if (autoDrive) throttle = 1.0f;
+        if (autoDrive && options.driftFrame != 0 && missionFrame >= std::abs(options.driftFrame))
+        {
+            handbrake = options.driftFrame > 0; // сөрөг: тоормосгүй, зөвхөн эргэнэ (шарвах ёсгүй)
+            steer = 1.0f;
+        }
     }
-    garage.Update(dt, world, horde, throttle, steer, handbrake);
+    garage.Update(dt, world, horde, throttle, steer, handbrake, garage.IsDriving() && (InSprint() || autoDrive));
+    UpdateSounds(dt, throttle);
+
+    // Дэлбэрэлт (гранат, торх, пуужин) ойрын унааг гэмтээнэ
+    {
+        std::vector<Vector3> blasts;
+        particles.TakeExplosions(blasts);
+        for (const Vector3& blast : blasts)
+        {
+            for (int i = 0; i < garage.Count(); ++i)
+            {
+                const float distance = Vector3Distance(blast, garage.At(i).position);
+                if (distance < 8.0f) garage.Damage(i, 70.0f * (1.0f - distance / 8.0f));
+            }
+        }
+    }
+
+    // Унаж яваа хэрэгсэл эвдэрвэл (морь үхвэл) буулгана; бензин дуусвал сануулна.
+    if (garage.IsDriving())
+    {
+        const Vehicle& vehicle = garage.At(garage.Driven());
+        if (vehicle.wrecked)
+        {
+            const float side = SpecFor(vehicle.type).radius + config.playerRadius + 0.3f;
+            Vector3 exit = HumanoidLocalToWorld(vehicle.position, vehicle.heading, { side, 0.0f, 0.0f });
+            world.ResolveHorizontal(exit, config.playerRadius, config.playerHeight, config.stepHeight);
+            exit.y = world.GroundHeight(exit.x, exit.z);
+            garage.Dismount();
+            player.StopRiding(exit);
+            SetNotice(vehicle.type == VehicleType::Horse ? "Морь үхлээ!" : std::string(SpecFor(vehicle.type).name) + " эвдэрлээ!", 3.0f);
+        }
+        else if (SpecFor(vehicle.type).fuelRange > 0.0f && vehicle.fuel <= 0.0f && !fuelWarned)
+        {
+            fuelWarned = true;
+            SetNotice("Бензин дууслаа! Шатахуун түгээх газарт очиж бензин хийнэ үү", 4.0f);
+        }
+        else if (vehicle.fuel > 0.02f)
+        {
+            fuelWarned = false;
+        }
+    }
+
+    // Шатахуун түгээх газар: түгээгүүрийн дэргэд зогсоход бензин хийж, засварлана (зоосоор).
+    if (garage.IsDriving())
+    {
+        const int index = garage.Driven();
+        const Vehicle& vehicle = garage.At(index);
+        const float dx = vehicle.position.x - 30.0f, dz = vehicle.position.z + 11.5f; // түгээгүүрүүд (Structures: GasStation)
+        if (dx * dx + dz * dz < 9.0f * 9.0f && std::fabs(vehicle.speed) < 1.0f && progress.coins > 0)
+        {
+            const float fuel = garage.Refuel(index, 0.12f * dt);              // ~8 секундэд дүүрнэ
+            const float fixed = garage.Repair(index, SpecFor(vehicle.type).maxHealth * 0.08f * dt);
+            fuelCoinDebt += fuel * 60.0f + fixed * 0.5f;                      // дүүрэн сав 60, засвар 1 зоос / 2 нэгж
+            if (fuelCoinDebt >= 1.0f)
+            {
+                const int pay = std::min(progress.coins, (int)fuelCoinDebt);
+                progress.coins -= pay;
+                fuelCoinDebt -= (float)pay;
+            }
+        }
+    }
+
+    // Шарвалт: хажуу тийш гулсаж байвал арын дугуйнаас утаа (засмал) эсвэл шороо босож, дугуй чахирна
+    driftTimer += dt;
+    if (driftTimer >= 0.05f)
+    {
+        driftTimer = 0.0f;
+        for (int i = 0; i < garage.Count(); ++i)
+        {
+            const Vehicle& vehicle = garage.At(i);
+            const float slide = std::fabs(vehicle.slip);
+            if (slide < 2.2f || vehicle.type == VehicleType::Horse) continue;
+            if (Vector3Distance(vehicle.position, camera.Get().position) > 120.0f) continue;
+            const bool asphalt = world.SurfaceAt(vehicle.position.x, vehicle.position.z) == Surface::Asphalt;
+            const float back = vehicle.type == VehicleType::Truck ? -2.4f : -1.2f;
+            for (float side : { -0.85f, 0.85f })
+            {
+                const Vector3 wheel = HumanoidLocalToWorld(vehicle.position, vehicle.heading, { side, 0.25f, back });
+                particles.Kickup(wheel, { 0.0f, 0.3f, 0.0f }, asphalt ? Color{ 205, 205, 200, 255 } : Color{ 176, 156, 120, 255 });
+            }
+            screechTimer -= 0.05f;
+            if (asphalt && screechTimer <= 0.0f)
+            {
+                screechTimer = 0.3f;
+                Audio::Play(Sfx::Screech, vehicle.position, std::min(1.0f, slide / 8.0f), 0.9f + 0.02f * slide);
+            }
+        }
+    }
+
+    // Гэмтсэн унаанаас утаа, эвдэрснээс хар утаа ба гал
+    smokeTimer += dt;
+    if (smokeTimer >= 0.12f)
+    {
+        smokeTimer = 0.0f;
+        for (int i = 0; i < garage.Count(); ++i)
+        {
+            const Vehicle& vehicle = garage.At(i);
+            if (vehicle.type == VehicleType::Horse) continue;
+            const float condition = vehicle.health / SpecFor(vehicle.type).maxHealth;
+            if (condition > 0.35f || Vector3Distance(vehicle.position, camera.Get().position) > 150.0f) continue;
+            const Vector3 engine = HumanoidLocalToWorld(vehicle.position, vehicle.heading,
+                                                        { 0.0f, vehicle.type == VehicleType::Truck ? 2.0f : 1.2f,
+                                                          vehicle.type == VehicleType::Truck ? 2.6f : 1.0f });
+            const Vector2 wind = environment.Wind();
+            const unsigned char grey = vehicle.wrecked ? 40 : (unsigned char)(70 + condition * 200.0f);
+            particles.Kickup(engine, { wind.x * 0.8f, 1.6f, wind.y * 0.8f }, { grey, grey, grey, 255 });
+            if (vehicle.wrecked && GetRandomValue(0, 2) == 0)
+            {
+                particles.Kickup(engine, { 0.0f, 2.2f, 0.0f }, { 240, 120, 40, 255 }); // гал
+            }
+        }
+    }
 
     // Шороон зам, хээр талаар хурдтай явахад унаа, морины ард тоос босно (бороо, цастай үед үгүй).
     dustTimer += dt;
@@ -1143,9 +1399,10 @@ void Game::UpdateTeamRiding(float dt)
         }
     }
 
-    if (!garage.IsDriving())
+    const bool teamWrecked = teamVehicle >= 0 && garage.At(teamVehicle).wrecked;
+    if (!garage.IsDriving() || teamWrecked)
     {
-        // Тоглогч буусан: гишүүд ч хэрэгслийнхээ хажууд бууна. Хэрэгсэл нь аяндаа зогсоно.
+        // Тоглогч буусан (эсвэл багийн унаа эвдэрсэн): гишүүд хэрэгслийнхээ хажууд бууна.
         int slot = 0;
         for (Soldier& soldier : all)
         {
@@ -1187,7 +1444,7 @@ void Game::UpdateTeamRiding(float dt)
         for (int i = 0; i < garage.Count(); ++i)
         {
             const float distance = HorizontalDistance(reference->mover.position, garage.At(i).position);
-            if (i != garage.Driven() && !garage.At(i).occupied && distance < best)
+            if (i != garage.Driven() && !garage.At(i).occupied && !garage.At(i).wrecked && distance < best)
             {
                 best = distance;
                 teamVehicle = i;
@@ -1338,11 +1595,30 @@ void Game::AimAssist(float dt)
     camera.AddView(std::remainder(wantedYaw - camera.Yaw(), 2.0f * PI) * pull, (wantedPitch - camera.Pitch()) * pull);
 }
 
+void Game::WatchPerformance(float dt)
+{
+    // Удаан компьютер: 4 секундын дундаж 20 FPS-ээс бага бол графикийг нэг шат бууруулна (сүүдэр, эффект).
+    if (options.screenshotPath || environment.Quality() == 0) return;
+    perfTime += std::min(dt, 0.5f);
+    ++perfFrames;
+    if (perfTime < 4.0f) return;
+    const float fps = (float)perfFrames / perfTime;
+    perfTime = 0.0f;
+    perfFrames = 0;
+    if (fps >= 20.0f) return;
+    progress.graphics = environment.Quality() - 1;
+    environment.SetQuality(progress.graphics);
+    Save();
+    TraceLog(LOG_WARNING, "PERF: %.1f fps, graphics lowered to %d", fps, progress.graphics);
+    SetNotice(progress.graphics == 1 ? "Тоглоом удаан байна: график ДУНД болголоо" : "Тоглоом удаан байна: график БАГА болголоо", 4.0f);
+}
+
 void Game::AdvanceDay(float dt)
 {
     dayClock = std::fmod(dayClock + dt, kDayLength);
     if (options.dayTime >= 0.0f) dayClock = options.dayTime * kDayLength; // туршилт
     environment.Update(dt);
+    WatchPerformance(dt);
     environment.SetTimeOfDay(dayClock / kDayLength);
     const bool isNight = environment.Night() > 0.5f;
     if (isNight != wasNight && state == GameState::Playing)
@@ -1436,7 +1712,25 @@ void Game::UpdateMission(float dt)
     {
         camera.Guide(player.TraverseFacing(), 0.03f, dt); // бараг хэвтээ: цонхны нүхээр харна
     }
-    camera.Update(dt, config, world, player.Position(), aiming, cameraExtra, scoped, player.CameraDrop());
+    // Жолоодож байхад камер унааны төвийг, унааны өндөрт тааруулж харна (суудлыг тойрвол урт машины дотор орно)
+    Vector3 cameraFocus = player.Position();
+    float cameraDrop = player.CameraDrop();
+    if (garage.IsDriving())
+    {
+        const Vehicle& vehicle = garage.At(garage.Driven());
+        float height = 2.0f;
+        switch (vehicle.type)
+        {
+        case VehicleType::Truck: height = 3.4f; break;
+        case VehicleType::Jeep: height = 2.3f; break;
+        case VehicleType::Horse: height = 2.4f; break;
+        default: height = 1.9f; break;
+        }
+        cameraFocus = vehicle.position;
+        cameraDrop = config.cameraTargetHeight - height;
+    }
+    camera.SetRiding(garage.IsDriving());
+    camera.Update(dt, config, world, cameraFocus, aiming, cameraExtra, scoped, cameraDrop);
     if (aiming)
     {
         player.AimAtPoint(CrosshairTarget());
@@ -1654,7 +1948,8 @@ void Game::UpdateAirstrike(float dt)
 // ---------------------------------------------------------------- Тоглоомын цэс (ESC)
 namespace
 {
-    enum class PauseItem { Resume, Graphics, Fullscreen, Map, Quit };
+    enum class PauseItem { Resume, Graphics, Sound, Fullscreen, Map, Quit };
+
 
     // Одоогийн төлөвт харагдах мөрүүд (газрын зураг дээр "Газрын зураг руу буцах" байхгүй; утсан дээр бүтэн дэлгэц байхгүй).
     int PauseItems(bool playing, PauseItem* out)
@@ -1662,6 +1957,7 @@ namespace
         int count = 0;
         out[count++] = PauseItem::Resume;
         out[count++] = PauseItem::Graphics;
+        out[count++] = PauseItem::Sound;
 #if !defined(__ANDROID__)
         if (!InTouchMode()) out[count++] = PauseItem::Fullscreen;
 #endif
@@ -1708,7 +2004,7 @@ void Game::SetFullscreen(bool enabled)
 
 void Game::UpdatePauseMenu()
 {
-    PauseItem items[5];
+    PauseItem items[6];
     const int count = PauseItems(state == GameState::Playing, items);
     int chosen = -1;
     for (int i = 0; i < count; ++i)
@@ -1728,6 +2024,14 @@ void Game::UpdatePauseMenu()
         environment.SetQuality(progress.graphics);
         Save();
         break;
+    case PauseItem::Sound:
+        // 100% -> 60% -> 30% -> үгүй -> 100%
+        if (!progress.sound) { progress.sound = true; progress.soundLevel = 0; }
+        else if (progress.soundLevel >= 2) progress.sound = false;
+        else ++progress.soundLevel;
+        Audio::SetVolume(progress.sound ? kSoundLevels[progress.soundLevel] : 0.0f);
+        Save();
+        break;
     case PauseItem::Fullscreen: SetFullscreen(!progress.fullscreen); break;
     case PauseItem::Map:
         paused = false;
@@ -1745,13 +2049,15 @@ void Game::DrawPauseMenu() const
     const int width = ViewWidth(), height = ViewHeight();
     DrawRectangle(0, 0, width, height, Fade(BLACK, 0.55f));
 
-    PauseItem items[5];
+    PauseItem items[6];
     const int count = PauseItems(state == GameState::Playing, items);
     const Rectangle first = PauseRow(0, count), last = PauseRow(count - 1, count);
     const Rectangle panel = { first.x - 30.0f, first.y - 90.0f, first.width + 60.0f, last.y + last.height - first.y + 150.0f };
     Ui::PanelAccent(panel, Ui::kAccent);
     const char* title = "ЦЭС";
-    Ui::TextBold(title, (int)(panel.x + (panel.width - (float)Ui::MeasureBold(title, 30)) * 0.5f), (int)panel.y + 26, 30, Ui::kText);
+    const int titleX = (int)(panel.x + (panel.width - (float)Ui::MeasureBold(title, 30)) * 0.5f);
+    Ui::DrawIcon(Ui::Icon::Pause, { (float)titleX - 40.0f, panel.y + 26.0f, 32.0f, 32.0f });
+    Ui::TextBold(title, titleX, (int)panel.y + 26, 30, Ui::kText);
 
     const Vector2 pointer = InPointer();
     for (int i = 0; i < count; ++i)
@@ -1761,6 +2067,9 @@ void Game::DrawPauseMenu() const
         switch (items[i])
         {
         case PauseItem::Resume: label = "Үргэлжлүүлэх"; break;
+        case PauseItem::Sound:
+            label = !progress.sound ? "Дуу: ҮГҮЙ" : progress.soundLevel == 0 ? "Дуу: 100%" : progress.soundLevel == 1 ? "Дуу: 60%" : "Дуу: 30%";
+            break;
         case PauseItem::Graphics:
             label = progress.graphics == 2 ? "График: ӨНДӨР" : progress.graphics == 1 ? "График: ДУНД" : "График: БАГА";
             break;
@@ -1772,6 +2081,19 @@ void Game::DrawPauseMenu() const
         const bool danger = items[i] == PauseItem::Quit;
         Ui::Panel(row, hover ? Fade(danger ? Ui::kDanger : Ui::kAccent, 0.25f) : Ui::kPanelSoft, 12.0f);
         if (!InTouchMode()) Ui::KeyBadge(TextFormat("%d", i + 1), (int)row.x + 16, (int)row.y + 17, 16, Ui::kTextDim);
+        // Мөрийн баруун талд үйлдлийн икон
+        Ui::Icon icon = Ui::Icon::Play;
+        switch (items[i])
+        {
+        case PauseItem::Resume: icon = Ui::Icon::Play; break;
+        case PauseItem::Graphics: icon = Ui::Icon::Settings; break;
+        case PauseItem::Sound: icon = Ui::Icon::Sound; break;
+        case PauseItem::Fullscreen: icon = Ui::Icon::Fullscreen; break;
+        case PauseItem::Map: icon = Ui::Icon::Back; break;
+        case PauseItem::Quit: icon = Ui::Icon::Close; break;
+        }
+        Ui::DrawIcon(icon, { row.x + row.width - 44.0f, row.y + (row.height - 24.0f) * 0.5f, 24.0f, 24.0f },
+                     hover ? WHITE : Fade(WHITE, 0.75f));
         Ui::TextBold(label, (int)(row.x + (row.width - (float)Ui::MeasureBold(label, 22)) * 0.5f), (int)row.y + 17, 22,
                      danger ? Ui::kDanger : Ui::kText);
     }
@@ -1805,11 +2127,16 @@ void Game::RenderShadows() const
     center.y = world.GroundHeight(center.x, center.z);
     if (!environment.BeginShadowPass(center)) return;
 
-    world.DrawShadowCasters(center, radius * 1.5f, environment.DepthMaterial());
+    world.DrawShadowCasters(center, radius * 1.1f, environment.DepthMaterial());
+    if (environment.Quality() < 2)
+    {
+        environment.EndShadowPass(); // "дунд" график: зөвхөн барилга, мод, газрын сүүдэр (хүмүүс, унаа үгүй)
+        return;
+    }
 
-    garage.Draw(center, radius * 1.4f, &environment.DepthMaterial());
+    garage.Draw(center, radius * 1.4f, &environment.DepthMaterial(), true);
     squad.Draw(center, false);
-    horde.Draw(center, radius, false);
+    horde.Draw(view.position, 12.0f, false); // зомби олон тул зөвхөн хамгийн ойрынх нь сүүдэр тусгана
     if (player.IsAlive()) player.Draw(config, false); // 1-р этгээдийн үед ч өөрийн сүүдэр харагдана
     barrels.Draw(center);
     if (remoteActive && !coopGuest) DrawRemoteFigure(guestFigure, TeamMemberLook(guestFigure.member));
@@ -2028,15 +2355,22 @@ void Game::DrawMission() const
     }
 
     // Унааны мэдээлэл: унаж яваа бол хурд ба гадаргуу, үгүй бол ойрын унааны санамж
-    char rideText[96] = "";
+    char rideText[256] = ""; // UTF-8 кирилл үсэг 2 байт
     if (garage.IsDriving())
     {
         const Vehicle& vehicle = garage.At(garage.Driven());
         const char* surface = garage.DrivenSurface() == Surface::Asphalt ? "ЗАСМАЛ ЗАМ"
                             : garage.DrivenSurface() == Surface::Dirt ? "ШОРООН ЗАМ" : "ХЭЭР ТАЛ";
-        std::snprintf(rideText, sizeof(rideText), InTouchMode() ? "%s  %d км/ц  (энд дээд тал нь %d)  %s" : "%s  %d км/ц  (энд дээд тал нь %d)  %s     F — буух",
-                      SpecFor(vehicle.type).name, (int)(std::fabs(vehicle.speed) * 3.6f),
-                      (int)(garage.DrivenMaxSpeed() * 3.6f), surface);
+        const bool horse = vehicle.type == VehicleType::Horse;
+        const int condition = (int)std::ceil(100.0f * vehicle.health / SpecFor(vehicle.type).maxHealth);
+        char status[64];
+        if (horse) std::snprintf(status, sizeof(status), "Амь %d%%", condition);
+        else std::snprintf(status, sizeof(status), "Бензин %d%%   Бүтэн %d%%", (int)std::ceil(vehicle.fuel * 100.0f), condition);
+        std::snprintf(rideText, sizeof(rideText),
+                      InTouchMode() ? "%s  %d км/ц  %s   %s%s"
+                                    : "%s  %d км/ц  %s   %s%s     F — буух",
+                      SpecFor(vehicle.type).name, (int)(std::sqrt(vehicle.speed * vehicle.speed + vehicle.slip * vehicle.slip) * 3.6f), surface, status,
+                      horse ? (InTouchMode() ? "     Жойстикийг бүрэн түлхэж давхина" : "     Shift — давхих") : "");
         info.rideText = rideText;
     }
     else if (state == GameState::Playing && !InTouchMode())
@@ -2319,6 +2653,7 @@ void Game::DrawMissionCompleted() const
     };
 
     DrawRectangle(0, 0, width, height, Fade({ 14, 40, 22, 255 }, 0.82f));
+    Ui::DrawIcon(Ui::Icon::MissionComplete, { (float)width * 0.5f - 36.0f, 44.0f, 72.0f, 72.0f });
     centered("ДААЛГАВАР АМЖИЛТТАЙ БИЕЛЛЭЭ", 126, 52, gold);
 
     char line[200];
@@ -2332,6 +2667,10 @@ void Game::DrawMissionCompleted() const
     if (lastReward > 0) std::snprintf(line, sizeof(line), "Аймаг чөлөөлсний шагнал: %d зоос", lastReward);
     else std::snprintf(line, sizeof(line), "Энэ аймаг өмнө нь чөлөөлөгдсөн тул нэмэлт шагнал олгохгүй");
     centered(line, 318, 26, gold);
+    if (lastReward > 0)
+    {
+        Ui::DrawIcon(Ui::Icon::Reward, { (float)(width - UiMeasure(line, 26)) * 0.5f - 38.0f, 316.0f, 30.0f, 30.0f });
+    }
 
     std::snprintf(line, sizeof(line), "Нийт зоос: %d", progress.coins);
     centered(line, 356, 26, text);
@@ -2490,6 +2829,9 @@ void Game::Draw() const
     {
         mapScreen.Draw(progress);
         DrawCoopMap();
+        // Хувилбар: хөрвүүлсэн огноо, цаг (аль хувилбар ажиллаж байгааг ялгахад)
+        const char* build = "Хувилбар: " __DATE__ " " __TIME__;
+        UiText(build, ViewWidth() - UiMeasure(build, 14) - 12, ViewHeight() - 22, 14, Fade(WHITE, 0.55f));
     }
     else
     {
@@ -2560,6 +2902,8 @@ void Game::ShowRemoteShots(RemoteFigure& figure, uint8_t shots, Vector3 shotEnd)
     for (int i = 0; i < std::min(fresh, 3); ++i)
     {
         tracers.Add(muzzle, shotEnd, (HeldItem)figure.held == HeldItem::Sniper ? RAYWHITE : YELLOW);
+        Audio::Play((HeldItem)figure.held == HeldItem::Sniper ? Sfx::Sniper : (HeldItem)figure.held == HeldItem::Pistol ? Sfx::Pistol
+                    : (HeldItem)figure.held == HeldItem::Shotgun ? Sfx::Shotgun : Sfx::Rifle, muzzle, 0.8f);
     }
     particles.Flash(muzzle, direction);
     figure.recoil = 1.0f;
@@ -3176,14 +3520,15 @@ void Game::UpdateCoopMap()
 Rectangle Game::CoopButtonRect(int row) const
 {
     // Олдсон тоглолтуудын "НЭГДЭХ" (0 нь хүлээж байхад "ЦУЦЛАХ")
-    return { 790.0f, 628.0f + 30.0f * (float)row, 120.0f, 26.0f };
+    return { 790.0f, 634.0f + 30.0f * (float)row, 120.0f, 26.0f };
 }
 
 void Game::DrawCoopMap() const
 {
     if (!net.Available()) return;
-    const Rectangle panel = { 430.0f, 592.0f, 500.0f, 122.0f };
-    Ui::PanelAccent(panel, Ui::kInfo, Ui::kPanelSoft);
+    const Rectangle panel = { 430.0f, 598.0f, 500.0f, 114.0f };
+    Ui::PanelAccent(panel, Ui::kInfo, { 10, 13, 19, 205 });
+    Ui::Outline(panel, { 96, 196, 236, 70 }, 1.0f, 10.0f);
     Ui::TextBold("ХАМТ ТОГЛОХ  (дотоод сүлжээ)", (int)panel.x + 18, (int)panel.y + 8, 15, Ui::kInfo);
     const std::string self = PlayerName();
     Ui::Text(self.c_str(), (int)(panel.x + panel.width) - 16 - Ui::Measure(self.c_str(), 13), (int)panel.y + 10, 13,
@@ -3192,7 +3537,7 @@ void Game::DrawCoopMap() const
     const std::vector<Net::FoundGame>& found = net.Found();
     if (waitingForReply)
     {
-        Ui::Text("Хүсэлт илгээлээ, хариу хүлээж байна...", (int)panel.x + 18, 630, 15, Ui::kText);
+        Ui::Text("Хүсэлт илгээлээ, хариу хүлээж байна...", (int)panel.x + 18, 638, 15, Ui::kText);
         const Rectangle button = CoopButtonRect(0);
         DrawRectangleRounded(button, 0.5f, 6, Fade(Ui::kDanger, 0.8f));
         Ui::TextBold("ЦУЦЛАХ", (int)(button.x + (button.width - (float)Ui::MeasureBold("ЦУЦЛАХ", 13)) / 2.0f), (int)button.y + 5, 13,
@@ -3202,15 +3547,20 @@ void Game::DrawCoopMap() const
     {
         if (found.empty())
         {
+            // Хайж байгааг илтгэх эргэдэг нум
+            const float spin = (float)GetTime() * 300.0f;
+            const Vector2 spinner = { panel.x + 30.0f, 655.0f };
+            DrawRing(spinner, 8.0f, 11.0f, 0.0f, 360.0f, 24, { 255, 255, 255, 30 });
+            DrawRing(spinner, 8.0f, 11.0f, spin, spin + 100.0f, 12, Ui::kInfo);
             const float dots = std::fmod((float)GetTime(), 1.5f);
             Ui::Text(TextFormat("Ойролцоо тоглож буй хүн хайж байна%s", dots < 0.5f ? "." : dots < 1.0f ? ".." : "..."),
-                     (int)panel.x + 18, 630, 15, Ui::kTextDim);
-            Ui::Text("Нөгөө хүн аймгаа эхлүүлсэн, нэг сүлжээнд байх ёстой", (int)panel.x + 18, 654, 13, Ui::kTextDim);
+                     (int)panel.x + 52, 636, 15, Ui::kText);
+            Ui::Text("Нөгөө хүн аймгаа эхлүүлсэн, нэг сүлжээнд байх ёстой", (int)panel.x + 52, 660, 13, Ui::kTextDim);
         }
         for (int i = 0; i < (int)found.size() && i < 2; ++i)
         {
             const Net::FoundGame& game = found[(size_t)i];
-            const int y = 630 + 30 * i;
+            const int y = 636 + 30 * i;
             const char* province = game.province >= 0 && game.province < (int)Provinces().size() ? Provinces()[(size_t)game.province].name : "?";
             Ui::Text(TextFormat("%s  —  %s", game.name.c_str(), province), (int)panel.x + 18, y + 2, 15, Ui::kText);
             const Rectangle button = CoopButtonRect(i);

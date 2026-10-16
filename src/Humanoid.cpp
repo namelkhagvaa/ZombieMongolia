@@ -1077,13 +1077,13 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
     if (longGun)
     {
         // Буу дэлгэцийн баруун доор, гол төмөр нь хараа руу бага зэрэг чиглэнэ (Counter-Strike маягийн).
-        // Жинхэнэ хэмжээгээр (1.1 м) зурвал дэлгэцийг дүүргэнэ: 55% болгож, их бие нь (0.45 м) дэлгэцийн
-        // баруун доор 0.38 м-т байрлана. Бөгс нь дэлгэцийн гадна үлдэнэ.
+        // Жинхэнэ хэмжээгээр (1.1 м) зурвал дэлгэцийг дүүргэнэ: 48% болгож, дэлгэцийн баруун доод хэсэгт
+        // (зэвсгийн үүрнүүд ба мини газрын зургийн хооронд) байрлуулна. Бөгс нь дэлгэцийн гадна үлдэнэ.
         // Онилоход (aim) гол төмөр нь дэлгэцийн төвд, хараан доор ирнэ (x = 0); ар тал нь харааг халхлахгүй
         // байхаар бага зэрэг урагш, доош байрлана.
         const bool launcher = held == HeldItem::Launcher;
-        const float scale = 0.55f;
-        rlTranslatef(Lerp(-0.04f, 0.132f, aim), Lerp(launcher ? -0.31f : -0.365f, launcher ? -0.25f : -0.25f, aim),
+        const float scale = Lerp(0.48f, 0.55f, aim);
+        rlTranslatef(Lerp(-0.11f, 0.132f, aim), Lerp(launcher ? -0.32f : -0.375f, launcher ? -0.25f : -0.25f, aim),
                      Lerp(0.13f, 0.24f, aim) - 0.04f * recoil);
         rlRotatef(3.0f * (1.0f - aim), 0.0f, 1.0f, 0.0f);
         rlScalef(scale, scale, scale);
@@ -1191,9 +1191,9 @@ Vector3 ViewModelMuzzle(const Camera3D& camera, HeldItem held, float aim)
 {
     const Matrix basis = ViewBasis(camera);
     aim = std::clamp(aim, 0.0f, 1.0f);
-    // Бууны амны цэг (-0.24, 0.32, 1.06) нь 55%-ийн хэмжээ ба шилжилтийн дараа; онилоход төв рүү шилжинэ.
-    Vector3 hip = { -0.17f, -0.19f, 0.72f }, sight = { 0.0f, -0.075f, 0.83f }; // автомат, үрлэн буу, дурантай буу
+    // Бууны амны цэг: 48%-ийн хэмжээ ба шилжилтийн дараа (DrawViewModel); онилоход (55%) төв рүү шилжинэ.
+    Vector3 hip = { -0.224f, -0.222f, 0.64f }, sight = { 0.0f, -0.075f, 0.83f }; // автомат, үрлэн буу, дурантай буу
     if (held == HeldItem::Pistol) { hip = { -0.13f, -0.09f, 0.6f }; sight = { 0.0f, -0.04f, 0.54f }; }
-    else if (held == HeldItem::Launcher) { hip = { -0.17f, -0.14f, 0.82f }; sight = { 0.0f, -0.08f, 0.93f }; }
+    else if (held == HeldItem::Launcher) { hip = { -0.223f, -0.172f, 0.69f }; sight = { 0.0f, -0.08f, 0.93f }; }
     return Vector3Transform(Vector3Lerp(hip, sight, aim), basis);
 }

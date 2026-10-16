@@ -35,6 +35,10 @@ public:
     float Night() const { return night; } // 0 = өдөр, 1 = шөнө
 
     void SetWeather(WeatherKind kind);
+    // Аймгийн хуурайшил: 0 = ногоон (хойд ой), 1 = говь
+    void SetDryness(float value);
+    // Алсын уулсын өндөр: 1 = Алтайн цастай нуруу, 0.4 = зүүн талын намхан толгод
+    void SetMountainScale(float scale);
     WeatherKind Weather() const { return weather; }
 
     // Үүл, салхины хөдөлгөөн (frame бүрд).
@@ -61,6 +65,7 @@ public:
 
     // Гаднаас оруулсан ястай загваруудын shader: текстур + жинхэнэ normal-аар гөлгөр гэрэлтүүлэг + манан.
     Shader CharacterShader() const { return characterShader; }
+    Shader VehicleShader() const { return vehicleShader; } // текстуртай унааны загвар
 
     // Хөдөлдөг объектын (унаа) material: mesh-ийг rlgl-ийн одоогийн хувиргалтаар DrawMesh-ээр зурна.
     const Material& PropMaterial() const { return propMaterial; }
@@ -88,6 +93,7 @@ public:
 private:
     Shader shader = {};
     Shader characterShader = {};
+    Shader vehicleShader = {};
     Shader propShader = {};
     Shader terrainShader = {};
     Shader detailShader = {};
@@ -99,10 +105,13 @@ private:
     Material material = {};
     Material propMaterial = {};
     Material terrainMaterial = {};
+    Texture2D terrainTextures[4] = {}; // өвс, өвс+шороо, шороо, хад (assets/terrain)
+    void LoadTerrainTextures();
     Material detailMaterial = {};
     Material depthMaterial = {};
     Mesh mountains = {};
     int offsetLocation = -1;
+    float mountainScale = 0.8f;
 
     // Одоогийн цагийн өнгө (SetTimeOfDay)
     Color skyZenith = { 64, 112, 182, 255 };
@@ -135,4 +144,5 @@ private:
     RenderTexture2D bloomB = {};
     bool sceneActive = false;
     int quality = 2;
+    bool shadersBroken = false; // видео карт эффектийн shader-ийг хүлээж аваагүй: зөвхөн "бага" график
 };

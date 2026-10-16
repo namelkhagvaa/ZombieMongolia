@@ -1,11 +1,54 @@
 #include "Game.h"
 
+#include <cstdarg>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
+
+#if !defined(__ANDROID__)
+namespace
+{
+    // Тоглоомын лог: %LOCALAPPDATA%\ZombieMongolia\log.txt (сүүлийн ажиллуулалт). Өөр компьютер дээр гарсан
+    // асуудлыг (shader, видео карт, гацалт) оношлоход хэрэгтэй. Консол руу ч бичнэ.
+    FILE* logFile = nullptr;
+
+    void LogToFile(int level, const char* text, va_list args)
+    {
+        static const char* const names[] = { "ALL", "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "FATAL", "NONE" };
+        const char* name = level >= 0 && level < 8 ? names[level] : "LOG";
+        va_list copy;
+        va_copy(copy, args);
+        std::printf("%s: ", name);
+        std::vprintf(text, args);
+        std::printf("\n");
+        if (logFile)
+        {
+            std::fprintf(logFile, "%s: ", name);
+            std::vfprintf(logFile, text, copy);
+            std::fprintf(logFile, "\n");
+            std::fflush(logFile);
+        }
+        va_end(copy);
+    }
+
+    void OpenLog()
+    {
+        const char* local = std::getenv("LOCALAPPDATA");
+        if (!local || !*local) return;
+        const std::string path = std::string(local) + "\\ZombieMongolia\\log.txt";
+        logFile = std::fopen(path.c_str(), "w");
+        SetTraceLogCallback(LogToFile);
+    }
+}
+#endif
 
 // Сонголтгүй ажиллуулбал ердийн тоглоом. Сонголтуудыг Game.h-ийн LaunchOptions-оос үз.
 int main(int argc, char** argv)
 {
+#if !defined(__ANDROID__)
+    OpenLog();
+#endif
     LaunchOptions options;
     for (int i = 1; i < argc; ++i)
     {
@@ -140,6 +183,18 @@ int main(int argc, char** argv)
         else if (std::strcmp(argv[i], "--campaign") == 0)
         {
             options.campaignMap = true;
+        }
+        else if (std::strcmp(argv[i], "--drift") == 0 && i + 1 < argc)
+        {
+            options.driftFrame = std::atoi(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--crash-test") == 0 && i + 1 < argc)
+        {
+            options.crashTest = std::atoi(argv[++i]) - 1;
+        }
+        else if (std::strcmp(argv[i], "--ride-heading") == 0 && i + 1 < argc)
+        {
+            options.rideHeading = (float)std::atof(argv[++i]);
         }
         else if (std::strcmp(argv[i], "--graphics") == 0 && i + 1 < argc)
         {

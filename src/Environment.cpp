@@ -10,7 +10,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -32,6 +35,7 @@ uniform vec3 groundLight;
 uniform vec3 fogColor;
 uniform vec3 fogSunColor;
 uniform float fogDensity;
+uniform float fogScale;
 uniform highp sampler2D shadowMap;
 uniform mat4 lightVP;
 uniform float shadowStrength;
@@ -39,6 +43,24 @@ uniform float shadowTexel;
 uniform float shadowBias;
 uniform float snowCover;
 uniform float wetness;
+uniform float dryness;
+uniform float exposure;
+
+// Кино маягийн өнгөний шилжилт (ACES, Narkowicz): тод хэсэг зөөлөн цайрч "шатахгүй", бараан хэсэг гүн.
+// Гэрлийг 1-ээс их болгож болно (хүчтэй нар) - эцсийн өнгө 0..1 хооронд үлдэнэ.
+vec3 Tonemap(vec3 x)
+{
+    x *= exposure;
+    return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+
+// Аймгийн хуурайшил: ногоон өвсийг шаргал, говьд элсэрхэг хүрэн болгоно (газар, өвсөнд).
+vec3 Dry(vec3 albedo)
+{
+    float green = clamp((albedo.g - max(albedo.r, albedo.b)) * 16.0, 0.0, 1.0);
+    vec3 sand = vec3(0.70, 0.62, 0.45) * (0.8 + 0.4 * dot(albedo, vec3(0.33)));
+    return mix(albedo, sand, dryness * green);
+}
 
 float SunShadow(vec3 pos, float ndl)
 {
@@ -85,11 +107,11 @@ vec3 ApplyFog(vec3 color, vec3 pos)
 {
     vec3 ray = pos - viewPos;
     float dist = length(ray);
-    float d = dist * fogDensity;
+    float d = dist * fogDensity * fogScale;
     float fog = 1.0 - exp(-d * d);
     float toward = max(dot(ray / max(dist, 0.001), sunDirection), 0.0);
     vec3 haze = mix(fogColor, fogSunColor, pow(toward, 6.0) * 0.7);
-    return mix(color, haze, fog);
+    return Tonemap(mix(color, haze, fog));
 }
 )";
 
@@ -112,12 +134,65 @@ void main()
     const char* kFragmentShader = R"(in vec3 fragPosition;
 in vec4 fragColor;
 uniform vec4 colDiffuse;
+uniform float surfaceDetail; // 0 = жигд өнгө (хөдөлдөг унаа), 1 = ойрын гадаргуугийн бүтэц
 out vec4 finalColor;
+
+float SurfaceHash(vec2 p)
+{
+    p = fract(p * vec2(127.1, 311.7));
+    p += dot(p, p + 19.19);
+    return fract(p.x * p.y);
+}
+float SurfaceNoise(vec2 p)
+{
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(SurfaceHash(i), SurfaceHash(i + vec2(1.0, 0.0)), u.x),
+               mix(SurfaceHash(i + vec2(0.0, 1.0)), SurfaceHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+// Ойрын гадаргуугийн бүтэц: материалыг өнгө, чиглэлээр нь танина (текстургүй).
+//   асфальт, бетон (саарал, хэвтээ): ширхэг, засварын толбо, хагарал
+//   хана (босоо): дээрээс урссан бохирын судал
+//   бүгд: том, жижиг толбо (өнгө жигд биш)
+vec3 SurfaceDetail(vec3 albedo, vec3 normal, vec3 pos)
+{
+    float dist = distance(viewPos, pos);
+    float near = (1.0 - smoothstep(30.0, 120.0, dist)) * surfaceDetail;
+    if (near <= 0.0) return albedo;
+    vec3 an = abs(normal);
+    vec2 uv = an.y > 0.7 ? pos.xz : (an.x > an.z ? pos.zy : pos.xy);
+    float broad = SurfaceNoise(uv * 0.35);
+    float fine = SurfaceNoise(uv * 3.1);
+    albedo *= 1.0 + near * ((broad - 0.5) * 0.18 + (fine - 0.5) * 0.08);
+
+    float lum = dot(albedo, vec3(0.333));
+    float sat = max(albedo.r, max(albedo.g, albedo.b)) - min(albedo.r, min(albedo.g, albedo.b));
+    float paved = step(0.85, an.y) * (1.0 - smoothstep(0.05, 0.12, sat)) * (1.0 - smoothstep(0.4, 0.55, lum));
+    if (paved > 0.0)
+    {
+        float grainNear = 1.0 - smoothstep(8.0, 22.0, dist); // ширхэг холдоход анивчихгүй
+        float grain = SurfaceHash(floor(uv * 20.0)) - 0.5;
+        float repair = smoothstep(0.64, 0.7, SurfaceNoise(uv * 0.16 + 3.0));
+        float crackLine = 1.0 - smoothstep(0.0, 0.028, abs(SurfaceNoise(uv * 0.55 + 11.0) - 0.5));
+        float crackZone = smoothstep(0.45, 0.75, SurfaceNoise(uv * 0.07 + 5.0));
+        albedo *= 1.0 + paved * near * (grain * 0.14 * grainNear - repair * 0.16 - crackLine * crackZone * 0.32);
+    }
+    if (an.y < 0.3)
+    {
+        float streak = SurfaceNoise(vec2(uv.x * 1.6, uv.y * 0.12 + 4.0));
+        albedo *= 1.0 - near * 0.14 * smoothstep(0.55, 0.9, streak);
+    }
+    return albedo;
+}
+
 void main()
 {
     // Гадаргуугийн чиглэл: хөрш пикселүүдийн байрлалын зөрүүгээс (камер руу харсан тал).
     vec3 normal = normalize(cross(dFdx(fragPosition), dFdy(fragPosition)));
-    vec3 lit = Shade(fragColor.rgb * colDiffuse.rgb, normal, fragPosition);
+    vec3 albedo = SurfaceDetail(fragColor.rgb * colDiffuse.rgb, normal, fragPosition);
+    vec3 lit = Shade(albedo, normal, fragPosition);
     finalColor = vec4(ApplyFog(lit, fragPosition), fragColor.a * colDiffuse.a);
 }
 )";
@@ -127,12 +202,13 @@ void main()
 in vec3 vertexNormal;
 in vec4 vertexColor;
 uniform mat4 mvp;
+uniform vec3 worldOffset;
 out vec3 fragPosition;
 out vec3 fragNormal;
 out vec4 fragColor;
 void main()
 {
-    fragPosition = vertexPosition;
+    fragPosition = vertexPosition + worldOffset; // алсын уулс камерыг дагана
     fragNormal = vertexNormal;
     fragColor = vertexColor;
     gl_Position = mvp * vec4(vertexPosition, 1.0);
@@ -144,9 +220,80 @@ in vec3 fragNormal;
 in vec4 fragColor;
 uniform vec4 colDiffuse;
 out vec4 finalColor;
+
+float TerrainHash(vec2 p)
+{
+    p = fract(p * vec2(127.1, 311.7));
+    p += dot(p, p + 19.19);
+    return fract(p.x * p.y);
+}
+float TerrainNoise(vec2 p)
+{
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(TerrainHash(i), TerrainHash(i + vec2(1.0, 0.0)), u.x),
+               mix(TerrainHash(i + vec2(0.0, 1.0)), TerrainHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+// Газрын бодит текстурууд (assets/terrain, CC0): өвс, өвс+шороо, хуурай шороо, хад.
+// Текстурын өнгийг шууд биш, "дундажтайгаа харьцуулсан нарийн бүтэц" болгон оройн өнгөнд үржүүлнэ:
+// аймгийн өнгө (хуурайшил, говь) хэвээр, бодит ширхэг, толбо, өнгөний хэлбэлзэл нэмэгдэнэ.
+uniform sampler2D texture0; // өвс
+uniform sampler2D texture1; // өвс + шороо
+uniform sampler2D texture2; // хуурай шороо
+uniform sampler2D texture3; // хад
+uniform float terrainTextures; // 0 = текстургүй (файл олдоогүй)
+uniform vec3 terrainMean[4];   // текстур бүрийн дундаж өнгө (ачаалахдаа нэг удаа тооцно)
+
+vec3 TerrainDetail(sampler2D t, vec2 uv, vec3 mean)
+{
+    return texture(t, uv).rgb / max(mean, vec3(0.04));
+}
+
 void main()
 {
-    vec3 lit = Shade(fragColor.rgb * colDiffuse.rgb, normalize(fragNormal), fragPosition);
+    vec3 albedo = fragColor.rgb * colDiffuse.rgb;
+    vec3 normal = normalize(fragNormal);
+    float dist = distance(viewPos, fragPosition);
+    vec2 p = fragPosition.xz;
+    if (terrainTextures > 0.5)
+    {
+        // Ногоон өнгөтэй газар өвс, бусад нь шороо; эгц налуу хад
+        float green = clamp((albedo.g - max(albedo.r, albedo.b)) * 9.0 + 0.15, 0.0, 1.0);
+        float blotch = TerrainNoise(p * 0.045 + 3.0);
+        vec3 grass = mix(TerrainDetail(texture0, p * 0.33, terrainMean[0]), TerrainDetail(texture1, p * 0.11, terrainMean[1]),
+                         smoothstep(0.38, 0.72, blotch));
+        vec3 detail = mix(TerrainDetail(texture2, p * 0.21, terrainMean[2]), grass, green);
+        float steep = smoothstep(0.86, 0.62, normal.y);
+        if (steep > 0.0)
+        {
+            vec2 side = abs(normal.x) > abs(normal.z) ? fragPosition.zy : fragPosition.xy;
+            detail = mix(detail, TerrainDetail(texture3, side * 0.12, terrainMean[3]), steep);
+            albedo = mix(albedo, vec3(0.42, 0.40, 0.37), steep * 0.55);
+        }
+        // Бүтцийг тодруулна (зургийн дундаж өнгөнөөс зөрүүг 1.6 дахин)
+        detail = max(mix(vec3(1.0), detail, 1.6), vec3(0.2));
+        // Том хэмжээний толбо: текстурын давталт харагдахгүй; ногоон ба шаргал хэсгүүд ээлжилнэ
+        float macro = TerrainNoise(p * 0.018 + 11.0);
+        detail *= 0.8 + 0.4 * macro;
+        detail *= mix(vec3(1.06, 1.0, 0.82), vec3(0.94, 1.03, 1.02), TerrainNoise(p * 0.009 - 4.0));
+        // Холдох тусам бүтэц зөөлөрнө (анивчихгүй, уулс жигд)
+        albedo *= mix(detail, vec3(1.0), smoothstep(160.0, 700.0, dist) * 0.7);
+    }
+    else
+    {
+        // Ойрын газрын нарийн бүтэц (өвсний толбо, хөрс): холдох тусам арилна (анивчихгүй)
+        float near = 1.0 - smoothstep(40.0, 180.0, dist);
+        if (near > 0.0)
+        {
+            float n = TerrainNoise(p * 0.45) * 0.55 + TerrainNoise(p * 2.3) * 0.45;
+            float blotch = TerrainNoise(p * 0.11 + 7.0);
+            albedo *= 1.0 + near * ((n - 0.5) * 0.24);
+            albedo = mix(albedo, albedo * vec3(1.08, 1.02, 0.86), near * smoothstep(0.55, 0.8, blotch) * 0.6);
+        }
+    }
+    vec3 lit = Shade(Dry(albedo), normal, fragPosition);
     finalColor = vec4(ApplyFog(lit, fragPosition), 1.0);
 }
 )";
@@ -182,7 +329,7 @@ void main()
     // Нимгэн ир: хавтгай normal-ыг дээш чиглэлтэй хольж, нарны эсрэг тал нь хэт харлахгүй.
     vec3 faceNormal = normalize(cross(dFdx(fragPosition), dFdy(fragPosition)));
     vec3 normal = normalize(mix(faceNormal, vec3(0.0, 1.0, 0.0), 0.6));
-    vec3 lit = Shade(fragColor.rgb * colDiffuse.rgb, normal, fragPosition);
+    vec3 lit = Shade(Dry(fragColor.rgb * colDiffuse.rgb), normal, fragPosition);
     finalColor = vec4(ApplyFog(lit, fragPosition), 1.0);
 }
 )";
@@ -250,6 +397,45 @@ void main()
 }
 )";
 
+    // Текстуртай унааны загвар (assets/cars, Tripo3D): ястай биш, оройн normal ба uv-тэй.
+    const char* kVehicleVertexShader = R"(in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec3 vertexNormal;
+uniform mat4 mvp;
+uniform mat4 matModel;
+out vec3 fragPosition;
+out vec2 fragTexCoord;
+out vec3 fragNormal;
+void main()
+{
+    fragPosition = vec3(matModel * vec4(vertexPosition, 1.0));
+    fragTexCoord = vertexTexCoord;
+    fragNormal = mat3(matModel) * vertexNormal;
+    gl_Position = mvp * vec4(vertexPosition, 1.0);
+}
+)";
+
+    const char* kVehicleFragmentShader = R"(in vec3 fragPosition;
+in vec2 fragTexCoord;
+in vec3 fragNormal;
+uniform sampler2D texture0;
+uniform vec4 colDiffuse;
+out vec4 finalColor;
+void main()
+{
+    vec3 normal = normalize(fragNormal);
+    if (!gl_FrontFacing) normal = -normal;
+    vec3 albedo = texture(texture0, fragTexCoord).rgb * colDiffuse.rgb;
+    vec3 lit = Shade(albedo, normal, fragPosition);
+    // Будагны гялбаа: нарны тусгал (сүүдэрт бүдэгрэнэ)
+    vec3 view = normalize(viewPos - fragPosition);
+    float ndl = max(dot(normal, sunDirection), 0.0);
+    float spec = pow(max(dot(reflect(-sunDirection, normal), view), 0.0), 40.0) * ndl;
+    lit += sunLight * spec * 0.45 * SunShadow(fragPosition, ndl);
+    finalColor = vec4(ApplyFog(lit, fragPosition), 1.0);
+}
+)";
+
     // Сүүдрийн зураг: зөвхөн гүн
     const char* kDepthVertexShader = R"(in vec3 vertexPosition;
 uniform mat4 mvp;
@@ -294,7 +480,14 @@ uniform float night;
 uniform float time;
 uniform float cloudCover;
 uniform vec2 wind;
+uniform float exposure;
 out vec4 finalColor;
+
+vec3 Tonemap(vec3 x)
+{
+    x *= exposure;
+    return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
 
 float Hash(vec2 p)
 {
@@ -348,7 +541,7 @@ void main()
         c *= smoothstep(0.0, 0.16, e);
         sky = mix(sky, cloud, c * 0.94);
     }
-    finalColor = vec4(sky, 1.0);
+    finalColor = vec4(Tonemap(sky), 1.0);
 }
 )";
 
@@ -370,7 +563,7 @@ void main()
     float luma = dot(color, vec3(0.299, 0.587, 0.114));
     color = mix(vec3(luma), color, saturation) * tint;
     vec2 d = fragTexCoord - 0.5;
-    color *= mix(1.0 - vignette, 1.0, smoothstep(0.75, 0.2, length(d) * 1.15));
+    color *= mix(1.0 - vignette, 1.0, 1.0 - smoothstep(0.2, 0.75, length(d) * 1.15));
     finalColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }
 )";
@@ -382,7 +575,7 @@ void main()
 {
     vec3 color = texture(texture0, fragTexCoord).rgb;
     float luma = dot(color, vec3(0.299, 0.587, 0.114));
-    finalColor = vec4(color * smoothstep(0.68, 0.95, luma), 1.0);
+    finalColor = vec4(color * smoothstep(0.84, 1.0, luma), 1.0);
 }
 )";
 
@@ -453,58 +646,87 @@ void main()
         if (location >= 0) SetShaderValue(shader, location, &value, SHADER_UNIFORM_INT);
     }
 
-    // Талбарыг тойрсон low-poly уулсын цагираг.
-    Mesh BuildMountains()
+    // Алсын уулс: камерыг дагадаг туйлын торон гадаргуу (оройн normal-тай, гөлгөр гэрэлтэнэ).
+    // Ойрын цагираг газрын доор (харагдахгүй), холдох тусам нуруу, хөндий, цастай оргилууд.
+    Mesh BuildMountains(float scale)
     {
-        const int segments = 72;
-        const Color foothill = { 120, 118, 96, 255 };
-        const Color rock = { 104, 110, 124, 255 };
-        const Color snow = { 230, 234, 240, 255 };
+        const int segments = 256;
+        const float radii[] = { 740.0f, 800.0f, 870.0f, 950.0f, 1040.0f, 1140.0f, 1250.0f, 1370.0f, 1500.0f, 1640.0f, 1800.0f };
+        const int rings = (int)(sizeof(radii) / sizeof(radii[0]));
 
-        MeshBuilder builder;
-        Rng rng(4242u);
-
-        // Гурван цагираг: бэл, дунд нуруу, оргилууд. Өндрийг өнцгөөр нь noise-оос авна (эхлэл төгсгөл нь нийлнэ).
-        auto ringPoint = [&](int index, int ring) {
-            const float angle = 2.0f * PI * (float)(index % segments) / (float)segments;
+        auto heightAt = [&](float angle, float r) {
             const float nx = std::cos(angle), nz = std::sin(angle);
-            const float ridge = Fbm(nx * 3.0f + 20.0f, nz * 3.0f + 20.0f, 3);
-            const float jag = ValueNoise(nx * 11.0f + 5.0f, nz * 11.0f + 5.0f);
-
-            // Газрыг 680 м хүртэл зурдаг; уулсын цагираг камерыг дагаж, үргэлж түүний цаана байна.
-            float radius = 770.0f, height = -15.0f;
-            if (ring == 1)
+            const float t = (r - radii[0]) / (radii[rings - 1] - radii[0]);
+            // Нурууны хэлбэр: "ridged" fbm (хурц нуруу, зөөлөн хөндий)
+            float ridge = 0.0f, amplitude = 0.55f, frequency = 0.0021f, weight = 1.0f;
+            for (int octave = 0; octave < 5; ++octave)
             {
-                radius = 900.0f + jag * 60.0f;
-                height = 40.0f + ridge * 85.0f + jag * 30.0f;
+                float n = ValueNoise(nx * r * frequency + 31.0f * (float)octave, nz * r * frequency + 17.0f);
+                n = 1.0f - std::fabs(n * 2.0f - 1.0f);
+                n *= n * weight;
+                weight = std::clamp(n * 1.6f, 0.0f, 1.0f);
+                ridge += n * amplitude;
+                amplitude *= 0.5f;
+                frequency *= 2.1f;
             }
-            else if (ring == 2)
-            {
-                radius = 1120.0f + jag * 80.0f;
-                height = 65.0f + ridge * ridge * 270.0f + jag * 85.0f;
-            }
-            return Vector3{ nx * radius, height, nz * radius };
-        };
-        auto faceColor = [&](Vector3 a, Vector3 b, Vector3 c) {
-            const float height = (a.y + b.y + c.y) / 3.0f;
-            Color color = MixColor(foothill, rock, SmoothStep(30.0f, 115.0f, height));
-            color = MixColor(color, snow, SmoothStep(180.0f, 255.0f, height));
-            return JitterColor(color, rng, 0.07f);
+            // Том хэмжээний өндөрлөг: зарим зүгт өндөр нуруу, заримд нь намхан толгод
+            const float massif = Fbm(nx * 1.6f + 40.0f, nz * 1.6f + 40.0f, 3);
+            const float envelope = SmoothStep(0.0f, 0.3f, t) * (0.45f + 0.55f * t);
+            return -25.0f + envelope * (60.0f + (170.0f + 560.0f * massif * massif) * ridge) * scale;
         };
 
-        for (int i = 0; i < segments; ++i)
+        std::vector<Vector3> points((size_t)rings * segments);
+        for (int ring = 0; ring < rings; ++ring)
         {
-            for (int ring = 0; ring < 2; ++ring)
+            for (int s = 0; s < segments; ++s)
             {
-                const Vector3 a = ringPoint(i, ring);
-                const Vector3 b = ringPoint(i + 1, ring);
-                const Vector3 c = ringPoint(i, ring + 1);
-                const Vector3 d = ringPoint(i + 1, ring + 1);
-                builder.Triangle(a, b, c, faceColor(a, b, c));
-                builder.Triangle(b, d, c, faceColor(b, d, c));
+                const float angle = 2.0f * PI * (float)s / (float)segments;
+                const float r = radii[ring];
+                points[(size_t)ring * segments + s] = { std::cos(angle) * r, heightAt(angle, r), std::sin(angle) * r };
             }
         }
-        return builder.Upload();
+        auto P = [&](int ring, int s) { return points[(size_t)std::clamp(ring, 0, rings - 1) * segments + (size_t)((s + segments) % segments)]; };
+
+        const Vector3 grassLow = { 0.43f, 0.47f, 0.30f }, ochre = { 0.55f, 0.49f, 0.36f };
+        const Vector3 rock = { 0.42f, 0.40f, 0.38f }, rockDark = { 0.30f, 0.30f, 0.31f }, snow = { 0.92f, 0.93f, 0.96f };
+        std::vector<float> positions, normals;
+        std::vector<unsigned char> colors;
+        auto vertex = [&](int ring, int s) {
+            const Vector3 p = P(ring, s);
+            Vector3 n = Vector3Normalize(Vector3CrossProduct(Vector3Subtract(P(ring + 1, s), P(ring - 1, s)),
+                                                             Vector3Subtract(P(ring, s + 1), P(ring, s - 1))));
+            if (n.y < 0.0f) n = Vector3Negate(n);
+            const float h = p.y;
+            const float steep = 1.0f - n.y;
+            const float streak = ValueNoise((float)s * 0.35f, (float)ring * 1.7f); // хадны судал, цасны хэлтэрхий
+            Vector3 c = Vector3Lerp(grassLow, ochre, SmoothStep(10.0f, 90.0f, h) * 0.8f);
+            c = Vector3Lerp(c, Vector3Lerp(rock, rockDark, streak), SmoothStep(0.25f, 0.55f, steep) * 0.85f + SmoothStep(110.0f, 200.0f, h) * 0.5f);
+            const float snowLine = 190.0f + streak * 60.0f;
+            c = Vector3Lerp(c, snow, SmoothStep(snowLine, snowLine + 50.0f, h) * SmoothStep(0.7f, 0.35f, steep));
+            positions.insert(positions.end(), { p.x, p.y, p.z });
+            normals.insert(normals.end(), { n.x, n.y, n.z });
+            colors.insert(colors.end(), { (unsigned char)(c.x * 255.0f), (unsigned char)(c.y * 255.0f), (unsigned char)(c.z * 255.0f), 255 });
+        };
+        for (int ring = 0; ring + 1 < rings; ++ring)
+        {
+            for (int s = 0; s < segments; ++s)
+            {
+                vertex(ring, s); vertex(ring + 1, s); vertex(ring, s + 1);
+                vertex(ring, s + 1); vertex(ring + 1, s); vertex(ring + 1, s + 1);
+            }
+        }
+
+        Mesh mesh = {};
+        mesh.vertexCount = (int)(positions.size() / 3);
+        mesh.triangleCount = mesh.vertexCount / 3;
+        mesh.vertices = (float*)MemAlloc((unsigned int)(positions.size() * sizeof(float)));
+        mesh.normals = (float*)MemAlloc((unsigned int)(normals.size() * sizeof(float)));
+        mesh.colors = (unsigned char*)MemAlloc((unsigned int)colors.size());
+        std::memcpy(mesh.vertices, positions.data(), positions.size() * sizeof(float));
+        std::memcpy(mesh.normals, normals.data(), normals.size() * sizeof(float));
+        std::memcpy(mesh.colors, colors.data(), colors.size());
+        UploadMesh(&mesh, false);
+        return mesh;
     }
 
     RenderTexture2D LoadShadowTarget(int size)
@@ -567,9 +789,11 @@ Environment::Environment()
 
     terrainShader = LoadVersionedShader(kTerrainVertexShader, kTerrainFragmentShader);
     terrainMaterial = MaterialWith(terrainShader);
+    LoadTerrainTextures();
     detailShader = LoadVersionedShader(kDetailVertexShader, kDetailFragmentShader);
     detailMaterial = MaterialWith(detailShader);
     characterShader = LoadVersionedShader(kCharacterVertexShader, kCharacterFragmentShader);
+    vehicleShader = LoadVersionedShader(kVehicleVertexShader, kVehicleFragmentShader);
     propShader = LoadVersionedShader(kPropVertexShader, kFragmentShader);
     propMaterial = MaterialWith(propShader);
     depthShader = LoadVersionedShader(kDepthVertexShader, kDepthFragmentShader, false);
@@ -579,34 +803,122 @@ Environment::Environment()
     brightShader = LoadVersionedShader(kScreenVertexShader, kBrightFragmentShader, false);
     blurShader = LoadVersionedShader(kScreenVertexShader, kBlurFragmentShader, false);
 
-    for (Shader s : { shader, terrainShader, detailShader, characterShader, propShader })
+    // Зарим видео картын драйвер shader-ийг хүлээж авахгүй байж болно: тэр тохиолдолд энгийн гэрэлтүүлэгтэй
+    // үндсэн shader-ээр орлуулж, сүүдэр, дэлгэцийн эффектийг унтраана (тоглоом гацахгүй, унахгүй).
+    auto failed = [](Shader s) { return s.id == 0 || s.id == rlGetShaderIdDefault(); };
+    if (!failed(shader))
+    {
+        if (failed(terrainShader)) { TraceLog(LOG_WARNING, "ENVIRONMENT: terrain shader failed, fallback"); terrainShader = shader; terrainMaterial.shader = shader; }
+        if (failed(detailShader)) { TraceLog(LOG_WARNING, "ENVIRONMENT: detail shader failed, fallback"); detailShader = shader; detailMaterial.shader = shader; }
+        if (failed(propShader)) { TraceLog(LOG_WARNING, "ENVIRONMENT: prop shader failed, fallback"); propShader = shader; propMaterial.shader = shader; }
+    }
+    shadersBroken = failed(shader) || failed(depthShader) || failed(postShader) || failed(skyShader) || failed(brightShader) ||
+                    failed(blurShader);
+    if (shadersBroken) TraceLog(LOG_WARNING, "ENVIRONMENT: effect shaders failed, shadows and post-processing disabled");
+
+    for (Shader s : { shader, terrainShader, detailShader, characterShader, propShader, vehicleShader })
     {
         SetVec3(s, "sunDirection", Vector3Normalize(kSunDirection));
         SetInt(s, "shadowMap", kShadowSlot);
         SetFloat(s, "shadowStrength", 0.0f);
+        SetFloat(s, "fogScale", 1.0f);
     }
     SetVec3(skyShader, "sunDirection", Vector3Normalize(kSunDirection));
     SetVec3(skyShader, "sunCore", ToVector(kSunCore));
+    // Гадаргуугийн бүтэц: зөвхөн хөдөлдөггүй геометрт (унаанд хэв нь гулсаж харагдана)
+    SetFloat(shader, "surfaceDetail", 1.0f);
+    if (propShader.id != shader.id) SetFloat(propShader, "surfaceDetail", 0.0f);
 
     shadowSize = kShadowMapSize;
     shadowRadius = kShadowRadius;
     shadowMap = LoadShadowTarget(shadowSize);
 
-    mountains = BuildMountains();
+    mountains = BuildMountains(mountainScale);
     SetTimeOfDay(0.3f);
+}
+
+// Газрын текстурууд: материалын 0..3-р map-д (raylib DrawMesh нь texture0..3-т холбоно).
+void Environment::LoadTerrainTextures()
+{
+    const char* names[4] = { "grass.png", "grass_dirt.png", "dirt.png", "rock.png" };
+#if defined(__ANDROID__)
+    const std::string folder = "terrain/";
+#else
+    std::string folder = "assets/terrain/";
+    const std::string application = GetApplicationDirectory();
+    for (const std::string& candidate : { std::string("assets/terrain/"), application + "assets/terrain/", application + "../assets/terrain/" })
+    {
+        if (DirectoryExists(candidate.c_str())) { folder = candidate; break; }
+    }
+#endif
+    const int slots[4] = { SHADER_LOC_MAP_ALBEDO, SHADER_LOC_MAP_METALNESS, SHADER_LOC_MAP_NORMAL, SHADER_LOC_MAP_ROUGHNESS };
+    const char* uniforms[4] = { "texture0", "texture1", "texture2", "texture3" };
+    int loaded = 0;
+    Vector3 means[4] = {};
+    for (int i = 0; i < 4; ++i)
+    {
+        const std::string path = folder + names[i];
+#if !defined(__ANDROID__)
+        if (!FileExists(path.c_str())) continue;
+#endif
+        Image image = LoadImage(path.c_str());
+        if (image.data == nullptr) continue;
+        // Дундаж өнгө: shader-т нарийн бүтцийг (дундажтай харьцуулсан) гаргахад
+        ImageFormat(&image, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        const Color* pixels = (const Color*)image.data;
+        double sum[3] = { 0.0, 0.0, 0.0 };
+        const int count = image.width * image.height;
+        for (int k = 0; k < count; ++k)
+        {
+            sum[0] += pixels[k].r;
+            sum[1] += pixels[k].g;
+            sum[2] += pixels[k].b;
+        }
+        means[i] = { (float)(sum[0] / count / 255.0), (float)(sum[1] / count / 255.0), (float)(sum[2] / count / 255.0) };
+        Texture2D texture = LoadTextureFromImage(image);
+        UnloadImage(image);
+        if (texture.id == 0) continue;
+        GenTextureMipmaps(&texture);
+        SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
+        SetTextureFilter(texture, TEXTURE_FILTER_ANISOTROPIC_8X); // налуу өнцгөөс харахад бүрэлзэхгүй
+        SetTextureWrap(texture, TEXTURE_WRAP_REPEAT);
+        terrainTextures[i] = texture;
+        terrainMaterial.maps[i].texture = texture;
+        terrainShader.locs[slots[i]] = GetShaderLocation(terrainShader, uniforms[i]);
+        ++loaded;
+    }
+    terrainMaterial.shader = terrainShader;
+    SetFloat(terrainShader, "terrainTextures", loaded == 4 ? 1.0f : 0.0f);
+    const int meanLocation = GetShaderLocation(terrainShader, "terrainMean");
+    if (meanLocation >= 0) SetShaderValueV(terrainShader, meanLocation, means, SHADER_UNIFORM_VEC3, 4);
+    TraceLog(LOG_INFO, "ENVIRONMENT: %d of 4 terrain textures loaded", loaded);
 }
 
 Environment::~Environment()
 {
-    UnloadBuiltMesh(mountains);
-    UnloadMaterial(material); // shader-ийг мөн чөлөөлнө
-    UnloadMaterial(terrainMaterial);
-    UnloadMaterial(detailMaterial);
-    UnloadMaterial(propMaterial);
-    UnloadMaterial(depthMaterial);
-    for (Shader s : { characterShader, skyShader, postShader, brightShader, blurShader })
+    for (Texture2D& texture : terrainTextures)
     {
-        if (s.id != 0 && s.id != rlGetShaderIdDefault()) UnloadShader(s);
+        if (texture.id != 0) UnloadTexture(texture);
+        texture = {};
+    }
+    UnloadBuiltMesh(mountains);
+    // Material-ууд shader-ээ хуваалцаж болох тул (орлуулсан үед) shader бүрийг нэг л удаа чөлөөлнө.
+    for (Material* m : { &material, &terrainMaterial, &detailMaterial, &propMaterial, &depthMaterial })
+    {
+        RL_FREE(m->maps);
+        m->maps = nullptr;
+    }
+    unsigned int released[16] = {};
+    int count = 0;
+    for (Shader s : { shader, terrainShader, detailShader, propShader, depthShader, characterShader, vehicleShader, skyShader, postShader,
+                      brightShader, blurShader })
+    {
+        if (s.id == 0 || s.id == rlGetShaderIdDefault()) continue;
+        bool done = false;
+        for (int i = 0; i < count; ++i) done = done || released[i] == s.id;
+        if (done) continue;
+        released[count++] = s.id;
+        UnloadShader(s);
     }
     UnloadShadowTarget(shadowMap);
     if (scene.id) UnloadRenderTexture(scene);
@@ -630,6 +942,7 @@ namespace
 void Environment::SetQuality(int level)
 {
     quality = std::clamp(level, 0, 2);
+    if (shadersBroken) quality = 0;
     shadowsEnabled = quality >= 1;
     postEnabled = quality >= 1;
     bloomEnabled = quality >= 2;
@@ -641,6 +954,19 @@ void Environment::SetQuality(int level)
         bloomB = {};
     }
     SetFloat(postShader, "bloomStrength", bloomEnabled ? 0.55f : 0.0f);
+}
+
+void Environment::SetMountainScale(float scale)
+{
+    if (std::fabs(scale - mountainScale) < 0.01f && mountains.vertexCount > 0) return;
+    mountainScale = scale;
+    UnloadBuiltMesh(mountains);
+    mountains = BuildMountains(scale);
+}
+
+void Environment::SetDryness(float value)
+{
+    for (Shader s : { terrainShader, detailShader }) SetFloat(s, "dryness", std::clamp(value, 0.0f, 1.0f));
 }
 
 void Environment::SetWeather(WeatherKind kind)
@@ -675,15 +1001,19 @@ void Environment::SetTimeOfDay(float t)
     golden = std::max(bump(0.61f, 0.07f), bump(0.955f, 0.05f));
 
     // --- Өдөр / үдэш / шөнийн өнгө ---
-    Vector3 zenith = Mix3(Mix3({ 0.20f, 0.41f, 0.70f }, { 0.27f, 0.32f, 0.55f }, golden), { 0.02f, 0.04f, 0.10f }, night);
-    Vector3 horizon = Mix3(Mix3({ 0.73f, 0.81f, 0.87f }, { 0.91f, 0.63f, 0.43f }, golden), { 0.10f, 0.13f, 0.20f }, night);
-    Vector3 haze = Mix3(Mix3({ 1.0f, 0.90f, 0.74f }, { 1.0f, 0.60f, 0.34f }, golden), { 0.12f, 0.15f, 0.24f }, night);
-    Vector3 sun = Mix3(Mix3({ 0.93f, 0.86f, 0.74f }, { 0.95f, 0.58f, 0.36f }, golden), { 0.13f, 0.17f, 0.28f }, night);
-    Vector3 ambient = Mix3(Mix3({ 0.40f, 0.47f, 0.58f }, { 0.40f, 0.36f, 0.43f }, golden), { 0.17f, 0.20f, 0.31f }, night);
-    Vector3 ground = Mix3(Mix3({ 0.32f, 0.29f, 0.23f }, { 0.32f, 0.24f, 0.19f }, golden), { 0.07f, 0.07f, 0.09f }, night);
+    // Гэрэл нь HDR (1-ээс их байж болно): эцэст нь Tonemap шахна. Нар дулаан, хүчтэй; сүүдэр (тэнгэрийн
+    // орчны гэрэл) хүйтэн хөхөвтөр - бодит зураг шиг дулаан/хүйтний ялгаа.
+    Vector3 zenith = Mix3(Mix3({ 0.16f, 0.36f, 0.72f }, { 0.20f, 0.27f, 0.52f }, golden), { 0.02f, 0.04f, 0.10f }, night);
+    Vector3 horizon = Mix3(Mix3({ 0.66f, 0.76f, 0.88f }, { 1.05f, 0.62f, 0.38f }, golden), { 0.10f, 0.13f, 0.20f }, night);
+    Vector3 haze = Mix3(Mix3({ 1.15f, 0.98f, 0.76f }, { 1.35f, 0.70f, 0.32f }, golden), { 0.12f, 0.15f, 0.24f }, night);
+    Vector3 sun = Mix3(Mix3({ 1.38f, 1.24f, 1.02f }, { 1.55f, 0.86f, 0.46f }, golden), { 0.13f, 0.17f, 0.28f }, night);
+    Vector3 ambient = Mix3(Mix3({ 0.32f, 0.42f, 0.60f }, { 0.28f, 0.31f, 0.48f }, golden), { 0.17f, 0.20f, 0.31f }, night);
+    Vector3 ground = Mix3(Mix3({ 0.30f, 0.26f, 0.18f }, { 0.34f, 0.22f, 0.14f }, golden), { 0.07f, 0.07f, 0.09f }, night);
     Vector3 cloudLit = Mix3(Mix3({ 0.98f, 0.98f, 1.0f }, { 1.0f, 0.76f, 0.58f }, golden), { 0.16f, 0.18f, 0.25f }, night);
     Vector3 cloudDark = Mix3(Mix3({ 0.64f, 0.68f, 0.76f }, { 0.50f, 0.40f, 0.46f }, golden), { 0.07f, 0.08f, 0.12f }, night);
     float fogDensity = kFogDensity * (1.0f + 0.8f * night);
+    // Өнгөний шилжилтийн гэрэлтүүлэг: шөнө бага зэрэг өндөр (харанхуйд ч харагдахуйц)
+    const float exposure = 0.64f + 0.5f * night;
     float shadowStrength = 0.72f * (1.0f - night) * (1.0f - golden * 0.3f);
 
     // --- Цаг агаар ---
@@ -738,7 +1068,7 @@ void Environment::SetTimeOfDay(float t)
     skyHorizon = ToColor(horizon);
     sunHaze = haze;
 
-    for (Shader s : { shader, terrainShader, detailShader, characterShader, propShader })
+    for (Shader s : { shader, terrainShader, detailShader, characterShader, propShader, vehicleShader })
     {
         if (s.id == 0) continue;
         SetVec3(s, "sunLight", sun);
@@ -747,7 +1077,9 @@ void Environment::SetTimeOfDay(float t)
         SetVec3(s, "fogColor", horizon);
         SetVec3(s, "fogSunColor", haze);
         SetFloat(s, "fogDensity", fogDensity);
+        SetFloat(s, "exposure", exposure);
     }
+    SetFloat(skyShader, "exposure", exposure);
     SetVec3(skyShader, "zenith", zenith);
     SetVec3(skyShader, "horizon", horizon);
     SetVec3(skyShader, "fogSunColor", haze);
@@ -764,10 +1096,10 @@ void Environment::SetTimeOfDay(float t)
 
     // Дэлгэцийн өнгө: өдөр тод, үдэш дулаан, шөнө хөхөвтөр бүдэг
     const float wet = weather == WeatherKind::Rain || weather == WeatherKind::Snow ? 1.0f : 0.0f;
-    const float saturation = (1.04f + golden * 0.08f) * (1.0f - night * 0.3f) * (1.0f - wet * 0.15f);
+    const float saturation = (1.1f + golden * 0.06f) * (1.0f - night * 0.3f) * (1.0f - wet * 0.15f);
     const Vector3 tint = Mix3(Mix3({ 1.02f, 1.0f, 0.97f }, { 1.06f, 0.98f, 0.9f }, golden), { 0.88f, 0.94f, 1.1f }, night);
     SetFloat(postShader, "saturation", saturation);
-    SetFloat(postShader, "contrast", 1.06f);
+    SetFloat(postShader, "contrast", 1.02f); // тодролыг Tonemap өгнө
     SetVec3(postShader, "tint", tint);
     SetFloat(postShader, "vignette", 0.28f + night * 0.12f);
     SetFloat(postShader, "bloomStrength", bloomEnabled ? 0.55f : 0.0f);
@@ -852,7 +1184,7 @@ void Environment::Begin(const Camera3D& camera) const
     const float texel = 1.0f / (float)std::max(1, shadowSize);
     // Ортографын гүн шугаман: near..far (Game: rlSetClipPlanes) → 0..1. ~15 см-ийн хазайлт.
     const float bias = 0.15f / (float)(rlGetCullDistanceFar() - rlGetCullDistanceNear());
-    for (Shader s : { shader, terrainShader, detailShader, characterShader, propShader })
+    for (Shader s : { shader, terrainShader, detailShader, characterShader, propShader, vehicleShader })
     {
         if (s.id == 0) continue;
         SetVec3(s, "viewPos", camera.position);
@@ -889,13 +1221,15 @@ void Environment::DrawMountains(Vector3 viewPosition) const
     const Vector3 none = { 0.0f, 0.0f, 0.0f };
 
     rlDrawRenderBatchActive(); // өмнөх зураглал хуучин offset-оор дуусна
-    if (offsetLocation >= 0) SetShaderValue(shader, offsetLocation, &offset, SHADER_UNIFORM_VEC3);
+    SetVec3(terrainShader, "worldOffset", offset);
+    SetFloat(terrainShader, "fogScale", 0.52f); // алсын уулсын хэлбэр мананд бүрэн уусахгүй
 
     rlDisableBackfaceCulling();
-    DrawMesh(mountains, material, MatrixTranslate(offset.x, 0.0f, offset.z));
+    DrawMesh(mountains, terrainMaterial, MatrixTranslate(offset.x, 0.0f, offset.z));
     rlEnableBackfaceCulling();
 
-    if (offsetLocation >= 0) SetShaderValue(shader, offsetLocation, &none, SHADER_UNIFORM_VEC3);
+    SetVec3(terrainShader, "worldOffset", none);
+    SetFloat(terrainShader, "fogScale", 1.0f);
 }
 
 // ---------------------------------------------------------------- Сүүдэр
@@ -939,7 +1273,7 @@ bool Environment::BeginShadowPass(Vector3 center)
     ClearBackground(WHITE);
     BeginMode3D(light);
     lightViewProj = MatrixMultiply(rlGetMatrixModelview(), rlGetMatrixProjection());
-    for (Shader s : { shader, terrainShader, detailShader, characterShader, propShader })
+    for (Shader s : { shader, terrainShader, detailShader, characterShader, propShader, vehicleShader })
     {
         SetFloat(s, "shadowStrength", 0.0f);
     }

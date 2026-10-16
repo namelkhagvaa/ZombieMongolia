@@ -177,6 +177,9 @@ namespace
             const Vector2 p = view.ToScreen(vehicle.position.x, vehicle.position.z);
             if (p.x < left + 4.0f || p.x > right - 4.0f || p.y < top + 4.0f || p.y > bottom - 4.0f) continue;
 
+            const float icon = 15.0f * markerScale;
+            const Ui::Icon picture = vehicle.type == VehicleType::Horse ? Ui::Icon::MapHorse : Ui::Icon::MapVehicle;
+            if (Ui::DrawIcon(picture, { p.x - icon * 0.5f, p.y - icon * 0.5f, icon, icon })) continue;
             const float size = 6.0f * markerScale;
             DrawRectangleV({ p.x - size * 0.5f - 1.0f, p.y - size * 0.5f - 1.0f }, { size + 2.0f, size + 2.0f }, BLACK);
             DrawRectangleV({ p.x - size * 0.5f, p.y - size * 0.5f }, { size, size }, kVehicle);
@@ -198,6 +201,9 @@ namespace
             {
                 p = { center.x + dx / overflow, center.y + dy / overflow };
             }
+            const float icon = 16.0f * markerScale;
+            DrawCircleV(p, icon * 0.55f, Fade(BLACK, 0.45f));
+            if (Ui::DrawIcon(Ui::Icon::MapMission, { p.x - icon * 0.5f, p.y - icon * 0.5f, icon, icon })) continue;
             const float r = 6.5f * markerScale;
             DrawPoly(p, 4, r + 2.0f, 0.0f, BLACK);
             DrawPoly(p, 4, r, 0.0f, kObjective);
@@ -222,6 +228,7 @@ namespace
             }
             const float half = (6.0f + 1.5f * pulse) * markerScale;
             DrawCircleV(p, half * 2.0f, Fade(kMedKit, 0.25f * pulse));
+            if (Ui::DrawIcon(Ui::Icon::MapSupply, { p.x - half * 1.3f, p.y - half * 1.3f, half * 2.6f, half * 2.6f })) continue;
             DrawRectangleV({ p.x - half - 1.5f, p.y - half - 1.5f }, { half * 2.0f + 3.0f, half * 2.0f + 3.0f }, BLACK);
             DrawRectangleV({ p.x - half, p.y - half }, { half * 2.0f, half * 2.0f }, RAYWHITE);
             const float arm = half * 0.8f, thick = half * 0.32f;
@@ -254,6 +261,8 @@ namespace
             Vector2 p = view.ToScreen(soldier.mover.position.x, soldier.mover.position.z);
             bool outside = false;
             if (!place(p, outside)) continue;
+            const float icon = 9.0f * markerScale;
+            if (Ui::DrawIcon(Ui::Icon::MapAlly, { p.x - icon * 0.5f, p.y - icon * 0.5f, icon, icon })) continue;
             DrawCircleV(p, 3.5f * markerScale, BLACK);
             DrawCircleV(p, 2.5f * markerScale, kSoldier);
         }
@@ -266,6 +275,13 @@ namespace
             bool outside = false;
             if (!place(p, outside)) continue;
             const float radius = (zombie.type == ZombieType::Brute ? 4.0f : 3.0f) * markerScale;
+            const bool brute = zombie.type == ZombieType::Brute;
+            const float icon = radius * 2.6f;
+            if (Ui::DrawIcon(brute ? Ui::Icon::MapElite : Ui::Icon::MapZombie, { p.x - icon * 0.5f, p.y - icon * 0.5f, icon, icon },
+                             outside ? Fade(WHITE, 0.55f) : WHITE))
+            {
+                continue;
+            }
             DrawCircleV(p, radius, outside ? Fade(kZombie, 0.55f) : kZombie);
         }
 
@@ -277,6 +293,10 @@ namespace
             const float relative = player.Facing() - view.yaw;
             const float dirX = -std::sin(relative), dirY = -std::cos(relative);
             const float size = markerScale;
+            const float icon = 15.0f * size;
+            const float degrees = std::atan2(dirX, -dirY) * RAD2DEG; // зураг дээш заасан: харах зүг рүү эргүүлнэ
+            DrawCircleV(p, icon * 0.42f, Fade(BLACK, 0.4f));
+            if (Ui::DrawIcon(Ui::Icon::MapPlayer, { p.x - icon * 0.5f, p.y - icon * 0.5f, icon, icon }, WHITE, degrees)) return;
             const Vector2 tip = { p.x + dirX * 8.0f * size, p.y + dirY * 8.0f * size };
             const Vector2 backLeft = { p.x - dirX * 5.0f * size + dirY * 5.0f * size,
                                        p.y - dirY * 5.0f * size - dirX * 5.0f * size };

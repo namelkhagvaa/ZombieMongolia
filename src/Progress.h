@@ -35,11 +35,9 @@ struct Progress
     bool aimAssist = false;      // утсан дээр автомат онилгоо (тохиргоо)
     bool firstPerson = true;     // анхдагч: 1-р этгээд (зөвхөн зэвсэг харагдана)
     bool fullscreen = true;      // компьютер: бүтэн дэлгэцээр тоглох (F11 / цэс)
-#if defined(__ANDROID__)
-    int graphics = 1;            // 0 бага, 1 дунд, 2 өндөр (сүүдэр, bloom)
-#else
-    int graphics = 2;
-#endif
+    int graphics = 0;            // 0 бага (өгөгдмөл), 1 дунд (сүүдэр), 2 өндөр (хүний сүүдэр, bloom)
+    bool sound = true;           // дуу асаалттай
+    int soundLevel = 0;          // 0 = 100%, 1 = 60%, 2 = 30%
     int netTag = 0;              // хамтарсан тоглолтод харагдах дугаар (1000..9999)    // камер: 1-р этгээд (зөвхөн гар, буу) эсвэл 3-р этгээд (бүтэн бие)
     std::vector<bool> liberated; // аймаг бүрээр
 
