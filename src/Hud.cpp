@@ -177,19 +177,56 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
     }
 
     // --- Баруун дээд: зоос, устгасан тоо, баг ---
+    // Өдөр / шөнийн заагч: нар эсвэл сар, тойргоор нь үеийн явц, доор нь солигдох хүртэлх хугацаа.
+    auto drawDayNight = [&](float cx, float cy, bool textRight) {
+        if (info.phaseLeft < 0.0f) return;
+        const float r = 18.0f;
+        DrawCircleV({ cx, cy }, r + 4.0f, Ui::kPanel);
+        const Color ring = info.night ? Color{ 120, 150, 230, 255 } : Color{ 255, 196, 64, 255 };
+        DrawRing({ cx, cy }, r + 1.0f, r + 4.0f, -90.0f, -90.0f + 360.0f * info.phaseProgress, 32, ring);
+        if (info.night)
+        {
+            DrawCircleV({ cx, cy }, 10.0f, { 228, 232, 246, 255 });
+            DrawCircleV({ cx + 5.0f, cy - 3.0f }, 9.0f, Ui::kPanel); // хавирган сар
+        }
+        else
+        {
+            for (int k = 0; k < 8; ++k)
+            {
+                const float a = (float)k * PI / 4.0f;
+                DrawLineEx({ cx + std::cos(a) * 9.0f, cy + std::sin(a) * 9.0f }, { cx + std::cos(a) * 13.0f, cy + std::sin(a) * 13.0f },
+                           2.0f, { 255, 206, 80, 255 });
+            }
+            DrawCircleV({ cx, cy }, 7.0f, { 255, 214, 90, 255 });
+        }
+        // Солигдох хүртэлх хугацаа: дугуйн зүүн талд
+        const int seconds = (int)info.phaseLeft;
+        const char* left = TextFormat("%d:%02d", seconds / 60, seconds % 60);
+        const int textWidth = Ui::MeasureBold(left, 15);
+        const float backX = textRight ? cx + r + 10.0f : cx - r - 12.0f - (float)textWidth - 14.0f;
+        const Rectangle back = { backX, cy - 14.0f, (float)textWidth + 20.0f, 28.0f };
+        Ui::Panel(back, Ui::kPanel, 14.0f);
+        Ui::TextBold(left, (int)back.x + 10, (int)cy - 9, 15, ring);
+    };
+
     if (info.touch)
     {
         // Мэдрэгчтэй дэлгэц: баруун дээд буланд газрын зураг, баг байрладаг тул зоосыг дээд голд харуулна.
         const char* coins = TextFormat("%d", info.coins);
         const int chipWidth = Ui::MeasureBold(coins, 18) + 40;
-        Ui::Chip(coins, (width - chipWidth) / 2, 16, Ui::kAccent, Ui::kAccent);
+        // Дээд голд өдөр шөнийн заагч, зоос түүний зүүн талд
+        Ui::Chip(coins, width / 2 - 34 - chipWidth, 16, Ui::kAccent, Ui::kAccent);
+        drawDayNight((float)width / 2.0f, 34.0f, true);
     }
     else
     {
         const int right = width - 16;
         const int coinWidth = Ui::Chip(TextFormat("%d", info.coins), right, 16, Ui::kAccent, Ui::kAccent, true);
         Ui::Coin({ (float)(right - coinWidth + 17), 32.0f }, 9.0f); // чипийн цэгийн оронд зоос
-        Ui::Chip(TextFormat("Устгасан  %d", info.missionKills), right - coinWidth - 8, 16, Ui::kText, Ui::kDanger, true);
+        const int killsWidth =
+            Ui::Chip(TextFormat("Устгасан  %d", info.missionKills), right - coinWidth - 8, 16, Ui::kText, Ui::kDanger, true);
+        (void)killsWidth;
+        drawDayNight((float)width / 2.0f, 34.0f, true); // дэлгэцийн дээд голд
 
         // Баг: F1, F2, F3 картууд, амины зурвастай; удирдаж буй нь алтан хүрээтэй.
         int teamY = 58;

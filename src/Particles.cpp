@@ -1,6 +1,7 @@
 #include "Particles.h"
 
 #include "raymath.h"
+#include "rlgl.h"
 
 #include <algorithm>
 
@@ -61,6 +62,19 @@ void Particles::Dust(Vector3 at)
         p.color = { 176, 160, 130, 255 };
         Add(p);
     }
+}
+
+void Particles::Kickup(Vector3 at, Vector3 drift, Color color)
+{
+    Particle p = {};
+    p.kind = Kind::Puff;
+    p.position = Vector3Add(at, RandomSpread(0.3f));
+    p.velocity = Vector3Add(drift, RandomSpread(0.5f));
+    p.velocity.y = Random(0.3f, 0.9f);
+    p.size = Random(0.35f, 0.6f);
+    p.life = p.maxLife = Random(1.2f, 2.0f);
+    p.color = color;
+    Add(p);
 }
 
 void Particles::Shell(Vector3 at, Vector3 sideDirection)
@@ -137,6 +151,11 @@ void Particles::Update(float dt, const World& world)
             p.velocity = Vector3Scale(p.velocity, 1.0f - std::min(1.0f, 3.0f * dt));
             p.size += 0.25f * dt;
         }
+        else if (p.kind == Kind::Puff)
+        {
+            p.velocity = Vector3Scale(p.velocity, 1.0f - std::min(1.0f, 1.2f * dt));
+            p.size += 1.1f * dt;
+        }
         else
         {
             p.velocity.y -= kGravity * dt;
@@ -144,7 +163,7 @@ void Particles::Update(float dt, const World& world)
         p.position = Vector3Add(p.position, Vector3Scale(p.velocity, dt));
 
         const float ground = world.GroundHeight(p.position.x, p.position.z);
-        if (p.kind != Kind::Dust && p.position.y <= ground + 0.02f)
+        if (p.kind != Kind::Dust && p.kind != Kind::Puff && p.position.y <= ground + 0.02f)
         {
             p.position.y = ground + 0.02f;
             if (p.kind == Kind::Shell && p.velocity.y < -1.5f)
@@ -186,11 +205,29 @@ void Particles::Draw() const
         {
             DrawCubeV(p.position, { p.size, p.size, p.size }, Fade(p.color, 0.7f * p.life / p.maxLife));
         }
+        else if (p.kind == Kind::Puff)
+        {
+            continue; // доор: гүний буферт бичихгүйгээр
+        }
         else
         {
             DrawCubeV(p.position, { p.size, p.size, p.size }, p.color);
         }
     }
+}
+
+void Particles::DrawPuffs() const
+{
+    rlDrawRenderBatchActive();
+    rlDisableDepthMask();
+    for (const Particle& p : particles)
+    {
+        if (p.kind != Kind::Puff) continue;
+        const float t = p.life / p.maxLife;
+        DrawSphereEx(p.position, p.size, 4, 6, Fade(p.color, 0.32f * t * std::min(1.0f, (1.0f - t) * 6.0f)));
+    }
+    rlDrawRenderBatchActive();
+    rlEnableDepthMask();
 }
 
 void Particles::DrawUnlit() const

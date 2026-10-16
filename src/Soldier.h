@@ -14,6 +14,7 @@ struct Soldier
 {
     Mover mover;
     int member = -1;         // багийн гишүүний дугаар (0..2); -1 = элсүүлсэн жирийн цэрэг
+    bool guestTeam = false;  // хамтарсан тоглолт: зочны багийн гишүүн (зочныг дагана, хостын F1-F3-т орохгүй)
     float health = 0.0f;
     float maxHealth = 80.0f;
     float fireCooldown = 0.0f;
@@ -49,6 +50,8 @@ struct Soldier
     int seatStyle = 0;         // 1 = мотоцикл, 2 = эмээл, 3 = бүхээг дотор (харагдахгүй), 4 = тэвшинд
     Vector3 seat = { 0.0f, 0.0f, 0.0f }; // ташааны ертөнцийн байрлал
     float seatHeading = 0.0f;  // унааны зүг (буудахад бие эргэх ч ташаа, хөл энэ зүгт үлдэнэ)
+    bool hasRein = false;      // жолооч: зүүн гар жолоо (бариул, хазаар) барина
+    Vector3 rein = { 0.0f, 0.0f, 0.0f };
     bool moving = false;
     bool alive = true;
     // Хамтарсан тоглолт: буудсан сумны тоолуур ба сүүлийн сумны туссан цэг (зочинд сумны мөр зурахад)
@@ -69,8 +72,14 @@ public:
     void Add(Vector3 position, float facing);
     // Тоглогчийн удирдаагүй багийн гишүүнийг нэмнэ (дагаж, хамгаална).
     void AddMember(int member, Vector3 position, float facing, float health, float maxHealth);
-    // Багийн гишүүний индекс; -1 = байхгүй (тоглогч өөрөө удирдаж байгаа).
+    // Багийн гишүүний индекс; -1 = байхгүй (тоглогч өөрөө удирдаж байгаа). Зочны багийнхныг тооцохгүй.
     int FindMember(int member) const;
+    // Хамтарсан тоглолт: зочны удирдаагүй хоёр дайчин (зочныг дагаж байлдана)
+    void AddGuestTeam(int controlledMember, Vector3 around, const World& world);
+    void RemoveGuestTeam();
+    bool HasGuestTeam() const;
+    // Зочны багийнхны дагах байрлал (зочин холбогдсон үед)
+    void SetGuestLeader(bool active, Vector3 position) { guestLeaderActive = active; guestLeader = position; }
     // world нь тогтмол биш: цэргүүд замдаа таарсан хаалгыг онгойлгоно.
     void Update(float dt, World& world, Vector3 playerPosition, ZombieHorde& horde, Tracers& tracers,
                 Particles& particles);
@@ -89,4 +98,6 @@ private:
     void ChooseGuardPost(int index, Vector3 playerPosition, const World& world);
 
     std::vector<Soldier> soldiers;
+    bool guestLeaderActive = false;
+    Vector3 guestLeader = { 0.0f, 0.0f, 0.0f };
 };

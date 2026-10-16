@@ -1,5 +1,6 @@
 #include "Vehicle.h"
 
+#include "HorseModel.h"
 #include "Humanoid.h"
 #include "MeshBuilder.h"
 #include "Mover.h"
@@ -10,6 +11,19 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+
+// Зомбийг мөргөж унагааж алах (агаарт шидэх) хурд, м/с. Жийп хүнд тул ~16 км/ц-аас; морь дэвсэж, мотоцикл
+// мөргөж ~22-25 км/ц-аас дээш хурдтай давхиж ирэхэд зомбийг унагааж ална.
+float RamLaunchSpeed(VehicleType type)
+{
+    switch (type)
+    {
+    case VehicleType::Horse: return 6.0f;
+    case VehicleType::Motorcycle: return 7.0f;
+    case VehicleType::Trike: return 8.0f;
+    default: return 4.5f;
+    }
+}
 
 const VehicleSpec& SpecFor(VehicleType type)
 {
@@ -401,6 +415,14 @@ namespace
             b.Ellipsoid({ x, 1.1f, 0.56f }, { 0.11f, 0.22f, 0.15f }, 6, 8, kCoat);
             b.Ellipsoid({ x, 1.14f, -0.58f }, { 0.13f, 0.24f, 0.2f }, 6, 8, kCoat);
         }
+        return b;
+    }
+
+    // Монгол эмээл, тохом, дөрөө, бүслүүр (кодоор үүсгэсэн морь ч, ястай загвар ч нуруун дээрээ үүрнэ)
+    const MeshBuilder& HorseSaddle()
+    {
+        static MeshBuilder b;
+        if (!b.Empty()) return b;
         // Монгол эмээл: өнгөт тохом, улаан суудал, өндөр урд хойд бүүрэг мөнгөн товруутай, дөрөө
         const Color felt = { 36, 66, 128, 255 }, trim = { 220, 170, 50, 255 };
         const Color saddle = { 150, 40, 34, 255 }, wood = { 120, 66, 36, 255 }, silver = { 210, 210, 214, 255 };
@@ -511,12 +533,22 @@ namespace
 
     void DrawHorse(const Vehicle& v)
     {
-        const float gait = std::min(1.0f, std::fabs(v.speed) / 4.0f);
+        // (газар дээрээ эргэхэд ч хөлөө бага зэрэг өргөж гишгэлнэ)
+        const float gait = std::max(std::min(1.0f, std::fabs(v.speed) / 4.0f), std::fabs(v.steer) * 0.35f);
         const float bounce = std::sin(v.animation * 2.0f) * 0.05f * gait;
 
         rlPushMatrix();
         rlTranslatef(0.0f, bounce, 0.0f);
+        if (HasHorseModel())
+        {
+            // Ястай загвар (assets/horse_mesh.glb): хөл, хүзүү, сүүлийг HorseModel хөдөлгөнө. Эмээл, хазаар,
+            // дөрөө нь загварын текстурт байгаа тул кодоор үүсгэсэн эмээлийг зурахгүй.
+            DrawHorseModel(v.animation, gait, v.steer, v.position.x * 0.37f + v.position.z * 0.61f);
+            rlPopMatrix();
+            return;
+        }
         DrawProp(HorseBody());
+        DrawProp(HorseSaddle());
 
         // Хүзүү, толгой: давхихад дээш доош толгой дохино
         rlPushMatrix();
@@ -627,6 +659,17 @@ Vector3 Garage::SeatPosition() const
     return SeatWorld(driven, false);
 }
 
+namespace
+{
+    // Унаа налуу дээр зурахдаа хөндлөн тэнхлэгээ тойрон хазайдаг (Draw: rlRotatef(-pitch, X)). Суудал, хазаарын
+    // цэгийг ч мөн адил хазайлгана: эс бөгөөс өгсүүрт унаач эмээлээс урагш гарч морины хүзүүнд шигдэнэ.
+    Vector3 PitchLocal(const Vehicle& vehicle, Vector3 local)
+    {
+        const float c = std::cos(-vehicle.pitch), s = std::sin(-vehicle.pitch);
+        return { local.x, local.y * c - local.z * s, local.y * s + local.z * c };
+    }
+}
+
 Vector3 Garage::SeatWorld(int index, bool passenger) const
 {
     const Vehicle& vehicle = vehicles[index];
@@ -650,7 +693,33 @@ Vector3 Garage::SeatWorld(int index, bool passenger) const
         // Морины давхилттай хамт дэгдэнэ.
         seat.y += std::sin(vehicle.animation * 2.0f) * 0.05f * std::min(1.0f, std::fabs(vehicle.speed) / 4.0f);
     }
-    return HumanoidLocalToWorld(vehicle.position, vehicle.heading, seat);
+    return HumanoidLocalToWorld(vehicle.position, vehicle.heading, PitchLocal(vehicle, seat));
+}
+
+Vector3 Garage::ReinWorld(int index, bool& hasRein) const
+{
+    const Vehicle& vehicle = vehicles[(size_t)index];
+    Vector3 local = { 0.0f, 0.0f, 0.0f };
+    hasRein = true;
+    switch (vehicle.type)
+    {
+    case VehicleType::Motorcycle:
+    case VehicleType::Trike:
+    {
+        // Зүүн бариул (+X = зүүн тал): жолооны тэнхлэгийг (kMotoSteerZ) тойрон жолоотой хамт эргэнэ.
+        const float angle = -vehicle.steer * 28.0f * DEG2RAD;
+        const float x = 0.31f, z = 0.48f - kMotoSteerZ;
+        local = { x * std::cos(angle) + z * std::sin(angle), 1.16f, kMotoSteerZ - x * std::sin(angle) + z * std::cos(angle) };
+        break;
+    }
+    case VehicleType::Horse:
+        local = { 0.09f, 1.6f, 0.36f }; // хазаар: эмээлийн урд, хүзүүний дээр
+        break;
+    default:
+        hasRein = false;
+        break;
+    }
+    return HumanoidLocalToWorld(vehicle.position, vehicle.heading, PitchLocal(vehicle, local));
 }
 
 void Garage::Update(float dt, const World& world, ZombieHorde& horde, float throttle, float steer, bool handbrake)
@@ -670,6 +739,14 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
             vehicle.position.z += (vehicle.netPosition.z - vehicle.position.z) * follow;
             vehicle.position.y = world.GroundHeight(vehicle.position.x, vehicle.position.z);
             vehicle.heading += std::remainder(vehicle.netHeading - vehicle.heading, 2.0f * PI) * follow;
+            {
+                // Налууг дагана (сүлжээгээр ирдэггүй тул энд тооцно)
+                const float reach = remoteSpec.radius + 0.6f;
+                const float fx = std::sin(vehicle.heading) * reach, fz = std::cos(vehicle.heading) * reach;
+                const float grade = (world.GroundHeight(vehicle.position.x + fx, vehicle.position.z + fz) -
+                                     world.GroundHeight(vehicle.position.x - fx, vehicle.position.z - fz)) / (reach * 2.0f);
+                vehicle.pitch += (std::atan(grade) - vehicle.pitch) * std::min(1.0f, 8.0f * dt);
+            }
             vehicle.speed = vehicle.netSpeed;
             vehicle.steer += (vehicle.netSteer - vehicle.steer) * follow;
             vehicle.animation += vehicle.speed * dt * (vehicle.type == VehicleType::Horse ? 1.1f : 1.0f);
@@ -679,7 +756,7 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
                 const float impact = speed * remoteSpec.ramDamage;
                 const float sign = vehicle.speed >= 0.0f ? 1.0f : -1.0f;
                 const Vector3 push = { std::sin(vehicle.heading) * speed * sign, 0.0f, std::cos(vehicle.heading) * speed * sign };
-                horde.Ram(vehicle.position, remoteSpec.radius + 0.5f, impact * dt * 6.0f, impact > 40.0f, push);
+                horde.Ram(vehicle.position, remoteSpec.radius + 0.5f, impact * dt * 6.0f, speed >= RamLaunchSpeed(vehicle.type), push);
             }
             continue;
         }
@@ -739,7 +816,9 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
         // --- Эргэлт: хурдтай үед л эргэнэ, хурд их байх тусам эргэлт өргөснө ---
         if (controlled && steerInput != 0.0f)
         {
-            const float grip = std::clamp(vehicle.speed / 3.0f, -1.0f, 1.0f);
+            // Морь машин шиг биш: зогсож байхдаа ч газар дээрээ эргэнэ (саад тойрохдоо ухрах шаардлагагүй).
+            const float grip = vehicle.type == VehicleType::Horse ? (vehicle.speed < -0.1f ? -1.0f : 1.0f)
+                                                                  : std::clamp(vehicle.speed / 3.0f, -1.0f, 1.0f);
             const float rate = spec.turnRate / (1.0f + std::fabs(vehicle.speed) * 0.045f);
             vehicle.heading -= steerInput * rate * grip * dt; // D = баруун тийш
         }
@@ -767,6 +846,10 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
 
         // Дугуй / хөлийн хөдөлгөөн. Дугуйнд: явсан зай (м); зурахдаа дугуйн радиусаар хуваавал эргэлтийн өнцөг.
         vehicle.animation += vehicle.speed * dt * (vehicle.type == VehicleType::Horse ? 1.1f : 1.0f);
+        if (vehicle.type == VehicleType::Horse && controlled && std::fabs(vehicle.speed) < 1.5f)
+        {
+            vehicle.animation += std::fabs(steerInput) * 4.0f * dt; // газар дээрээ эргэхэд хөлөө гишгэлнэ
+        }
         // Жолоо: товч дарахад аажим эргэж, тавихад буцаж тэгширнэ.
         const float steerTarget = controlled ? steerInput : 0.0f;
         vehicle.steer += (steerTarget - vehicle.steer) * std::min(1.0f, (steerTarget != 0.0f ? 7.0f : 5.0f) * dt);
@@ -780,13 +863,13 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
         {
 
             // Зомбийг дайрах. Цохилтын хүч = хурд x унааны жин (ramDamage).
-            // Хүчтэй цохилт (жийп ~16 км/ц-аас дээш, мотоцикл ~48 км/ц-аас дээш) зомбийг агаарт шидэж ална;
-            // сул цохилт зөвхөн гэмтээнэ. Морь хэзээ ч шидэх хүчгүй.
+            // Хүчтэй цохилт (RamLaunchSpeed-ээс хурдан: жийп ~16, морь ~22, мотоцикл ~25 км/ц) зомбийг агаарт
+            // шидэж ална; удаан мөргөлт зөвхөн гэмтээнэ.
             const float speed = std::fabs(vehicle.speed);
             if (speed > 4.0f)
             {
                 const float impact = speed * spec.ramDamage;
-                const bool launch = impact > 40.0f;
+                const bool launch = speed >= RamLaunchSpeed(vehicle.type);
                 const float direction = vehicle.speed >= 0.0f ? 1.0f : -1.0f;
                 const Vector3 push = { std::sin(vehicle.heading) * speed * direction, 0.0f,
                                        std::cos(vehicle.heading) * speed * direction };

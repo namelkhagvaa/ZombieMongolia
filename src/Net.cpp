@@ -7,6 +7,14 @@
 #define NOUSER
 #endif
 #include <enet/enet.h>
+#if defined(_WIN32)
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#endif
 
 #include <algorithm>
 #include <cstring>
@@ -86,6 +94,16 @@ namespace Net
             return a;
         }
 
+        // Ашиглах боломжгүй хаяг: 0.0.0.0, 127.x (loopback), 169.254.x (DHCP-гүй автомат хаяг).
+        bool UsableAddress(uint32_t host)
+        {
+            const uint8_t first = (uint8_t)(host & 0xFF), second = (uint8_t)((host >> 8) & 0xFF);
+            return host != 0 && first != 127 && !(first == 169 && second == 254);
+        }
+
+        // Бүх сүлжээний картын IPv4 хаяг (интернэтгүй дотоод сүлжээнд ч олдоно).
+        std::vector<uint32_t> FindLocalAddresses();
+
         uint32_t FindLocalAddress()
         {
             // UDP сокетыг гадаад хаяг руу "холбож" (пакет илгээгдэхгүй) системийн сонгосон өөрийн хаягийг уншина.
@@ -103,6 +121,48 @@ namespace Net
             enet_socket_destroy(socket);
             return result;
         }
+    }
+
+    namespace
+    {
+        std::vector<uint32_t> FindLocalAddresses()
+        {
+            std::vector<uint32_t> result;
+            auto add = [&](uint32_t host) {
+                if (UsableAddress(host) && std::find(result.begin(), result.end(), host) == result.end()) result.push_back(host);
+            };
+            add(FindLocalAddress()); // интернэт рүү гарах зам (байвал эхэнд)
+#if defined(_WIN32)
+            char name[256] = {};
+            if (gethostname(name, sizeof(name)) == 0)
+            {
+                addrinfo hints = {};
+                hints.ai_family = AF_INET;
+                addrinfo* list = nullptr;
+                if (getaddrinfo(name, nullptr, &hints, &list) == 0)
+                {
+                    for (addrinfo* entry = list; entry; entry = entry->ai_next)
+                    {
+                        add(reinterpret_cast<sockaddr_in*>(entry->ai_addr)->sin_addr.s_addr);
+                    }
+                    freeaddrinfo(list);
+                }
+            }
+#else
+            ifaddrs* list = nullptr;
+            if (getifaddrs(&list) == 0)
+            {
+                for (ifaddrs* entry = list; entry; entry = entry->ifa_next)
+                {
+                    if (!entry->ifa_addr || entry->ifa_addr->sa_family != AF_INET || !(entry->ifa_flags & IFF_UP)) continue;
+                    add(reinterpret_cast<sockaddr_in*>(entry->ifa_addr)->sin_addr.s_addr);
+                }
+                freeifaddrs(list);
+            }
+#endif
+            return result;
+        }
+
     }
 
     Session::Session()
@@ -186,6 +246,7 @@ namespace Net
         w.U8((uint8_t)Msg::JoinReply);
         w.U8(accept ? 1 : 0);
         w.U8((uint8_t)province);
+        w.U16(kProtocolVersion);
         Send(w.data, true);
         if (accept)
         {
@@ -238,7 +299,7 @@ namespace Net
             enet_socket_set_option(socket, ENET_SOCKOPT_NONBLOCK, 1);
             enet_socket_set_option(socket, ENET_SOCKOPT_BROADCAST, 1);
             discoverySocket = (intptr_t)socket;
-            localAddress = FindLocalAddress();
+            localAddresses = FindLocalAddresses();
             probeTimer = 0.0f;
         }
         const ENetSocket socket = (ENetSocket)discoverySocket;
@@ -258,9 +319,9 @@ namespace Net
             target.port = kDiscoveryPort;
             target.host = ENET_HOST_BROADCAST;
             enet_socket_send(socket, &target, &buffer, 1);
-            if (localAddress != 0)
+            for (uint32_t localAddress : localAddresses)
             {
-                // Нэг дэд сүлжээний (/24) бүх хаягийг асууна: broadcast хаагдсан утсанд ч олдоно.
+                // Сүлжээний карт бүрийн дэд сүлжээний (/24) бүх хаягийг асууна: broadcast хаагдсан утсанд ч олдоно.
                 for (uint32_t i = 1; i < 255; ++i)
                 {
                     target.host = (localAddress & 0x00FFFFFFu) | (i << 24);
@@ -356,6 +417,7 @@ namespace Net
                     Writer w;
                     w.U8((uint8_t)Msg::JoinRequest);
                     w.Str(name);
+                    w.U16(kProtocolVersion);
                     Send(w.data, true);
                 }
                 break;
@@ -397,10 +459,12 @@ namespace Net
         {
         case Msg::JoinRequest:
             e.text = r.Str();
+            e.version = r.at + 2 <= r.size ? r.U16() : 0; // хуучин хувилбар хувилбаргүй илгээдэг
             break;
         case Msg::JoinReply:
             e.accepted = r.U8() != 0;
             e.province = r.U8();
+            e.version = r.at + 2 <= r.size ? r.U16() : 0;
             joinPending = false;
             connected = e.accepted;
             break;
@@ -440,6 +504,8 @@ namespace Net
                 so.vehicle = (int8_t)r.U8();
                 so.seatStyle = r.U8();
                 so.seat = r.V3();
+                so.guest = r.U8();
+                so.health = r.F();
                 s.soldiers.push_back(so);
             }
             const int zombies = r.U16();
@@ -476,6 +542,7 @@ namespace Net
             s.hordeSmall = r.I32();
             s.hordeBig = r.I32();
             s.zombieSpeed = r.F();
+            s.dayClock = r.F();
             if (r.ok)
             {
                 latest = std::move(s);
@@ -585,6 +652,7 @@ namespace Net
             w.V3(so.position); w.F(so.facing); w.F(so.speed); w.U8((uint8_t)so.member); w.U8(so.alive);
             w.U8(so.aiming); w.U8(so.shots); w.V3(so.shotEnd);
             w.U8((uint8_t)so.vehicle); w.U8(so.seatStyle); w.V3(so.seat);
+            w.U8(so.guest); w.F(so.health);
         }
         w.U16((uint16_t)s.zombies.size());
         for (const ZombieState& z : s.zombies)
@@ -605,6 +673,7 @@ namespace Net
         w.I32(s.hordeSmall);
         w.I32(s.hordeBig);
         w.F(s.zombieSpeed);
+        w.F(s.dayClock);
         Send(w.data, false);
     }
 

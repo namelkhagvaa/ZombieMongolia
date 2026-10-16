@@ -257,8 +257,10 @@ Vector3 Player::BodyBase() const
     return IsRiding() ? Vector3{ seat.x, seat.y - 0.9f, seat.z } : position;
 }
 
-void Player::Ride(float dt, Vector3 ground, Vector3 seatHip, float heading, RideStyle style)
+void Player::Ride(float dt, Vector3 ground, Vector3 seatHip, float heading, RideStyle style, Vector3 reinPoint, bool reins)
 {
+    rein = reinPoint;
+    hasRein = reins;
     timeSinceHit += dt;
     aimTimer -= dt;
     aimPose += ((aimTimer > 0.0f ? 1.0f : 0.0f) - aimPose) * std::min(1.0f, 9.0f * dt);
@@ -514,6 +516,14 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
         pose.aim = aimPose;
         pose.aimPitch = aimPitch * RAD2DEG;
         pose.seatTwist = std::remainder(rideHeading - facing, 2.0f * PI) * RAD2DEG; // ташаа, хөл унааны зүгт
+        if (hasRein)
+        {
+            // Зүүн гар жолоо барина: цэгийг биеийн (хөлийн) орон зайд шилжүүлнэ.
+            const Vector3 d = Vector3Subtract(rein, BodyBase());
+            const float sn = std::sin(facing), cs = std::cos(facing);
+            pose.rein = 1.0f;
+            pose.reinPoint = { d.x * cs - d.z * sn, d.y - pose.bob, d.x * sn + d.z * cs };
+        }
         DrawHumanoid(BodyBase(), facing, 1.0f, pose, look);
         return;
     }

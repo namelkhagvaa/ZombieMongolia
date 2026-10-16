@@ -31,7 +31,9 @@ public:
 
     // Унаа унасан үед Update-ийн оронд дуудна: байрлал, харах зүг нь унааг дагана.
     // ground: унааны газар дээрх байрлал, seatHip: суудал дээрх ташааны байрлал.
-    void Ride(float dt, Vector3 ground, Vector3 seatHip, float heading, RideStyle style);
+    // rein: зүүн гарын барих цэг (жолоо, хазаар; ертөнцөд), hasRein = false бол гар чөлөөтэй.
+    void Ride(float dt, Vector3 ground, Vector3 seatHip, float heading, RideStyle style, Vector3 rein = {},
+              bool hasRein = false);
     // Унаанаас буух: байрлал нь exitPosition болно.
     void StopRiding(Vector3 exitPosition);
     bool IsRiding() const { return rideStyle != RideStyle::None; }
@@ -153,6 +155,8 @@ private:
     RideStyle rideStyle = RideStyle::None;
     Vector3 seat = { 0.0f, 0.0f, 0.0f }; // унаа унасан үеийн ташааны байрлал
     float rideHeading = 0.0f;            // унааны зүг (бие онилсон зүг рүү эргэхэд ташаа, хөл энэ зүгт)
+    Vector3 rein = { 0.0f, 0.0f, 0.0f };  // жолоо, хазаарын цэг (зүүн гар барина)
+    bool hasRein = false;
 
     // Биеийг зурах, сум гарах цэгийг тооцох суурь (хөлийн түвшин).
     Vector3 BodyBase() const;

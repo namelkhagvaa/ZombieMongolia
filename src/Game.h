@@ -12,6 +12,7 @@
 #include "Mission.h"
 #include "Net.h"
 #include "Particles.h"
+#include "Weather.h"
 #include "Player.h"
 #include "Progress.h"
 #include "Soldier.h"
@@ -42,6 +43,8 @@ struct LaunchOptions
     float x = 0.0f, z = 0.0f, yawDegrees = 0.0f, pitchDegrees = 17.0f;
     bool forceMsaa = false;
     int frames = 120; // хэмжих frame-ийн тоо (--frames N)
+    int weather = -1; // туршилт: цаг агаарыг тогтоох (--weather 0..4)
+    int graphics = -1; // туршилт: графикийн түвшин (--graphics 0..2)
     int zombies = 0;  // тоглогчийн урд шууд гаргах зомбины тоо (--zombies N)
     int soldiers = 0; // туршилтад багийн цэргийн тоо (--soldiers N)
     float cameraDistance = 0.0f; // >0 бол камерын зай (--zoom D)
@@ -54,6 +57,7 @@ struct LaunchOptions
     bool journal = false;     // даалгаврын журналыг нээлттэй эхлүүлнэ (--journal)
     bool shop = false;        // дэлгүүрийн цэсийг нээлттэй эхлүүлнэ (--shop)
     bool airstrike = false;   // бөмбөгдөлтийн киног шууд эхлүүлнэ (--airstrike)
+    float dayTime = -1.0f;    // туршилт: өдрийн цагийг 0..1 тогтооно (--daytime t)
     bool pause = false;       // тоглоомын цэсийг нээлттэй эхлүүлнэ (--pause)
     int member = 0;           // 1..3 бол тэр багийн гишүүн рүү шилжиж эхэлнэ (--member N)
     bool demo = false;        // дүрийн байрлалыг тогтооно (--demo move phase aim action)
@@ -148,13 +152,15 @@ private:
     TouchState MakeTouchState() const;
 
     void Draw() const;
-    void DrawMission() const;
+    void DrawMission() const;      // HUD ба 2D давхарга (3D зургийн дараа)
+    void DrawMissionScene() const; // тэнгэр + 3D ертөнц
+    void RenderShadows() const;    // нарны сүүдрийн зураг (frame бүрд, 3D-ээс өмнө)
     void DrawMissionCompleted() const;
 
     GameConfig config;
     LaunchOptions options;
     GameWindow window; // доорх гишүүдээс өмнө байх ёстой
-    Environment environment;
+    mutable Environment environment; // зурах үед сүүдэр, дэлгэцийн эффектийн текстурт бичнэ
     World world;
     Player player;
     ThirdPersonCamera camera;
@@ -171,6 +177,8 @@ private:
     SoldierSquad squad;
     Tracers tracers;
     Particles particles;
+    Precipitation precipitation; // бороо, цас, шороон шуурга
+    float dustTimer = 0.0f;
 
     Progress progress;
     MapScreen mapScreen;
@@ -185,6 +193,9 @@ private:
     int missionKills = 0;
     int medKitKills = 0; // эмнэлгийн хайрцаг унахад тоолох устгалт
     bool inShop = false;   // дэлгүүр дотор (E дарж цэс нээнэ)
+    float dayClock = 0.0f;   // өдөр шөнийн мөчлөг, секунд (kDayLength-ээр эргэнэ)
+    bool wasNight = false;
+    void AdvanceDay(float dt);
     bool paused = false;   // ESC: тоглоомын цэс (үргэлжлүүлэх, бүтэн дэлгэц, газрын зураг, гарах)
     bool quitRequested = false;
     bool aimToggled = false; // компьютер: баруун товчоор онилгоог асааж / унтраана (дахин дарахад болино)
@@ -262,6 +273,7 @@ private:
     void DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& look) const;
     std::vector<ZombieHorde::KillReward> killRewardBuffer;
     void DrawCoinPopups() const;
+    bool inTown = false;             // тоглогч аймгийн төвд байгаа (орох үед нэрийг харуулна)
     float recruitNoticeTimer = 0.0f;
     const char* recruitNotice = nullptr;
     int lastReward = 0;

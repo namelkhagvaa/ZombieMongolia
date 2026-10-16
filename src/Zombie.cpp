@@ -49,7 +49,7 @@ namespace
         switch (type)
         {
         case ZombieType::Runner: return { 35.0f, 4.6f, 0.7f, 0.92f, 0.9f, 1.5f, 8 };
-        case ZombieType::Brute: return { 220.0f, 1.9f, 2.0f, 1.32f, 1.28f, 1.9f, 20 };
+        case ZombieType::Brute: return { 220.0f, 1.9f, 2.0f, 1.32f, 1.28f, 3.2f, 20 }; // хэмнэл: том алхам гулсахгүй
         case ZombieType::Walker:
         default: return { 80.0f, 2.6f, 1.0f, 1.0f, 1.0f, 2.1f, 5 }; // 80 амь: анхны буугаар биед 4 сум
         }
@@ -136,7 +136,7 @@ namespace
         look.model = zombie.boss ? kCharacterZombieBoss
                    : zombie.type == ZombieType::Runner ? kCharacterZombieRunner
                    : zombie.type == ZombieType::Brute ? kCharacterZombieBrute : kCharacterZombieWalker;
-        look.modelTint = zombie.boss ? Color{ 255, 172, 160, 255 }
+        look.modelTint = zombie.boss ? Color{ 255, 255, 255, 255 } // аварга өөрийн загвартай: өнгөө хэвээр
                                      : Color{ (unsigned char)(200 + zombie.skin.r % 56), (unsigned char)(200 + zombie.skin.g % 56),
                                               (unsigned char)(200 + zombie.shirt.b % 56), 255 };
         if (HasCharacterModel(look.model))
@@ -144,6 +144,21 @@ namespace
             look.bulk = 1.0f + (look.bulk - 1.0f) * 0.4f; // загвар өөрөө бүдүүн, нарийн хэлбэртэй
         }
         return look;
+    }
+
+    // Өмнөх frame-ээс хойш явсан зайгаар бодит хурдыг хэмжиж (зөөлрүүлж), алхааны үеийг тэр хурдтай таарах
+    // давтамжаар урагшлуулна: хөл газарт тулж, гулсахгүй.
+    void AdvanceGait(Zombie& zombie, float dt)
+    {
+        const Vector3 pos = zombie.mover.position;
+        const float moved = dt > 0.0f ? HorizontalDistance(pos, zombie.lastPosition) / dt : 0.0f;
+        zombie.lastPosition = pos;
+        const float measured = moved > 15.0f ? 0.0f : moved; // үсрэлт (snapshot, цонх давах) тооцохгүй
+        zombie.gaitSpeed += (measured - zombie.gaitSpeed) * std::min(1.0f, 8.0f * dt);
+        if (zombie.gaitSpeed > 0.25f && zombie.IsAlive())
+        {
+            zombie.walkCycle += dt * HumanoidGaitRate(zombie.gaitSpeed / zombie.scale);
+        }
     }
 
     HumanoidPose PoseFor(const Zombie& zombie)
@@ -173,6 +188,11 @@ namespace
 
         const float cycle = zombie.walkCycle;
         const float s = std::sin(cycle);
+        // Явж байхад хөл ээлжлэн газарт тулж гишгэнэ (доорх hip/knee нь зогсож байх үед л).
+        pose.plantWalk = zombie.gaitSpeed > 0.25f && !zombie.airborne && zombie.climbTimer <= 0.0f;
+        pose.stepLift = zombie.type == ZombieType::Brute || zombie.boss ? 1.5f : zombie.type == ZombieType::Runner ? 1.4f : 2.2f;
+        pose.walkPhase = cycle;
+        pose.speed = zombie.gaitSpeed / zombie.scale; // загварын орон зайд (DrawHumanoid scale-аар томруулна)
         pose.jaw = 14.0f + 8.0f * std::sin(cycle * 0.5f); // эрүү нь сул унжиж хөдөлнө
         auto kneeLift = [&](int side) { return std::max(0.0f, std::cos(cycle + (float)side * PI)); };
 
@@ -195,19 +215,21 @@ namespace
             break;
 
         case ZombieType::Brute:
-            // Хүнд, өргөн алхаа: бие нь хажуу тийш хүчтэй найгана
-            pose.hip[0] = s * 18.0f;
-            pose.hip[1] = -s * 18.0f;
-            pose.knee[0] = 8.0f + 20.0f * kneeLift(0);
-            pose.knee[1] = 8.0f + 20.0f * kneeLift(1);
-            pose.lean = 10.0f;
-            pose.roll = s * 10.0f;
-            pose.bob = -0.05f * std::fabs(s);
-            pose.headPitch = 12.0f;
-            pose.shoulder[0] = 22.0f - s * 20.0f;
-            pose.shoulder[1] = 22.0f + s * 20.0f;
+            // Хүнд, том алхаа: хөлөө өндөр өргөж газар дэлсэн гишгэнэ, бие нь гишгэсэн хөл рүүгээ найгаж,
+            // гишгэх бүрд доош суунэ. Урт гараа хөлийнхөө эсрэг савлана (горилла маягийн).
+            pose.hip[0] = s * 32.0f;
+            pose.hip[1] = -s * 32.0f;
+            pose.knee[0] = 12.0f + 48.0f * kneeLift(0);
+            pose.knee[1] = 12.0f + 48.0f * kneeLift(1);
+            pose.lean = 14.0f + 3.0f * std::fabs(s);
+            pose.roll = s * 8.0f;
+            pose.bob = -0.07f * (1.0f - std::fabs(s)); // хоёр хөл газарт: доош суунэ
+            pose.headPitch = 10.0f;
+            pose.shoulder[0] = 18.0f - s * 30.0f;
+            pose.shoulder[1] = 18.0f + s * 30.0f;
             pose.shoulderYaw[0] = pose.shoulderYaw[1] = -18.0f; // гараа биеэсээ зайтай барина
-            pose.elbow[0] = pose.elbow[1] = 32.0f;
+            pose.elbow[0] = 30.0f + 12.0f * std::max(0.0f, s);
+            pose.elbow[1] = 30.0f + 12.0f * std::max(0.0f, -s);
             break;
 
         case ZombieType::Walker:
@@ -376,6 +398,7 @@ void ZombieHorde::Spawn(ZombieType type, Vector3 position, const MissionParams& 
     zombie.zone = zone;
     zombie.alerted = alerted;
     zombie.mover.position = position;
+    zombie.lastPosition = position;
     zombie.mover.detourSign = GetRandomValue(0, 1) == 0 ? -1.0f : 1.0f;
     zombie.type = type;
     zombie.health = stats.health * mission.healthScale * kZombieHealthMultiplier;
@@ -403,6 +426,7 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
     for (Zombie& zombie : zombies)
     {
         Vector3& pos = zombie.mover.position;
+        AdvanceGait(zombie, dt);
 
         if (!zombie.IsAlive())
         {
@@ -496,7 +520,6 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
                 const float speed = zombie.speed * speedMultiplier * 0.45f;
                 MoveToward(zombie.mover, spot, speed, dt, world, zombie.Radius(), zombie.Height(), kClimbHeight);
                 world.KeepOutOfSafeRooms(pos, zombie.Radius());
-                zombie.walkCycle += speed * dt * StatsFor(zombie.type).cadence / zombie.scale;
             }
             const float floor = world.SurfaceHeightAt(pos.x, pos.z, pos.y + kClimbHeight);
             pos.y = pos.y < floor ? std::min(floor, pos.y + 4.0f * dt) : std::max(floor, pos.y - 12.0f * dt);
@@ -623,7 +646,6 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
             const float speed = zombie.speed * speedMultiplier * (zombie.stagger > 0.0f ? 0.2f : 1.0f);
             MoveToward(zombie.mover, moveTarget, speed, dt, world, zombie.Radius(), zombie.Height(), kClimbHeight);
             world.KeepOutOfSafeRooms(pos, zombie.Radius()); // дэлгүүрийн үүдээр орохгүй
-            zombie.walkCycle += speed * dt * StatsFor(zombie.type).cadence / zombie.scale;
 
             // Бай нь ойрхон (барилга дотор нуугдсан байж болно) үед дэргэдэх хаалттай хаалгыг нүднэ.
             if (targetDistance < 14.0f)
@@ -1023,6 +1045,7 @@ void ZombieHorde::UpdatePuppets(float dt)
                   zombies.end());
     for (Zombie& zombie : zombies)
     {
+        AdvanceGait(zombie, dt);
         zombie.netSeen += dt;
         zombie.attackAnim -= dt;
         if (!zombie.IsAlive())
@@ -1041,8 +1064,6 @@ void ZombieHorde::UpdatePuppets(float dt)
         {
             const Vector3 step = Vector3Scale(delta, std::min(1.0f, 10.0f * dt));
             pos = Vector3Add(pos, step);
-            const float moved = std::sqrt(step.x * step.x + step.z * step.z);
-            zombie.walkCycle += moved * StatsFor(zombie.type).cadence / zombie.scale;
         }
         zombie.mover.facing += std::remainder(zombie.netFacing - zombie.mover.facing, 2.0f * PI) * std::min(1.0f, 10.0f * dt);
     }

@@ -22,7 +22,7 @@ constexpr int kCharacterSurvivorWoman = 4; // assets\survivor_woman
 constexpr int kCharacterZombieWalker = 5; // assets\zombie_walker
 constexpr int kCharacterZombieRunner = 6; // assets\zombie_runner
 constexpr int kCharacterZombieBrute = 7;  // assets\zombie_brute
-constexpr int kCharacterZombieBoss = 8;   // assets\zombie_boss
+constexpr int kCharacterZombieBoss = 8;   // assets\giant_zombie (аварга)
 constexpr int kCharacterCount = 9;
 
 // shader: текстур, гэрэлтүүлэг, манантай дүрийн shader (Environment::CharacterShader).

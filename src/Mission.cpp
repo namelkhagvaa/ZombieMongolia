@@ -1,5 +1,7 @@
 #include "Mission.h"
 
+#include "Layout.h"
+
 #include "Input.h"
 
 #include "CharacterModel.h"
@@ -311,7 +313,7 @@ void Mission::Start(int provinceIndex, const MissionParams& missionParams, const
                 MissionEntity entity;
                 entity.position = PlaceAround(world, state.location, rescue ? 3.0f : 4.0f, rescue ? 12.0f : 18.0f, rng);
                 entity.facing = rng.Range(0.0f, 6.28f);
-                entity.used = done || ((save->entities[i] >> k) & 1u);
+                entity.used = done || (i < StageSave::kEntitySlots && ((save->entities[i] >> k) & 1u));
                 state.progress += entity.used;
                 state.entities.push_back(entity);
             }
@@ -553,6 +555,7 @@ void Mission::UpdateZone(int index, float dt, const World& world, const Player& 
         if (!state.spawned && playerDistance < 110.0f)
         {
             horde.SpawnBoss(RandomAround(world, state.location, 0.0f, 6.0f), params, zone);
+            TraceLog(LOG_INFO, "MISSION: boss spawned for objective %d", index + 1);
             for (int k = 0; k < 3 * kZoneScale; ++k)
             {
                 SpawnFromPool(horde, RandomAround(world, state.location, 4.0f, 16.0f), zone, false);
@@ -585,7 +588,9 @@ void Mission::UpdateAmbient(float dt, const World& world, const Player& player, 
     // Тоглогчийг тойрсон зомбины урсгал: цөөрөх тусам хурдан нөхөгдөнө, тиймээс тулаан тасрахгүй.
     // Одоо хийх даалгаврын цэгт ойртоход шинээр гарах зомбины тал нь тэр цэгийг тойрон гарч, замыг хаана.
     const int alive = horde.AliveInZone(0);
-    const int cap = kAmbientCap + province;
+    // Аймгийн төвийн гудамжинд зомби олон: гудамжаар байлдаж явна.
+    const bool inTown = InTown(player.Position().x, player.Position().z);
+    const int cap = kAmbientCap + province + (inTown ? 28 : 0);
     const int batch = alive < cap / 2 ? 3 : 1;
     const int focus = FocusObjective();
     for (int k = 0; k < batch && alive + k < cap; ++k)
@@ -740,7 +745,7 @@ void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde,
     {
     case ObjectiveType::RescueSurvivors:
     case ObjectiveType::CollectItems:
-        save->entities[nearestObjective] |= 1u << nearestEntity;
+        if (nearestObjective < StageSave::kEntitySlots) save->entities[nearestObjective] |= 1u << nearestEntity;
         ++state.progress;
         dirty = true;
         if (def.type == ObjectiveType::RescueSurvivors && def.survivor == SurvivorKind::Soldier)
@@ -941,7 +946,8 @@ void Mission::DrawJournal() const
 {
     const int screenWidth = ViewWidth();
     const int screenHeight = ViewHeight();
-    const int width = 960, height = 640;
+    // 5-аас олон даалгавартай бол цонх өндөрсөнө (дэлгэцэд багтах хэмжээгээр).
+    const int width = 960, height = std::min(screenHeight - 20, 640 + 96 * std::max(0, ObjectiveCount() - 4));
     const int left = (screenWidth - width) / 2, top = (screenHeight - height) / 2;
 
     const Color text = Ui::kText;
@@ -971,7 +977,7 @@ void Mission::DrawJournal() const
         const ObjectiveState& state = states[(size_t)i];
         const bool done = state.status == ObjectiveStatus::Done;
         const bool locked = state.status == ObjectiveStatus::Locked;
-        const int blockHeight = 104;
+        const int blockHeight = ObjectiveCount() > 4 ? 92 : 104;
 
         // Одоо хийх ёстой даалгаврыг онцолно.
         if (i == focus)

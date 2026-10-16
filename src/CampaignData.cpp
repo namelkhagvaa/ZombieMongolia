@@ -1,5 +1,7 @@
 #include "CampaignData.h"
 
+#include <algorithm>
+
 // Аяны 22 үеийн даалгаврын өгөгдөл.
 //
 // Даалгавар бүрийн сүүлчийн параметр "after" нь урьдчилсан нөхцөл: тэр индекстэй даалгавар биелсний
@@ -303,6 +305,17 @@ namespace
                  Hamlet(0), 2),
         } });
 
+        // Аймаг бүрт аварга зомби: аваргагүй үе шатад сүүлийн даалгаврын дараа, түүний газарт гарч ирнэ.
+        for (StageDef& stage : stages)
+        {
+            const bool hasBoss = std::any_of(stage.objectives.begin(), stage.objectives.end(),
+                                             [](const ObjectiveDef& o) { return o.type == ObjectiveType::DefeatBoss; });
+            if (hasBoss || stage.objectives.empty()) continue;
+            const int last = (int)stage.objectives.size() - 1;
+            stage.objectives.push_back(Boss("province_giant", "Аварга зомбийг устга",
+                                            "Даалгавар биелсэн газрын дэргэд гарч ирэх аварга зомбийг ял. Толгой руу нь олон удаа буудах хэрэгтэй.",
+                                            stage.objectives[(size_t)last].site, last));
+        }
         return stages;
     }
 }

@@ -141,20 +141,53 @@ int SoldierSquad::FindMember(int member) const
 {
     for (int i = 0; i < Total(); ++i)
     {
-        if (soldiers[i].member == member) return i;
+        if (soldiers[i].member == member && !soldiers[i].guestTeam) return i;
     }
     return -1;
 }
 
-void SoldierSquad::Update(float dt, World& world, Vector3 playerPosition, ZombieHorde& horde,
+void SoldierSquad::AddGuestTeam(int controlledMember, Vector3 around, const World& world)
+{
+    RemoveGuestTeam();
+    for (int member = 0; member < kTeamSize; ++member)
+    {
+        if (member == controlledMember) continue;
+        Vector3 position = { around.x + (member == kSniperMember ? 3.5f : -3.5f), around.y, around.z - 3.0f };
+        world.ResolveHorizontal(position, kRadius, kHeight, 0.0f);
+        position.y = world.GroundHeight(position.x, position.z);
+        Add(position, 0.0f);
+        Soldier& soldier = soldiers.back();
+        soldier.member = member;
+        soldier.guestTeam = true;
+        soldier.health = soldier.maxHealth = 100.0f;
+    }
+}
+
+void SoldierSquad::RemoveGuestTeam()
+{
+    soldiers.erase(std::remove_if(soldiers.begin(), soldiers.end(), [](const Soldier& s) { return s.guestTeam; }), soldiers.end());
+    guestLeaderActive = false;
+}
+
+bool SoldierSquad::HasGuestTeam() const
+{
+    return std::any_of(soldiers.begin(), soldiers.end(), [](const Soldier& s) { return s.guestTeam; });
+}
+
+void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHorde& horde,
                           Tracers& tracers, Particles& particles)
 {
-    // Тоглогч аль барилгын дотор байгаа (-1 = гадаа)
-    const int playerRoom = world.InteriorAt(playerPosition.x, playerPosition.z);
+    // Хостын тоглогч ба (хамтарсан тоглолтод) зочин аль барилгын дотор байгаа (-1 = гадаа)
+    const int hostRoom = world.InteriorAt(hostPosition.x, hostPosition.z);
+    const int guestRoom = guestLeaderActive ? world.InteriorAt(guestLeader.x, guestLeader.z) : -1;
 
     for (int i = 0; i < Total(); ++i)
     {
         Soldier& soldier = soldiers[i];
+        // Дагах удирдагч: хостын тоглогч, эсвэл зочны багийнхны хувьд зочин
+        const bool followGuest = soldier.guestTeam && guestLeaderActive;
+        const Vector3 playerPosition = followGuest ? guestLeader : hostPosition;
+        const int playerRoom = followGuest ? guestRoom : hostRoom;
         if (!soldier.alive)
         {
             soldier.deathTimer += dt;
@@ -554,8 +587,16 @@ void SoldierSquad::Draw(Vector3 viewPosition, bool showColliders) const
             // Буудахдаа бие бай руу эргэнэ (±120 градус), ташаа хөл нь унааны зүгт.
             const float twist = std::clamp(std::remainder(soldier.mover.facing - soldier.seatHeading, 2.0f * PI), -2.1f, 2.1f);
             pose.seatTwist = -twist * RAD2DEG;
-            DrawHumanoid({ soldier.seat.x, soldier.seat.y - 0.9f, soldier.seat.z }, soldier.seatHeading + twist, 1.0f, pose,
-                         look, detailed);
+            const Vector3 base = { soldier.seat.x, soldier.seat.y - 0.9f, soldier.seat.z };
+            const float facing = soldier.seatHeading + twist;
+            if (soldier.hasRein)
+            {
+                const Vector3 d = Vector3Subtract(soldier.rein, base);
+                const float sn = std::sin(facing), cs = std::cos(facing);
+                pose.rein = 1.0f;
+                pose.reinPoint = { d.x * cs - d.z * sn, d.y - pose.bob, d.x * sn + d.z * cs };
+            }
+            DrawHumanoid(base, facing, 1.0f, pose, look, detailed);
             continue;
         }
 

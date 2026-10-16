@@ -15,6 +15,10 @@ struct HudInfo
     const char* prompt = nullptr;          // харилцах заавар: "E — Генератор асаах"
     const char* notice = nullptr;          // богино мэдэгдэл: "ДААЛГАВАР БИЕЛЛЭЭ: ..."
     int coins = 0;
+    // Өдөр шөнө (Dota маягийн): одоо шөнө эсэх, дараагийн солигдох хүртэлх секунд, тухайн үеийн явц 0..1
+    bool night = false;
+    float phaseLeft = -1.0f; // < 0: харуулахгүй
+    float phaseProgress = 0.0f;
     int missionKills = 0;
     int ammo = 0;
     int magazine = 0;

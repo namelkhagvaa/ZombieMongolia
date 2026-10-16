@@ -75,6 +75,9 @@ void World::BuildSettlements(int variant)
     doors.clear();
     passages.resize(staticPassageCount);
 
+    // Буянт-Ухаа нисэх буудлын хучилт зөвхөн Улаанбаатарын үед (өвс ургахгүй, засмал замын хурд)
+    layout.SetAirfieldActive(variant == kUlaanbaatarProvince);
+
     MeshBuilder solidBuilder, shadowBuilder, glassBuilder;
     BuildSettlementStructures(variant, layout, terrain, obstacles, solidBuilder, shadowBuilder, glassBuilder, interiors,
                               doors, passages);
@@ -676,24 +679,40 @@ float World::RayDistance(Ray ray, float maxDistance) const
 
 // ---------------------------------------------------------------- Зураглал
 
-void World::Draw(const Camera3D& camera, const Material& material, float detailDistance) const
+void World::Draw(const Camera3D& camera, const Material& material, const Material& groundMaterial,
+                 const Material& detailMaterial, float detailDistance, bool realShadows) const
 {
     const ViewCone view = ViewCone::From(camera);
 
     // Гараар үүсгэсэн mesh-үүдийн гурвалжны эргэлтийн чиглэл жигд биш тул хоёр талаас нь зурна.
     rlDisableBackfaceCulling();
 
-    terrain.Draw(camera, material, detailDistance);
+    terrain.Draw(camera, groundMaterial, detailMaterial, detailDistance);
     DrawPieces(structures, material, view, kStructureDistance);
     DrawPieces(settlementStructures, material, view, kStructureDistance);
     DrawPieces(boundaryPosts, material, view, kBoundaryDistance);
 
     // Сүүдэр: газар дээр наалдсан хагас тунгалаг давхарга, гүний буферт бичихгүй.
-    rlDisableDepthMask();
-    DrawPieces(shadows, material, view, kShadowDistance);
-    DrawPieces(settlementShadows, material, view, kShadowDistance);
-    rlEnableDepthMask();
+    // Нарны жинхэнэ сүүдэр (shadow map) асаалттай бол ойр орчимд хэрэггүй: зөвхөн түүний хүрээнээс цааш.
+    if (!realShadows)
+    {
+        rlDisableDepthMask();
+        DrawPieces(shadows, material, view, kShadowDistance);
+        DrawPieces(settlementShadows, material, view, kShadowDistance);
+        rlEnableDepthMask();
+    }
 
+    rlEnableBackfaceCulling();
+}
+
+void World::DrawShadowCasters(Vector3 center, float radius, const Material& material) const
+{
+    // Нарны зүгээс: харах конусгүй, center орчмын бүх зүйл
+    const ViewCone all = { center, { 0.0f, 0.0f, 1.0f }, PI };
+    rlDisableBackfaceCulling();
+    terrain.DrawShadowCasters(center, radius, material);
+    DrawPieces(structures, material, all, radius);
+    DrawPieces(settlementStructures, material, all, radius);
     rlEnableBackfaceCulling();
 }
 

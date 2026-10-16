@@ -1031,6 +1031,22 @@ namespace
     const Color kGlove = { 38, 36, 32, 255 };    // бээлий
 
     // Ханцуйтай шуу ба бээлийтэй гар: from (тохой, дэлгэцийн гадна) -> hand (бариул).
+    // Шуу: тохойноос (дэлгэцийн доод ирмэгийн гадна) бугуй хүртэл ханцуй, бугуйнд бээлийн ам.
+    void ViewForearm(Vector3 elbow, Vector3 wrist)
+    {
+        DrawCylinderEx(elbow, wrist, 0.042f, 0.031f, 10, kSleeve);
+        const Vector3 cuff = Vector3Lerp(elbow, wrist, 0.86f);
+        DrawCylinderEx(cuff, wrist, 0.035f, 0.033f, 10, Shade(kSleeve, 0.7f));
+        DrawCylinderEx(wrist, Vector3Lerp(elbow, wrist, 1.08f), 0.031f, 0.03f, 10, kGlove);
+    }
+
+    // Бээлийн хэсэг (тэгш өнцөгт), бага зэрэг цайвар үетэй
+    void GlovePart(float x, float y, float z, float sx, float sy, float sz)
+    {
+        DrawCubeV({ x, y, z }, { sx, sy, sz }, kGlove);
+        DrawCubeV({ x, y + sy * 0.5f - 0.002f, z }, { sx * 0.96f, 0.004f, sz * 0.96f }, Shade(kGlove, 1.35f));
+    }
+
     void ViewArm(Vector3 from, Vector3 hand)
     {
         DrawCylinderEx(from, hand, 0.06f, 0.045f, 8, kSleeve);
@@ -1046,8 +1062,10 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
     // Алхахад найгах, буудахад ухрах, цэнэглэхэд доошлох (онилж байхад найгалт бараг алга)
     aim = std::clamp(aim, 0.0f, 1.0f);
     const float sway = std::min(1.0f, moveAmount) * (1.0f - 0.85f * aim);
-    const float bobX = std::sin(walkPhase) * 0.012f * sway;
-    const float bobY = -std::fabs(std::cos(walkPhase)) * 0.016f * sway;
+    const float time = (float)GetTime();
+    const float still = (1.0f - std::min(1.0f, moveAmount)) * (1.0f - 0.85f * aim); // тайван үеийн амьсгалын найгалт
+    const float bobX = std::sin(walkPhase) * 0.012f * sway + 0.004f * still * std::sin(time * 0.9f);
+    const float bobY = -std::fabs(std::cos(walkPhase)) * 0.016f * sway + 0.005f * still * std::sin(time * 1.6f);
     const float reloading = reload >= 0.0f ? std::sin(reload * PI) : 0.0f;
 
     rlPushMatrix();
@@ -1092,25 +1110,79 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
     else if (held == HeldItem::Pistol)
     {
         // Гар буу: хоёр гараар урагш сунган барина
-        rlTranslatef(Lerp(-0.13f, 0.0f, aim), Lerp(-0.17f, -0.12f, aim), 0.46f - 0.06f * aim - 0.04f * recoil);
-        rlRotatef(-14.0f * recoil - 30.0f * reloading, 1.0f, 0.0f, 0.0f);
-        rlScalef(0.75f, 0.75f, 0.75f);
+        // Буудахад ам нь дээш үсэрч гар хойш түлхэгдэнэ; алхахад, тайван үед бага зэрэг хазайна
+        rlTranslatef(Lerp(-0.15f, 0.0f, aim), Lerp(-0.2f, -0.128f, aim) + 0.03f * recoil, 0.54f - 0.04f * aim - 0.08f * recoil);
+        rlRotatef(-24.0f * recoil - 30.0f * reloading, 1.0f, 0.0f, 0.0f);
+        rlRotatef(3.0f * sway * std::sin(walkPhase) + 2.0f * still * std::sin(time * 0.6f), 0.0f, 0.0f, 1.0f);
+        rlRotatef(Lerp(4.0f, 0.0f, aim), 0.0f, 1.0f, 0.0f); // бэлэн үед ам нь хараа руу бага зэрэг дотогш
+        rlRotatef(Lerp(7.0f, 0.0f, aim), 1.0f, 0.0f, 0.0f); // бэлэн үед ам нь бага зэрэг доош
+        rlScalef(0.85f, 0.85f, 0.85f);
         DrawPistolUpright();
-        ViewArm({ -0.12f, -0.38f, -0.18f }, { 0.0f, -0.05f, 0.0f });
-        ViewArm({ 0.16f, -0.38f, -0.12f }, { 0.035f, -0.07f, 0.01f });
+        // Баруун гар: бариулыг атгасан нударга, долоовор гохон дээр, эрхий хуруу зүүн талаар
+        GlovePart(-0.03f, -0.015f, -0.03f, 0.026f, 0.09f, 0.06f);                  // алга (баруун талд)
+        for (int i = 0; i < 3; ++i)
+        {
+            GlovePart(-0.004f, -0.045f + 0.024f * (float)i, 0.014f, 0.05f, 0.021f, 0.026f); // бариулын урдуур ороосон хуруу
+        }
+        GlovePart(-0.012f, 0.03f, 0.045f, 0.016f, 0.015f, 0.05f);                 // долоовор: гохны хамгаалалт дотор
+        GlovePart(0.022f, 0.034f, 0.0f, 0.015f, 0.016f, 0.055f);                  // эрхий хуруу
+        // Зүүн гар: баруун гарыг доороос нь тэвэрч, эрхий хуруу нь замагны дагуу урагш
+        GlovePart(0.034f, -0.035f, -0.01f, 0.024f, 0.08f, 0.06f);
+        for (int i = 0; i < 3; ++i)
+        {
+            GlovePart(0.0f, -0.052f + 0.022f * (float)i, 0.038f, 0.07f, 0.02f, 0.024f);
+        }
+        GlovePart(0.032f, 0.04f, 0.05f, 0.014f, 0.015f, 0.065f);
+        // Шуунууд: бугуйнаас дэлгэцийн доод буланд (камерын ойрын хавтгайгаас цааш)
+        ViewForearm({ -0.14f, -0.34f, -0.1f }, { -0.035f, -0.065f, -0.07f });
+        ViewForearm({ 0.17f, -0.34f, -0.08f }, { 0.04f, -0.075f, -0.05f });
     }
     else if (held == HeldItem::Knife || held == HeldItem::Grenade)
     {
         // Хутга, гранат: баруун гарт, хатгах / шидэх үед урагш түлхэнэ
-        const float thrust = action > 0.0f ? std::sin((1.0f - action) * PI) : 0.0f;
-        rlTranslatef(-0.17f, -0.22f + 0.05f * thrust, 0.4f + 0.22f * thrust);
-        rlScalef(0.8f, 0.8f, 0.8f);
-        ViewArm({ -0.08f, -0.25f, -0.25f }, { 0.0f, 0.0f, 0.0f });
-        rlRotatef(-90.0f + 20.0f * thrust, 1.0f, 0.0f, 0.0f); // гарын тэнхлэг (-Y) урагш
-        rlTranslatef(0.0f, kForearm + 0.05f, 0.0f);
-        HumanoidLook look;
-        look.held = held;
-        DrawHandItem(look);
+        // Хутга: тулааны байрлалд нүүдэллэнэ; хатгахдаа эхлээд хойш далайгаад урагш шиднэ
+        const float p = action > 0.0f ? 1.0f - action : -1.0f;
+        const float windUp = p < 0.0f ? 0.0f : p < 0.28f ? p / 0.28f : std::max(0.0f, 1.0f - (p - 0.28f) / 0.14f);
+        const float lunge = p < 0.28f ? 0.0f : p < 0.5f ? (p - 0.28f) / 0.22f : std::max(0.0f, 1.0f - (p - 0.55f) / 0.45f);
+        const float thrust = held == HeldItem::Knife ? lunge : (action > 0.0f ? std::sin((1.0f - action) * PI) : 0.0f);
+        const float cock = held == HeldItem::Knife ? windUp : 0.0f;
+        rlTranslatef(-0.16f + 0.09f * thrust - 0.04f * cock + 0.02f * still * std::sin(time * 1.3f),
+                     -0.17f + 0.07f * thrust + 0.07f * cock + 0.015f * still * std::sin(time * 2.1f),
+                     0.44f + 0.22f * thrust - 0.1f * cock);
+        if (held == HeldItem::Knife) rlRotatef(-20.0f * cock + 8.0f * still * std::sin(time * 1.1f), 0.0f, 0.0f, 1.0f);
+        if (held == HeldItem::Knife)
+        {
+            // Ир нь урагш, бага зэрэг дотогш (хараа руу), дээш; хатгахад шулуун урагш
+            rlRotatef(14.0f - 10.0f * thrust, 0.0f, 1.0f, 0.0f);
+            rlRotatef(-8.0f - 22.0f * cock + 10.0f * thrust, 1.0f, 0.0f, 0.0f);
+            rlRotatef(-18.0f, 0.0f, 0.0f, 1.0f);
+            rlScalef(0.9f, 0.9f, 0.9f);
+            // Нударга: бариулыг доороос нь атгана (хутганы бариул Z тэнхлэгийн дагуу, эх нь бариулын төв)
+            GlovePart(-0.028f, -0.004f, -0.004f, 0.026f, 0.07f, 0.1f);           // алга
+            for (int i = 0; i < 4; ++i)
+            {
+                GlovePart(0.004f, -0.03f, -0.036f + 0.024f * (float)i, 0.05f, 0.024f, 0.021f); // ороосон хуруу
+            }
+            GlovePart(0.018f, 0.028f, 0.018f, 0.016f, 0.016f, 0.05f);            // эрхий хуруу
+            ViewForearm({ -0.1f, -0.3f, -0.26f }, { -0.025f, -0.035f, -0.07f });
+            // Хутга: DrawHandItem-ийн бариулыг (шууны -Y дагуу) эх рүү, ирийг +Z руу эргүүлнэ
+            rlRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
+            rlTranslatef(0.0f, kForearm + 0.05f, 0.0f);
+            HumanoidLook look;
+            look.held = held;
+            DrawHandItem(look);
+        }
+        else
+        {
+            rlScalef(0.8f, 0.8f, 0.8f);
+            ViewForearm({ -0.08f, -0.3f, -0.2f }, { 0.0f, -0.03f, -0.02f });
+            DrawSphereEx({ 0.0f, 0.0f, 0.0f }, 0.045f, 5, 8, kGlove);
+            rlRotatef(-90.0f + 20.0f * thrust, 1.0f, 0.0f, 0.0f); // гарын тэнхлэг (-Y) урагш
+            rlTranslatef(0.0f, kForearm + 0.05f, 0.0f);
+            HumanoidLook look;
+            look.held = held;
+            DrawHandItem(look);
+        }
     }
     rlPopMatrix();
 }

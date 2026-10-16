@@ -7,10 +7,11 @@
 // Нэг үеийн (аймгийн) даалгаврын хадгалагдах явц.
 struct StageSave
 {
-    static constexpr int kMaxObjectives = 4;
+    static constexpr int kMaxObjectives = 8;  // үе шатны даалгаврын дээд тоо (done битүүд)
+    static constexpr int kEntitySlots = 4;    // хүн / зүйлтэй даалгавар эхний 4-т л байна (хадгалалтын формат)
 
     unsigned done = 0;                        // бит i = i-р даалгавар биелсэн
-    unsigned entities[kMaxObjectives] = {};   // даалгавар бүрд: бит k = k-р хүн аврагдсан / зүйл авагдсан
+    unsigned entities[kEntitySlots] = {};     // даалгавар бүрд: бит k = k-р хүн аврагдсан / зүйл авагдсан
     unsigned clearedZones = 0;                // бит i = i-р даалгаврын бүс бүрэн цэвэрлэгдсэн (дахин spawn болохгүй)
     int killedSmall = 0;                      // энэ үед устгасан алхагч + гүйгч зомби
     int killedBig = 0;                        // энэ үед устгасан том зомби
@@ -32,8 +33,13 @@ struct Progress
     int healthLevel = 0;
     int soldiers = 0;
     bool aimAssist = false;      // утсан дээр автомат онилгоо (тохиргоо)
-    bool firstPerson = false;
+    bool firstPerson = true;     // анхдагч: 1-р этгээд (зөвхөн зэвсэг харагдана)
     bool fullscreen = true;      // компьютер: бүтэн дэлгэцээр тоглох (F11 / цэс)
+#if defined(__ANDROID__)
+    int graphics = 1;            // 0 бага, 1 дунд, 2 өндөр (сүүдэр, bloom)
+#else
+    int graphics = 2;
+#endif
     int netTag = 0;              // хамтарсан тоглолтод харагдах дугаар (1000..9999)    // камер: 1-р этгээд (зөвхөн гар, буу) эсвэл 3-р этгээд (бүтэн бие)
     std::vector<bool> liberated; // аймаг бүрээр
 

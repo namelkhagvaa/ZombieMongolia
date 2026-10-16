@@ -1,11 +1,15 @@
 #include "Structures.h"
 
+#include "AirportData.h"
+#include "Polygon.h"
+
 #include "Procedural.h"
 #include "Layout.h"
 #include "raymath.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace
 {
@@ -1895,7 +1899,7 @@ namespace
     {
         // Гэрэлтүүлгийн шон: замын хойд талаар жигд зайтай, зарим нь хазайсан эсвэл унасан
         int index = 0;
-        for (float x = -526.0f; x <= 530.0f; x += 38.0f, ++index)
+        for (float x = -184.0f; x <= 530.0f; x += 38.0f, ++index)
         {
             const int state = index % 5 == 3 ? 2 : (index % 4 == 1 ? 1 : 0);
             LightPole(s, x, HighwayZ(s.layout, x) + 6.4f, state);
@@ -1911,9 +1915,7 @@ namespace
         Car(s, 262.0f, HighwayZ(s.layout, 262.0f) - 1.8f, true, { 120, 60, 54, 255 });
         Truck(s, 340.0f, HighwayZ(s.layout, 340.0f) + 2.0f, true, { 132, 120, 70, 255 }, { 110, 112, 116, 255 });
         Car(s, 430.0f, HighwayZ(s.layout, 430.0f) + 1.6f, false, { 70, 84, 100, 255 });
-        Car(s, -205.0f, HighwayZ(s.layout, -205.0f) - 1.9f, true, { 164, 160, 150, 255 });
-        Truck(s, -300.0f, HighwayZ(s.layout, -300.0f) - 2.1f, true, { 96, 60, 52, 255 }, { 86, 100, 88, 255 });
-        Car(s, -410.0f, HighwayZ(s.layout, -410.0f) + 5.4f, true, { 90, 98, 76, 255 });
+        Car(s, -165.0f, HighwayZ(s.layout, -165.0f) - 1.9f, true, { 164, 160, 150, 255 });
 
         RoadSign(s, 78.0f, HighwayZ(s.layout, 78.0f) - 5.4f, 1, -6.0f);
         RoadSign(s, -128.0f, HighwayZ(s.layout, -128.0f) - 5.4f, 0, 5.0f);
@@ -1926,6 +1928,8 @@ namespace
         for (float x = -kPlayableHalfExtent; x < kPlayableHalfExtent; x += rng.Range(120.0f, 260.0f))
         {
             if (std::fabs(x) < 520.0f) continue; // төв хэсгийг дээр гараар байрлуулсан
+            // Машин X тэнхлэгийн дагуу байрлана: зам огцом эргэсэн хэсэгт тавихгүй
+            if (std::fabs(HighwayZ(s.layout, x + 6.0f) - HighwayZ(s.layout, x - 6.0f)) > 12.0f * 0.45f) continue;
 
             const float side = rng.Chance(0.5f) ? 1.9f : -1.9f;
             const float z = HighwayZ(s.layout, x) + (rng.Chance(0.2f) ? side * 3.0f : side); // зарим нь замаас гарсан
@@ -2491,6 +2495,1495 @@ namespace
         Car(s, 27.4f, 44.0f, false, RandomCarPaint(s.rng));
     }
 
+    // ------------------------------------------------------------------ Аймгийн төв / хот
+
+    // Гэр хорооллын хашаа: банзан хашаа, нэг эсвэл хоёр гэр, модон жорлон, түлээ, заримд нь жижиг байшин.
+    // gateFace: 2 = +Z (хойд гудамж), 3 = -Z (урд гудамж).
+    void GerLot(Scene& s, float x0, float z0, float x1, float z1, int gateFace)
+    {
+        Yard(s, x0, z0, x1, z1, gateFace, (x0 + x1) * 0.5f + s.rng.Range(-2.0f, 2.0f));
+        const float cx = (x0 + x1) * 0.5f, cz = (z0 + z1) * 0.5f;
+        const float back = gateFace == 2 ? -1.0f : 1.0f; // гудамжнаас хол тал руу
+        const float depth = z1 - z0;
+        const float radius = s.rng.Range(2.1f, 2.5f);
+        if (s.rng.Chance(0.25f))
+        {
+            // Гэрийн оронд жижиг байшин (хашаа байшин)
+            HouseStyle style = RegionHouseStyle(s);
+            style.floors = 1;
+            House(s, cx, cz + back * depth * 0.18f, 4.6f, 4.2f, style, gateFace == 2 ? 2 : 3);
+        }
+        else
+        {
+            Ger(s, cx + s.rng.Range(-1.0f, 1.0f), cz + back * depth * 0.18f, radius, RandomGerDoor(s.rng));
+        }
+        if (s.rng.Chance(0.35f) && (x1 - x0) > 13.0f)
+        {
+            Ger(s, cx + (s.rng.Chance(0.5f) ? -1.0f : 1.0f) * (x1 - x0) * 0.24f, cz - back * depth * 0.16f, 2.0f,
+                RandomGerDoor(s.rng));
+        }
+        // Модон жорлон (хашааны арын буланд), түлээ, торх
+        Shed(s, x0 + 1.4f, cz + back * (depth * 0.5f - 1.4f), 1.3f, 1.3f, 2.2f);
+        if (s.rng.Chance(0.6f)) Crate(s, x1 - 1.4f, cz + back * (depth * 0.5f - 1.3f), 0.9f, 0.0f, kWoodGrey);
+        if (s.rng.Chance(0.4f)) Barrel(s, x1 - 1.0f, cz - back * (depth * 0.5f - 1.6f), s.rng.Chance(0.5f) ? kRust : Color{ 60, 96, 130, 255 });
+    }
+
+    // Хороолол (гудамжаар хүрээлэгдсэн дөрвөлжин): 3 x 2 гэр хорооллын хашаа
+    void GerBlock(Scene& s, float x0, float z0, float x1, float z1)
+    {
+        const float width = (x1 - x0) / 3.0f;
+        const float mid = (z0 + z1) * 0.5f;
+        for (int i = 0; i < 3; ++i)
+        {
+            const float a = x0 + width * (float)i + 0.6f, b = x0 + width * (float)(i + 1) - 0.6f;
+            GerLot(s, a, z0, b, mid - 1.5f, 3);
+            GerLot(s, a, mid + 1.5f, b, z1, 2);
+        }
+    }
+
+    // Хашаат байшингийн хороолол: 2 x 2 хашаа, хаалга нь хажуугийн гудамж руу
+    void HouseBlock(Scene& s, float x0, float z0, float x1, float z1)
+    {
+        const float mx = (x0 + x1) * 0.5f, mz = (z0 + z1) * 0.5f;
+        BuildLot(s, x0, z0, mx - 1.5f, mz - 1.5f, 1);
+        BuildLot(s, x0, mz + 1.5f, mx - 1.5f, z1, 1);
+        BuildLot(s, mx + 1.5f, z0, x1, mz - 1.5f, 0);
+        BuildLot(s, mx + 1.5f, mz + 1.5f, x1, z1, 0);
+    }
+
+    // Орон сууцны хороолол: хоёр урт байр, дунд нь хашаа (машин, тоглоомын талбай, гэрлийн шон)
+    void ApartmentQuarter(Scene& s, float x0, float z0, float x1, float z1, int minFloors, int maxFloors)
+    {
+        static const Color walls[] = { { 186, 182, 172, 255 }, { 196, 180, 160, 255 }, { 164, 176, 184, 255 },
+                                       { 190, 168, 160, 255 }, { 172, 178, 160, 255 }, { 206, 196, 150, 255 } };
+        const float w = x1 - x0 - 4.0f, d = 11.0f;
+        const float cx = (x0 + x1) * 0.5f;
+        ApartmentBlock(s, cx, z0 + 2.0f + d * 0.5f, w, d, s.rng.Int(minFloors, maxFloors), walls[s.rng.Int(0, 5)], 2);
+        ApartmentBlock(s, cx, z1 - 2.0f - d * 0.5f, w, d, s.rng.Int(minFloors, maxFloors), walls[s.rng.Int(0, 5)], 3);
+        // Хашаа: машин, гэрлийн шон, тоглоомын талбайн хашлага
+        const float yard = (z0 + z1) * 0.5f;
+        Car(s, x0 + 6.0f + s.rng.Range(0.0f, 8.0f), yard - 3.0f, true, RandomCarPaint(s.rng));
+        if (s.rng.Chance(0.6f)) Car(s, x1 - 8.0f - s.rng.Range(0.0f, 6.0f), yard + 3.0f, true, RandomCarPaint(s.rng));
+        LightPole(s, cx + s.rng.Range(-8.0f, 8.0f), yard, s.rng.Chance(0.2f) ? 1 : 0);
+        for (int i = 0; i < 3; ++i)
+        {
+            const float px = cx - 6.0f + 6.0f * (float)i;
+            s.solid.Box({ px, 0.9f, yard + 4.6f }, { 0.12f, 1.8f, 0.12f }, { 176, 60, 50, 255 }); // тоглоомын талбайн хүрээ
+        }
+        s.solid.Box({ cx, 1.8f, yard + 4.6f }, { 12.2f, 0.1f, 0.1f }, { 176, 60, 50, 255 });
+    }
+
+    // Төв талбай: хавтан, төрийн далбаа, хөшөө, Засаг даргын тамгын газар, гэрлийн шонгууд
+    void TownSquare(Scene& s, float x0, float z0, float x1, float z1, bool city)
+    {
+        const float cx = (x0 + x1) * 0.5f, cz = (z0 + z1) * 0.5f;
+        const Color tile = { 168, 164, 156, 255 };
+        for (float x = x0 + 2.0f; x < x1 - 2.0f; x += 6.0f)
+        {
+            for (float z = z0 + 2.0f; z < z1 - 16.0f; z += 6.0f)
+            {
+                const float ground = s.terrain.HeightAt(x + 3.0f, z + 3.0f);
+                s.solid.Box({ x + 3.0f, ground + 0.04f, z + 3.0f }, { 5.9f, 0.08f, 5.9f }, JitterColor(tile, s.rng, 0.04f));
+            }
+        }
+        // Засаг даргын тамгын газар: талбайн хойд талд, төвдөө өндөр хаалгатай, багануудтай
+        const float hz = z1 - 8.5f;
+        ApartmentBlock(s, cx, hz, x1 - x0 - 6.0f, 12.0f, city ? 5 : 3, { 214, 206, 186, 255 }, 3);
+        for (int i = 0; i < 6; ++i)
+        {
+            const float px = cx - 7.5f + 3.0f * (float)i;
+            s.solid.Cylinder({ px, 0.0f, hz - 6.6f }, 0.35f, 0.32f, 6.2f, 10, { 232, 228, 216, 255 });
+        }
+        s.solid.Box({ cx, 6.4f, hz - 6.6f }, { 18.0f, 0.5f, 1.4f }, { 222, 216, 200, 255 });
+        s.Collider({ cx, 3.1f, hz - 6.6f }, { 17.0f, 6.2f, 0.8f });
+        // Хөшөө: тавцан, морьтон баатрын дүрс (хялбаршуулсан)
+        const float sz = cz - 6.0f;
+        s.solid.Box({ cx, 1.0f, sz }, { 4.2f, 2.0f, 4.2f }, { 120, 116, 110, 255 });
+        s.solid.Box({ cx, 2.15f, sz }, { 3.6f, 0.3f, 3.6f }, { 150, 146, 138, 255 });
+        s.solid.Box({ cx, 3.3f, sz }, { 0.9f, 2.0f, 2.4f }, { 70, 84, 70, 255 });      // морь
+        s.solid.Box({ cx, 4.6f, sz - 0.2f }, { 0.6f, 1.2f, 0.6f }, { 70, 84, 70, 255 }); // морьтон
+        s.solid.Box({ cx, 4.2f, sz + 1.3f }, { 0.5f, 0.9f, 0.5f }, { 70, 84, 70, 255 }); // морины толгой
+        s.Collider({ cx, 1.2f, sz }, { 4.2f, 2.4f, 4.2f });
+        s.Shadow(cx - 2.1f, sz - 2.1f, cx + 2.1f, sz + 2.1f, 0.0f, 5.2f);
+        Flagpole(s, cx - 9.0f, sz);
+        Flagpole(s, cx + 9.0f, sz);
+        for (float x : { x0 + 3.0f, x1 - 3.0f })
+        {
+            for (float z : { z0 + 4.0f, cz })
+            {
+                LightPole(s, x, z, 0);
+            }
+        }
+        // Сандал
+        for (float x : { cx - 5.0f, cx + 5.0f })
+        {
+            s.solid.Box({ x, 0.45f, sz - 5.0f }, { 2.0f, 0.1f, 0.5f }, kWood);
+            s.solid.Box({ x, 0.22f, sz - 5.0f }, { 1.8f, 0.45f, 0.1f }, kMetal);
+        }
+    }
+
+    // Аймгийн төв: 4 x 4 хороолол. Төвд нь талбай, орон сууц; хүрээнд нь хашаат байшин; хойд ба зүүн захаар гэр хороолол.
+    // Хот (Эрдэнэт, Дархан, Улаанбаатар, Чингис) илүү өндөр, олон орон сууцтай.
+    void BuildTown(Scene& s)
+    {
+        bool city = false;
+        TownName(s.variant, city);
+        const float margin = 6.0f; // гудамжны тэнхлэгээс хорооллын зах хүртэл
+        for (int bx = 0; bx < 4; ++bx)
+        {
+            for (int bz = 0; bz < 4; ++bz)
+            {
+                const float x0 = kTownStreets[bx] + margin, x1 = kTownStreets[bx + 1] - margin;
+                const float z0 = kTownRows[bz] + margin, z1 = kTownRows[bz + 1] - margin;
+                const bool inner = (bx == 1 || bx == 2) && (bz == 1 || bz == 2);
+                const bool outerEdge = bz == 3 || bx == 3;
+                if (bx == 1 && bz == 1)
+                {
+                    TownSquare(s, x0, z0, x1, z1, city);
+                }
+                else if (inner)
+                {
+                    ApartmentQuarter(s, x0, z0, x1, z1, city ? 5 : 3, city ? 9 : 5);
+                }
+                else if (city && !outerEdge)
+                {
+                    ApartmentQuarter(s, x0, z0, x1, z1, 4, 5);
+                }
+                else if (outerEdge)
+                {
+                    GerBlock(s, x0, z0, x1, z1);
+                }
+                else
+                {
+                    HouseBlock(s, x0, z0, x1, z1);
+                }
+            }
+        }
+
+        // Гудамжинд орхигдсон машинууд, гэрлийн шонгууд, хогийн сав
+        for (int i = 0; i < 5; ++i)
+        {
+            for (int j = 0; j < 4; ++j)
+            {
+                const float z = kTownRows[j] + s.rng.Range(14.0f, 40.0f);
+                if (s.rng.Chance(0.35f)) Car(s, kTownStreets[i] + (s.rng.Chance(0.5f) ? 2.0f : -2.0f), z, false, RandomCarPaint(s.rng));
+                if (s.rng.Chance(0.5f)) LightPole(s, kTownStreets[i] + 4.6f, kTownRows[j] + 27.0f, s.rng.Chance(0.15f) ? 1 : 0);
+            }
+        }
+        // Хотын үүдний самбар (гол өргөн чөлөөний эхэнд)
+        RoadSign(s, kTownStreets[2] + 5.5f, kTownRows[0] - 10.0f, 0, 2.0f);
+    }
+
+    // ------------------------------------------------------------------ Буянт-Ухаа нисэх онгоцны буудал
+    // OpenStreetMap-ийн өгөгдлөөр (AirportData.h) жинхэнэ хэмжээ, жинхэнэ чиглэлтэй. Зөвхөн Улаанбаатарын үед.
+
+    const Color kRunwayAsphalt = { 64, 66, 70, 255 };
+    const Color kTaxiAsphalt = { 80, 80, 82, 255 };
+    const Color kApronConcrete = { 156, 154, 146, 255 };
+    const Color kRunwayPaint = { 228, 228, 222, 255 };
+    const Color kTaxiPaint = { 218, 178, 58, 255 };
+    const float kYApron = 0.05f, kYTaxi = 0.06f, kYRunway = 0.07f, kYAirPaint = 0.09f;
+
+    Vector3 AirGround(const Scene& s, Vector2 p, float lift)
+    {
+        return { p.x, s.terrain.HeightAt(p.x, p.y) + lift, p.y };
+    }
+
+    // Дээшээ харсан гурвалжин (xz дээрх оройн дарааллаас үл хамааран); том бол хуваана
+    void PaveTriangle(Scene& s, Vector2 a, Vector2 b, Vector2 c, float lift, Color color, float jitter, int depth = 0)
+    {
+        const float ab = Vector2Distance(a, b), bc = Vector2Distance(b, c), ca = Vector2Distance(c, a);
+        if (std::max({ ab, bc, ca }) > 32.0f && depth < 8)
+        {
+            // Хамгийн урт ирмэгийг тэнд нь хуваана
+            if (ab >= bc && ab >= ca)
+            {
+                const Vector2 m = Vector2Lerp(a, b, 0.5f);
+                PaveTriangle(s, a, m, c, lift, color, jitter, depth + 1);
+                PaveTriangle(s, m, b, c, lift, color, jitter, depth + 1);
+            }
+            else if (bc >= ca)
+            {
+                const Vector2 m = Vector2Lerp(b, c, 0.5f);
+                PaveTriangle(s, a, b, m, lift, color, jitter, depth + 1);
+                PaveTriangle(s, a, m, c, lift, color, jitter, depth + 1);
+            }
+            else
+            {
+                const Vector2 m = Vector2Lerp(c, a, 0.5f);
+                PaveTriangle(s, a, b, m, lift, color, jitter, depth + 1);
+                PaveTriangle(s, m, b, c, lift, color, jitter, depth + 1);
+            }
+            return;
+        }
+        const float cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        if (cross > 0.0f) std::swap(b, c); // Box-ийн дээд талтай ижил эргэлт (дээрээс харагдана)
+        s.solid.Triangle(AirGround(s, a, lift), AirGround(s, b, lift), AirGround(s, c, lift), JitterColor(color, s.rng, jitter));
+    }
+
+    void PavePolygon(Scene& s, const Polygon& polygon, float lift, Color color, float jitter)
+    {
+        const std::vector<Vector2> triangles = Triangulate(polygon);
+        for (size_t i = 0; i + 2 < triangles.size(); i += 3)
+        {
+            PaveTriangle(s, triangles[i], triangles[i + 1], triangles[i + 2], lift, color, jitter);
+        }
+    }
+
+    // Олон шугамын дагуух зурвас (ХБЗ, явгалах зам): тэнхлэгийн дагуух зай -> цэг, хажуугийн чиглэл
+    struct StripPath
+    {
+        std::vector<Vector2> points;
+        std::vector<Vector2> side;
+        std::vector<float> distance;
+
+        StripPath(const std::vector<Vector2>& raw, float spacing)
+        {
+            points = Resample(raw, spacing);
+            const int count = (int)points.size();
+            side.resize(count);
+            distance.resize(count);
+            for (int i = 0; i < count; ++i)
+            {
+                const Vector2 tangent = Vector2Normalize(Vector2Subtract(points[std::min(i + 1, count - 1)], points[std::max(i - 1, 0)]));
+                side[i] = { -tangent.y, tangent.x };
+                distance[i] = i == 0 ? 0.0f : distance[i - 1] + Vector2Distance(points[i - 1], points[i]);
+            }
+        }
+        float Length() const { return distance.back(); }
+
+        // along зайд, хажуу тийш across: тэнхлэгийн шулуун хэсгүүдийн дагуу шугаман завсарлана
+        Vector2 At(float along, float across) const
+        {
+            along = std::clamp(along, 0.0f, Length());
+            size_t i = 0;
+            while (i + 2 < points.size() && distance[i + 1] < along) ++i;
+            const float span = std::max(0.001f, distance[i + 1] - distance[i]);
+            const float t = (along - distance[i]) / span;
+            const Vector2 p = Vector2Lerp(points[i], points[i + 1], t);
+            const Vector2 n = Vector2Normalize(Vector2Lerp(side[i], side[i + 1], t));
+            return { p.x + n.x * across, p.y + n.y * across };
+        }
+
+        // [a0, a1] x [c0, c1] тэгш өнцөгт (урт бол хэсэгчилнэ)
+        void Paint(Scene& s, float a0, float a1, float c0, float c1, float lift, Color color) const
+        {
+            const int pieces = std::max(1, (int)std::ceil((a1 - a0) / 24.0f));
+            for (int k = 0; k < pieces; ++k)
+            {
+                const float u0 = a0 + (a1 - a0) * (float)k / (float)pieces;
+                const float u1 = a0 + (a1 - a0) * (float)(k + 1) / (float)pieces;
+                s.solid.Quad(AirGround(s, At(u0, c0), lift), AirGround(s, At(u1, c0), lift), AirGround(s, At(u1, c1), lift),
+                             AirGround(s, At(u0, c1), lift), color);
+            }
+        }
+    };
+
+    // ХБЗ-ын дугаар (7 хэсэгт цифр). end = 0: эхний үзүүр (нисгэгч тэнхлэгийн дагуу урагш харна), 1: сүүлийн үзүүр.
+    void RunwayNumber(Scene& s, const StripPath& path, int end, int number)
+    {
+        static const uint8_t masks[10] = { 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F };
+        const float L = path.Length();
+        const float H = 14.0f, W = 6.0f, t = 1.3f, v0 = 50.0f;
+        // Нисгэгчийн өнцгөөс: u = баруун тийш, v = урагш (ХБЗ руу)
+        auto paint = [&](float u0, float u1, float w0, float w1) {
+            if (end == 0) path.Paint(s, v0 + w0, v0 + w1, u0, u1, kYAirPaint, kRunwayPaint);
+            else path.Paint(s, L - v0 - w1, L - v0 - w0, -u1, -u0, kYAirPaint, kRunwayPaint);
+        };
+        const int digits[2] = { number / 10, number % 10 };
+        for (int d = 0; d < 2; ++d)
+        {
+            const float x = d == 0 ? -W - 2.0f : 2.0f;
+            const uint8_t m = masks[digits[d]];
+            if (m & 0x01) paint(x, x + W, H - t, H);           // a: дээд
+            if (m & 0x02) paint(x + W - t, x + W, H * 0.5f, H); // b
+            if (m & 0x04) paint(x + W - t, x + W, 0.0f, H * 0.5f); // c
+            if (m & 0x08) paint(x, x + W, 0.0f, t);             // d: доод
+            if (m & 0x10) paint(x, x + t, 0.0f, H * 0.5f);      // e
+            if (m & 0x20) paint(x, x + t, H * 0.5f, H);         // f
+            if (m & 0x40) paint(x, x + W, H * 0.5f - t * 0.5f, H * 0.5f + t * 0.5f); // g: дунд
+        }
+    }
+
+    void BuildRunway(Scene& s, const airport::Strip& strip, int numberStart)
+    {
+        const std::vector<Vector2> raw(airport::kPoints + strip.first, airport::kPoints + strip.first + strip.count);
+        const StripPath path(raw, 12.0f);
+        const float L = path.Length(), hw = strip.halfWidth;
+        const bool gravel = strip.kind == 1;
+
+        // Хучилт: хөвөө, гадаргуу (хавтан бүр бага зэрэг өөр өнгө)
+        for (size_t i = 0; i + 1 < path.points.size(); ++i)
+        {
+            const float a0 = path.distance[i], a1 = path.distance[i + 1];
+            path.Paint(s, a0, a1, -hw - 1.5f, hw + 1.5f, kYRunway - 0.01f, JitterColor(gravel ? kDirtRoad : kGravel, s.rng, 0.05f));
+            path.Paint(s, a0, a1, -hw, hw, kYRunway, JitterColor(gravel ? kGravel : kRunwayAsphalt, s.rng, gravel ? 0.07f : 0.03f));
+        }
+        if (gravel)
+        {
+            // Хайрган ХБЗ: захын цагаан тэмдэг (будсан чулуу) 50 м тутам
+            for (float a = 10.0f; a < L - 5.0f; a += 50.0f)
+            {
+                for (float side : { -1.0f, 1.0f })
+                {
+                    const Vector2 p = path.At(a, side * (hw + 0.8f));
+                    s.solid.Box({ p.x, s.terrain.HeightAt(p.x, p.y) + 0.15f, p.y }, { 1.2f, 0.3f, 1.2f }, kRunwayPaint);
+                }
+            }
+            return;
+        }
+
+        // Тэмдэглэгээ: захын шугам, тэнхлэгийн тасархай, босгоны "төгөлдөр хуурын" зураас, онох цэг, дугаар
+        path.Paint(s, 0.0f, L, -hw + 0.6f, -hw + 1.5f, kYAirPaint, kRunwayPaint);
+        path.Paint(s, 0.0f, L, hw - 1.5f, hw - 0.6f, kYAirPaint, kRunwayPaint);
+        for (float a = 80.0f; a + 30.0f < L - 80.0f; a += 50.0f)
+        {
+            if (!s.rng.Chance(0.12f)) path.Paint(s, a, a + 30.0f, -0.45f, 0.45f, kYAirPaint, kRunwayPaint); // зарим нь арилсан
+        }
+        for (int end = 0; end < 2; ++end)
+        {
+            for (int k = 0; k < 6; ++k)
+            {
+                for (float side : { -1.0f, 1.0f })
+                {
+                    const float c = side * (3.0f + 3.6f * (float)k);
+                    if (end == 0) path.Paint(s, 6.0f, 36.0f, c - 0.9f, c + 0.9f, kYAirPaint, kRunwayPaint);
+                    else path.Paint(s, L - 36.0f, L - 6.0f, c - 0.9f, c + 0.9f, kYAirPaint, kRunwayPaint);
+                }
+            }
+            for (float side : { -1.0f, 1.0f })
+            {
+                const float c0 = side > 0.0f ? 6.0f : -15.0f, c1 = side > 0.0f ? 15.0f : -6.0f;
+                if (end == 0) path.Paint(s, 300.0f, 345.0f, c0, c1, kYAirPaint, kRunwayPaint);
+                else path.Paint(s, L - 345.0f, L - 300.0f, c0, c1, kYAirPaint, kRunwayPaint);
+            }
+        }
+        RunwayNumber(s, path, 0, numberStart);
+        RunwayNumber(s, path, 1, (numberStart + 18 - 1) % 36 + 1);
+
+        // Захын гэрэл 60 м тутам, үзүүрт ногоон/улаан гэрлийн эгнээ
+        for (float a = 0.0f; a <= L; a += 60.0f)
+        {
+            for (float side : { -1.0f, 1.0f })
+            {
+                const Vector2 p = path.At(a, side * (hw + 2.5f));
+                const float y = s.terrain.HeightAt(p.x, p.y);
+                s.solid.Box({ p.x, y + 0.18f, p.y }, { 0.12f, 0.36f, 0.12f }, kMetal);
+                s.solid.Box({ p.x, y + 0.42f, p.y }, { 0.26f, 0.14f, 0.26f }, { 236, 226, 170, 255 });
+            }
+        }
+        for (int end = 0; end < 2; ++end)
+        {
+            for (float c = -hw + 1.0f; c <= hw - 1.0f; c += 3.0f)
+            {
+                const Vector2 p = path.At(end == 0 ? 1.0f : L - 1.0f, c);
+                s.solid.Box({ p.x, s.terrain.HeightAt(p.x, p.y) + 0.12f, p.y }, { 0.4f, 0.24f, 0.4f },
+                            end == 0 ? Color{ 70, 170, 90, 255 } : Color{ 190, 60, 50, 255 });
+            }
+        }
+
+        // Салхины уут: эхний үзүүрээс 200 м-т ХБЗ-ын хажууд
+        const Vector2 sock = path.At(200.0f, hw + 45.0f);
+        const float ground = s.terrain.HeightAt(sock.x, sock.y);
+        s.solid.Cylinder({ sock.x, ground, sock.y }, 0.1f, 0.07f, 6.0f, 6, kRunwayPaint);
+        const Vector2 dir = Vector2Normalize(Vector2Subtract(path.At(210.0f, 0.0f), path.At(200.0f, 0.0f)));
+        for (int k = 0; k < 4; ++k)
+        {
+            const float a = 0.25f + 0.85f * (float)k, b = a + 0.85f;
+            s.solid.Tube({ sock.x + dir.x * a, ground + 5.8f - 0.08f * a, sock.y + dir.y * a },
+                         { sock.x + dir.x * b, ground + 5.8f - 0.08f * b, sock.y + dir.y * b }, 0.45f - 0.06f * a,
+                         0.45f - 0.06f * b, 8, k % 2 == 0 ? Color{ 230, 110, 40, 255 } : kRunwayPaint, false);
+        }
+        s.Collider({ sock.x, ground + 3.0f, sock.y }, { 0.3f, 6.0f, 0.3f });
+    }
+
+    void BuildTaxiway(Scene& s, const airport::Strip& strip)
+    {
+        const std::vector<Vector2> raw(airport::kPoints + strip.first, airport::kPoints + strip.first + strip.count);
+        if (raw.size() < 2) return;
+        const StripPath path(raw, 8.0f);
+        const float hw = strip.halfWidth;
+        for (size_t i = 0; i + 1 < path.points.size(); ++i)
+        {
+            path.Paint(s, path.distance[i], path.distance[i + 1], -hw, hw, kYTaxi, kTaxiAsphalt);
+        }
+        path.Paint(s, 0.0f, path.Length(), -0.15f, 0.15f, kYTaxi + 0.015f, kTaxiPaint); // шар тэнхлэг
+    }
+
+    void BuildHelipad(Scene& s, const airport::Ring& ring)
+    {
+        const Polygon polygon(airport::kPoints + ring.first, airport::kPoints + ring.first + ring.count);
+        PavePolygon(s, polygon, kYApron + 0.01f, { 140, 140, 134, 255 }, 0.02f);
+        Vector2 c = { 0.0f, 0.0f };
+        for (const Vector2& p : polygon) c = Vector2Add(c, p);
+        c = Vector2Scale(c, 1.0f / (float)polygon.size());
+        // Тойрог ба "H" тэмдэг: талбайн ирмэгийн чиглэлтэй зэрэгцүүлнэ
+        const Vector2 u = Vector2Normalize(Vector2Subtract(polygon[1], polygon[0]));
+        const Vector2 v = { -u.y, u.x };
+        const float y = s.terrain.HeightAt(c.x, c.y) + kYApron + 0.03f;
+        auto rect = [&](float u0, float u1, float v0, float v1, Color color) {
+            auto p = [&](float a, float b) { return Vector3{ c.x + u.x * a + v.x * b, y, c.y + u.y * a + v.y * b }; };
+            s.solid.Quad(p(u0, v0), p(u0, v1), p(u1, v1), p(u1, v0), color);
+            s.solid.Quad(p(u1, v0), p(u1, v1), p(u0, v1), p(u0, v0), color);
+        };
+        rect(-4.0f, -2.6f, -5.0f, 5.0f, kRunwayPaint);
+        rect(2.6f, 4.0f, -5.0f, 5.0f, kRunwayPaint);
+        rect(-2.6f, 2.6f, -0.7f, 0.7f, kRunwayPaint);
+        for (int k = 0; k < 32; ++k)
+        {
+            const float a0 = 2.0f * PI * (float)k / 32.0f, a1 = 2.0f * PI * (float)(k + 1) / 32.0f;
+            const float r0 = 8.6f, r1 = 9.4f;
+            auto p = [&](float a, float r) {
+                return Vector3{ c.x + (u.x * std::cos(a) + v.x * std::sin(a)) * r, y, c.y + (u.y * std::cos(a) + v.y * std::sin(a)) * r };
+            };
+            s.solid.Quad(p(a0, r0), p(a1, r0), p(a1, r1), p(a0, r1), kTaxiPaint);
+            s.solid.Quad(p(a0, r1), p(a1, r1), p(a1, r0), p(a0, r0), kTaxiPaint);
+        }
+    }
+
+    // Олон өнцөгт суурьтай барилгын мөргөлдөөн: 2 м зузаан хэвтээ зурвасуудаар дүүргэнэ
+    void PolygonColliders(Scene& s, const Vector2* points, int count, float base, float height, bool walkable = false)
+    {
+        float z0 = 1e9f, z1 = -1e9f;
+        for (int i = 0; i < count; ++i)
+        {
+            z0 = std::min(z0, points[i].y);
+            z1 = std::max(z1, points[i].y);
+        }
+        const float row = 2.0f;
+        std::vector<float> xs;
+        for (float z = z0 + row * 0.5f; z < z1 + row * 0.5f; z += row)
+        {
+            const float zc = std::min(z, z1 - 0.05f);
+            xs.clear();
+            for (int i = 0, j = count - 1; i < count; j = i++)
+            {
+                const Vector2 a = points[i], b = points[j];
+                if ((a.y > zc) != (b.y > zc)) xs.push_back(a.x + (zc - a.y) * (b.x - a.x) / (b.y - a.y));
+            }
+            std::sort(xs.begin(), xs.end());
+            for (size_t k = 0; k + 1 < xs.size(); k += 2)
+            {
+                if (xs[k + 1] - xs[k] < 0.3f) continue;
+                s.Collider({ (xs[k] + xs[k + 1]) * 0.5f, base + height * 0.5f, zc }, { xs[k + 1] - xs[k], height, row }, true, walkable);
+            }
+        }
+    }
+
+    void AirportBuilding(Scene& s, const airport::Building& building)
+    {
+        const Vector2* p = airport::kPoints + building.first;
+        const int n = building.count;
+        const float h = building.height;
+
+        float base = 1e9f;
+        Vector2 center = { 0.0f, 0.0f };
+        for (int i = 0; i < n; ++i)
+        {
+            base = std::min(base, s.terrain.HeightAt(p[i].x, p[i].y));
+            center = Vector2Add(center, p[i]);
+        }
+        center = Vector2Scale(center, 1.0f / (float)n);
+        base -= 0.2f;
+        const float top = base + 0.2f + h;
+
+        static const Color pastel[] = { { 214, 204, 176, 255 }, { 196, 186, 168, 255 }, { 176, 188, 196, 255 },
+                                        { 210, 190, 170, 255 }, { 188, 196, 172, 255 }, { 220, 214, 200, 255 } };
+        Color wall, roof, window = { 44, 54, 64, 255 };
+        switch (building.kind)
+        {
+        case 0: wall = { 222, 220, 212, 255 }; roof = { 132, 134, 136, 255 }; window = { 62, 92, 112, 255 }; break;
+        case 1: wall = { 176, 182, 186, 255 }; roof = { 118, 126, 132, 255 }; break;
+        case 4: wall = { 232, 228, 216, 255 }; roof = { 70, 104, 86, 255 }; break;
+        default: wall = pastel[s.rng.Int(0, 5)]; roof = { 112, 104, 98, 255 }; break;
+        }
+        wall = JitterColor(wall, s.rng, 0.04f);
+
+        // Хананууд (оройнууд цагийн зүүний эсрэг тул гадна тал нь (dz, -dx))
+        for (int i = 0; i < n; ++i)
+        {
+            const Vector2 a = p[i], c = p[(i + 1) % n];
+            const float length = Vector2Distance(a, c);
+            if (length < 0.05f) continue;
+            const Vector2 normal = { (c.y - a.y) / length, -(c.x - a.x) / length };
+            s.solid.Quad({ c.x, base, c.y }, { a.x, base, a.y }, { a.x, top, a.y }, { c.x, top, c.y }, wall);
+
+            auto face = [&](float t0, float t1, float y0, float y1, float out, Color color) {
+                auto q = [&](float t, float y) {
+                    return Vector3{ a.x + (c.x - a.x) * t + normal.x * out, y, a.y + (c.y - a.y) * t + normal.y * out };
+                };
+                s.solid.Quad(q(t1, y0), q(t0, y0), q(t0, y1), q(t1, y1), color);
+            };
+
+            if (building.kind == 0)
+            {
+                // Терминал: давхар бүрд шилэн зурвас
+                for (float y = base + 1.4f; y + 2.2f < top - 0.8f; y += 4.2f)
+                {
+                    face(0.02f, 0.98f, y, y + 2.4f, 0.05f, window);
+                }
+            }
+            else if (building.kind == 1)
+            {
+                // Ангар: босоо хавирга, хамгийн урт ханад том хаалга
+                for (float t = 4.0f; t < length - 1.0f; t += 4.0f)
+                {
+                    face(t / length - 0.12f / length, t / length + 0.12f / length, base, top - 0.3f, 0.04f, ScaleColor(wall, 0.8f));
+                }
+                float longest = 0.0f;
+                for (int k = 0; k < n; ++k) longest = std::max(longest, Vector2Distance(p[k], p[(k + 1) % n]));
+                if (length >= longest - 0.01f)
+                {
+                    face(0.12f, 0.88f, base, base + (top - base) * 0.72f, 0.07f, { 128, 136, 142, 255 });
+                }
+            }
+            else if (length > 2.5f)
+            {
+                // Цонхнууд: давхар бүрд 3.2 м тутам
+                const int floors = std::max(1, (int)std::round((h - 0.6f) / 3.1f));
+                const int columns = std::max(1, (int)(length / 3.2f));
+                for (int f = 0; f < floors; ++f)
+                {
+                    const float y = base + 0.2f + 0.9f + 3.1f * (float)f;
+                    for (int k = 0; k < columns; ++k)
+                    {
+                        const float t = ((float)k + 0.5f) / (float)columns;
+                        const float half = 0.7f / length;
+                        face(t - half, t + half, y, y + 1.4f, 0.05f, s.rng.Chance(0.15f) ? Color{ 24, 26, 30, 255 } : window);
+                    }
+                }
+            }
+        }
+
+        // Хавтгай дээвэр (дээрээс харагдана)
+        const Polygon outline(p, p + n);
+        const std::vector<Vector2> triangles = Triangulate(outline);
+        for (size_t i = 0; i + 2 < triangles.size(); i += 3)
+        {
+            Vector2 a = triangles[i], b = triangles[i + 1], c = triangles[i + 2];
+            const float cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+            if (cross > 0.0f) std::swap(b, c);
+            s.solid.Triangle({ a.x, top, a.y }, { b.x, top, b.y }, { c.x, top, c.y }, roof);
+        }
+
+        if (building.kind == 4)
+        {
+            // Сүм: төвдөө бөмбөгөр
+            s.solid.Cylinder({ center.x, top, center.y }, 2.2f, 2.2f, 2.4f, 12, wall);
+            s.solid.Ellipsoid({ center.x, top + 3.0f, center.y }, { 2.3f, 2.0f, 2.3f }, 6, 12, { 200, 170, 80, 255 });
+        }
+        else if (building.kind == 0 && h > 12.0f)
+        {
+            // Терминалын дээврийн агааржуулалтын төхөөрөмж
+            for (int k = 0; k < 4; ++k)
+            {
+                const Vector2 q = Vector2Lerp(p[0], center, 0.25f + 0.18f * (float)k);
+                s.solid.Box({ q.x, top + 0.8f, q.y }, { 3.0f, 1.6f, 2.2f }, kMetal);
+            }
+        }
+
+        PolygonColliders(s, p, n, base, top - base);
+    }
+
+    // Зорчигч тээврийн онгоц (Боинг 737 орчим): урт ~39 м, далавч ~35 м. heading: хамрын чиглэл (xz).
+    // belly: буух араа эвдэрч гэдсэн дээрээ хэвтсэн.
+    void Airliner(Scene& s, Vector2 position, Vector2 heading, Color tail, Color stripe, bool belly)
+    {
+        heading = Vector2Normalize(heading);
+        const float ground = s.terrain.HeightAt(position.x, position.y);
+        const float drop = belly ? -1.2f : 0.0f;
+        Matrix place = MatrixMultiply(MatrixRotateY(std::atan2(-heading.y, heading.x)),
+                                      MatrixTranslate(position.x, ground + drop, position.y));
+        if (belly) place = MatrixMultiply(MatrixRotateX(0.05f), place);
+        MeshBuilder& m = s.solid;
+        m.SetTransform(place);
+
+        const Color white = JitterColor({ 232, 232, 228, 255 }, s.rng, 0.03f);
+        const Color grey = { 182, 186, 190, 255 };
+        const Color dark = { 40, 46, 54, 255 };
+        const float y = 3.3f, r = 1.95f;
+        auto twoSided = [&](Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color color) {
+            m.Quad(a, b, c, d, color);
+            m.Quad(d, c, b, a, color);
+        };
+
+        // Их бие, хамар, сүүл
+        m.Tube({ -14.5f, y, 0.0f }, { 13.0f, y, 0.0f }, r, r, 14, white);
+        m.Ellipsoid({ 13.0f, y, 0.0f }, { 4.4f, r, r }, 6, 14, white);
+        m.Tube({ -21.5f, y + 1.2f, 0.0f }, { -14.5f, y, 0.0f }, 0.35f, r, 14, white);
+        m.Box({ 15.0f, y + 0.95f, 0.0f }, { 1.3f, 0.5f, 2.9f }, dark); // бүхээгийн шил
+        for (float side : { -1.0f, 1.0f })
+        {
+            m.Box({ -1.0f, y + 0.55f, side * 1.93f }, { 25.0f, 0.3f, 0.08f }, dark);   // зорчигчийн цонхнууд
+            m.Box({ -1.0f, y - 0.15f, side * 1.94f }, { 27.0f, 0.42f, 0.08f }, stripe); // будгийн зураас
+            m.Box({ 10.2f, y + 0.1f, side * 1.94f }, { 0.9f, 1.9f, 0.06f }, ScaleColor(white, 0.82f)); // хаалга
+        }
+
+        // Далавч: доод далавч, сум хэлбэртэй, үзүүрт босоо далавчлуур
+        for (float side : { -1.0f, 1.0f })
+        {
+            twoSided({ 4.0f, y - 1.0f, side * 1.8f }, { -6.4f, y - 0.25f, side * 17.4f }, { -8.8f, y - 0.25f, side * 17.4f },
+                     { -3.4f, y - 1.0f, side * 1.8f }, grey);
+            twoSided({ -6.4f, y - 0.25f, side * 17.4f }, { -7.6f, y + 1.9f, side * 17.6f }, { -8.8f, y + 1.9f, side * 17.6f },
+                     { -8.8f, y - 0.25f, side * 17.4f }, tail);
+            // Хөдөлгүүр ба тулгуур
+            m.Tube({ 4.4f, y - 1.95f, side * 5.6f }, { 0.4f, y - 1.95f, side * 5.6f }, 1.05f, 0.8f, 14, grey);
+            m.Tube({ 4.45f, y - 1.95f, side * 5.6f }, { 4.3f, y - 1.95f, side * 5.6f }, 0.88f, 0.88f, 14, dark);
+            m.Box({ 1.4f, y - 1.2f, side * 5.6f }, { 3.2f, 0.9f, 0.25f }, grey);
+            // Хэвтээ тогтворжуулагч
+            twoSided({ -16.5f, y + 0.9f, side * 0.6f }, { -20.4f, y + 1.3f, side * 6.8f }, { -22.0f, y + 1.3f, side * 6.8f },
+                     { -20.0f, y + 0.9f, side * 0.6f }, white);
+        }
+        // Босоо сүүл (компанийн өнгө)
+        twoSided({ -15.0f, y + 1.5f, 0.0f }, { -20.0f, y + 8.7f, 0.0f }, { -22.6f, y + 8.7f, 0.0f }, { -20.8f, y + 1.5f, 0.0f }, tail);
+
+        if (!belly)
+        {
+            m.Tube({ 11.5f, 0.35f, 0.0f }, { 11.5f, y - 1.3f, 0.0f }, 0.1f, 0.1f, 6, kMetal);
+            m.Tube({ 11.5f, 0.35f, -0.35f }, { 11.5f, 0.35f, 0.35f }, 0.35f, 0.35f, 10, kRubber);
+            for (float side : { -1.0f, 1.0f })
+            {
+                m.Tube({ -1.0f, 0.55f, side * 2.9f }, { -1.0f, y - 1.0f, side * 2.9f }, 0.13f, 0.13f, 6, kMetal);
+                m.Tube({ -1.0f, 0.55f, side * 2.45f }, { -1.0f, 0.55f, side * 3.35f }, 0.55f, 0.55f, 12, kRubber);
+            }
+        }
+        m.ResetTransform();
+
+        // Мөргөлдөөн: их биеийн дагуу, хөдөлгүүрүүд
+        auto world = [&](float lx, float lz) {
+            return Vector2{ position.x + heading.x * lx - heading.y * lz, position.y + heading.y * lx + heading.x * lz };
+        };
+        const float bodyTop = y + r + drop;
+        for (float lx = -19.0f; lx <= 16.0f; lx += 2.5f)
+        {
+            const Vector2 q = world(lx, 0.0f);
+            s.Collider({ q.x, ground + bodyTop * 0.5f, q.y }, { 3.4f, bodyTop, 3.4f });
+        }
+        for (float side : { -1.0f, 1.0f })
+        {
+            const Vector2 q = world(2.4f, side * 5.6f);
+            const float engineTop = std::max(0.5f, y - 0.9f + drop);
+            s.Collider({ q.x, ground + engineTop * 0.5f, q.y }, { 2.4f, engineTop, 2.4f });
+        }
+    }
+
+    // Ми-8 нисдэг тэрэг: хамар нь heading чиглэлд
+    void Helicopter(Scene& s, Vector2 position, Vector2 heading, Color paint)
+    {
+        heading = Vector2Normalize(heading);
+        const float ground = s.terrain.HeightAt(position.x, position.y);
+        const Matrix place = MatrixMultiply(MatrixRotateY(std::atan2(-heading.y, heading.x)),
+                                            MatrixTranslate(position.x, ground, position.y));
+        MeshBuilder& m = s.solid;
+        m.SetTransform(place);
+        const Color body = JitterColor(paint, s.rng, 0.05f);
+        const Color dark = { 36, 42, 48, 255 };
+        m.BevelBox({ -0.6f, 2.0f, 0.0f }, { 9.2f, 2.6f, 2.5f }, 0.5f, body);
+        m.Ellipsoid({ 3.9f, 1.9f, 0.0f }, { 2.1f, 1.3f, 1.25f }, 6, 12, body);
+        m.Ellipsoid({ 4.4f, 2.35f, 0.0f }, { 1.5f, 0.8f, 1.05f }, 5, 10, dark); // бүхээгийн шил
+        m.BevelBox({ 0.3f, 3.6f, 0.0f }, { 5.2f, 1.0f, 1.9f }, 0.3f, ScaleColor(body, 0.9f)); // хөдөлгүүрийн бүрхүүл
+        m.Tube({ -4.8f, 2.6f, 0.0f }, { -12.8f, 3.4f, 0.0f }, 0.6f, 0.25f, 8, body);
+        m.Box({ -12.6f, 4.3f, 0.0f }, { 1.2f, 2.2f, 0.12f }, body);
+        m.Box({ -12.8f, 4.6f, 0.35f }, { 0.25f, 2.8f, 0.06f }, dark); // сүүлний сэнс
+        for (float side : { -1.0f, 1.0f })
+        {
+            m.Box({ 0.0f, 2.3f, side * 1.27f }, { 6.0f, 0.5f, 0.04f }, dark); // цонхнууд
+            m.Tube({ -1.0f, 0.4f, side * 1.6f }, { -1.0f, 0.4f, side * 1.9f }, 0.4f, 0.4f, 10, kRubber);
+        }
+        m.Tube({ 3.6f, 0.3f, -0.15f }, { 3.6f, 0.3f, 0.15f }, 0.3f, 0.3f, 8, kRubber);
+        m.Tube({ 0.3f, 4.1f, 0.0f }, { 0.3f, 4.8f, 0.0f }, 0.16f, 0.12f, 8, kMetal);
+        for (int k = 0; k < 5; ++k)
+        {
+            m.SetTransform(MatrixMultiply(MatrixMultiply(MatrixRotateY((float)k * 2.0f * PI / 5.0f + 0.4f), MatrixTranslate(0.3f, 4.85f, 0.0f)), place));
+            m.Box({ 5.3f, -0.12f * 5.3f / 10.6f, 0.0f }, { 10.6f, 0.07f, 0.5f }, dark);
+        }
+        m.ResetTransform();
+        for (float lx = -4.0f; lx <= 4.0f; lx += 2.5f)
+        {
+            const Vector2 q = { position.x + heading.x * lx, position.y + heading.y * lx };
+            s.Collider({ q.x, ground + 1.9f, q.y }, { 2.6f, 3.8f, 2.6f });
+        }
+    }
+
+    // ---------------- "Чингис хаан" олон улсын нисэх буудлын терминал (Буянт-Ухаа)
+    // Орон нутгийн тэнхлэг (kTerminalFrame): x = урт тэнхлэг (±88 м), z = агаарын тал руу; урд (хуурай газрын) нүүр z = -23.
+    // Төвд 26 м өндөр блок ("CHINGGIS KHAAN" бичиг, соёмбо, алтан хээтэй шилэн нүүр), хоёр жигүүр сум хэлбэрийн
+    // металл дээвэртэй, урд талаар нь 2 давхарт гарах гүүрэн зам (хоёр үзүүрээрээ эргэж газар руу буух).
+
+    const Color kTerminalWhite = { 232, 230, 222, 255 };
+    const Color kTerminalGlass = { 56, 82, 100, 255 };
+    const Color kTerminalRoof = { 178, 184, 190, 255 };
+    const Color kTerminalFascia = { 92, 98, 106, 255 };
+    const Color kSignBlue = { 26, 58, 196, 255 };
+    const Color kSoyomboRed = { 196, 30, 36, 255 };
+    const Color kLatticeGold = { 200, 160, 78, 255 };
+    const float kWingTop = 15.0f, kCenterTop = 26.0f, kDeckTop = 7.2f;
+
+    // Хоёр талаас харагдах дөрвөн өнцөгт (локал хувиргалттай)
+    void TwoSidedQuad(MeshBuilder& m, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color color)
+    {
+        m.Quad(a, b, c, d, color);
+        m.Quad(d, c, b, a, color);
+    }
+
+    // Урд (-Z) тал руу харсан босоо тэгш өнцөгт: үзэгчийн баруун тал нь -X
+    void FrontRect(MeshBuilder& m, float x0, float x1, float y0, float y1, float z, Color color)
+    {
+        m.Quad({ x1, y0, z }, { x0, y0, z }, { x0, y1, z }, { x1, y1, z }, color);
+    }
+    // Ар (+Z) тал руу харсан
+    void BackRect(MeshBuilder& m, float x0, float x1, float y0, float y1, float z, Color color)
+    {
+        m.Quad({ x0, y0, z }, { x1, y0, z }, { x1, y1, z }, { x0, y1, z }, color);
+    }
+
+    // 5x7 цэгэн үсэг (зөвхөн бичигт хэрэгтэй үсгүүд)
+    const char* const* Glyph(char c)
+    {
+        static const char* const kC[7] = { ".###.", "#...#", "#....", "#....", "#....", "#...#", ".###." };
+        static const char* const kH[7] = { "#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#" };
+        static const char* const kI[7] = { ".###.", "..#..", "..#..", "..#..", "..#..", "..#..", ".###." };
+        static const char* const kN[7] = { "#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#", "#...#" };
+        static const char* const kG[7] = { ".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".###." };
+        static const char* const kS[7] = { ".####", "#....", "#....", ".###.", "....#", "....#", "####." };
+        static const char* const kK[7] = { "#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#" };
+        static const char* const kA[7] = { ".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#" };
+        static const char* const kT[7] = { "#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.." };
+        static const char* const kE[7] = { "#####", "#....", "#....", "####.", "#....", "#....", "#####" };
+        static const char* const kR[7] = { "####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#" };
+        static const char* const kO[7] = { ".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###." };
+        static const char* const kL[7] = { "#....", "#....", "#....", "#....", "#....", "#....", "#####" };
+        static const char* const kP[7] = { "####.", "#...#", "#...#", "####.", "#....", "#....", "#...." };
+        switch (c)
+        {
+        case 'C': return kC; case 'H': return kH; case 'I': return kI; case 'N': return kN; case 'G': return kG;
+        case 'S': return kS; case 'K': return kK; case 'A': return kA; case 'T': return kT; case 'E': return kE;
+        case 'R': return kR; case 'O': return kO; case 'L': return kL; case 'P': return kP;
+        default: return nullptr;
+        }
+    }
+
+    // Цэгэн зургийг урд нүүрэнд будна: мөр бүрийн зэрэгцээ цэгүүдийг нэг тэгш өнцөгт болгоно.
+    // left: зургийн зүүн дээд булангийн x (үзэгчийн зүүн = +X), top: дээд ирмэгийн y.
+    void PixelArt(MeshBuilder& m, const char* const* rows, int count, float left, float top, float px, float z, Color color)
+    {
+        for (int r = 0; r < count; ++r)
+        {
+            const int width = (int)std::strlen(rows[r]);
+            for (int c = 0; c < width;)
+            {
+                if (rows[r][c] != '#') { ++c; continue; }
+                int end = c;
+                while (end < width && rows[r][end] == '#') ++end;
+                FrontRect(m, left - px * (float)end, left - px * (float)c, top - px * (float)(r + 1), top - px * (float)r, z, color);
+                c = end;
+            }
+        }
+    }
+
+    // Бичгийг төвд нь (x = center) байрлуулна
+    void SignText(MeshBuilder& m, const char* text, float center, float top, float px, float z, Color color)
+    {
+        const int length = (int)std::strlen(text);
+        const float width = (float)(length * 6 - 1) * px;
+        float left = center + width * 0.5f;
+        for (int i = 0; i < length; ++i, left -= 6.0f * px)
+        {
+            if (const char* const* glyph = Glyph(text[i])) PixelArt(m, glyph, 7, left, top, px, z, color);
+        }
+    }
+
+    void Soyombo(MeshBuilder& m, float center, float top, float px, float z)
+    {
+        static const char* const rows[] = {
+            "....#....", "...###...", "..#####..", ".##.#.##.", ".........", "..#####..", ".#######.", "..#####..",
+            ".........", ".#.....#.", "..#####..", ".........", "#########", "#.#####.#", "#..###..#", "#...#...#",
+            "#.......#", "#########", "#.......#", "#.##.##.#", "#.##.##.#", "#.......#", "#########", "#.......#",
+            "#########",
+        };
+        PixelArt(m, rows, 25, center + 4.5f * px, top, px, z, kSoyomboRed);
+    }
+
+    // Терминалын ертөнцийн координат дахь тэгш өнцөгтийн мөргөлдөөн
+    void TerminalCollider(Scene& s, float x0, float x1, float z0, float z1, float base, float height, bool walkable = false)
+    {
+        const Vector2 corners[4] = { kTerminalFrame.ToWorld(x0, z0), kTerminalFrame.ToWorld(x1, z0),
+                                     kTerminalFrame.ToWorld(x1, z1), kTerminalFrame.ToWorld(x0, z1) };
+        PolygonColliders(s, corners, 4, base, height, walkable);
+    }
+
+    // Жигүүрийн сум хэлбэрийн металл дээвэр. inner: төв блок талын x, outer: гадна үзүүрийн x (тэмдэгтэйгээр)
+    void WingRoof(MeshBuilder& m, float inner, float outer)
+    {
+        const float dir = outer > inner ? 1.0f : -1.0f;
+        const float y0 = kWingTop, y1 = kWingTop + 3.4f;
+        const float zf = -25.5f, zb = 25.5f;
+        const float tip = outer + dir * 7.0f;             // хурц хамар
+        const float corner = outer + dir * 1.5f;          // эгнээний булан
+        const float ridge = tip - dir * 22.0f;             // нурууны гадна үзүүр
+        const Vector3 fi = { inner, y0, zf }, bi = { inner, y0, zb }, fc = { corner, y0, zf }, bc = { corner, y0, zb };
+        const Vector3 t = { tip, y0, 0.0f }, ri = { inner, y1, 0.0f }, ro = { ridge, y1, 0.0f };
+        TwoSidedQuad(m, fi, fc, ro, ri, kTerminalRoof);
+        TwoSidedQuad(m, bc, bi, ri, ro, ScaleColor(kTerminalRoof, 0.92f));
+        m.Triangle(fc, t, ro, ScaleColor(kTerminalRoof, 1.04f));
+        m.Triangle(ro, t, fc, ScaleColor(kTerminalRoof, 1.04f));
+        m.Triangle(t, bc, ro, ScaleColor(kTerminalRoof, 0.96f));
+        m.Triangle(ro, bc, t, ScaleColor(kTerminalRoof, 0.96f));
+        // Доод тал (хаяавч) ба бараан хүрээ
+        const Vector3 outline[5] = { fi, fc, t, bc, bi };
+        for (int i = 0; i < 4; ++i)
+        {
+            const Vector3 a = outline[i], b = outline[i + 1];
+            TwoSidedQuad(m, { a.x, y0 - 0.7f, a.z }, { b.x, y0 - 0.7f, b.z }, b, a, kTerminalFascia);
+            TwoSidedQuad(m, { a.x, y0 - 0.7f, a.z }, { b.x, y0 - 0.7f, b.z }, { b.x, y0 - 0.7f, 0.0f }, { a.x, y0 - 0.7f, 0.0f },
+                         { 204, 204, 198, 255 });
+        }
+    }
+
+    // Гүүрэн зам: тэнхлэгийн цэгүүд (x, z, дээд өндөр). solid: доогуураа битүү бетон (налуу хэсэг)
+    struct DeckPoint { float x, z, y; };
+    void BuildDeck(Scene& s, const std::vector<DeckPoint>& path, float halfWidth, bool solid, float ground)
+    {
+        MeshBuilder& m = s.solid;
+        const Color asphalt = { 74, 76, 80, 255 }, concrete = { 196, 194, 186, 255 };
+        for (size_t i = 0; i + 1 < path.size(); ++i)
+        {
+            const DeckPoint a = path[i], b = path[i + 1];
+            auto side = [&](const DeckPoint& p, size_t k) {
+                const DeckPoint q0 = path[k == 0 ? 0 : k - 1], q1 = path[std::min(k + 1, path.size() - 1)];
+                const Vector2 tangent = Vector2Normalize({ q1.x - q0.x, q1.z - q0.z });
+                (void)p;
+                return Vector2{ -tangent.y, tangent.x };
+            };
+            const Vector2 na = side(a, i), nb = side(b, i + 1);
+            auto at = [&](const DeckPoint& p, Vector2 n, float offset, float y) { return Vector3{ p.x + n.x * offset, y, p.z + n.y * offset }; };
+            // Замын гадаргуу ба зураас
+            TwoSidedQuad(m, at(a, na, -halfWidth, a.y), at(b, nb, -halfWidth, b.y), at(b, nb, halfWidth, b.y), at(a, na, halfWidth, a.y), asphalt);
+            if (i % 2 == 0)
+            {
+                TwoSidedQuad(m, at(a, na, -0.1f, a.y + 0.02f), at(b, nb, -0.1f, b.y + 0.02f), at(b, nb, 0.1f, b.y + 0.02f),
+                             at(a, na, 0.1f, a.y + 0.02f), kRoadPaint);
+            }
+            for (float edge : { -1.0f, 1.0f })
+            {
+                const float o = edge * halfWidth;
+                // Хашлага (бетон хана 1 м)
+                TwoSidedQuad(m, at(a, na, o, a.y), at(b, nb, o, b.y), at(b, nb, o, b.y + 1.0f), at(a, na, o, a.y + 1.0f), concrete);
+                TwoSidedQuad(m, at(a, na, o - edge * 0.3f, a.y + 1.0f), at(b, nb, o - edge * 0.3f, b.y + 1.0f),
+                             at(b, nb, o, b.y + 1.0f), at(a, na, o, a.y + 1.0f), ScaleColor(concrete, 1.05f));
+                // Доод хэсэг: битүү хана эсвэл зузаан ирмэг
+                const float bottomA = solid ? 0.0f : a.y - 1.4f, bottomB = solid ? 0.0f : b.y - 1.4f;
+                TwoSidedQuad(m, at(a, na, o, bottomA), at(b, nb, o, bottomB), at(b, nb, o, b.y), at(a, na, o, a.y), ScaleColor(concrete, 0.94f));
+            }
+            if (!solid)
+            {
+                TwoSidedQuad(m, at(a, na, -halfWidth, a.y - 1.4f), at(b, nb, -halfWidth, b.y - 1.4f), at(b, nb, halfWidth, b.y - 1.4f),
+                             at(a, na, halfWidth, a.y - 1.4f), ScaleColor(concrete, 0.8f));
+            }
+
+            // Мөргөлдөөн (ертөнцийн координатаар): гадаргуу дээр алхаж болно
+            const Vector3 c0 = at(a, na, -halfWidth, 0), c1 = at(b, nb, -halfWidth, 0), c2 = at(b, nb, halfWidth, 0), c3 = at(a, na, halfWidth, 0);
+            const Vector2 corners[4] = { kTerminalFrame.ToWorld(c0.x, c0.z), kTerminalFrame.ToWorld(c1.x, c1.z),
+                                         kTerminalFrame.ToWorld(c2.x, c2.z), kTerminalFrame.ToWorld(c3.x, c3.z) };
+            const float top = (a.y + b.y) * 0.5f;
+            if (solid) PolygonColliders(s, corners, 4, ground, std::max(0.2f, top), true);
+            else PolygonColliders(s, corners, 4, ground + top - 1.4f, 1.4f, true);
+        }
+    }
+
+    void BuildTerminal(Scene& s)
+    {
+        const TerminalFrame& f = kTerminalFrame;
+        const float ground = s.terrain.HeightAt(f.center.x, f.center.y);
+        MeshBuilder& m = s.solid;
+        m.SetTransform(MatrixMultiply(MatrixRotateY(f.Angle()), MatrixTranslate(f.center.x, ground, f.center.y)));
+
+        const float L = 88.0f, D = 23.0f, C = 25.0f; // хагас урт, хагас гүн, төв блокийн хагас өргөн
+        // --- Жигүүрүүд: их бие, урд нүүрийн шил, баганууд, хаалганууд ---
+        for (float sign : { -1.0f, 1.0f })
+        {
+            const float x0 = sign < 0.0f ? -L : C, x1 = sign < 0.0f ? -C : L;
+            m.Box({ (x0 + x1) * 0.5f, kWingTop * 0.5f, 0.0f }, { x1 - x0, kWingTop, D * 2.0f }, kTerminalWhite);
+            // 2-р давхрын (гарах танхим) шилэн зурвас, хүрээ
+            FrontRect(m, x0 + 1.0f, x1 - 1.0f, 8.4f, 13.2f, -D - 0.05f, kTerminalGlass);
+            for (float x = x0 + 1.0f; x <= x1 - 0.9f; x += 2.4f) FrontRect(m, x, x + 0.18f, 8.4f, 13.2f, -D - 0.1f, { 210, 210, 206, 255 });
+            FrontRect(m, x0 + 1.0f, x1 - 1.0f, 10.7f, 10.9f, -D - 0.1f, { 210, 210, 206, 255 });
+            // Газрын давхар: багана ба шар хүрээтэй шилэн хаалганууд
+            for (float x = x0 + 4.0f; x < x1 - 2.0f; x += 8.0f)
+            {
+                m.Box({ x, 3.3f, -D - 0.5f }, { 1.0f, 6.6f, 1.0f }, ScaleColor(kTerminalWhite, 0.95f));
+                FrontRect(m, x + 1.2f, x + 6.8f, 0.0f, 4.2f, -D - 0.05f, kTerminalGlass);
+                FrontRect(m, x + 2.8f, x + 5.2f, 0.0f, 3.2f, -D - 0.1f, { 210, 168, 40, 255 });
+                FrontRect(m, x + 3.0f, x + 5.0f, 0.0f, 3.0f, -D - 0.12f, { 44, 62, 76, 255 });
+            }
+            // Арын (перроны) тал: цонхны зурвас, хаалганууд
+            BackRect(m, x0 + 1.0f, x1 - 1.0f, 8.6f, 11.6f, D + 0.05f, kTerminalGlass);
+            for (float x = x0 + 6.0f; x < x1 - 4.0f; x += 14.0f) BackRect(m, x, x + 3.6f, 0.0f, 3.4f, D + 0.05f, { 120, 126, 132, 255 });
+            // Гадна үзүүрийн цонхнууд
+            const float endX = sign < 0.0f ? x0 : x1;
+            for (float z = -D + 3.0f; z < D - 2.0f; z += 4.0f)
+            {
+                for (float y : { 1.2f, 5.2f, 9.2f })
+                {
+                    const float e = endX + sign * 0.05f;
+                    if (sign > 0.0f) m.Quad({ e, y, z }, { e, y, z + 1.8f }, { e, y + 1.8f, z + 1.8f }, { e, y + 1.8f, z }, kTerminalGlass);
+                    else m.Quad({ e, y, z + 1.8f }, { e, y, z }, { e, y + 1.8f, z }, { e, y + 1.8f, z + 1.8f }, kTerminalGlass);
+                }
+            }
+            WingRoof(m, sign * C, sign * L);
+            // Дээврийн антенн
+            m.Box({ sign * (L - 10.0f), kWingTop + 4.6f, 6.0f }, { 0.2f, 2.4f, 0.2f }, kMetal);
+            TerminalCollider(s, x0, x1, -D, D, ground, kWingTop + 3.0f);
+        }
+
+        // --- Төв блок: доод хэсэг үүдтэй, дээд хэсэг урагшаа 4 м цухуйсан ---
+        m.Box({ 0.0f, 3.6f, 0.0f }, { C * 2.0f, 7.2f, D * 2.0f }, kTerminalWhite);
+        m.Box({ 0.0f, (7.2f + kCenterTop) * 0.5f, -2.0f }, { C * 2.0f, kCenterTop - 7.2f, D * 2.0f + 4.0f }, kTerminalWhite);
+        m.Box({ 0.0f, kCenterTop + 0.5f, -2.0f }, { C * 2.0f + 1.0f, 1.0f, D * 2.0f + 5.0f }, { 196, 196, 190, 255 }); // парапет
+        const float zFront = -D - 4.0f;
+        // Алтан хээтэй шилэн нүүр
+        FrontRect(m, -C + 3.0f, C - 3.0f, 8.0f, 18.4f, zFront - 0.05f, { 34, 44, 54, 255 });
+        for (float x = -C + 3.0f; x <= C - 3.0f + 0.01f; x += 1.1f) FrontRect(m, x - 0.07f, x + 0.07f, 8.0f, 18.4f, zFront - 0.1f, kLatticeGold);
+        for (float y = 8.0f; y <= 18.41f; y += 1.3f) FrontRect(m, -C + 3.0f, C - 3.0f, y - 0.07f, y + 0.07f, zFront - 0.1f, kLatticeGold);
+        for (float x = -C + 3.55f; x < C - 3.0f; x += 2.2f)
+        {
+            for (float y = 8.65f; y < 18.0f; y += 2.6f) FrontRect(m, x - 0.25f, x + 0.25f, y - 0.25f, y + 0.25f, zFront - 0.12f, kLatticeGold);
+        }
+        // Бичгийн самбар: CHINGGIS KHAAN / INTERNATIONAL AIRPORT, хоёр талд соёмбо
+        m.Box({ 0.0f, 22.3f, zFront - 0.3f }, { C * 2.0f - 1.0f, 6.6f, 0.6f }, { 238, 238, 234, 255 });
+        SignText(m, "CHINGGIS KHAAN", 0.0f, 25.0f, 0.42f, zFront - 0.65f, kSignBlue);
+        SignText(m, "INTERNATIONAL AIRPORT", 0.0f, 21.4f, 0.24f, zFront - 0.65f, kSignBlue);
+        for (float x : { -21.4f, 21.4f }) Soyombo(m, x, 25.4f, 0.25f, zFront - 0.65f);
+        // Гол хаалганууд (гүүрэн замын доор)
+        for (float x = -C + 4.0f; x < C - 3.0f; x += 7.0f)
+        {
+            FrontRect(m, x, x + 5.6f, 0.0f, 5.6f, -D - 0.05f, kTerminalGlass);
+            FrontRect(m, x + 1.6f, x + 4.0f, 0.0f, 3.2f, -D - 0.1f, { 210, 168, 40, 255 });
+            FrontRect(m, x + 1.8f, x + 3.8f, 0.0f, 3.0f, -D - 0.12f, { 44, 62, 76, 255 });
+        }
+        BackRect(m, -C + 2.0f, C - 2.0f, 8.6f, 20.0f, D + 0.05f, kTerminalGlass);
+        TerminalCollider(s, -C, C, -D, D, ground, 7.2f);
+        TerminalCollider(s, -C, C, zFront, D, ground + 7.2f, kCenterTop - 6.2f);
+
+        // --- Дээвэр дээрх нислэгийн удирдлагын цамхаг (арын хэсэгт) ---
+        const float tz = 12.0f;
+        m.Cylinder({ 0.0f, kCenterTop + 1.0f, tz }, 2.6f, 2.4f, 14.0f, 12, kTerminalWhite);
+        m.Cylinder({ 0.0f, kCenterTop + 15.0f, tz }, 4.0f, 4.8f, 1.0f, 12, kTerminalWhite);
+        m.Cylinder({ 0.0f, kCenterTop + 16.0f, tz }, 4.8f, 5.2f, 3.4f, 12, { 58, 84, 100, 255 });
+        m.Cylinder({ 0.0f, kCenterTop + 19.4f, tz }, 5.6f, 3.4f, 0.9f, 12, kTerminalWhite);
+        m.Cylinder({ 0.0f, kCenterTop + 20.3f, tz }, 0.12f, 0.06f, 4.0f, 5, kMetal);
+        TerminalCollider(s, -2.6f, 2.6f, tz - 2.6f, tz + 2.6f, ground + kCenterTop, 15.0f);
+        TerminalCollider(s, -4.8f, 4.8f, tz - 4.8f, tz + 4.8f, ground + kCenterTop + 15.0f, 5.3f);
+
+        // --- Гүүрэн зам: урд нүүрийн дагуу 2-р давхрын түвшинд, үзүүрүүдээрээ эргэж газар руу буух ---
+        const float roadZ = -35.0f, roadHalf = 6.0f;
+        // Явган хүний зам (барилга ба замын хооронд)
+        TwoSidedQuad(m, { -L - 8.0f, kDeckTop, -D }, { L + 8.0f, kDeckTop, -D }, { L + 8.0f, kDeckTop, roadZ + roadHalf },
+                     { -L - 8.0f, kDeckTop, roadZ + roadHalf }, { 186, 182, 172, 255 });
+        TwoSidedQuad(m, { -L - 8.0f, kDeckTop - 1.0f, -D }, { L + 8.0f, kDeckTop - 1.0f, -D },
+                     { L + 8.0f, kDeckTop - 1.0f, roadZ + roadHalf }, { -L - 8.0f, kDeckTop - 1.0f, roadZ + roadHalf }, { 150, 148, 142, 255 });
+        TerminalCollider(s, -L - 8.0f, L + 8.0f, roadZ + roadHalf, -D, ground + kDeckTop - 1.0f, 1.0f, true);
+        std::vector<DeckPoint> straight;
+        for (float x = -96.0f; x <= 96.01f; x += 12.0f) straight.push_back({ x, roadZ, kDeckTop });
+        const float R = 13.0f;
+        for (float sign : { -1.0f, 1.0f })
+        {
+            std::vector<DeckPoint> loop;
+            for (int k = 0; k <= 12; ++k)
+            {
+                const float phi = PI * (float)k / 12.0f;
+                loop.push_back({ sign * (96.0f + R * std::sin(phi)), roadZ - R + R * std::cos(phi), kDeckTop - 3.0f * (float)k / 12.0f });
+            }
+            for (int k = 1; k <= 14; ++k)
+            {
+                const float t = (float)k / 14.0f;
+                loop.push_back({ sign * (96.0f - 56.0f * t), roadZ - 2.0f * R, (kDeckTop - 3.0f) * (1.0f - t) });
+            }
+            BuildDeck(s, loop, roadHalf, true, ground);
+        }
+        BuildDeck(s, straight, roadHalf, false, ground);
+        // Гадна талын хашлагын мөргөлдөөн (2-р давхраас унахгүй)
+        TerminalCollider(s, -96.0f, 96.0f, roadZ - roadHalf - 0.3f, roadZ - roadHalf + 0.3f, ground + kDeckTop, 1.0f);
+        m.ResetTransform();
+    }
+
+    // Терминалаас онгоц руу гарах өндөрлөг шилэн коридорууд (OSM-ийн нимгэн "салаанууд")
+    void JetBridges(Scene& s)
+    {
+        static const std::vector<std::vector<Vector2>> piers = {
+            { { -559.0f, 1383.0f }, { -539.0f, 1363.0f }, { -553.0f, 1348.0f } },
+            { { -512.0f, 1425.0f }, { -493.0f, 1408.0f }, { -506.0f, 1395.0f } },
+            { { -508.0f, 1425.0f }, { -446.0f, 1431.0f }, { -431.0f, 1414.0f } },
+            { { -446.0f, 1431.0f }, { -397.0f, 1484.0f }, { -384.0f, 1466.0f } },
+        };
+        for (const std::vector<Vector2>& pier : piers)
+        {
+            for (size_t i = 0; i + 1 < pier.size(); ++i)
+            {
+                const Vector2 a = pier[i], b = pier[i + 1];
+                const Vector2 d = Vector2Subtract(b, a);
+                const float length = Vector2Length(d);
+                const Vector2 mid = Vector2Lerp(a, b, 0.5f);
+                const float ground = s.terrain.HeightAt(mid.x, mid.y);
+                s.solid.SetTransform(MatrixMultiply(MatrixRotateY(std::atan2(-d.y, d.x)), MatrixTranslate(mid.x, ground, mid.y)));
+                s.solid.Box({ 0.0f, 5.6f, 0.0f }, { length + 2.6f, 3.0f, 2.8f }, { 222, 222, 216, 255 });
+                for (float side : { -1.0f, 1.0f }) s.solid.Box({ 0.0f, 5.9f, side * 1.42f }, { length + 2.4f, 1.0f, 0.06f }, kTerminalGlass);
+                s.solid.ResetTransform();
+                for (float t = 0.0f; t <= 1.0f; t += std::max(0.25f, 12.0f / length))
+                {
+                    const Vector2 p = Vector2Lerp(a, b, t);
+                    s.solid.Cylinder({ p.x, s.terrain.HeightAt(p.x, p.y), p.y }, 0.3f, 0.3f, 4.1f, 8, kMetal);
+                    s.Collider({ p.x, ground + 2.05f, p.y }, { 0.6f, 4.1f, 0.6f });
+                }
+                const Vector2 n = Vector2Scale(Vector2Normalize({ -d.y, d.x }), 1.4f);
+                const Vector2 corners[4] = { Vector2Subtract(a, n), Vector2Subtract(b, n), Vector2Add(b, n), Vector2Add(a, n) };
+                PolygonColliders(s, corners, 4, ground + 4.1f, 3.0f);
+            }
+        }
+    }
+
+    void BuildAirport(Scene& s)
+    {
+        using namespace airport;
+        for (const Ring& apron : kAprons)
+        {
+            PavePolygon(s, Polygon(kPoints + apron.first, kPoints + apron.first + apron.count), kYApron, kApronConcrete, 0.035f);
+        }
+        {
+            Vector2 corners[4];
+            AirportParking(corners);
+            PavePolygon(s, Polygon(corners, corners + 4), kYApron, { 92, 92, 94, 255 }, 0.03f);
+            // Терминалын урд талбай (гүүрэн замын доорх ирэх замын эгнээ)
+            const TerminalFrame& f = kTerminalFrame;
+            const Polygon forecourt = { f.ToWorld(-116.0f, -72.0f), f.ToWorld(116.0f, -72.0f), f.ToWorld(116.0f, -22.0f),
+                                        f.ToWorld(-116.0f, -22.0f) };
+            PavePolygon(s, forecourt, kYApron + 0.005f, { 84, 84, 88, 255 }, 0.02f);
+        }
+        for (const Strip& strip : kStrips)
+        {
+            if (strip.kind == 2) BuildTaxiway(s, strip);
+        }
+        for (const Strip& strip : kStrips)
+        {
+            if (strip.kind == 2) continue;
+            // Гол (засмал) ХБЗ: 14/32, хайрган нь 15/33. Хойд үзүүрт нь 14 (15), өмнөд үзүүрт 32 (33).
+            const bool northFirst = kPoints[strip.first].y > kPoints[strip.first + strip.count - 1].y;
+            const int north = strip.kind == 0 ? 14 : 15;
+            BuildRunway(s, strip, northFirst ? north : north + 18);
+        }
+        for (const Ring& pad : kHelipads) BuildHelipad(s, pad);
+        for (const Building& building : kBuildings)
+        {
+            if (building.kind == 0 && building.height > 12.0f) continue; // гол терминалыг тусгай загвараар
+            AirportBuilding(s, building);
+        }
+        BuildTerminal(s);
+        JetBridges(s);
+        BuildRoad(s, AirportAccessRoad());
+
+        // Коридорын үзүүрт (хаалганд) зогссон онгоцнууд, нэг нь эвдэрч гэдсэн дээрээ хэвтсэн
+        const Color miatBlue = { 30, 64, 140, 255 }, hunnuRed = { 170, 40, 44, 255 }, aeroGreen = { 40, 120, 90, 255 };
+        const Vector2 pierEnds[] = { { -553.0f, 1348.0f }, { -506.0f, 1395.0f }, { -431.0f, 1414.0f }, { -384.0f, 1466.0f } };
+        const Color tails[] = { miatBlue, hunnuRed, miatBlue, aeroGreen };
+        for (int i = 0; i < 4; ++i)
+        {
+            const Vector2 nose = Vector2Negate(kTerminalFrame.axisZ);
+            const Vector2 gate = Vector2Add(pierEnds[i], Vector2Scale(kTerminalFrame.axisZ, 21.0f));
+            Airliner(s, gate, nose, tails[i], tails[i], false);
+            // Шатахууны машин онгоцны хажууд
+            Truck(s, gate.x - nose.y * 9.0f, gate.y + nose.x * 9.0f, std::fabs(nose.x) > std::fabs(nose.y),
+                  { 220, 214, 200, 255 }, { 230, 150, 40, 255 });
+        }
+        Airliner(s, { -150.0f, 1500.0f }, { 0.7f, -0.71f }, aeroGreen, aeroGreen, true);
+
+        // Нисдэг тэрэгнүүд
+        for (int i = 0; i < 2; ++i)
+        {
+            const Ring& pad = kHelipads[i * 2];
+            Vector2 c = { 0.0f, 0.0f };
+            for (int k = 0; k < pad.count; ++k) c = Vector2Add(c, kPoints[pad.first + k]);
+            c = Vector2Scale(c, 1.0f / (float)pad.count);
+            Helicopter(s, c, { 0.62f + 0.2f * (float)i, -0.78f }, i == 0 ? Color{ 92, 104, 84, 255 } : Color{ 196, 200, 206, 255 });
+        }
+
+
+        // Зогсоолд орхигдсон машинууд
+        {
+            Vector2 corners[4];
+            AirportParking(corners);
+            for (int i = 0; i < 16; ++i)
+            {
+                const float a = s.rng.Range(0.08f, 0.92f), b = s.rng.Range(0.15f, 0.85f);
+                const Vector2 p = Vector2Lerp(Vector2Lerp(corners[0], corners[1], a), Vector2Lerp(corners[3], corners[2], a), b);
+                Car(s, p.x, p.y, s.rng.Chance(0.5f), RandomCarPaint(s.rng));
+            }
+        }
+        // Перрон дээр тархсан тэрэг, торх, хайрцаг
+        for (int i = 0; i < 14; ++i)
+        {
+            const Vector2 p = { s.rng.Range(-700.0f, -300.0f), s.rng.Range(1150.0f, 1450.0f) };
+            if (!s.layout.Paved(p.x, p.y)) continue;
+            if (s.rng.Chance(0.5f)) Crate(s, p.x, p.y, 1.2f, 0.0f, kOlive);
+            else Barrel(s, p.x, p.y, s.rng.Chance(0.5f) ? kRust : Color{ 60, 96, 130, 255 });
+        }
+    }
+
+    // ------------------------------------------------------------------ Байгаль: мод, овоо, нуур, мал
+
+    Vector3 GroundNormalAt(const Scene& s, float x, float z)
+    {
+        const float d = 3.0f;
+        const float hx = s.terrain.HeightAt(x + d, z) - s.terrain.HeightAt(x - d, z);
+        const float hz = s.terrain.HeightAt(x, z + d) - s.terrain.HeightAt(x, z - d);
+        return Vector3Normalize({ -hx, 2.0f * d, -hz });
+    }
+
+    // Шинэс: нарийн их бие, давхарласан шовгор мөчир (хойд аймгийн ой)
+    void Larch(Scene& s, float x, float z, float height)
+    {
+        const float ground = s.terrain.HeightAt(x, z) - 0.2f;
+        const Color bark = JitterColor({ 92, 70, 52, 255 }, s.rng, 0.08f);
+        const Color needles = JitterColor({ 58, 88, 52, 255 }, s.rng, 0.1f);
+        s.solid.Cylinder({ x, ground, z }, 0.16f + height * 0.012f, 0.06f, height, 6, bark);
+        const int tiers = 4;
+        for (int i = 0; i < tiers; ++i)
+        {
+            const float t = (float)i / (float)tiers;
+            const float base = ground + height * (0.25f + 0.68f * t);
+            const float radius = (1.0f - t * 0.75f) * height * 0.19f;
+            s.solid.Cylinder({ x, base, z }, radius, 0.0f, height * 0.32f, 7, ScaleColor(needles, 0.9f + 0.12f * t));
+        }
+        s.Collider({ x, ground + 1.5f, z }, { 0.5f, 3.0f, 0.5f });
+        s.Shadow(x - height * 0.15f, z - height * 0.15f, x + height * 0.15f, z + height * 0.15f, height * 0.25f, height);
+    }
+
+    // Хус: цагаан их бие, цайвар ногоон титэм
+    void Birch(Scene& s, float x, float z, float height)
+    {
+        const float ground = s.terrain.HeightAt(x, z) - 0.2f;
+        s.solid.Cylinder({ x, ground, z }, 0.14f, 0.07f, height * 0.85f, 6, { 222, 220, 210, 255 });
+        for (int i = 0; i < 3; ++i)
+        {
+            s.solid.Box({ x, ground + 1.0f + 1.3f * (float)i, z }, { 0.3f, 0.12f, 0.3f }, { 40, 40, 38, 255 }); // хар толбо
+        }
+        const Color leaves = JitterColor({ 112, 150, 72, 255 }, s.rng, 0.1f);
+        for (int i = 0; i < 3; ++i)
+        {
+            const float r = height * s.rng.Range(0.16f, 0.22f);
+            s.solid.Blob({ x + s.rng.Range(-0.6f, 0.6f), ground + height * (0.62f + 0.12f * (float)i), z + s.rng.Range(-0.6f, 0.6f) },
+                         { r, r * 1.2f, r }, leaves, s.rng, 0.1f);
+        }
+        s.Collider({ x, ground + 1.5f, z }, { 0.4f, 3.0f, 0.4f });
+        s.Shadow(x - height * 0.2f, z - height * 0.2f, x + height * 0.2f, z + height * 0.2f, height * 0.45f, height);
+    }
+
+    // Хайлаас: тал хээрийн ганц бие, өргөн титэмтэй мод
+    void Elm(Scene& s, float x, float z, float height)
+    {
+        const float ground = s.terrain.HeightAt(x, z) - 0.2f;
+        const Color bark = JitterColor({ 96, 82, 66, 255 }, s.rng, 0.08f);
+        s.solid.Cylinder({ x, ground, z }, 0.32f, 0.2f, height * 0.5f, 7, bark);
+        const float lean = s.rng.Range(-0.8f, 0.8f);
+        s.solid.Tube({ x, ground + height * 0.45f, z }, { x + lean * 1.6f, ground + height * 0.75f, z + 0.9f }, 0.18f, 0.08f, 5, bark);
+        s.solid.Tube({ x, ground + height * 0.45f, z }, { x - 1.4f, ground + height * 0.7f, z - lean }, 0.16f, 0.07f, 5, bark);
+        const Color leaves = JitterColor({ 86, 114, 62, 255 }, s.rng, 0.1f);
+        for (int i = 0; i < 5; ++i)
+        {
+            const float angle = (float)i * 1.26f + s.rng.Range(0.0f, 0.5f);
+            const float r = height * s.rng.Range(0.18f, 0.24f);
+            const float spread = i == 0 ? 0.0f : height * 0.22f;
+            s.solid.Blob({ x + std::cos(angle) * spread, ground + height * (0.78f + s.rng.Range(-0.05f, 0.08f)), z + std::sin(angle) * spread },
+                         { r * 1.2f, r * 0.8f, r * 1.2f }, leaves, s.rng, 0.12f);
+        }
+        s.Collider({ x, ground + 1.5f, z }, { 0.7f, 3.0f, 0.7f });
+        s.Shadow(x - height * 0.4f, z - height * 0.4f, x + height * 0.4f, z + height * 0.4f, height * 0.55f, height);
+    }
+
+    // Заг: говийн мушгирсан саарал бут
+    void Saxaul(Scene& s, float x, float z)
+    {
+        const float ground = s.terrain.HeightAt(x, z) - 0.1f;
+        const Color wood = JitterColor({ 128, 116, 100, 255 }, s.rng, 0.1f);
+        for (int i = 0; i < 4; ++i)
+        {
+            const float a = s.rng.Range(0.0f, 2.0f * PI);
+            const float h = s.rng.Range(1.0f, 2.2f);
+            s.solid.Tube({ x, ground, z }, { x + std::cos(a) * 0.9f, ground + h, z + std::sin(a) * 0.9f }, 0.09f, 0.03f, 4, wood);
+            s.solid.Blob({ x + std::cos(a) * 0.9f, ground + h, z + std::sin(a) * 0.9f }, { 0.45f, 0.3f, 0.45f },
+                         JitterColor({ 120, 128, 88, 255 }, s.rng, 0.1f), s.rng, 0.1f);
+        }
+        s.Collider({ x, ground + 0.8f, z }, { 1.0f, 1.6f, 1.0f });
+    }
+
+    // Овоо: уулын оройн чулуун овоолго, төвдөө шон, хөх хадагтай
+    void Ovoo(Scene& s, float x, float z)
+    {
+        const float ground = s.terrain.HeightAt(x, z) - 0.2f;
+        for (int layer = 0; layer < 4; ++layer)
+        {
+            const float radius = 2.6f - 0.6f * (float)layer;
+            const int stones = 9 - layer * 2;
+            for (int i = 0; i < stones; ++i)
+            {
+                const float a = 2.0f * PI * (float)i / (float)stones + (float)layer * 0.4f;
+                const float r = s.rng.Range(0.35f, 0.6f);
+                s.solid.Rock({ x + std::cos(a) * radius * 0.7f, ground + 0.3f + 0.5f * (float)layer, z + std::sin(a) * radius * 0.7f },
+                             { r, r * 0.7f, r }, JitterColor({ 132, 128, 120, 255 }, s.rng, 0.12f), s.rng);
+            }
+        }
+        s.solid.Cylinder({ x, ground, z }, 0.09f, 0.06f, 5.0f, 6, { 120, 92, 64, 255 });
+        // Хадаг: оройгоос доош унжсан хөх, цагаан, шар туузууд
+        const Color ribbons[] = { { 40, 92, 188, 255 }, { 232, 232, 226, 255 }, { 40, 92, 188, 255 }, { 220, 186, 60, 255 }, { 60, 140, 80, 255 } };
+        for (int i = 0; i < 10; ++i)
+        {
+            const float a = 2.0f * PI * (float)i / 10.0f;
+            const Vector3 top = { x, ground + 4.8f, z };
+            const Vector3 end = { x + std::cos(a) * 3.0f, ground + 1.2f, z + std::sin(a) * 3.0f };
+            const Vector3 side = Vector3Scale(Vector3Normalize({ -std::sin(a), 0.0f, std::cos(a) }), 0.12f);
+            const Color c = ribbons[i % 5];
+            s.solid.Quad(Vector3Subtract(top, side), Vector3Add(top, side), Vector3Add(end, side), Vector3Subtract(end, side), c);
+            s.solid.Quad(Vector3Subtract(end, side), Vector3Add(end, side), Vector3Add(top, side), Vector3Subtract(top, side), c);
+        }
+        s.Collider({ x, ground + 1.1f, z }, { 3.6f, 2.2f, 3.6f });
+    }
+
+    // --- Мал: хонь ямаа, тэмээ, сарлаг (хөдөлгөөнгүй, бэлчиж буй) ---
+    void Sheep(Scene& s, float x, float z, float heading)
+    {
+        const float ground = s.terrain.HeightAt(x, z);
+        static const Color wool[] = { { 230, 224, 206, 255 }, { 220, 212, 192, 255 }, { 236, 232, 222, 255 }, { 90, 72, 60, 255 }, { 50, 46, 44, 255 } };
+        const bool goat = s.rng.Chance(0.3f);
+        const Color body = JitterColor(wool[goat ? s.rng.Int(3, 4) : s.rng.Int(0, 2)], s.rng, 0.05f);
+        MeshBuilder& m = s.solid;
+        m.SetTransform(MatrixMultiply(MatrixRotateY(heading), MatrixTranslate(x, ground, z)));
+        m.Ellipsoid({ 0.0f, 0.62f, 0.0f }, { goat ? 0.24f : 0.32f, goat ? 0.24f : 0.3f, 0.5f }, 3, 6, body);
+        const bool grazing = s.rng.Chance(0.6f);
+        m.Box({ 0.0f, grazing ? 0.34f : 0.72f, 0.55f }, { 0.16f, 0.2f, 0.28f }, goat ? body : Color{ 40, 36, 34, 255 });
+        for (int i = 0; i < 4; ++i)
+        {
+            m.Box({ (i % 2 ? 0.14f : -0.14f), 0.22f, (i < 2 ? 0.3f : -0.3f) }, { 0.07f, 0.44f, 0.07f }, { 50, 44, 40, 255 });
+        }
+        m.ResetTransform();
+    }
+
+    void Camel(Scene& s, float x, float z, float heading)
+    {
+        const float ground = s.terrain.HeightAt(x, z);
+        const Color hair = JitterColor({ 168, 132, 88, 255 }, s.rng, 0.06f);
+        MeshBuilder& m = s.solid;
+        const Matrix place = MatrixMultiply(MatrixRotateY(heading), MatrixTranslate(x, ground, z));
+        m.SetTransform(place);
+        m.Ellipsoid({ 0.0f, 1.7f, 0.0f }, { 0.5f, 0.5f, 1.1f }, 4, 8, hair);
+        m.Ellipsoid({ 0.0f, 2.15f, 0.45f }, { 0.32f, 0.38f, 0.32f }, 4, 6, ScaleColor(hair, 0.9f)); // хоёр бөх
+        m.Ellipsoid({ 0.0f, 2.15f, -0.45f }, { 0.32f, 0.38f, 0.32f }, 4, 6, ScaleColor(hair, 0.9f));
+        m.Tube({ 0.0f, 1.8f, 0.95f }, { 0.0f, 2.5f, 1.5f }, 0.2f, 0.14f, 6, hair);
+        m.Ellipsoid({ 0.0f, 2.55f, 1.75f }, { 0.16f, 0.17f, 0.35f }, 3, 6, hair);
+        for (int i = 0; i < 4; ++i)
+        {
+            const float lx = i % 2 ? 0.25f : -0.25f, lz = i < 2 ? 0.7f : -0.7f;
+            m.Tube({ lx, 1.45f, lz }, { lx, 0.0f, lz }, 0.11f, 0.07f, 5, ScaleColor(hair, 0.85f));
+        }
+        m.ResetTransform();
+        s.Collider({ x, ground + 1.2f, z }, { 1.4f, 2.4f, 1.4f });
+    }
+
+    void Yak(Scene& s, float x, float z, float heading)
+    {
+        const float ground = s.terrain.HeightAt(x, z);
+        const Color hair = JitterColor(s.rng.Chance(0.25f) ? Color{ 200, 196, 186, 255 } : Color{ 46, 38, 34, 255 }, s.rng, 0.06f);
+        MeshBuilder& m = s.solid;
+        m.SetTransform(MatrixMultiply(MatrixRotateY(heading), MatrixTranslate(x, ground, z)));
+        m.Ellipsoid({ 0.0f, 1.0f, 0.0f }, { 0.55f, 0.55f, 0.95f }, 4, 8, hair);
+        m.Cylinder({ 0.0f, 0.35f, 0.0f }, 0.6f, 0.5f, 0.5f, 8, ScaleColor(hair, 0.85f)); // унжсан урт үс
+        m.Ellipsoid({ 0.0f, 1.32f, 0.35f }, { 0.4f, 0.32f, 0.35f }, 3, 6, hair);         // бөх
+        m.Ellipsoid({ 0.0f, 0.9f, 1.0f }, { 0.25f, 0.25f, 0.32f }, 3, 6, hair);
+        m.Tube({ 0.15f, 1.05f, 1.0f }, { 0.35f, 1.3f, 1.05f }, 0.05f, 0.02f, 4, { 220, 212, 190, 255 });
+        m.Tube({ -0.15f, 1.05f, 1.0f }, { -0.35f, 1.3f, 1.05f }, 0.05f, 0.02f, 4, { 220, 212, 190, 255 });
+        m.ResetTransform();
+        s.Collider({ x, ground + 0.8f, z }, { 1.2f, 1.6f, 1.2f });
+    }
+
+    void BuildLivestock(Scene& s)
+    {
+        for (const Vector2& camp : s.layout.camps)
+        {
+            if (!s.rng.Chance(0.75f)) continue;
+            // Отроос 25-55 м-т бэлчиж буй сүрэг
+            const float a = s.rng.Range(0.0f, 2.0f * PI);
+            const float d = s.rng.Range(25.0f, 55.0f);
+            const float fx = camp.x + std::cos(a) * d, fz = camp.y + std::sin(a) * d;
+            const float flockHeading = s.rng.Range(0.0f, 2.0f * PI);
+            const int count = s.rng.Int(10, 18);
+            for (int i = 0; i < count; ++i)
+            {
+                const float x = fx + s.rng.Range(-9.0f, 9.0f), z = fz + s.rng.Range(-9.0f, 9.0f);
+                if (s.layout.RoadDistance(x, z) < 1.5f) continue;
+                Sheep(s, x, z, flockHeading + s.rng.Range(-0.8f, 0.8f));
+            }
+            if (s.region == Region::Gobi || (s.region == Region::East && s.rng.Chance(0.3f)))
+            {
+                const int camels = s.rng.Int(2, 4);
+                for (int i = 0; i < camels; ++i)
+                {
+                    Camel(s, camp.x + s.rng.Range(-30.0f, 30.0f), camp.y + s.rng.Range(14.0f, 30.0f) * (s.rng.Chance(0.5f) ? 1.0f : -1.0f),
+                          s.rng.Range(0.0f, 2.0f * PI));
+                }
+            }
+            if (s.region == Region::Forest || s.region == Region::West)
+            {
+                const int yaks = s.rng.Int(2, 4);
+                for (int i = 0; i < yaks; ++i)
+                {
+                    Yak(s, camp.x + s.rng.Range(14.0f, 32.0f) * (s.rng.Chance(0.5f) ? 1.0f : -1.0f), camp.y + s.rng.Range(-30.0f, 30.0f),
+                        s.rng.Range(0.0f, 2.0f * PI));
+                }
+            }
+        }
+    }
+
+    void BuildTrees(Scene& s)
+    {
+        // Бүс нутгаас хамаарсан ургамал: хойд ойт аймагт шинэс, хусан ой; баруунд уулын шинэс;
+        // төв, зүүн талд ганц нэг хайлаас, хус; говьд заг, хааяа хайлаас.
+        int larches = 0, birches = 0, elms = 0, saxauls = 0;
+        switch (s.region)
+        {
+        case Region::Forest: larches = 1300; birches = 450; elms = 40; break;
+        case Region::West: larches = 260; birches = 60; elms = 40; break;
+        case Region::City: larches = 120; birches = 140; elms = 110; break;
+        case Region::East: birches = 50; elms = 120; break;
+        case Region::Gobi: elms = 60; saxauls = 420; break;
+        }
+        Rng rng((uint32_t)(91 + s.variant * 7));
+        const float extent = kPlayableHalfExtent * kUlaanbaatarMapScale;
+        auto place = [&](int count, int kind) {
+            for (int attempt = 0, placed = 0; attempt < count * 8 && placed < count; ++attempt)
+            {
+                const float x = rng.Range(-extent, extent), z = rng.Range(-extent, extent);
+                if (s.layout.FlatDistance(x, z) < 14.0f) continue;
+                const Vector3 n = GroundNormalAt(s, x, z);
+                const float h = s.terrain.HeightAt(x, z);
+                if (kind <= 1)
+                {
+                    // Ой: хойд (+Z) энгэр, ой бүхий толбо (noise), хэт эгц биш
+                    const float grove = Fbm(x * 0.004f + 13.0f, z * 0.004f + 7.0f, 3);
+                    if (n.y < 0.8f || grove < (kind == 0 ? 0.5f : 0.46f)) continue;
+                    if (n.z < -0.05f && rng.Chance(0.8f)) continue;
+                    if (h < 6.0f && rng.Chance(0.6f)) continue;
+                    // Төгөл: ойр ойрхон
+                    const int cluster = rng.Int(3, 7);
+                    for (int k = 0; k < cluster && placed < count; ++k, ++placed)
+                    {
+                        const float cx = x + rng.Range(-12.0f, 12.0f), cz = z + rng.Range(-12.0f, 12.0f);
+                        if (s.layout.FlatDistance(cx, cz) < 10.0f) continue;
+                        if (kind == 0) Larch(s, cx, cz, rng.Range(7.0f, 13.0f));
+                        else Birch(s, cx, cz, rng.Range(6.0f, 10.0f));
+                    }
+                }
+                else if (kind == 2)
+                {
+                    if (n.y < 0.9f || h > 25.0f) continue; // хөндий, тал
+                    Elm(s, x, z, rng.Range(5.0f, 8.0f));
+                    ++placed;
+                }
+                else
+                {
+                    if (n.y < 0.85f) continue;
+                    Saxaul(s, x, z);
+                    ++placed;
+                }
+            }
+        };
+        place(larches, 0);
+        place(birches, 1);
+        place(elms, 2);
+        place(saxauls, 3);
+    }
+
+    void BuildOvoos(Scene& s)
+    {
+        // Толгодын орой: ойр орчмоосоо өндөр, замаас хол цэгүүд
+        const float extent = kPlayableHalfExtent * kUlaanbaatarMapScale - 60.0f;
+        int placed = 0;
+        for (float z = -extent; z <= extent && placed < 16; z += 130.0f)
+        {
+            for (float x = -extent; x <= extent && placed < 16; x += 130.0f)
+            {
+                // Нүд доторх хамгийн өндөр цэг
+                float bestH = -1e9f, bx = x, bz = z;
+                for (float dz = 0.0f; dz < 130.0f; dz += 13.0f)
+                {
+                    for (float dx = 0.0f; dx < 130.0f; dx += 13.0f)
+                    {
+                        const float h = s.terrain.HeightAt(x + dx, z + dz);
+                        if (h > bestH) { bestH = h; bx = x + dx; bz = z + dz; }
+                    }
+                }
+                if (bestH < 22.0f || s.layout.FlatDistance(bx, bz) < 25.0f) continue;
+                bool peak = true;
+                for (int k = 0; k < 8 && peak; ++k)
+                {
+                    const float a = (float)k * PI * 0.25f;
+                    peak = s.terrain.HeightAt(bx + std::cos(a) * 40.0f, bz + std::sin(a) * 40.0f) < bestH - 1.5f;
+                }
+                if (!peak) continue;
+                Ovoo(s, bx, bz);
+                ++placed;
+            }
+        }
+    }
+
+    // Нуур: ус (говьд хатсан давсны мараа)
+    void BuildLakes(Scene& s)
+    {
+        for (const Lake& lake : s.layout.lakes)
+        {
+            const bool dry = s.region == Region::Gobi;
+            const int segments = 40;
+            const float r = lake.radius * 0.9f;
+            for (int i = 0; i < segments; ++i)
+            {
+                const float a0 = 2.0f * PI * (float)i / (float)segments, a1 = 2.0f * PI * (float)(i + 1) / (float)segments;
+                const float w0 = 1.0f + 0.08f * std::sin(a0 * 3.0f + lake.center.x), w1 = 1.0f + 0.08f * std::sin(a1 * 3.0f + lake.center.x);
+                const Vector3 c = { lake.center.x, kLakeLevel, lake.center.y };
+                const Vector3 p0 = { lake.center.x + std::cos(a0) * r * w0, kLakeLevel, lake.center.y + std::sin(a0) * r * w0 };
+                const Vector3 p1 = { lake.center.x + std::cos(a1) * r * w1, kLakeLevel, lake.center.y + std::sin(a1) * r * w1 };
+                if (dry)
+                {
+                    s.solid.Triangle(c, p1, p0, { 214, 208, 192, 255 }); // давсны цагаан хучаас
+                }
+                else
+                {
+                    s.glass.Triangle(c, p1, p0, { 70, 112, 140, 190 });
+                }
+            }
+            if (dry) continue;
+            // Эргийн зэгс
+            for (int i = 0; i < 70; ++i)
+            {
+                const float a = s.rng.Range(0.0f, 2.0f * PI);
+                const float d = r * s.rng.Range(0.92f, 1.08f);
+                const float x = lake.center.x + std::cos(a) * d, z = lake.center.y + std::sin(a) * d;
+                const float ground = std::max(s.terrain.HeightAt(x, z), kLakeLevel - 0.2f);
+                for (int k = 0; k < 5; ++k)
+                {
+                    const float ox = s.rng.Range(-0.4f, 0.4f), oz = s.rng.Range(-0.4f, 0.4f);
+                    const float h = s.rng.Range(0.8f, 1.6f);
+                    s.solid.Triangle({ x + ox - 0.03f, ground, z + oz }, { x + ox + 0.03f, ground, z + oz },
+                                     { x + ox * 1.4f, ground + h, z + oz * 1.4f }, JitterColor({ 120, 132, 70, 255 }, s.rng, 0.1f));
+                }
+            }
+        }
+    }
+
+    void BuildNature(Scene& s)
+    {
+        BuildLakes(s);
+        BuildTrees(s);
+        BuildOvoos(s);
+        BuildLivestock(s);
+    }
+
     // Талд тархсан том чулуунууд: ард нь хоргодож болно.
     void BuildBoulders(Scene& s)
     {
@@ -2549,11 +4042,14 @@ void BuildSettlementStructures(int variant, const Layout& layout, const Terrain&
     if (variant == kUlaanbaatarStage)
     {
         BuildUlaanbaatar(scene);
+        BuildAirport(scene); // Буянт-Ухаа: жинхэнэ хэмжээтэй нисэх буудал
     }
     else
     {
         BuildTownLots(scene, variant);
     }
+    BuildTown(scene);
     BuildHerderCamps(scene);
     BuildHamlets(scene);
+    BuildNature(scene); // мод, овоо, нуур, мал (бүс нутгаас хамаарна)
 }

@@ -101,8 +101,10 @@ MissionParams MissionFor(int provinceIndex)
 
 bool IsProvinceUnlocked(const Progress& progress, int provinceIndex)
 {
-    // Баруунаас зүүн тийш нэг нэгээр: өмнөх аймгийг чөлөөлсний дараа дараагийнх нээгдэнэ.
-    return provinceIndex == 0 || progress.liberated[provinceIndex - 1];
+    // Аль ч аймгийг хүссэн дарааллаар чөлөөлж болно (хүндрэл нь аймгаас хамаарна: MissionFor).
+    (void)progress;
+    (void)provinceIndex;
+    return true;
 }
 
 void MapScreen::SelectNextTarget(const Progress& progress)
@@ -222,7 +224,7 @@ void MapScreen::Draw(const Progress& progress) const
     int legendX = (int)kMapRect.x + 12;
     const int legendY = (int)(kMapRect.y + kMapRect.height) - 30;
     const struct { Color color; const char* text; } legend[] = {
-        { kLiberated, "чөлөөлсөн" }, { kAvailable, "довтолж болно" }, { kLocked, "түгжээтэй" } };
+        { kLiberated, "чөлөөлсөн" }, { kAvailable, "зомбид эзлэгдсэн" } };
     for (const auto& entry : legend)
     {
         legendX += Ui::Chip(entry.text, legendX, legendY, Ui::kTextDim, entry.color) + 8;
@@ -243,7 +245,7 @@ void MapScreen::Draw(const Progress& progress) const
     {
         const Rectangle card = { (float)panelX, (float)y, (float)panelWidth, 150.0f };
         Ui::PanelAccent(card, StatusColor(progress, selected));
-        Ui::Text(TextFormat("ҮЕ %02d / %02d", selected + 1, count), panelX + 18, y + 12, 13, Ui::kTextDim);
+        Ui::Text(TextFormat("АЙМАГ %02d / %02d", selected + 1, count), panelX + 18, y + 12, 13, Ui::kTextDim);
         Ui::TextBold(provinces[selected].name, panelX + 18, y + 28, 26, Ui::kText);
         Ui::Text(free ? "Чөлөөлөгдсөн — дахин тоглож болно" : unlocked ? "Зомбид эзлэгдсэн" : "Түгжээтэй", panelX + 18, y + 62,
                  15, StatusColor(progress, selected));
@@ -251,6 +253,15 @@ void MapScreen::Draw(const Progress& progress) const
         Ui::Bar({ (float)panelX + 18.0f, (float)y + 110.0f, (float)panelWidth - 36.0f, 6.0f },
                 objectives > 0 ? (float)objectivesDone / (float)objectives : 0.0f, kLiberated);
         Ui::Text(TextFormat("Шагнал  %d зоос", free ? 0 : mission.reward), panelX + 18, y + 124, 15, Ui::kAccent);
+        // Хүндрэл: аймгийн дугаараас (зомбины тоо, амь, хурд нэмэгддэг) 1-5 од
+        const int stars = 1 + selected * 5 / count;
+        const char* label = "Хүндрэл";
+        const int labelX = panelX + panelWidth - 18 - 5 * 14 - Ui::Measure(label, 13) - 8;
+        Ui::Text(label, labelX, y + 125, 13, Ui::kTextDim);
+        for (int i = 0; i < 5; ++i)
+        {
+            DrawCircle(panelX + panelWidth - 18 - (4 - i) * 14 - 5, y + 133, 5.0f, i < stars ? Ui::kDanger : Color{ 255, 255, 255, 40 });
+        }
         y += 162;
     }
 

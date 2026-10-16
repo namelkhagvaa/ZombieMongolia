@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace
 {
@@ -21,14 +22,15 @@ namespace
     const float kDetailKeep = 120.0f;
 
     // Тал хээрийн өнгөнүүд
-    const Color kGrassGreen = { 104, 122, 66, 255 };
+    const Color kGrassGreen = { 110, 122, 70, 255 };
     const Color kGrassDry = { 160, 146, 88, 255 };
     const Color kEarth = { 128, 104, 74, 255 };
     const Color kRockyGround = { 122, 110, 96, 255 };
     const Color kTrampled = { 146, 128, 96, 255 };
     const Color kStone = { 128, 124, 118, 255 };
     const Color kBush = { 84, 98, 52, 255 };
-    const Color kGrassLush = { 92, 140, 62, 255 };
+    const Color kGrassLush = { 96, 126, 64, 255 };
+    const Color kOchre = { 152, 130, 86, 255 };
     // Тал хээрийн цэцэг: алтан гагнуур (шар), хонхон цэцэг (ягаан хөх), цагаан цэцэг, улаан
     const Color kFlowers[4] = { { 236, 196, 52, 255 }, { 150, 110, 196, 255 }, { 236, 232, 220, 255 }, { 206, 72, 64, 255 } };
     const Color kBushDry = { 132, 112, 70, 255 };
@@ -63,7 +65,8 @@ namespace
                                             : MixColor(kGrassGreen, kGrassDry, rng.Next());
         // Нимгэн ир нь ихэвчлэн нарны эсрэг харж бараан гардаг тул өнгийг нь цайвар авна.
         const Color root = ScaleColor(tint, 0.85f);
-        const Color tip = ScaleColor(tint, 1.55f);
+        Color tip = ScaleColor(tint, 1.55f);
+        tip.a = 150; // alpha < 255: салхинд найгах хэмжээ (detail shader)
         const float height = rng.Range(0.22f, 0.62f);
         const int blades = rng.Chance(0.5f) ? 4 : 3;
 
@@ -85,7 +88,10 @@ namespace
     {
         const float height = rng.Range(0.18f, 0.38f);
         const Vector3 head = { base.x + rng.Range(-0.04f, 0.04f), base.y + height, base.z + rng.Range(-0.04f, 0.04f) };
-        builder.Triangle({ base.x - 0.012f, base.y, base.z }, { base.x + 0.012f, base.y, base.z }, head, kGrassGreen);
+        Color stemTop = kGrassGreen;
+        stemTop.a = 165;
+        petal.a = 165;
+        builder.Triangle({ base.x - 0.012f, base.y, base.z }, { base.x + 0.012f, base.y, base.z }, head, kGrassGreen, kGrassGreen, stemTop);
         const float r = rng.Range(0.04f, 0.07f);
         builder.Triangle({ head.x - r, head.y, head.z - r * 0.5f }, { head.x + r, head.y, head.z - r * 0.5f },
                          { head.x, head.y + r * 0.6f, head.z + r }, petal);
@@ -112,7 +118,7 @@ Terrain::Terrain(const Layout& layout) : layout(layout)
             const float x = -halfExtent + (float)ix * cellSize;
             // Зам, суурингийн орчим тэгш, тэндээс холдох тусам толгод аажим өндөрсөнө.
             const float mask = SmoothStep(0.0f, 30.0f, layout.FlatDistance(x, z));
-            const float height = mask > 0.0f ? Hills(x, z) * mask : 0.0f;
+            const float height = (mask > 0.0f ? Hills(x, z) * mask : 0.0f) - layout.LakeDepth(x, z);
             heights[(size_t)iz * (size_t)side + (size_t)ix] = height;
             maxHeight = std::max(maxHeight, height);
         }
@@ -157,50 +163,88 @@ Terrain::~Terrain()
     }
 }
 
+Vector3 Terrain::GridNormal(int ix, int iz) const
+{
+    const int x0 = std::max(ix - 1, 0), x1 = std::min(ix + 1, cells);
+    const int z0 = std::max(iz - 1, 0), z1 = std::min(iz + 1, cells);
+    const float dx = (GridHeight(x1, iz) - GridHeight(x0, iz)) / ((float)(x1 - x0) * cellSize);
+    const float dz = (GridHeight(ix, z1) - GridHeight(ix, z0)) / ((float)(z1 - z0) * cellSize);
+    return Vector3Normalize({ -dx, 1.0f, -dz });
+}
+
+Color Terrain::GroundColor(int ix, int iz, Vector3 normal) const
+{
+    // Өнгө нь зөвхөн байрлалаас хамаарна: хөрш хэсэг, нарийн/бүдүүн тор ирмэгээрээ яг таарна.
+    const float x = -halfExtent + (float)ix * cellSize, z = -halfExtent + (float)iz * cellSize;
+    const float h = GridHeight(ix, iz);
+
+    // Том толбо: чийглэг ногоон хөндий ба хуурай шаргал тал
+    const float moisture = Fbm(x * 0.011f + 7.0f, z * 0.011f + 3.0f, 3);
+    Color color = MixColor(kGrassLush, kGrassGreen, SmoothStep(0.30f, 0.50f, moisture));
+    color = MixColor(color, kGrassDry, SmoothStep(0.50f, 0.72f, moisture));
+
+    // Нар тусдаг энгэр хуурай, ар (сүүдэртэй) энгэр ногоон
+    const float sunFacing = normal.x * kSunDirection.x + normal.z * kSunDirection.z;
+    color = MixColor(color, kGrassDry, std::clamp(sunFacing * 3.5f, 0.0f, 0.55f));
+    color = MixColor(color, kGrassLush, std::clamp(-sunFacing * 2.5f, 0.0f, 0.35f));
+
+    // Өндөрт шаргал, оройд нь хад чулуу; эгц налуу чулуурхаг
+    color = MixColor(color, kOchre, SmoothStep(12.0f, 36.0f, h) * 0.55f);
+    color = MixColor(color, kRockyGround, SmoothStep(0.93f, 0.76f, normal.y));
+    color = MixColor(color, kRockyGround, SmoothStep(40.0f, 72.0f, h) * 0.6f);
+
+    // Жижиг нүцгэн хөрстэй толбо, бага зэргийн өнгөний хэлбэлзэл
+    const float spots = ValueNoise(x * 0.09f + 40.0f, z * 0.09f + 11.0f);
+    color = MixColor(color, kEarth, SmoothStep(0.74f, 0.96f, spots) * 0.4f);
+    const float grain = ValueNoise(x * 0.43f + 3.0f, z * 0.43f + 9.0f);
+    color = ScaleColor(color, 0.95f + grain * 0.1f);
+
+    // Нуурын ёроол, эрэг: шавар, элс
+    const float lake = layout.LakeDepth(x, z);
+    if (lake > 0.0f) color = MixColor(color, { 132, 122, 100, 255 }, SmoothStep(0.0f, 0.6f, lake));
+
+    // Суурин, замын орчим гишгэгдсэн шороо
+    const float flat = layout.FlatDistance(x, z);
+    color = MixColor(color, kTrampled, SmoothStep(6.0f, -10.0f, flat) * 0.55f);
+    color = MixColor(color, kEarth, SmoothStep(3.0f, 0.0f, layout.RoadDistance(x, z)) * 0.5f);
+    return color;
+}
+
 Mesh Terrain::BuildGround(const Chunk& chunk, int step) const
 {
-    MeshBuilder builder;
-    Rng rng((uint32_t)(chunk.cellX * 7919 + chunk.cellZ * 104729 + 13 + step));
-
-    // Гурвалжин бүрийг өөр өнгөөр будаж low-poly олон өнгийн гадаргуу гаргана.
-    auto colorAt = [&](Vector3 a, Vector3 b, Vector3 c) {
-        const float cx = (a.x + b.x + c.x) / 3.0f;
-        const float cy = (a.y + b.y + c.y) / 3.0f;
-        const float cz = (a.z + b.z + c.z) / 3.0f;
-
-        const float patches = Fbm(cx * 0.03f, cz * 0.03f, 3);
-        const float spots = ValueNoise(cx * 0.15f + 40.0f, cz * 0.15f + 11.0f);
-        Color color = MixColor(kGrassGreen, kGrassDry, SmoothStep(0.36f, 0.64f, patches));
-        color = MixColor(color, kEarth, SmoothStep(0.62f, 0.92f, spots) * 0.65f);
-
-        // Эгц налуу ба өндөр газар чулуурхаг
-        const Vector3 normal = Vector3Normalize(Vector3CrossProduct(Vector3Subtract(b, a), Vector3Subtract(c, a)));
-        color = MixColor(color, kRockyGround, SmoothStep(0.93f, 0.80f, std::fabs(normal.y)));
-        color = MixColor(color, kRockyGround, SmoothStep(34.0f, 60.0f, cy) * 0.6f);
-
-        // Суурин, замын орчим гишгэгдсэн шороо
-        const float flat = layout.FlatDistance(cx, cz);
-        color = MixColor(color, kTrampled, SmoothStep(6.0f, -10.0f, flat) * 0.55f);
-        color = MixColor(color, kEarth, SmoothStep(3.0f, 0.0f, layout.RoadDistance(cx, cz)) * 0.5f);
-
-        return JitterColor(color, rng, 0.05f);
-    };
-    auto point = [&](int ix, int iz) {
-        return Vector3{ -halfExtent + (float)ix * cellSize, GridHeight(ix, iz), -halfExtent + (float)iz * cellSize };
-    };
-
-    for (int iz = chunk.cellZ; iz < chunk.cellZ + kChunkCells; iz += step)
+    // Газрын mesh: оройн normal ба өнгөтэй (гөлгөр гэрэлтүүлэг, зөөлөн өнгөний шилжилт).
+    std::vector<float> positions, normals;
+    std::vector<unsigned char> vertexColors;
+    const int samples = kChunkCells / step + 1;
+    std::vector<Vector3> gridPoint((size_t)samples * samples), gridNormal((size_t)samples * samples);
+    std::vector<Color> gridColor((size_t)samples * samples);
+    for (int j = 0; j < samples; ++j)
     {
-        for (int ix = chunk.cellX; ix < chunk.cellX + kChunkCells; ix += step)
+        for (int i = 0; i < samples; ++i)
         {
-            const Vector3 p00 = point(ix, iz);
-            const Vector3 p10 = point(ix + step, iz);
-            const Vector3 p01 = point(ix, iz + step);
-            const Vector3 p11 = point(ix + step, iz + step);
-
+            const int ix = chunk.cellX + i * step, iz = chunk.cellZ + j * step;
+            const size_t k = (size_t)j * samples + i;
+            gridPoint[k] = { -halfExtent + (float)ix * cellSize, GridHeight(ix, iz), -halfExtent + (float)iz * cellSize };
+            gridNormal[k] = GridNormal(ix, iz);
+            gridColor[k] = GroundColor(ix, iz, gridNormal[k]);
+        }
+    }
+    auto vertex = [&](Vector3 p, Vector3 n, Color c) {
+        positions.insert(positions.end(), { p.x, p.y, p.z });
+        normals.insert(normals.end(), { n.x, n.y, n.z });
+        vertexColors.insert(vertexColors.end(), { c.r, c.g, c.b, 255 });
+    };
+    auto corner = [&](int i, int j) {
+        const size_t k = (size_t)j * samples + i;
+        vertex(gridPoint[k], gridNormal[k], gridColor[k]);
+    };
+    for (int j = 0; j + 1 < samples; ++j)
+    {
+        for (int i = 0; i + 1 < samples; ++i)
+        {
             // step = 1 үед HeightAt-ийн хуваалттай ижил байх ёстой.
-            builder.Triangle(p00, p01, p10, colorAt(p00, p01, p10));
-            builder.Triangle(p10, p01, p11, colorAt(p10, p01, p11));
+            corner(i, j); corner(i, j + 1); corner(i + 1, j);
+            corner(i + 1, j); corner(i, j + 1); corner(i + 1, j + 1);
         }
     }
 
@@ -208,21 +252,34 @@ Mesh Terrain::BuildGround(const Chunk& chunk, int step) const
     {
         // Бүдүүн тор нь хөрш нарийн хэсэгтэй ирмэгээрээ яг таарахгүй тул завсрыг доош унжсан хормойгоор хаана.
         const float drop = 4.0f;
-        const int x0 = chunk.cellX, x1 = chunk.cellX + kChunkCells;
-        const int z0 = chunk.cellZ, z1 = chunk.cellZ + kChunkCells;
-        auto skirt = [&](Vector3 a, Vector3 b) {
-            builder.Quad(a, b, { b.x, b.y - drop, b.z }, { a.x, a.y - drop, a.z }, kEarth);
+        auto skirt = [&](int i0, int j0, int i1, int j1) {
+            const size_t a = (size_t)j0 * samples + i0, b = (size_t)j1 * samples + i1;
+            const Vector3 pa = gridPoint[a], pb = gridPoint[b];
+            const Vector3 qa = { pa.x, pa.y - drop, pa.z }, qb = { pb.x, pb.y - drop, pb.z };
+            vertex(pa, gridNormal[a], gridColor[a]); vertex(pb, gridNormal[b], gridColor[b]); vertex(qb, gridNormal[b], gridColor[b]);
+            vertex(pa, gridNormal[a], gridColor[a]); vertex(qb, gridNormal[b], gridColor[b]); vertex(qa, gridNormal[a], gridColor[a]);
         };
-        for (int i = 0; i < kChunkCells; i += step)
+        const int last = samples - 1;
+        for (int i = 0; i < last; ++i)
         {
-            skirt(point(x0 + i, z0), point(x0 + i + step, z0));
-            skirt(point(x0 + i, z1), point(x0 + i + step, z1));
-            skirt(point(x0, z0 + i), point(x0, z0 + i + step));
-            skirt(point(x1, z0 + i), point(x1, z0 + i + step));
+            skirt(i, 0, i + 1, 0);
+            skirt(i, last, i + 1, last);
+            skirt(0, i, 0, i + 1);
+            skirt(last, i, last, i + 1);
         }
     }
 
-    return builder.Upload();
+    Mesh mesh = {};
+    mesh.vertexCount = (int)(positions.size() / 3);
+    mesh.triangleCount = mesh.vertexCount / 3;
+    mesh.vertices = (float*)MemAlloc((unsigned int)(positions.size() * sizeof(float)));
+    mesh.normals = (float*)MemAlloc((unsigned int)(normals.size() * sizeof(float)));
+    mesh.colors = (unsigned char*)MemAlloc((unsigned int)vertexColors.size());
+    std::memcpy(mesh.vertices, positions.data(), positions.size() * sizeof(float));
+    std::memcpy(mesh.normals, normals.data(), normals.size() * sizeof(float));
+    std::memcpy(mesh.colors, vertexColors.data(), vertexColors.size());
+    UploadMesh(&mesh, false);
+    return mesh;
 }
 
 Mesh Terrain::BuildDetails(const Chunk& chunk) const
@@ -256,7 +313,7 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
         const bool keep = rng.Chance(0.75f);
 
         if (Fbm(x * 0.05f, z * 0.05f, 2) < 0.44f) continue;
-        if (layout.RoadDistance(x, z) < 0.5f) continue;
+        if (layout.RoadDistance(x, z) < 0.5f || layout.Paved(x, z) || layout.LakeDepth(x, z) > 0.3f) continue;
         if (layout.FlatDistance(x, z) < 0.0f && !keep) continue; // суурин дотор сийрэг
         if (InsideObstacle(nearby, x, z, 0.15f)) continue;
 
@@ -273,7 +330,7 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
         for (int i = 0; i < 14; ++i)
         {
             const float x = px + rng.Range(-2.5f, 2.5f), z = pz + rng.Range(-2.5f, 2.5f);
-            if (InsideObstacle(nearby, x, z, 0.2f)) continue;
+            if (InsideObstacle(nearby, x, z, 0.2f) || layout.Paved(x, z)) continue;
             AddFlower(builder, { x, HeightAt(x, z), z }, JitterColor(petal, rng, 0.08f), rng);
         }
     }
@@ -286,7 +343,7 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
         const float radius = rng.Range(0.12f, 0.5f);
         const Vector3 radii = { radius * rng.Range(0.8f, 1.4f), radius * 0.6f, radius * rng.Range(0.8f, 1.4f) };
 
-        if (layout.RoadDistance(x, z) < 1.0f) continue;
+        if (layout.RoadDistance(x, z) < 1.0f || layout.Paved(x, z)) continue;
         if (InsideObstacle(nearby, x, z, 0.6f)) continue;
 
         const float ground = HeightAt(x, z);
@@ -313,7 +370,7 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
         const Color color = MixColor(kBush, kBushDry, rng.Next());
 
         if (Fbm(x * 0.02f + 7.0f, z * 0.02f + 3.0f, 2) < 0.48f) continue;
-        if (layout.RoadDistance(x, z) < 2.0f) continue;
+        if (layout.RoadDistance(x, z) < 2.0f || layout.Paved(x, z)) continue;
         if (InsideObstacle(nearby, x, z, 1.2f)) continue;
 
         // Харгана: доороо бараан, дээшээ цайвар бөмбөлгүүд, ёроолоос хуурай мөчир цухуйна
@@ -483,7 +540,22 @@ void Terrain::Stream(Vector3 viewPosition, int budget)
     }
 }
 
-void Terrain::Draw(const Camera3D& camera, const Material& material, float detailDistance) const
+void Terrain::DrawShadowCasters(Vector3 center, float radius, const Material& material) const
+{
+    int x0, x1, z0, z1;
+    ChunkRange(center, radius, x0, x1, z0, z1);
+    for (int cz = z0; cz <= z1; ++cz)
+    {
+        for (int cx = x0; cx <= x1; ++cx)
+        {
+            const Chunk& chunk = chunks[(size_t)cz * chunksPerSide + (size_t)cx];
+            if (chunk.hasGround) DrawBuiltMesh(chunk.ground, material);
+            else if (chunk.hasFar) DrawBuiltMesh(chunk.groundFar, material);
+        }
+    }
+}
+
+void Terrain::Draw(const Camera3D& camera, const Material& material, const Material& detailMaterial, float detailDistance) const
 {
     const ViewCone view = ViewCone::From(camera);
 
@@ -511,7 +583,7 @@ void Terrain::Draw(const Camera3D& camera, const Material& material, float detai
 
             if (chunk.hasDetails && distance < detailDistance + chunk.radius)
             {
-                DrawBuiltMesh(chunk.details, material);
+                DrawBuiltMesh(chunk.details, detailMaterial);
             }
             ++lastDrawnChunks;
         }

@@ -13,6 +13,8 @@ public:
     void Blood(Vector3 at, Vector3 direction, int count);
     // Сум газар, хананд тусахад гарах тоос.
     void Dust(Vector3 at);
+    // Унаа, морины ард босох тоос: том, зөөлөн бөмбөлөг, аажим тэлж, хөөрч арилна.
+    void Kickup(Vector3 at, Vector3 drift, Color color);
     // Буунаас хажуу тийш үсрэх хонгио.
     void Shell(Vector3 at, Vector3 sideDirection);
     // Бууны амны гал (хэдхэн frame).
@@ -22,6 +24,7 @@ public:
 
     void Update(float dt, const World& world);
     void Draw() const;      // гэрэлтүүлэгтэй хэсэг (shader дотор)
+    void DrawPuffs() const; // хагас тунгалаг тоос (бусад зүйлсийн дараа)
     void DrawUnlit() const; // өөрөө гэрэлтдэг хэсэг (shader-ийн гадна)
     void Clear();
 
@@ -30,7 +33,8 @@ private:
     {
         Blood,
         Dust,
-        Shell
+        Shell,
+        Puff
     };
 
     struct Particle

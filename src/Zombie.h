@@ -35,6 +35,8 @@ struct Zombie
     Vector3 flight = { 0.0f, 0.0f, 0.0f }; // шидэгдсэн үеийн хурд
     float tumble = 0.0f;     // агаарт эргэлдэх өнцөг, градус
     float walkCycle = 0.0f;
+    float gaitSpeed = 0.0f;  // газраар явж буй бодит хурд, м/с (хөлийн алхаа үүнтэй таарна)
+    Vector3 lastPosition = { 0.0f, 0.0f, 0.0f };
     int reward = 0;
     int zone = 0;         // аль spawn бүсэд харьяалагдах (0 = бүсгүй, тэнүүчилсэн)
     bool alerted = false; // бай руугаа хөөж эхэлсэн; үгүй бол байрандаа зогсоно

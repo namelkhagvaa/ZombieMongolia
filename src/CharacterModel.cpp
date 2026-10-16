@@ -15,7 +15,7 @@ namespace
 {
     const char* const kNames[kCharacterCount] = { "fighter1",     "fighter2",       "fighter3",
                                                   "survivor_man", "survivor_woman", "zombie_walker",
-                                                  "zombie_runner", "zombie_brute",  "zombie_boss" };
+                                                  "zombie_runner", "zombie_brute",  "giant_zombie" };
 
     // Загварын өндөр тоглоомын хүний өндөртэй (~1.9 м) таарахаар томруулна.
     const float kTargetHeight = 1.9f;
@@ -638,11 +638,14 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
 
     // --- Төлөв ---
     const bool onFoot = !direct && pose.grounded && !pose.seated && pose.fall <= 0.0f && pose.spin == 0.0f;
+    // Хөлийн алхаа: явган дүр, эсвэл явж буй зомби (их бие, гар нь өөрийн хэв маягаар, хөл нь газарт тулна).
+    const bool walkLegs = onFoot || (direct && pose.plantWalk && pose.fall <= 0.0f && pose.spin == 0.0f);
     const float move = onFoot ? std::min(pose.moveAmount, 1.0f) : 0.0f;                       // 0 зогссон .. 1 алхаа
     const float run = onFoot ? std::clamp(pose.moveAmount - 1.0f, 0.0f, 0.6f) / 0.6f : 0.0f;  // 0 ердийн .. 1 хурдан гүйлт
     // Алхааны хэлбэр бодит хурдаас: алхам урт нь газраар явах хурдтай яг таарч, хөл гулсахгүй.
-    const HumanoidGait gait = HumanoidGaitFor(onFoot ? pose.speed : 0.0f);
-    const float stride = std::min(1.0f, pose.speed / 1.2f) * (onFoot ? 1.0f : 0.0f); // бага хурдад алхаа аажим жижгэрнэ
+    const HumanoidGait gait = HumanoidGaitFor(walkLegs ? pose.speed : 0.0f);
+    // Бага хурдад алхаа аажим жижгэрнэ (зомби удаан ч тод гишгэнэ).
+    const float stride = std::min(1.0f, pose.speed / (onFoot ? 1.2f : 0.4f)) * (walkLegs ? 1.0f : 0.0f);
     // Нэг хөлийн мөчлөгийг "урд -> хойно -> урд" долгион болгоно: 1 = хамгийн урд (газарт хүрэх мөч),
     // -1 = хамгийн хойно (газраас салах мөч). Гар, ташаа энэ долгионоор хөлтэй эсрэг савлана.
     auto legWave = [&](float cycle) {
@@ -760,9 +763,22 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         chestYaw = -26.0f;
     }
 
-    Turn(c, Spine, QuaternionMultiply(AxisAngle(1.0f, 0.0f, 0.0f, lean), AxisAngle(0.0f, 0.0f, 1.0f, roll)));
-    Turn(c, Spine1, QuaternionMultiply(AxisAngle(0.0f, 1.0f, 0.0f, chestYaw - (onFoot ? hipYaw * upright : pose.seatTwist)),
-                                       AxisAngle(1.0f, 0.0f, 0.0f, -1.8f * pose.breath)));
+    if (!onFoot && std::fabs(pose.seatTwist) > 0.5f)
+    {
+        // Унаан дээр бие эргэсэн (ташаа унааны зүгт, цээж бай руу): эргэлтийг доод нуруу, цээж хоёрт хувааж
+        // (хүн бүсэлхийгээрээ нэг дор 90 градус эргэж чадахгүй), бөхийлтийг биеийн харах зүгийн тэнхлэгт тооцно.
+        // Ингэхгүй бол бүсэлхий нэг цэгт мушгирч, их бие хажуу тийш хэвийнэ.
+        const Quaternion bend = QuaternionMultiply(AxisAngle(1.0f, 0.0f, 0.0f, lean), AxisAngle(0.0f, 0.0f, 1.0f, roll));
+        Orient(c, Spine, QuaternionMultiply(AxisAngle(0.0f, 1.0f, 0.0f, pose.seatTwist * 0.5f), bend));
+        Orient(c, Spine1, QuaternionMultiply(AxisAngle(0.0f, 1.0f, 0.0f, chestYaw),
+                                             QuaternionMultiply(bend, AxisAngle(1.0f, 0.0f, 0.0f, -1.8f * pose.breath))));
+    }
+    else
+    {
+        Turn(c, Spine, QuaternionMultiply(AxisAngle(1.0f, 0.0f, 0.0f, lean), AxisAngle(0.0f, 0.0f, 1.0f, roll)));
+        Turn(c, Spine1, QuaternionMultiply(AxisAngle(0.0f, 1.0f, 0.0f, chestYaw - (onFoot ? hipYaw * upright : pose.seatTwist)),
+                                           AxisAngle(1.0f, 0.0f, 0.0f, -1.8f * pose.breath)));
+    }
     const Quaternion chest = c.rotation[(size_t)c.joints[Spine1]];
     Turn(c, Neck, QuaternionMultiply(AxisAngle(0.0f, 1.0f, 0.0f, headYaw - chestYaw * 0.85f),
                                      QuaternionMultiply(AxisAngle(1.0f, 0.0f, 0.0f, headPitch),
@@ -788,10 +804,12 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
             Aim(c, lower, foot, Rotate(shin, down));
             continue;
         }
-        if (!onFoot)
+        if (!walkLegs)
         {
-            // Унаа, үсрэлт, уналт: гуя шилбийг өгөгдсөн өнцгөөр нь шууд тавина.
-            const Quaternion spread = AxisAngle(0.0f, 0.0f, 1.0f, pose.legSpread * outward);
+            // Унаа, үсрэлт, уналт: гуя шилбийг өгөгдсөн өнцгөөр нь шууд тавина. Унаан дээр бие эргэсэн бол
+            // (seatTwist) хөл ташаатайгаа хамт унааны зүгт үлдэнэ (эс бөгөөс унааны дотор руу сунана).
+            const Quaternion twist = AxisAngle(0.0f, 1.0f, 0.0f, pose.seatTwist);
+            const Quaternion spread = QuaternionMultiply(twist, AxisAngle(0.0f, 0.0f, 1.0f, pose.legSpread * outward));
             const Quaternion thigh = QuaternionMultiply(spread, AxisAngle(1.0f, 0.0f, 0.0f, -pose.hip[side]));
             const Quaternion shin = QuaternionMultiply(thigh, AxisAngle(1.0f, 0.0f, 0.0f, pose.knee[side]));
             Aim(c, upper, lower, Rotate(thigh, down));
@@ -800,7 +818,7 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
             {
                 // Суусан, бөхийсөн, авирч буй үед тавхай газар / тавцантай хэвтээ (шилбийг дагаж хазайвал
                 // өвдөг нугарахад гутлын хошуу тавцангаас доош цухуйна).
-                Orient(c, foot, AxisAngle(0.0f, 1.0f, 0.0f, -outward * c.toeOut[side] * 0.8f));
+                Orient(c, foot, QuaternionMultiply(twist, AxisAngle(0.0f, 1.0f, 0.0f, -outward * c.toeOut[side] * 0.8f)));
             }
             continue;
         }
@@ -830,7 +848,7 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
             // Хөл газраас салмагц өвдөг нугарч өсгий дээш гарна: алхахад хуруу газар шүргэхгүй хэмжээнд,
             // гүйхэд өсгий өгзөг рүү өргөгдөнө. Оргил нь зөөх үеийн эхний хагаст.
             const float height = Lerp(0.1f, std::min(0.48f, 0.24f + 0.045f * (pose.speed - 3.0f)), gait.run);
-            lift = stride * height * std::sin(PI * std::pow(t, 0.65f));
+            lift = stride * height * pose.stepLift * std::sin(PI * std::pow(t, 0.65f));
             pitch = stride * Lerp(34.0f, -12.0f * (1.0f - gait.run) - 3.0f, Smooth(t)); // хуруу доош -> буухад дээш
         }
         // Өсгий өргөгдөхөд шагай дээшилнэ (хурууны үзүүрээр тулна).
@@ -946,15 +964,27 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
     {
         // --- Гар буу ---
         // Онилсон: хоёр гараа нүдний түвшинд урагш сунгана. Бэлэн: цээжиндээ ойр, ам нь доош.
+        // Амьд хөдөлгөөн: амьсгал, алхам бүрийн дээш доош савлалт, тайван үед бууг хазайлгаж эргэн тойрноо ажиглах,
+        // онилоход гар бага зэрэг чичирнэ, буудахад ам нь дээш "үсэрч" гар хойш түлхэгдэнэ.
         const Vector3 middle = Vector3Scale(Vector3Add(rightShoulder, leftShoulder), 0.5f);
-        const Vector3 ready = Vector3Add(middle, Rotate(heading, { -0.03f, -0.24f, 0.3f }));
-        const Vector3 aimed = Vector3Add(middle, Rotate(heading, { -0.02f, 0.03f + 0.05f * recoil, 0.5f - 0.04f * recoil }));
         const float extend = std::max(aim, prone); // хэвтсэн үед гараа үргэлж урагш сунгана
+        const float lowered = (1.0f - extend);
+        const float stepBob = move * std::sin(phase * 2.0f);
+        const Vector3 sway = { lowered * (0.016f * move * std::sin(phase) + 0.012f * idle * std::sin(time * 0.7f)),
+                               0.012f * pose.breath + lowered * (0.022f * stepBob - 0.06f * run),
+                               lowered * (0.01f * idle * std::sin(time * 0.45f) - 0.05f * run) };
+        const Vector3 tremor = { 0.0025f * std::sin(time * 7.3f), 0.0025f * std::sin(time * 9.1f + 1.0f), 0.0f };
+        const Vector3 ready = Vector3Add(middle, Rotate(heading, Vector3Add({ -0.03f, -0.24f, 0.3f }, sway)));
+        const Vector3 aimed = Vector3Add(middle, Rotate(heading, Vector3Add({ -0.02f, 0.03f + 0.07f * recoil, 0.5f - 0.09f * recoil },
+                                                                            Vector3Scale(tremor, still))));
         const float reloading = pose.reload >= 0.0f ? std::sin(pose.reload * PI) : 0.0f;
         const Vector3 grip = Mix(ready, aimed, extend * (1.0f - 0.5f * reloading));
+        const float pitch = lowered * (26.0f + 14.0f * run + 5.0f * stepBob) - 28.0f * recoil + pose.breath -
+                            30.0f * reloading - aimPitch;
+        const float cant = lowered * (9.0f * idle * std::sin(time * 0.35f) + 4.0f * move * std::sin(phase)); // бууг хажуу тийш хазайлгах
         const Quaternion gunRotation = QuaternionMultiply(
-            heading, AxisAngle(1.0f, 0.0f, 0.0f, 26.0f * (1.0f - extend) - 16.0f * recoil + pose.breath - 30.0f * reloading -
-                                          aimPitch));
+            heading, QuaternionMultiply(AxisAngle(0.0f, 1.0f, 0.0f, lowered * 6.0f * idle * std::sin(time * 0.5f + 0.8f)),
+                                        QuaternionMultiply(AxisAngle(1.0f, 0.0f, 0.0f, pitch), AxisAngle(0.0f, 0.0f, 1.0f, cant))));
         frames.rightForearm = Frame(gunRotation, grip);
 
         reach(0, Vector3Add(grip, Rotate(gunRotation, { -0.015f, 0.0f, 0.0f })), Rotate(chest, { -0.8f, -1.0f, 0.0f }),
@@ -967,20 +997,40 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
     else if (knife)
     {
         // --- Хутга ---
-        // Бэлэн: хутгатай гар бэлхүүсний урд, сул гар цээжээ хамгаална. Дайралт: бүх биеэрээ урагш түлхэж хатгана.
-        const Vector3 ready = Vector3Add(rightShoulder, Rotate(heading, { 0.1f, -0.32f + 0.02f * std::sin(time * 1.7f), 0.3f }));
-        const Vector3 strike = Vector3Add(rightShoulder, Rotate(heading, { 0.16f, -0.1f, 0.62f }));
-        const Vector3 hand = Mix(ready, strike, thrust);
-        reach(0, hand, Rotate(chest, { -0.5f, -1.0f, -0.6f }), Rotate(heading, { 1.0f, 0.0f, 0.0f }), true);
+        // Бэлэн: тулааны байрлал — хутга бэлхүүсний урд, ир нь урагш дээш зорилт руу, сул гар нүүрээ хамгаална.
+        // Тайван үед хоёр гар бага зэрэг "нүүдэллэж" (тулаанд бэлэн хүн шиг), алхахад алхамтай хамт савлана.
+        // Дайралт: эхлээд гараа хойш татаж (далайлт), дараа нь бүх биеэрээ урагш шидэж хатгаад, буцаж бэлэн болно.
+        const float p = progress >= 0.0f ? progress : -1.0f;
+        const float windUp = p < 0.0f ? 0.0f : p < 0.28f ? Smooth(p / 0.28f) : 1.0f - Smooth((p - 0.28f) / 0.14f);
+        const float lunge = p < 0.28f ? 0.0f : p < 0.5f ? Smooth((p - 0.28f) / 0.22f) : 1.0f - Smooth((p - 0.55f) / 0.45f);
+        const float runLow = run * 0.6f;
+        const Vector3 weave = { 0.028f * still * std::sin(time * 1.3f) + 0.012f * move * std::sin(phase),
+                                0.022f * still * std::sin(time * 2.1f) + 0.03f * move * std::sin(phase * 2.0f) - 0.12f * runLow,
+                                0.025f * still * std::sin(time * 1.7f + 1.0f) - armSwing * 0.0018f };
+        const Vector3 ready = Vector3Add(rightShoulder, Rotate(heading, Vector3Add({ 0.07f, -0.3f, 0.36f }, weave)));
+        const Vector3 cocked = Vector3Add(rightShoulder, Rotate(heading, { -0.06f, -0.22f, 0.08f }));
+        const Vector3 strike = Vector3Add(rightShoulder, Rotate(heading, { 0.14f, -0.1f, 0.68f }));
+        const Vector3 hand = Mix(Mix(ready, cocked, windUp), strike, lunge);
+        reach(0, hand, Rotate(chest, { -0.6f, -1.0f, -0.5f }), Rotate(heading, { 1.0f, 0.0f, 0.0f }), true);
 
-        const Vector3 guard = Vector3Add(leftShoulder, Rotate(heading, { -0.14f, -0.16f - 0.1f * thrust, 0.3f - 0.22f * thrust }));
-        reach(1, guard, Rotate(chest, { 0.6f, -1.0f, -0.2f }), Rotate(heading, { -1.0f, 0.0f, 0.3f }), true);
+        // Сул гар: нүүрний өмнө хамгаалж, хатгахад хойш татагдана (тэнцвэр)
+        const Vector3 guardWeave = { 0.02f * still * std::sin(time * 1.5f + 2.0f), 0.02f * still * std::sin(time * 1.9f + 0.5f), 0.0f };
+        const Vector3 guard = Vector3Add(leftShoulder, Rotate(heading, Vector3Add({ -0.12f, -0.1f - 0.08f * lunge + 0.04f * windUp - 0.1f * runLow,
+                                                                                    0.32f - 0.26f * lunge + 0.08f * windUp + armSwing * 0.0018f },
+                                                                                  guardWeave)));
+        reach(1, guard, Rotate(chest, { 0.6f, -1.0f, -0.2f }), Rotate(heading, { -1.0f, 0.2f, 0.3f }), true);
 
-        const Vector3 elbow = Vector3Scale(JointPosition(c, RightForeArm), s);
-        const Vector3 wrist = Vector3Scale(JointPosition(c, RightHand), s);
-        frames.rightForearm = Frame(ForearmBasis(elbow, wrist), elbow);
-        curl[0] = 60.0f;
-        curl[1] = 30.0f;
+        // Ир: шуунаас үл хамааран бэлэн үед урагш дээш (бага зэрэг дотогш), далайхад дээш, хатгахад шууд урагш.
+        Vector3 blade = Vector3Normalize(Mix(Mix({ 0.12f + 0.06f * still * std::sin(time * 1.1f), 0.32f + 0.05f * still * std::sin(time * 1.9f), 1.0f },
+                                                 { 0.0f, 0.9f, 0.5f }, windUp),
+                                             { 0.05f, -0.08f, 1.0f }, lunge));
+        blade = Rotate(heading, blade);
+        const Vector3 gripPoint = Vector3Scale(JointPosition(c, RightHand), s);
+        const float bladeOffset = 0.33f; // DrawHandItem: бариул шууны эхнээс (тохойноос) ийм зайд
+        frames.rightForearm = Frame(ForearmBasis(Vector3Add(gripPoint, Vector3Scale(blade, -0.2f)), gripPoint),
+                                    Vector3Subtract(gripPoint, Vector3Scale(blade, bladeOffset - 0.05f)));
+        curl[0] = 64.0f;
+        curl[1] = 34.0f + 20.0f * still;
     }
     else if (grenade)
     {
@@ -1036,6 +1086,16 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
                 curl[0] = curl[1] = 50.0f * pose.grip + 14.0f;
             }
         }
+    }
+
+    // Унаан дээр: зүүн гар жолоо (бариул, хазаар) барина (цэнэглэх үед л сум солихоор түр тавина).
+    if (!onFoot && pose.rein > 0.0f && pose.reload < 0.0f)
+    {
+        const Vector3 hand = Vector3Scale(JointPosition(c, LeftHand), s);
+        Unsolve(c, LeftArm);
+        reach(1, Mix(hand, pose.reinPoint, std::min(1.0f, pose.rein)), Rotate(chest, { 0.7f, -0.6f, -0.6f }),
+              { 0.0f, -1.0f, 0.0f }, false);
+        curl[1] = 78.0f; // атгана
     }
 
     CurlFingers(c, 0, curl[0]);

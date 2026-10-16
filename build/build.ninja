@@ -159,6 +159,16 @@ build CMakeFiles/ZombieMongolia.dir/src/Input.cpp.obj: CXX_COMPILER__ZombieMongo
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
+build CMakeFiles/ZombieMongolia.dir/src/HorseModel.cpp.obj: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/HorseModel.cpp || cmake_object_order_depends_target_ZombieMongolia
+  CONFIG = Release
+  DEFINES = -DGRAPHICS_API_OPENGL_33 -DPLATFORM_DESKTOP
+  DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\HorseModel.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=gnu++17 -Wall -Wextra -Wno-missing-field-initializers
+  INCLUDES = -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build/_deps/raylib-src/src -IC:/ankhaa/ZombieMongolia/build/_deps/raylib-src/src/external/glfw/include
+  OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
+  OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
+  TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
+
 build CMakeFiles/ZombieMongolia.dir/src/Humanoid.cpp.obj: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Humanoid.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_33 -DPLATFORM_DESKTOP
@@ -409,6 +419,16 @@ build CMakeFiles/ZombieMongolia.dir/src/Weapon.cpp.obj: CXX_COMPILER__ZombieMong
   OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
   TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
 
+build CMakeFiles/ZombieMongolia.dir/src/Weather.cpp.obj: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/Weather.cpp || cmake_object_order_depends_target_ZombieMongolia
+  CONFIG = Release
+  DEFINES = -DGRAPHICS_API_OPENGL_33 -DPLATFORM_DESKTOP
+  DEP_FILE = CMakeFiles\ZombieMongolia.dir\src\Weather.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=gnu++17 -Wall -Wextra -Wno-missing-field-initializers
+  INCLUDES = -IC:/ankhaa/ZombieMongolia/src -IC:/ankhaa/ZombieMongolia/build/_deps/enet-src/include -IC:/ankhaa/ZombieMongolia/build/_deps/raylib-src/src -IC:/ankhaa/ZombieMongolia/build/_deps/raylib-src/src/external/glfw/include
+  OBJECT_DIR = CMakeFiles\ZombieMongolia.dir
+  OBJECT_FILE_DIR = CMakeFiles\ZombieMongolia.dir\src
+  TARGET_SUPPORT_DIR = CMakeFiles\ZombieMongolia.dir
+
 build CMakeFiles/ZombieMongolia.dir/src/World.cpp.obj: CXX_COMPILER__ZombieMongolia_unscanned_Release C$:/ankhaa/ZombieMongolia/src/World.cpp || cmake_object_order_depends_target_ZombieMongolia
   CONFIG = Release
   DEFINES = -DGRAPHICS_API_OPENGL_33 -DPLATFORM_DESKTOP
@@ -446,7 +466,7 @@ build CMakeFiles/ZombieMongolia.dir/src/app.rc.obj: RC_COMPILER__ZombieMongolia_
 #############################################
 # Link the executable ZombieMongolia.exe
 
-build ZombieMongolia.exe: CXX_EXECUTABLE_LINKER__ZombieMongolia_Release CMakeFiles/ZombieMongolia.dir/main.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Airstrike.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Campaign.cpp.obj CMakeFiles/ZombieMongolia.dir/src/CampaignData.cpp.obj CMakeFiles/ZombieMongolia.dir/src/CharacterModel.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Environment.cpp.obj CMakeFiles/ZombieMongolia.dir/src/FuelBarrels.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Game.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Grenades.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Hud.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Input.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Humanoid.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Layout.cpp.obj CMakeFiles/ZombieMongolia.dir/src/MedKits.cpp.obj CMakeFiles/ZombieMongolia.dir/src/MeshBuilder.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Minimap.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Mission.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Mover.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Net.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Particles.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Player.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Polygon.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Procedural.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Progress.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Regions.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Shop.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Soldier.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Structures.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Team.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Terrain.cpp.obj CMakeFiles/ZombieMongolia.dir/src/ThirdPersonCamera.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Tracers.cpp.obj CMakeFiles/ZombieMongolia.dir/src/UiFont.cpp.obj CMakeFiles/ZombieMongolia.dir/src/UiStyle.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Vehicle.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Weapon.cpp.obj CMakeFiles/ZombieMongolia.dir/src/World.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Zombie.cpp.obj CMakeFiles/ZombieMongolia.dir/src/app.rc.obj | _deps/raylib-build/raylib/libraylib.a _deps/enet-build/libenet.a || _deps/enet-build/libenet.a _deps/raylib-build/raylib/external/glfw/src/glfw _deps/raylib-build/raylib/libraylib.a
+build ZombieMongolia.exe: CXX_EXECUTABLE_LINKER__ZombieMongolia_Release CMakeFiles/ZombieMongolia.dir/main.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Airstrike.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Campaign.cpp.obj CMakeFiles/ZombieMongolia.dir/src/CampaignData.cpp.obj CMakeFiles/ZombieMongolia.dir/src/CharacterModel.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Environment.cpp.obj CMakeFiles/ZombieMongolia.dir/src/FuelBarrels.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Game.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Grenades.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Hud.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Input.cpp.obj CMakeFiles/ZombieMongolia.dir/src/HorseModel.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Humanoid.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Layout.cpp.obj CMakeFiles/ZombieMongolia.dir/src/MedKits.cpp.obj CMakeFiles/ZombieMongolia.dir/src/MeshBuilder.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Minimap.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Mission.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Mover.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Net.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Particles.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Player.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Polygon.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Procedural.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Progress.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Regions.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Shop.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Soldier.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Structures.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Team.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Terrain.cpp.obj CMakeFiles/ZombieMongolia.dir/src/ThirdPersonCamera.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Tracers.cpp.obj CMakeFiles/ZombieMongolia.dir/src/UiFont.cpp.obj CMakeFiles/ZombieMongolia.dir/src/UiStyle.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Vehicle.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Weapon.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Weather.cpp.obj CMakeFiles/ZombieMongolia.dir/src/World.cpp.obj CMakeFiles/ZombieMongolia.dir/src/Zombie.cpp.obj CMakeFiles/ZombieMongolia.dir/src/app.rc.obj | _deps/raylib-build/raylib/libraylib.a _deps/enet-build/libenet.a || _deps/enet-build/libenet.a _deps/raylib-build/raylib/external/glfw/src/glfw _deps/raylib-build/raylib/libraylib.a
   CONFIG = Release
   FLAGS = -O3 -DNDEBUG
   LINK_FLAGS = -mwindows -static

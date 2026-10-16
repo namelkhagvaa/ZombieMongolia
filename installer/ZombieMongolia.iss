@@ -16,9 +16,8 @@ AppVersion={#AppVersion}
 AppPublisher=Lkhagvaa
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
-; Админ эрхгүй хэрэглэгч ч өөрийн хавтсанд суулгаж болно.
-PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
+; Админ эрх: хамтарсан тоглолтод Windows Firewall-д зөвшөөрөл нэмнэ (дотоод сүлжээнд бие биеэ олох).
+PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
@@ -47,4 +46,12 @@ Name: "{group}\{#AppName}-г устгах"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
+; Хамтарсан тоглолт: бусад компьютер энэ тоглоомыг олж холбогдохын тулд бүх сүлжээнд (Public ч) зөвшөөрнө.
+; Хуучин дүрмийг эхлээд устгана (дахин суулгахад давхардахгүй).
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Zombie Mongolia"""; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Zombie Mongolia"" dir=in action=allow program=""{app}\{#AppExe}"" enable=yes profile=any"; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Zombie Mongolia"" dir=in action=allow protocol=UDP localport=47810-47811 enable=yes profile=any"; Flags: runhidden waituntilterminated
 Filename: "{app}\{#AppExe}"; Description: "{#AppName} тоглоомыг одоо эхлүүлэх"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Zombie Mongolia"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveFirewallRule"

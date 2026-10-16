@@ -6,15 +6,19 @@
 #include <string>
 #include <vector>
 
-// Нэг Wi-Fi сүлжээн дэх хамтарсан тоглолт (co-op). Хост нь зомби, даалгаврыг тооцоолж, зочин нь өөрийн дүрийг
+// Нэг дотоод сүлжээн (Wi-Fi, кабель, утасны hotspot; интернэт хэрэггүй) дэх хамтарсан тоглолт (co-op). Хост нь зомби, даалгаврыг тооцоолж, зочин нь өөрийн дүрийг
 // хөдөлгөж, буудсан сумаа илгээнэ. ENet (UDP) ашиглана.
 //
-// Хайлт: даалгавар тоглож буй тоглоом бүр kDiscoveryPort дээр сонсож, асуултад хариулна. Зочин өөрийн сүлжээний
-// бүх хаяг (x.x.x.1-254) болон broadcast руу асуулт илгээнэ (Android дээр broadcast найдваргүй тул).
+// Хайлт: даалгавар тоглож буй тоглоом бүр kDiscoveryPort дээр сонсож, асуултад хариулна. Зочин өөрийн бүх
+// сүлжээний картын дэд сүлжээний хаяг бүр (x.x.x.1-254) болон broadcast руу асуулт илгээнэ (Android дээр
+// broadcast найдваргүй тул).
 namespace Net
 {
     constexpr uint16_t kGamePort = 47810;
     constexpr uint16_t kDiscoveryPort = 47811;
+    // Сүлжээний мессежийн хувилбар: мессежийн бүтэц өөрчлөгдөх бүрд нэмэгдүүлнэ. Хост ба зочин ижил хувилбартай
+    // байж л нэгдэнэ (эс бөгөөс өгөгдөл буруу уншигдаж, жишээ нь цэргүүд "үхсэн" мэт харагдана).
+    constexpr uint16_t kProtocolVersion = 3;
 
     // Мессежийн төрөл (пакетийн эхний байт)
     enum class Msg : uint8_t
@@ -82,6 +86,8 @@ namespace Net
         int8_t vehicle = -1;  // сууж яваа унаа (-1 = явган)
         uint8_t seatStyle = 0; // 1 мотоцикл, 2 эмээл, 3 бүхээг (харагдахгүй), 4 тэвш
         Vector3 seat = { 0.0f, 0.0f, 0.0f }; // ташааны ертөнцийн байрлал
+        uint8_t guest = 0;   // зочны багийн гишүүн
+        float health = 100.0f;
     };
 
     // Хостын бүх унааны төлөв (зочин өөрийн жолоодож буйгаас бусдыг нь эдгээрээр хөдөлгөнө)
@@ -106,6 +112,7 @@ namespace Net
         std::string objective, detail;
         int hordeSmall = 0, hordeBig = 0;
         float zombieSpeed = 1.0f;
+        float dayClock = 0.0f; // өдөр шөнийн мөчлөг (секунд): зочин хосттой ижил цагтай
     };
 
     // Хайлтаар олдсон хост
@@ -124,6 +131,7 @@ namespace Net
         std::string text;      // JoinRequest: нэр
         bool accepted = false; // JoinReply
         int province = 0;      // JoinReply
+        int version = 0;       // JoinRequest / JoinReply: нөгөө талын протоколын хувилбар (0 = хуучин, хувилбаргүй)
         AvatarState avatar;    // GuestState
         uint32_t id = 0;       // GuestHit: зомби, GuestBarrel / BarrelExploded: торх
         float amount = 0.0f;   // хохирол, зоос
@@ -204,7 +212,7 @@ namespace Net
         bool joinPending = false;  // зочин: хүсэлт илгээсэн, хариу хүлээж байна
         intptr_t discoverySocket = -1;
         float probeTimer = 0.0f;
-        uint32_t localAddress = 0;
+        std::vector<uint32_t> localAddresses; // бүх сүлжээний картын хаяг (ENet-ийн хэлбэр)
         std::vector<FoundGame> found;
         Snapshot latest;
         bool hasLatest = false;

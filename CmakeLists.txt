@@ -50,6 +50,7 @@ set(GAME_SOURCES
     src/Grenades.cpp
     src/Hud.cpp
     src/Input.cpp
+    src/HorseModel.cpp
     src/Humanoid.cpp
     src/Layout.cpp
     src/MedKits.cpp
@@ -75,6 +76,7 @@ set(GAME_SOURCES
     src/UiStyle.cpp
     src/Vehicle.cpp
     src/Weapon.cpp
+    src/Weather.cpp
     src/World.cpp
     src/Zombie.cpp
 )

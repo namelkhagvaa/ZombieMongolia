@@ -36,7 +36,10 @@ public:
     void Stream(Vector3 viewPosition, int budget);
 
     // Камерт харагдахгүй хэсгийг алгасна; detailDistance-аас холын өвс чулууг зурахгүй.
-    void Draw(const Camera3D& camera, const Material& material, float detailDistance) const;
+    // material: газар (оройн normal-тай shader), detailMaterial: өвс, чулуу (салхинд найгах shader).
+    void Draw(const Camera3D& camera, const Material& material, const Material& detailMaterial, float detailDistance) const;
+    // Сүүдрийн зураг: center орчмын газрыг (харах конусгүйгээр) зурна.
+    void DrawShadowCasters(Vector3 center, float radius, const Material& material) const;
 
     int LastDrawnChunks() const { return lastDrawnChunks; }
     int LoadedMeshes() const { return loadedMeshes; }
@@ -59,6 +62,8 @@ private:
     // step: нэг дөрвөлжинд орох нүдний тоо (1 = бүрэн, 2 = бүдүүн).
     Mesh BuildGround(const Chunk& chunk, int step) const;
     Mesh BuildDetails(const Chunk& chunk) const;
+    Vector3 GridNormal(int ix, int iz) const;
+    Color GroundColor(int ix, int iz, Vector3 normal) const;
 
     // Камерын эргэн тойрны radius зайд багтах хэсгүүдийн индексийн муж.
     void ChunkRange(Vector3 position, float radius, int& x0, int& x1, int& z0, int& z1) const;

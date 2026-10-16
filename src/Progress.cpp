@@ -70,6 +70,7 @@ bool LoadProgress(Progress& progress, int provinceCount)
 
     // Мөр бүр: "түлхүүр утга"
     int format = 1; // "format" мөргүй файл бол хуучин хувилбар
+    int savedFirstPerson = -1, viewVersion = 1;
     std::string key;
     while (file >> key)
     {
@@ -118,10 +119,16 @@ bool LoadProgress(Progress& progress, int provinceCount)
         else if (key == "soldiers") progress.soldiers = std::clamp(value, 0, kMaxSoldiers);
         else if (key == "aimAssist") progress.aimAssist = value != 0;
         else if (key == "fullscreen") progress.fullscreen = value != 0;
-        else if (key == "firstPerson") progress.firstPerson = value != 0;
+        else if (key == "graphics") progress.graphics = std::clamp(value, 0, 2);
+        else if (key == "firstPerson") savedFirstPerson = value;
+        else if (key == "viewVersion") viewVersion = value;
         else if (key == "netTag") progress.netTag = value;
         else if (key == "format") format = value;
     }
+
+    // Камер: 2-р хувилбараас 1-р этгээд анхдагч болсон. Хуучин хадгалалтын 3-р этгээдийн утгыг нэг удаа дарна;
+    // үүнээс хойш тоглогчийн сонголт (V товч) хадгалагдана.
+    progress.firstPerson = viewVersion >= 2 && savedFirstPerson >= 0 ? savedFirstPerson != 0 : true;
 
     if (format < 2)
     {
@@ -154,7 +161,9 @@ bool SaveProgress(const Progress& progress)
     file << "soldiers " << progress.soldiers << '\n';
     file << "aimAssist " << (progress.aimAssist ? 1 : 0) << '\n';
     file << "firstPerson " << (progress.firstPerson ? 1 : 0) << '\n';
+    file << "viewVersion 2\n";
     file << "fullscreen " << (progress.fullscreen ? 1 : 0) << '\n';
+    file << "graphics " << progress.graphics << '\n';
     file << "netTag " << progress.netTag << '\n';
 
     file << "liberated ";

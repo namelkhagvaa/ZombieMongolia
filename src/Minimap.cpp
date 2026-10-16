@@ -4,7 +4,9 @@
 #include "UiFont.h"
 #include "UiStyle.h"
 
+#include "AirportData.h"
 #include "Layout.h"
+#include "Polygon.h"
 #include "raylib.h"
 #include "raymath.h"
 
@@ -82,6 +84,53 @@ namespace
                 DrawLineEx(a, b, thickness, color);
                 DrawCircleV(b, thickness * 0.5f, color); // нугаралтын завсрыг бөглөнө
             }
+        }
+
+        // Буянт-Ухаа нисэх буудал (Улаанбаатарын үед): перрон, ХБЗ, явгалах зам, орох зам
+        if (world.GetLayout().AirfieldActive())
+        {
+            static std::vector<Vector2> apronTriangles;
+            if (apronTriangles.empty())
+            {
+                for (const airport::Ring& apron : airport::kAprons)
+                {
+                    const std::vector<Vector2> t = Triangulate(Polygon(airport::kPoints + apron.first, airport::kPoints + apron.first + apron.count));
+                    apronTriangles.insert(apronTriangles.end(), t.begin(), t.end());
+                }
+                Vector2 corners[4];
+                AirportParking(corners);
+                for (int i : { 0, 1, 2, 0, 2, 3 }) apronTriangles.push_back(corners[i]);
+            }
+            const Color apronColor = { 128, 128, 124, 255 };
+            for (size_t i = 0; i + 2 < apronTriangles.size(); i += 3)
+            {
+                DrawTriangleAnyWinding(view.ToScreen(apronTriangles[i].x, apronTriangles[i].y),
+                                       view.ToScreen(apronTriangles[i + 1].x, apronTriangles[i + 1].y),
+                                       view.ToScreen(apronTriangles[i + 2].x, apronTriangles[i + 2].y), apronColor);
+            }
+            auto polyline = [&](const Vector2* points, int count, float halfWidth, Color color) {
+                const float thickness = std::max(1.5f, halfWidth * 2.0f * view.scale);
+                for (int i = 0; i + 1 < count; ++i)
+                {
+                    const Vector2 b = view.ToScreen(points[i + 1].x, points[i + 1].y);
+                    DrawLineEx(view.ToScreen(points[i].x, points[i].y), b, thickness, color);
+                    DrawCircleV(b, thickness * 0.5f, color);
+                }
+            };
+            for (const airport::Strip& strip : airport::kStrips)
+            {
+                if (strip.kind == 2) polyline(airport::kPoints + strip.first, strip.count, strip.halfWidth, { 100, 100, 102, 255 });
+            }
+            for (const airport::Strip& strip : airport::kStrips)
+            {
+                if (strip.kind != 2)
+                {
+                    polyline(airport::kPoints + strip.first, strip.count, strip.halfWidth,
+                             strip.kind == 0 ? Color{ 66, 68, 72, 255 } : Color{ 134, 120, 98, 255 });
+                }
+            }
+            const Road& access = AirportAccessRoad();
+            polyline(access.points.data(), (int)access.points.size(), access.halfWidth, kAsphaltRoad);
         }
 
         // Саадууд: барилга цайвар, намхан саад бараан, торон хашаа саарал
@@ -375,14 +424,22 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     BeginScissorMode((int)view.area.x, (int)view.area.y, (int)view.area.width, (int)view.area.height);
     const struct { float x, z; const char* name; } places[] = {
         { 28.0f, 34.0f, "СУУРИН" },  { -52.0f, 2.0f, "ЗАСТАВ" }, { 38.0f, -13.0f, "ШАТАХУУН ТҮГЭЭХ ГАЗАР" },
-        { 10.0f, 70.0f, "АГУУЛАХ" }, { kShopCenter.x, kShopCenter.y + 5.5f, "ДЭЛГҮҮР" },
+        { 10.0f, 70.0f, "АГУУЛАХ" }, { kTownCenter.x, kTownCenter.y, "АЙМГИЙН ТӨВ" }, { kShopCenter.x, kShopCenter.y + 5.5f, "ДЭЛГҮҮР" },
+        { airport::kTerminal.x, airport::kTerminal.y - 60.0f, world.GetLayout().AirfieldActive() ? "БУЯНТ-УХАА НИСЭХ БУУДАЛ" : nullptr },
     };
     for (const auto& place : places)
     {
+        if (place.name == nullptr) continue;
         const Vector2 p = view.ToScreen(place.x, place.z);
         const int textWidth = UiMeasure(place.name, 16);
         UiText(place.name, (int)p.x - textWidth / 2 + 1, (int)p.y - 7, 16, Fade(BLACK, 0.8f));
         UiText(place.name, (int)p.x - textWidth / 2, (int)p.y - 8, 16, kFrame);
+    }
+    if (world.GetLayout().AirfieldActive())
+    {
+        // ODbL: нисэх буудлын зураг OpenStreetMap-ийн өгөгдлөөр
+        UiText("Нисэх буудлын зураг: (c) OpenStreetMap contributors", (int)view.area.x + 10,
+               (int)(view.area.y + view.area.height) - 22, 14, Fade(kFrame, 0.75f));
     }
     EndScissorMode();
 

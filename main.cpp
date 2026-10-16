@@ -117,6 +117,10 @@ int main(int argc, char** argv)
         {
             options.airstrike = true;
         }
+        else if (std::strcmp(argv[i], "--daytime") == 0 && i + 1 < argc)
+        {
+            options.dayTime = (float)std::atof(argv[++i]);
+        }
         else if (std::strcmp(argv[i], "--pause") == 0)
         {
             options.pause = true;
@@ -136,6 +140,14 @@ int main(int argc, char** argv)
         else if (std::strcmp(argv[i], "--campaign") == 0)
         {
             options.campaignMap = true;
+        }
+        else if (std::strcmp(argv[i], "--graphics") == 0 && i + 1 < argc)
+        {
+            options.graphics = std::atoi(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--weather") == 0 && i + 1 < argc)
+        {
+            options.weather = std::atoi(argv[++i]);
         }
         else if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc)
         {

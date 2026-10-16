@@ -112,7 +112,11 @@ public:
     int PassageCount() const { return (int)passages.size(); }
 
     // Газар, байгууламж, сүүдэр. Орчны shader-тэй material дамжуулна.
-    void Draw(const Camera3D& camera, const Material& material, float detailDistance) const;
+    // groundMaterial: газар, detailMaterial: өвс чулуу. realShadows: нарны сүүдэр асаалттай (хуурамч сүүдэр зурахгүй).
+    void Draw(const Camera3D& camera, const Material& material, const Material& groundMaterial,
+              const Material& detailMaterial, float detailDistance, bool realShadows) const;
+    // Сүүдрийн зураг руу: газар, барилга (center орчмын radius зайд)
+    void DrawShadowCasters(Vector3 center, float radius, const Material& material) const;
     // Хагас тунгалаг хэсгүүд (торон хашаа): бусад бүх зүйлийн дараа зурна.
     void DrawTransparent(const Camera3D& camera, const Material& material) const;
     void DrawColliders(Vector3 viewPosition) const;
