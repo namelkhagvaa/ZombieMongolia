@@ -151,10 +151,20 @@ namespace
 
     // Баруун гарт барьсан жижиг зэвсэг. Шууны орон зайд зурна: эх нь тохой, шууны тэнхлэг (-Y) нь
     // зэвсгийн чиглэл, гар урагш сунгасан үед +Z нь дээш харна.
-    void DrawHandItem(const HumanoidLook& look)
+    void DrawHandItem(const HumanoidLook& look, bool detailed = true)
     {
         const float grip = -kForearm - 0.05f;
-        if (look.held == HeldItem::Knife)
+        if (look.held == HeldItem::Knife && detailed && HasPropModel(PropModelId::Knife))
+        {
+            // assets/buu/knife: толгой нь grip + 0.063 (бариулын төв grip дээр), үзүүр нь шууны -Y дагуу,
+            // ирний нуруу +Z тал руу (доорх кодын хэлбэртэй ижил чиглэл, урт 0.44 м)
+            rlPushMatrix();
+            rlTranslatef(0.0f, grip + 0.063f, 0.01f);
+            rlRotatef(90.0f, 1.0f, 0.0f, 0.0f); // загварын +Z (үзүүр) -> -Y, +Y (нуруу) -> +Z
+            DrawPropModel(PropModelId::Knife);
+            rlPopMatrix();
+        }
+        else if (look.held == HeldItem::Knife)
         {
             // Цэргийн хутга: ороосон иш, хөндлөн хамгаалалт, нуруутай ир, хурц үзүүр
             Cube(0.0f, grip, 0.01f, 0.036f, 0.13f, 0.042f, { 44, 40, 34, 255 });             // иш
@@ -283,7 +293,7 @@ namespace
 
         if (side == 0 && !pose.hideItem)
         {
-            DrawHandItem(look);
+            DrawHandItem(look, detailed);
         }
         rlPopMatrix();
     }
@@ -294,6 +304,16 @@ namespace
         const float x = kHumanoidMuzzle.x;
         const float y = kHumanoidMuzzle.y - kHipHeight;
         const float z = -kick;
+
+        // assets/buu/shotgun: бөгс z - 0.055, ам z + 1.2; гол төмөр (y + 0.03) ба сумны хоолойн (y - 0.03) дунд
+        if (detailed && HasPropModel(PropModelId::Shotgun))
+        {
+            rlPushMatrix();
+            rlTranslatef(x, y, z - 0.055f);
+            DrawPropModel(PropModelId::Shotgun);
+            rlPopMatrix();
+            return;
+        }
 
         Tapered(x, y - 0.12f, z + 0.08f, 0.06f, 0.24f, 0.06f, 0.32f, 0.15f, kGunWood, 0.03f); // бөгс
         Cube(x, y - 0.06f, z - 0.04f, 0.065f, 0.2f, 0.03f, kGun);                              // бөгсний резин
@@ -943,7 +963,7 @@ void DrawHumanoid(Vector3 feet, float facing, float scale, const HumanoidPose& p
             rlPushMatrix();
             rlMultMatrixf(MatrixToFloat(frames.rightForearm));
             if (look.held == HeldItem::Pistol) DrawPistolUpright(detailed);
-            else DrawHandItem(look);
+            else DrawHandItem(look, detailed);
             rlPopMatrix();
         }
         rlPopMatrix();

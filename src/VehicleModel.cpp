@@ -29,7 +29,7 @@ namespace
     const char* kNames[(int)VehicleModelId::Count] = { "gclass", "truck" };
 
     Model3 props[(int)PropModelId::Count];
-    const char* kPropNames[(int)PropModelId::Count] = { "ak47", "sum", "sniper", "pistol" };
+    const char* kPropNames[(int)PropModelId::Count] = { "ak47", "sum", "sniper", "pistol", "shotgun", "knife" };
     const Material* propDepth = nullptr;
 
     // Файлын байрлал: компьютер дээр exe-ийн хажуу эсвэл төслийн assets/<sub>, утсан дээр APK-ийн assets/<sub>
