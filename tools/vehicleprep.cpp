@@ -31,6 +31,7 @@
 //   python tools/glb_extract.py assets/buu/sum.glb tmp/sum_raw
 //   python tools/prop_align.py tmp/sum_raw tmp/sum --upright  (+ текстурыг 256 px PNG: assets/buu/sum_color.png)
 //   vehicleprep prop tmp/sum assets/buu/sum.vmesh 150 0.057       (гаралт ~450 гурвалжин)
+//   Sniper.glb -> sniper.vmesh (prop_align, 4000 1.49; 1024 px), pistol.glb -> pistol.vmesh (prop_align ... 0.04, 2000 0.23; 512 px)
 #include "raylib.h"
 #include "meshoptimizer.h"
 

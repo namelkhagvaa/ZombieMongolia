@@ -191,8 +191,18 @@ namespace
     }
 
     // Босоо бариултай гар буу (оруулсан загварын гарт): эх нь бариулын төв, +Z нь ам, +Y нь дээш.
-    void DrawPistolUpright()
+    // Гар бууны орон зай: эх нь бариулын төв, +Z нь ам, +Y нь дээш.
+    void DrawPistolUpright(bool detailed = true)
     {
+        // assets/buu/pistol: ар тал z = -0.063, ам z = 0.167, гол төмөр y = 0.075 (доорх кодын хэлбэртэй ижил)
+        if (detailed && HasPropModel(PropModelId::Pistol))
+        {
+            rlPushMatrix();
+            rlTranslatef(0.0f, 0.075f, -0.063f);
+            DrawPropModel(PropModelId::Pistol);
+            rlPopMatrix();
+            return;
+        }
         Cube(0.0f, 0.085f, 0.055f, 0.034f, 0.05f, 0.21f, kGunMetal);          // замаг
         for (int i = 0; i < 5; ++i)
         {
@@ -405,6 +415,17 @@ namespace
         const float x = kHumanoidMuzzle.x;
         const float y = kHumanoidMuzzle.y - kHipHeight;
         const float z = -kick;
+
+        // assets/buu/sniper: бөгс z - 0.05, ам z + 1.44, гол төмөр y + 0.02 дээр (доорх кодын хэлбэртэй ижил хэмжээ)
+        if (detailed && HasPropModel(PropModelId::Sniper))
+        {
+            rlPushMatrix();
+            rlTranslatef(x, y + 0.02f, z - 0.05f);
+            DrawPropModel(PropModelId::Sniper);
+            rlPopMatrix();
+            return;
+        }
+
         const Color woodDark = Shade(kGunWood, 0.75f);
 
         // Цонхтой бөгс: дээд, доод хоёр мод, хойд хавтан, урд холбоос
@@ -921,7 +942,7 @@ void DrawHumanoid(Vector3 feet, float facing, float scale, const HumanoidPose& p
         {
             rlPushMatrix();
             rlMultMatrixf(MatrixToFloat(frames.rightForearm));
-            if (look.held == HeldItem::Pistol) DrawPistolUpright();
+            if (look.held == HeldItem::Pistol) DrawPistolUpright(detailed);
             else DrawHandItem(look);
             rlPopMatrix();
         }
