@@ -1,6 +1,7 @@
 #include "Humanoid.h"
 
 #include "CharacterModel.h"
+#include "VehicleModel.h"
 #include "raymath.h"
 
 #include "rlgl.h"
@@ -314,6 +315,18 @@ namespace
         const float x = kHumanoidMuzzle.x;
         const float y = kHumanoidMuzzle.y - kHipHeight;
         const float z = -kick;
+
+        // assets/buu/ak47: ойрын дүр ба 1-р этгээдийн буу. Бөгс z - 0.05, ам z + 1.1, гол төмөр y + 0.015 дээр
+        // (доорх кодоор угсарсан хэлбэртэй ижил хэмжээ). Холын дүрд хөнгөн, кодын хэлбэр.
+        if (detailed && HasPropModel(PropModelId::Ak47))
+        {
+            rlPushMatrix();
+            rlTranslatef(x, y + 0.015f, z - 0.05f);
+            DrawPropModel(PropModelId::Ak47);
+            rlPopMatrix();
+            return;
+        }
+
         const Color wood = kGunWood;
         const Color woodDark = Shade(kGunWood, 0.7f);
 

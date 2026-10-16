@@ -139,6 +139,7 @@ Game::Game(const LaunchOptions& launchOptions)
     Splash::Step(0.84f, "Морьдыг ачаалж байна...");
     LoadHorseModel(environment.CharacterShader());      // байхгүй бол морь кодоор үүсгэсэн дүрсээрээ
     LoadVehicleModels(environment.VehicleShader());     // байхгүй бол унаанууд кодоор угсарсан хэлбэрээрээ
+    LoadPropModels(environment.VehicleShader());        // assets/buu: автомат буу, үсрэх сум (байхгүй бол кодоор)
     Splash::Step(0.86f, "Дуу ачаалж байна...");
     Audio::Init();
     Splash::Step(0.94f, "Газрын зургийг бэлтгэж байна...");
@@ -164,6 +165,7 @@ Game::~Game()
     UnloadCharacterModels();
     UnloadHorseModel();
     UnloadVehicleModels();
+    UnloadPropModels();
     Save();
 }
 
@@ -2135,6 +2137,7 @@ void Game::RenderShadows() const
     }
 
     garage.Draw(center, radius * 1.4f, &environment.DepthMaterial(), true);
+    SetPropDepthMaterial(&environment.DepthMaterial()); // хүмүүсийн барьсан бууны загвар
     squad.Draw(center, false);
     horde.Draw(view.position, 12.0f, false); // зомби олон тул зөвхөн хамгийн ойрынх нь сүүдэр тусгана
     if (player.IsAlive()) player.Draw(config, false); // 1-р этгээдийн үед ч өөрийн сүүдэр харагдана
@@ -2145,6 +2148,7 @@ void Game::RenderShadows() const
         DrawRemoteFigure(hostFigure, TeamMemberLook(hostFigure.member));
         for (const RemoteFigure& soldier : hostSoldiers) DrawRemoteFigure(soldier, TeamMemberLook(soldier.member));
     }
+    SetPropDepthMaterial(nullptr);
     environment.EndShadowPass();
 }
 

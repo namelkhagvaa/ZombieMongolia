@@ -1,10 +1,12 @@
 #include "Particles.h"
 
 #include "Audio.h"
+#include "VehicleModel.h"
 #include "raymath.h"
 #include "rlgl.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace
 {
@@ -81,13 +83,16 @@ void Particles::Kickup(Vector3 at, Vector3 drift, Color color)
 void Particles::Shell(Vector3 at, Vector3 sideDirection)
 {
     Particle p = {};
-    p.kind = Kind::Shell;
+    p.kind = Kind::Casing;
     p.position = at;
     p.velocity = Vector3Add(Vector3Scale(sideDirection, Random(1.6f, 2.6f)), RandomSpread(0.4f));
     p.velocity.y = Random(2.0f, 3.2f);
     p.size = 0.035f;
     p.life = p.maxLife = 2.5f;
     p.color = { 206, 166, 70, 255 };
+    // Хөндлөн тэнхлэгээр (босоо ба нисэх чиглэлтэй перпендикуляр) хурдан эргэлдэнэ
+    p.axis = Vector3Normalize(Vector3Add(Vector3CrossProduct({ 0.0f, 1.0f, 0.0f }, sideDirection), RandomSpread(0.3f)));
+    p.spin = Random(900.0f, 1600.0f) * (GetRandomValue(0, 1) ? 1.0f : -1.0f);
     Add(p);
 }
 
@@ -175,7 +180,7 @@ void Particles::Update(float dt, const World& world)
         if (p.kind != Kind::Dust && p.kind != Kind::Puff && p.position.y <= ground + 0.02f)
         {
             p.position.y = ground + 0.02f;
-            if (p.kind == Kind::Shell && p.velocity.y < -1.5f)
+            if ((p.kind == Kind::Shell || p.kind == Kind::Casing) && p.velocity.y < -1.5f)
             {
                 // Хонгио нэг удаа ойно
                 p.velocity = { p.velocity.x * 0.4f, -p.velocity.y * 0.3f, p.velocity.z * 0.4f };
@@ -217,6 +222,25 @@ void Particles::Draw() const
         else if (p.kind == Kind::Puff)
         {
             continue; // доор: гүний буферт бичихгүйгээр
+        }
+        else if (p.kind == Kind::Casing && HasPropModel(PropModelId::Casing))
+        {
+            // Нисэж байхад эргэлдэнэ; газарт хажуугаараа хэвтэнэ (загварын урт тэнхлэг +Z нь хэвтээ).
+            const float age = p.maxLife - p.life;
+            rlPushMatrix();
+            if (p.settled)
+            {
+                rlTranslatef(p.position.x, p.position.y - 0.014f, p.position.z);
+                rlRotatef(std::atan2(p.axis.x, p.axis.z) * RAD2DEG, 0.0f, 1.0f, 0.0f);
+            }
+            else
+            {
+                rlTranslatef(p.position.x, p.position.y, p.position.z);
+                rlRotatef(p.spin * age, p.axis.x, p.axis.y, p.axis.z);
+            }
+            rlTranslatef(0.0f, 0.0f, -0.0285f); // загварын төвийг тойрно (ёроол нь z = 0)
+            DrawPropModel(PropModelId::Casing);
+            rlPopMatrix();
         }
         else
         {

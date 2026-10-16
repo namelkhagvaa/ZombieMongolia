@@ -28,19 +28,33 @@ namespace
     Model3 models[(int)VehicleModelId::Count];
     const char* kNames[(int)VehicleModelId::Count] = { "gclass", "truck" };
 
-    // Файлын байрлал: компьютер дээр exe-ийн хажуу эсвэл төслийн assets/cars, утсан дээр APK-ийн assets/cars
-    std::string CarsFolder()
+    Model3 props[(int)PropModelId::Count];
+    const char* kPropNames[(int)PropModelId::Count] = { "ak47", "sum" };
+    const Material* propDepth = nullptr;
+
+    // Файлын байрлал: компьютер дээр exe-ийн хажуу эсвэл төслийн assets/<sub>, утсан дээр APK-ийн assets/<sub>
+    std::string AssetFolder(const std::string& sub)
     {
 #if defined(__ANDROID__)
-        return "cars/";
+        return sub + "/";
 #else
         const std::string application = GetApplicationDirectory();
-        for (const std::string& folder : { std::string("assets/cars/"), application + "assets/cars/", application + "../assets/cars/" })
+        for (const std::string& folder : { "assets/" + sub + "/", application + "assets/" + sub + "/", application + "../assets/" + sub + "/" })
         {
             if (DirectoryExists(folder.c_str())) return folder;
         }
-        return "assets/cars/";
+        return "assets/" + sub + "/";
 #endif
+    }
+
+    void UnloadOne(Model3& model)
+    {
+        if (!model.loaded) return;
+        for (Part& part : model.parts) UnloadMesh(part.mesh);
+        model.parts.clear();
+        if (model.texture.id != 0) UnloadTexture(model.texture);
+        RL_FREE(model.material.maps);
+        model = {};
     }
 
     template <typename T>
@@ -94,7 +108,7 @@ namespace
         {
             for (Part& part : model.parts) UnloadMesh(part.mesh);
             model.parts.clear();
-            TraceLog(LOG_WARNING, "VEHICLE: %s is not a valid vehicle mesh", meshPath.c_str());
+            TraceLog(LOG_WARNING, "VEHICLE: %s is not a valid mesh", meshPath.c_str());
             return false;
         }
 
@@ -117,7 +131,7 @@ namespace
 
 void LoadVehicleModels(Shader shader)
 {
-    const std::string folder = CarsFolder();
+    const std::string folder = AssetFolder("cars");
     for (int i = 0; i < (int)VehicleModelId::Count; ++i)
     {
         const std::string mesh = folder + kNames[i] + ".vmesh";
@@ -131,15 +145,7 @@ void LoadVehicleModels(Shader shader)
 
 void UnloadVehicleModels()
 {
-    for (Model3& model : models)
-    {
-        if (!model.loaded) continue;
-        for (Part& part : model.parts) UnloadMesh(part.mesh);
-        model.parts.clear();
-        if (model.texture.id != 0) UnloadTexture(model.texture);
-        RL_FREE(model.material.maps);
-        model = {};
-    }
+    for (Model3& model : models) UnloadOne(model);
 }
 
 bool HasVehicleModel(VehicleModelId id)
@@ -173,4 +179,42 @@ void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Mate
         DrawMesh(part.mesh, material, MatrixIdentity());
         rlPopMatrix();
     }
+}
+
+void LoadPropModels(Shader shader)
+{
+    const std::string folder = AssetFolder("buu");
+    for (int i = 0; i < (int)PropModelId::Count; ++i)
+    {
+        const std::string mesh = folder + kPropNames[i] + ".vmesh";
+        const std::string texture = folder + kPropNames[i] + "_color.png";
+#if !defined(__ANDROID__)
+        if (!FileExists(mesh.c_str())) continue;
+#endif
+        LoadOne(props[i], mesh, texture, shader);
+    }
+}
+
+void UnloadPropModels()
+{
+    for (Model3& model : props) UnloadOne(model);
+}
+
+bool HasPropModel(PropModelId id)
+{
+    return props[(int)id].loaded;
+}
+
+void SetPropDepthMaterial(const Material* depth)
+{
+    propDepth = depth;
+}
+
+void DrawPropModel(PropModelId id, Color tint)
+{
+    Model3& model = props[(int)id];
+    if (!model.loaded) return;
+    if (!propDepth) model.material.maps[MATERIAL_MAP_DIFFUSE].color = tint;
+    const Material& material = propDepth ? *propDepth : model.material;
+    for (const Part& part : model.parts) DrawMesh(part.mesh, material, MatrixIdentity());
 }

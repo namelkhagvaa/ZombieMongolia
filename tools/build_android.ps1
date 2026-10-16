@@ -72,6 +72,9 @@ Copy-Item (Join-Path $root "assets\terrain\*.png") (Join-Path $staging "assets\t
 New-Item -ItemType Directory -Force (Join-Path $staging "assets\cars") | Out-Null
 Copy-Item (Join-Path $root "assets\cars\*.vmesh") (Join-Path $staging "assets\cars")
 Copy-Item (Join-Path $root "assets\cars\*_color.png") (Join-Path $staging "assets\cars")
+New-Item -ItemType Directory -Force (Join-Path $staging "assets\buu") | Out-Null
+Copy-Item (Join-Path $root "assets\buu\*.vmesh") (Join-Path $staging "assets\buu")
+Copy-Item (Join-Path $root "assets\buu\*_color.png") (Join-Path $staging "assets\buu")
 New-Item -ItemType Directory -Force (Join-Path $staging "assets\sounds") | Out-Null
 Copy-Item (Join-Path $root "assets\sounds\*.wav") (Join-Path $staging "assets\sounds")
 

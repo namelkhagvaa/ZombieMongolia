@@ -20,3 +20,20 @@ bool HasVehicleModel(VehicleModelId id);
 // steer -1..1. depth != nullptr бол сүүдрийн зурагт тэр материалаар зурна. tint нь эвдрэлийн бараан өнгө.
 void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Material* depth, Color tint);
 float VehicleModelWheelRadius(VehicleModelId id);
+
+// Унаагүй, нэг хэсэгтэй текстуртай загварууд (assets/buu/<name>.vmesh + <name>_color.png; vehicleprep prop бэлтгэнэ).
+// Байрлал нь загварын орон зайд: урт тэнхлэг +Z, эх нь z = 0 дээр (tools/prop_align.py).
+enum class PropModelId
+{
+    Ak47,   // автомат буу: бөгс z = 0, ам z = 1.15, гол төмрийн тэнхлэг y = 0, x = 0
+    Casing, // буунаас үсрэх сум: ёроол z = 0, үзүүр z = 0.057
+    Count
+};
+
+void LoadPropModels(Shader shader);
+void UnloadPropModels();
+bool HasPropModel(PropModelId id);
+// Сүүдрийн зургийн үед (nullptr биш бол) бүх загварыг тэр материалаар зурна.
+void SetPropDepthMaterial(const Material* depth);
+// Одоогийн rlgl хувиргалтаар зурна.
+void DrawPropModel(PropModelId id, Color tint = WHITE);

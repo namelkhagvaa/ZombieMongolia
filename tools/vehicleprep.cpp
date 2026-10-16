@@ -7,6 +7,9 @@
 //       Загварыг triangles хүртэл багасгаж, урт нь length м болохоор масштаблана (урд тал = +Z).
 //       Дугуйнууд: тэнхлэг бүрийн z (эх загварын координатаар), ойролцоо радиус ба хажуугийн |x| (нарийн утгыг геометрээс олно);
 //       тэдгээрийн гурвалжнуудыг их биеэс салгаж тусдаа хэсэг болгоно.
+//   vehicleprep prop <in> <out.vmesh> <triangles> <length>
+//       Дугуйгүй нэг хэсэгтэй загвар (зэвсэг, гильз): triangles хүртэл багасгаж, Z тэнхлэгийн дагуух урт нь length м
+//       болохоор масштаблана. Чиглэлийг өмнө нь tools/prop_align.py-аар тааруулна (эх нь хэвээр үлдэнэ).
 //
 // .vmesh формат (little-endian):
 //   "VMSH" u32 version=1, u32 partCount
@@ -21,6 +24,13 @@
 //   python tools/glb_extract.py assets/cars/G-class.glb tmp/gclass   (+ текстурыг 1024 px PNG болгох)
 //   vehicleprep build tmp/gclass assets/cars/gclass.vmesh 20000 4.3 1 0.097 0.184 0.302 -0.27
 //   vehicleprep build tmp/truck assets/cars/truck.vmesh 20000 7.4 1 0.086 0.161 0.316 -0.141 -0.334
+// Зэвсэг (assets/buu): AK47.glb -> ak47.vmesh (урт 1.15 м = DrawGun-ийн хэмжээ), sum.glb -> sum.vmesh (57 мм)
+//   python tools/glb_extract.py assets/buu/AK47.glb tmp/ak47_raw
+//   python tools/prop_align.py tmp/ak47_raw tmp/ak47          (+ текстурыг 1024 px PNG: assets/buu/ak47_color.png)
+//   vehicleprep prop tmp/ak47 assets/buu/ak47.vmesh 4000 1.15     (гаралт ~12000 гурвалжин)
+//   python tools/glb_extract.py assets/buu/sum.glb tmp/sum_raw
+//   python tools/prop_align.py tmp/sum_raw tmp/sum --upright  (+ текстурыг 256 px PNG: assets/buu/sum_color.png)
+//   vehicleprep prop tmp/sum assets/buu/sum.vmesh 150 0.057       (гаралт ~450 гурвалжин)
 #include "raylib.h"
 #include "meshoptimizer.h"
 
@@ -163,6 +173,13 @@ int main(int argc, char** argv)
     setvbuf(stdout, nullptr, _IONBF, 0);
     if (argc >= 5 && std::strcmp(argv[1], "views") == 0) return Views(argv[2], argv[3], argv[4]);
     if (argc >= 10 && std::strcmp(argv[1], "build") == 0) return Build(argc, argv);
+    if (argc >= 6 && std::strcmp(argv[1], "prop") == 0)
+    {
+        // Дугуйгүй build: урд = +Z, радиус ба хажуу 0, тэнхлэг байхгүй
+        char frontSign[] = "1", zero[] = "0";
+        char* buildArgs[] = { argv[0], argv[1], argv[2], argv[3], argv[4], argv[5], frontSign, zero, zero };
+        return Build(9, buildArgs);
+    }
     std::printf("usage: see source\n");
     return 1;
 }

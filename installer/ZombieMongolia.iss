@@ -46,6 +46,8 @@ Source: "..\assets\huds\*.png"; DestDir: "{app}\assets\huds"; Flags: ignoreversi
 Source: "..\assets\terrain\*.png"; DestDir: "{app}\assets\terrain"; Flags: ignoreversion
 Source: "..\assets\cars\*.vmesh"; DestDir: "{app}\assets\cars"; Flags: ignoreversion
 Source: "..\assets\cars\*_color.png"; DestDir: "{app}\assets\cars"; Flags: ignoreversion
+Source: "..\assets\buu\*.vmesh"; DestDir: "{app}\assets\buu"; Flags: ignoreversion
+Source: "..\assets\buu\*_color.png"; DestDir: "{app}\assets\buu"; Flags: ignoreversion
 Source: "..\assets\sounds\*.wav"; DestDir: "{app}\assets\sounds"; Flags: ignoreversion
 
 [Icons]

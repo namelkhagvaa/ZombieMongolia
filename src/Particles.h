@@ -35,7 +35,8 @@ private:
     {
         Blood,
         Dust,
-        Shell,
+        Shell,  // хэлтэрхий (жижиг шоо)
+        Casing, // буунаас үсрэх сум: assets/buu/sum загвар (байхгүй бол шоо)
         Puff
     };
 
@@ -49,6 +50,8 @@ private:
         float maxLife;
         Color color;
         bool settled; // газар хүрээд зогссон
+        Vector3 axis; // Casing: эргэлдэх тэнхлэг
+        float spin;   // Casing: эргэлтийн хурд, градус/с
     };
 
     struct MuzzleFlash
