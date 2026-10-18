@@ -19,7 +19,7 @@
 namespace Net
 {
     // Компьютер, Android-ийн relay сервер (TCP). Хөтөч web/shell.html-ийн RELAY_URL-ийг хэрэглэнэ.
-    constexpr const char* kRelayHost = "play-zombie.apps.mn";
+    constexpr const char* kRelayHost = "zombie-relay.apps.mn";
     constexpr uint16_t kRelayTcpPort = 8091;
 
     constexpr uint16_t kGamePort = 47810;
