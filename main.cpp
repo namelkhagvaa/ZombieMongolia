@@ -180,6 +180,14 @@ int main(int argc, char** argv)
         {
             options.savePath = argv[++i];
         }
+        else if (std::strcmp(argv[i], "--relay") == 0 && i + 1 < argc)
+        {
+            options.relay = argv[++i];
+        }
+        else if (std::strcmp(argv[i], "--join") == 0 && i + 1 < argc)
+        {
+            options.joinCode = std::atoi(argv[++i]);
+        }
         else if (std::strcmp(argv[i], "--campaign") == 0)
         {
             options.campaignMap = true;

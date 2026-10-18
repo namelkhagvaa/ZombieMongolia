@@ -138,6 +138,15 @@ Game::Game(const LaunchOptions& launchOptions)
     {
         SetSavePath(options.savePath); // туршилт: тусдаа хадгалалтын файл
     }
+    if (options.relay)
+    {
+        // Туршилт: өөр relay сервер ("хост:порт"), эсвэл "off" — зөвхөн дотоод сүлжээ
+        const std::string relay = options.relay;
+        const size_t colon = relay.rfind(':');
+        if (relay == "off") net.SetRelayServer("", 0);
+        else if (colon == std::string::npos) net.SetRelayServer(relay, Net::kRelayTcpPort);
+        else net.SetRelayServer(relay.substr(0, colon), (uint16_t)std::atoi(relay.c_str() + colon + 1));
+    }
     SetCharacterBindPose(options.bindPose);
     Splash::Step(0.7f, "Дүрүүдийг ачаалж байна...");
     LoadCharacterModels(environment.CharacterShader()); // байхгүй бол дүрүүд кодоор үүсгэсэн дүрсээрээ зурагдана
@@ -388,7 +397,11 @@ void Game::Run()
         // ESC (утсан дээр "буцах" товч): нээлттэй цонхыг (даалгаврын журнал, газрын зураг) хаана; цонхгүй бол гарна.
         if (InKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_BACK))
         {
-            if (paused)
+            if (codeEntryOpen)
+            {
+                codeEntryOpen = false; // өрөөний код оруулах цонх
+            }
+            else if (paused)
             {
                 ClosePause();
             }
@@ -528,6 +541,11 @@ void Game::HandleSettingsInput()
 
 void Game::UpdateMap()
 {
+    if (codeEntryOpen)
+    {
+        UpdateCodeEntry(); // газрын зургийн товч (1-5, Enter) кодын цифртэй давхцахгүй
+        return;
+    }
     UpdateCoopMap();
     if (state != GameState::Map) return; // хамтарсан тоглолт эхэлсэн
     bool changed = false;
@@ -2859,6 +2877,7 @@ void Game::Draw() const
     {
         mapScreen.Draw(progress);
         DrawCoopMap();
+        if (codeEntryOpen) DrawCodeEntry();
         // Хувилбар: хөрвүүлсэн огноо, цаг (аль хувилбар ажиллаж байгааг ялгахад)
         const char* build = "Хувилбар: " __DATE__ " " __TIME__;
         UiText(build, ViewWidth() - UiMeasure(build, 14) - 12, ViewHeight() - 22, 14, Fade(WHITE, 0.55f));
@@ -3093,9 +3112,10 @@ void Game::UpdateNetwork(float dt)
             }
         }
     }
-    else if (state == GameState::Playing && !coopGuest && net.GetRole() != Net::Role::Host)
+    else if (state == GameState::Playing && !coopGuest)
     {
-        net.StopDiscovery();
+        // Frame бүрд: дотоод сүлжээ, relay өрөө хоёуланг нээлттэй байлгана (сервер хүрэхгүй бол дахин оролдоно).
+        if (net.GetRole() != Net::Role::Host) net.StopDiscovery();
         net.StartHosting(provinceIndex);
     }
 
@@ -3496,9 +3516,10 @@ void Game::DrawCoopOverlay() const
         }
     }
 
-    // Хөтөч: хост найздаа хэлэх өрөөний код (зочин нэгдтэл). Сервертэй холбогдоогүй бол шалтгааныг харуулна.
-    const bool webHosting = Net::Session::UsesRoomCodes() && net.Available() && !coopGuest && state == GameState::Playing;
-    if (webHosting && net.RoomCode() == 0)
+    // Хост найздаа хэлэх өрөөний код (зочин нэгдтэл). Хөтөч дээр сервертэй холбогдоогүй бол шалтгааныг харуулна
+    // (компьютер, утсанд дотоод сүлжээгээр тоглож болох тул сервер хүрэхгүйг харуулахгүй).
+    const bool webHosting = net.UsesRoomCodes() && !coopGuest && state == GameState::Playing;
+    if (webHosting && net.RoomCode() == 0 && !net.HasLan())
     {
         const char* text = net.GetRole() == Net::Role::Host ? "ХАМТ ТОГЛОХ: сервертэй холбогдож байна..."
                                                              : "ХАМТ ТОГЛОХ: сервертэй холбогдож чадсангүй, дахин оролдож байна";
@@ -3561,30 +3582,26 @@ void Game::UpdateCoopMap()
         }
         return;
     }
-    if (Net::Session::UsesRoomCodes())
+    if (options.joinCode > 0 && net.UsesRoomCodes())
     {
-        // Хөтөч: найзынхаа өрөөний кодыг асууж, тэр өрөөнд нэгдэнэ.
-        if ((click && CheckCollisionPointRec(pointer, CoopButtonRect(0))) || InKeyPressed(KEY_J))
-        {
-            const int code = WebPromptNumber("Найзынхаа өрөөний кодыг оруулна уу (4 орон)");
-            if (code < 1000 || code > 9999)
-            {
-                if (code != 0) coopStatus = "Код 4 оронтой байна";
-                return;
-            }
-            Net::FoundGame room;
-            room.name = TextFormat("Өрөө %d", code);
-            room.address = (uint32_t)code;
-            net.SetName(PlayerName());
-            net.RequestJoin(room);
-            waitingForReply = true;
-            waitTimer = 30.0f;
-            coopStatus.clear();
-        }
+        // Туршилт: кодын цонхоор оруулсан мэт шууд нэгдэнэ (нэг удаа)
+        codeEntry = std::to_string(options.joinCode);
+        options.joinCode = 0;
+        codeEntryOpen = true;
+        ForceCodeSubmit();
         return;
     }
+    // Интернэт: найзынхаа өрөөний кодыг оруулж нэгдэнэ (J нь дотоод сүлжээнд олдсон тоглолтгүй үед).
+    if (net.UsesRoomCodes() &&
+        ((click && CheckCollisionPointRec(pointer, CodeButtonRect())) || (InKeyPressed(KEY_J) && found.empty())))
+    {
+        OpenCodeEntry();
+        return;
+    }
+    if (!net.HasLan()) return;
     const bool autoJoin = options.screenshotPath && options.coopTest; // туршилт: олдсон тоглолт руу шууд нэгдэнэ
-    for (int i = 0; i < (int)found.size() && i < 2; ++i)
+    const int lanRows = net.UsesRoomCodes() ? 1 : 2; // доод мөрөнд "КОДООР НЭГДЭХ"
+    for (int i = 0; i < (int)found.size() && i < lanRows; ++i)
     {
         if ((click && CheckCollisionPointRec(pointer, CoopButtonRect(i))) || (i == 0 && (InKeyPressed(KEY_J) || autoJoin)))
         {
@@ -3600,9 +3617,124 @@ void Game::UpdateCoopMap()
 
 Rectangle Game::CoopButtonRect(int row) const
 {
-    // Олдсон тоглолтуудын "НЭГДЭХ" (0 нь хүлээж байхад "ЦУЦЛАХ"; хөтөч дээр "КОДООР НЭГДЭХ")
-    if (Net::Session::UsesRoomCodes()) return { 750.0f, 634.0f + 30.0f * (float)row, 160.0f, 26.0f };
+    // Дотоод сүлжээнд олдсон тоглолтуудын "НЭГДЭХ" (0 нь хүлээж байхад "ЦУЦЛАХ")
     return { 790.0f, 634.0f + 30.0f * (float)row, 120.0f, 26.0f };
+}
+
+Rectangle Game::CodeButtonRect() const
+{
+    // Дотоод сүлжээтэй бол доод мөрөнд, хөтөч дээр дээд мөрөнд
+    return { 750.0f, net.HasLan() ? 664.0f : 634.0f, 160.0f, 26.0f };
+}
+
+void Game::OpenCodeEntry()
+{
+    codeEntryOpen = true;
+    codeEntry.clear();
+    coopStatus.clear();
+}
+
+Rectangle Game::CodeKeyRect(int key) const
+{
+    // 3 x 4 тоон товчлуур: 1 2 3 / 4 5 6 / 7 8 9 / ← 0 OK
+    const float size = 64.0f, gap = 10.0f;
+    const float left = (float)ViewWidth() * 0.5f - (size * 3.0f + gap * 2.0f) * 0.5f;
+    const float top = (float)ViewHeight() * 0.5f - 120.0f;
+    return { left + (float)(key % 3) * (size + gap), top + (float)(key / 3) * (size + gap), size, size };
+}
+
+namespace
+{
+    // Кодын цонхны хүрээ: товчлуурууд дээр гарчиг, цифрийн нүднүүд
+    Rectangle CodePanel(Rectangle first, Rectangle last)
+    {
+        return { first.x - 40.0f, first.y - 110.0f, last.x + last.width - first.x + 80.0f, last.y + last.height - first.y + 150.0f };
+    }
+}
+
+void Game::UpdateCodeEntry()
+{
+    auto addDigit = [&](int digit) {
+        if (codeEntry.size() < 4) codeEntry.push_back((char)('0' + digit));
+    };
+    bool submit = InKeyPressed(KEY_ENTER) || InKeyPressed(KEY_KP_ENTER);
+    for (int d = 0; d <= 9; ++d)
+    {
+        if (InKeyPressed(KEY_ZERO + d) || InKeyPressed(KEY_KP_0 + d)) addDigit(d);
+    }
+    if (InKeyPressed(KEY_BACKSPACE) && !codeEntry.empty()) codeEntry.pop_back();
+    if (InMousePressed(MOUSE_BUTTON_LEFT))
+    {
+        const Vector2 pointer = InPointer();
+        for (int key = 0; key < 12; ++key)
+        {
+            if (!CheckCollisionPointRec(pointer, CodeKeyRect(key))) continue;
+            if (key < 9) addDigit(key + 1);
+            else if (key == 9 && !codeEntry.empty()) codeEntry.pop_back();
+            else if (key == 10) addDigit(0);
+            else if (key == 11) submit = true;
+        }
+        // Цонхны гадна товшвол хаана
+        if (!CheckCollisionPointRec(pointer, CodePanel(CodeKeyRect(0), CodeKeyRect(11)))) codeEntryOpen = false;
+    }
+    if (!submit || !codeEntryOpen) return;
+    ForceCodeSubmit();
+}
+
+void Game::ForceCodeSubmit()
+{
+    if (codeEntry.size() != 4)
+    {
+        coopStatus = "Код 4 оронтой байна";
+        return;
+    }
+    Net::FoundGame room;
+    room.name = "Өрөө " + codeEntry;
+    room.address = (uint32_t)std::atoi(codeEntry.c_str());
+    room.relay = true;
+    codeEntryOpen = false;
+    net.SetName(PlayerName());
+    net.RequestJoin(room);
+    waitingForReply = true;
+    waitTimer = 30.0f;
+    coopStatus.clear();
+}
+
+void Game::DrawCodeEntry() const
+{
+    const Rectangle panel = CodePanel(CodeKeyRect(0), CodeKeyRect(11));
+    DrawRectangle(0, 0, ViewWidth(), ViewHeight(), { 0, 0, 0, 140 });
+    Ui::PanelAccent(panel, Ui::kInfo, { 10, 13, 19, 240 });
+    const char* title = "НАЙЗЫН ӨРӨӨНИЙ КОД";
+    Ui::TextBold(title, (int)(panel.x + (panel.width - (float)Ui::MeasureBold(title, 17)) / 2.0f), (int)panel.y + 16, 17, Ui::kInfo);
+    // 4 цифрийн нүд
+    const float box = 44.0f, boxGap = 10.0f;
+    const float boxLeft = panel.x + (panel.width - (box * 4.0f + boxGap * 3.0f)) / 2.0f;
+    for (int i = 0; i < 4; ++i)
+    {
+        const Rectangle cell = { boxLeft + (float)i * (box + boxGap), panel.y + 48.0f, box, 48.0f };
+        DrawRectangleRounded(cell, 0.25f, 6, { 255, 255, 255, 18 });
+        Ui::Outline(cell, i == (int)codeEntry.size() ? Ui::kAccent : Color{ 255, 255, 255, 60 }, 1.5f, 6.0f);
+        if (i < (int)codeEntry.size())
+        {
+            const char digit[2] = { codeEntry[(size_t)i], 0 };
+            Ui::TextBold(digit, (int)(cell.x + (cell.width - (float)Ui::MeasureBold(digit, 28)) / 2.0f), (int)cell.y + 8, 28, Ui::kText);
+        }
+    }
+    static const char* const labels[12] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "←", "0", "OK" };
+    for (int key = 0; key < 12; ++key)
+    {
+        const Rectangle r = CodeKeyRect(key);
+        const bool ok = key == 11;
+        DrawRectangleRounded(r, 0.3f, 8, ok ? Fade(Ui::kInfo, codeEntry.size() == 4 ? 0.9f : 0.35f) : Color{ 255, 255, 255, 26 });
+        Ui::TextBold(labels[key], (int)(r.x + (r.width - (float)Ui::MeasureBold(labels[key], 24)) / 2.0f), (int)(r.y + 18.0f), 24,
+                     ok ? Color{ 10, 20, 30, 255 } : Ui::kText);
+    }
+    if (!coopStatus.empty())
+    {
+        Ui::Text(coopStatus.c_str(), (int)(panel.x + (panel.width - (float)Ui::Measure(coopStatus.c_str(), 13)) / 2.0f),
+                 (int)(panel.y + panel.height) - 22, 13, Ui::kAccent);
+    }
 }
 
 void Game::DrawCoopMap() const
@@ -3611,8 +3743,10 @@ void Game::DrawCoopMap() const
     const Rectangle panel = { 430.0f, 598.0f, 500.0f, 114.0f };
     Ui::PanelAccent(panel, Ui::kInfo, { 10, 13, 19, 205 });
     Ui::Outline(panel, { 96, 196, 236, 70 }, 1.0f, 10.0f);
-    Ui::TextBold(Net::Session::UsesRoomCodes() ? "ХАМТ ТОГЛОХ  (интернэт)" : "ХАМТ ТОГЛОХ  (дотоод сүлжээ)", (int)panel.x + 18,
-                 (int)panel.y + 8, 15, Ui::kInfo);
+    const char* title = net.HasLan() && net.UsesRoomCodes() ? "ХАМТ ТОГЛОХ  (сүлжээ, интернэт)"
+                        : net.UsesRoomCodes()                ? "ХАМТ ТОГЛОХ  (интернэт)"
+                                                             : "ХАМТ ТОГЛОХ  (дотоод сүлжээ)";
+    Ui::TextBold(title, (int)panel.x + 18, (int)panel.y + 8, 15, Ui::kInfo);
     const std::string self = PlayerName();
     Ui::Text(self.c_str(), (int)(panel.x + panel.width) - 16 - Ui::Measure(self.c_str(), 13), (int)panel.y + 10, 13,
              Ui::kTextDim);
@@ -3626,17 +3760,15 @@ void Game::DrawCoopMap() const
         Ui::TextBold("ЦУЦЛАХ", (int)(button.x + (button.width - (float)Ui::MeasureBold("ЦУЦЛАХ", 13)) / 2.0f), (int)button.y + 5, 13,
                      Ui::kText);
     }
-    else if (Net::Session::UsesRoomCodes())
+    else if (!net.HasLan())
     {
+        // Хөтөч: зөвхөн интернэт
         Ui::Text("Найзынхаа өрөөний кодоор нэгдэнэ", (int)panel.x + 18, 636, 15, Ui::kText);
         Ui::Text("Нөгөө хүн аймгаа эхлүүлэхэд код нь гарна", (int)panel.x + 18, 660, 13, Ui::kTextDim);
-        const Rectangle button = CoopButtonRect(0);
-        DrawRectangleRounded(button, 0.5f, 6, Fade(Ui::kInfo, 0.85f));
-        Ui::TextBold("КОДООР НЭГДЭХ", (int)(button.x + (button.width - (float)Ui::MeasureBold("КОДООР НЭГДЭХ", 13)) / 2.0f),
-                     (int)button.y + 5, 13, { 10, 20, 30, 255 });
     }
     else
     {
+        const bool withCode = net.UsesRoomCodes();
         if (found.empty())
         {
             // Хайж байгааг илтгэх эргэдэг нум
@@ -3647,9 +3779,10 @@ void Game::DrawCoopMap() const
             const float dots = std::fmod((float)GetTime(), 1.5f);
             Ui::Text(TextFormat("Ойролцоо тоглож буй хүн хайж байна%s", dots < 0.5f ? "." : dots < 1.0f ? ".." : "..."),
                      (int)panel.x + 52, 636, 15, Ui::kText);
-            Ui::Text("Нөгөө хүн аймгаа эхлүүлсэн, нэг сүлжээнд байх ёстой", (int)panel.x + 52, 660, 13, Ui::kTextDim);
+            if (!withCode) Ui::Text("Нөгөө хүн аймгаа эхлүүлсэн, нэг сүлжээнд байх ёстой", (int)panel.x + 52, 660, 13, Ui::kTextDim);
         }
-        for (int i = 0; i < (int)found.size() && i < 2; ++i)
+        if (withCode) Ui::Text("Интернэтээр: найзын кодоор", (int)panel.x + 18, 668, 15, Ui::kTextDim);
+        for (int i = 0; i < (int)found.size() && i < (withCode ? 1 : 2); ++i)
         {
             const Net::FoundGame& game = found[(size_t)i];
             const int y = 636 + 30 * i;
@@ -3661,7 +3794,14 @@ void Game::DrawCoopMap() const
                          { 10, 20, 30, 255 });
         }
     }
-    if (!coopStatus.empty())
+    if (!waitingForReply && net.UsesRoomCodes())
+    {
+        const Rectangle button = CodeButtonRect();
+        DrawRectangleRounded(button, 0.5f, 6, Fade(Ui::kInfo, 0.85f));
+        Ui::TextBold("КОДООР НЭГДЭХ", (int)(button.x + (button.width - (float)Ui::MeasureBold("КОДООР НЭГДЭХ", 13)) / 2.0f),
+                     (int)button.y + 5, 13, { 10, 20, 30, 255 });
+    }
+    if (!coopStatus.empty() && !codeEntryOpen)
     {
         Ui::Text(coopStatus.c_str(), (int)panel.x + 18, (int)(panel.y + panel.height) - 22, 13, Ui::kAccent);
     }

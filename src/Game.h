@@ -80,6 +80,8 @@ struct LaunchOptions
     bool autoPlay = false;    // даалгавруудыг автоматаар гүйцэтгэнэ (--autoplay)
     int stopAfter = 0;        // автомат тоглолт энэ тооны даалгаврын дараа зогсоно (--stop-after N)
     const char* savePath = nullptr; // тусдаа хадгалалтын файл; заасан бол туршилт ч хадгална (--save FILE)
+    const char* relay = nullptr;    // интернэтийн relay сервер "хост:порт" эсвэл "off" (--relay 127.0.0.1:8091)
+    int joinCode = 0;               // газрын зураг дээрээс энэ өрөөнд шууд нэгдэнэ (--join 1234, --campaign --coop-тай)
 };
 
 // Цонхыг бусад гишүүдээс өмнө нээж, хамгийн сүүлд хаана (mesh, shader нь цонхноос хамаардаг).
@@ -269,6 +271,8 @@ private:
     Net::Snapshot guestView;        // зочин: хостын сүүлийн мэдээлэл (даалгаврын бичиг г.м.)
     float coopSendTimer = 0.0f;
     bool waitingForReply = false;   // зочин: хүсэлт илгээгээд хүлээж байна
+    bool codeEntryOpen = false;     // өрөөний код оруулах цонх нээлттэй
+    std::string codeEntry;          // оруулсан цифрүүд
     float waitTimer = 0.0f;
     std::string coopStatus;         // газрын зураг: сүүлийн мэдээ ("Татгалзлаа" г.м.)
     std::string noticeText;
@@ -284,6 +288,13 @@ private:
     void DrawCoopMap() const;
     void DrawCoopOverlay() const;
     Rectangle CoopButtonRect(int row) const;
+    Rectangle CodeButtonRect() const; // "КОДООР НЭГДЭХ" (интернэт)
+    // Өрөөний код оруулах цонх (тоон товчлуур; гарны тоо ч болно)
+    void OpenCodeEntry();
+    void UpdateCodeEntry();
+    void DrawCodeEntry() const;
+    void ForceCodeSubmit(); // оруулсан кодоор нэгдэх хүсэлт илгээнэ
+    Rectangle CodeKeyRect(int key) const; // 0..11: 1-9, ←, 0, OK
     void ObjectiveTexts(std::string& objective, std::string& detail) const;
     Net::AvatarState LocalAvatar() const;
     void UpdateRemoteFigure(RemoteFigure& figure, const Net::AvatarState& state, float dt, bool snap);

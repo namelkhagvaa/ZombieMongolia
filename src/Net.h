@@ -13,10 +13,15 @@
 // сүлжээний картын дэд сүлжээний хаяг бүр (x.x.x.1-254) болон broadcast руу асуулт илгээнэ (Android дээр
 // broadcast найдваргүй тул).
 //
-// Хөтөч (Emscripten) дээр UDP байхгүй тул WebSocket relay сервер (server/relay.js) ашиглана: хост өрөөний
-// 4 оронтой код авч, зочин тэр кодоор нэгдэнэ (хайлт байхгүй). Мессежүүд нь ижил.
+// Интернэтээр (relay сервер, server/relay.js): хост өрөөний 4 оронтой код авч, зочин тэр кодоор нэгдэнэ.
+// Хөтөч WebSocket-оор, компьютер ба Android TCP-ээр холбогдож, нэг өрөөнд хамт тоглоно. Компьютер, Android
+// дээр хост дотоод сүлжээ болон интернэтээс хоёуланг нь хүлээж авна. Мессежүүд нь ижил.
 namespace Net
 {
+    // Компьютер, Android-ийн relay сервер (TCP). Хөтөч web/shell.html-ийн RELAY_URL-ийг хэрэглэнэ.
+    constexpr const char* kRelayHost = "play-zombie.apps.mn";
+    constexpr uint16_t kRelayTcpPort = 8091;
+
     constexpr uint16_t kGamePort = 47810;
     constexpr uint16_t kDiscoveryPort = 47811;
     // Сүлжээний мессежийн хувилбар: мессежийн бүтэц өөрчлөгдөх бүрд нэмэгдүүлнэ. Хост ба зочин ижил хувилбартай
@@ -125,7 +130,8 @@ namespace Net
     struct FoundGame
     {
         std::string name;
-        uint32_t address = 0; // IPv4 (ENet-ийн хэлбэр); хөтөч дээр өрөөний код
+        uint32_t address = 0; // IPv4 (ENet-ийн хэлбэр); relay бол өрөөний код
+        bool relay = false;   // интернэтээр (өрөөний кодоор), эс бөгөөс дотоод сүлжээгээр
         int province = 0;
         float age = 0.0f;     // сүүлд хариулснаас хойш
     };
@@ -162,23 +168,20 @@ namespace Net
         Session(const Session&) = delete;
         Session& operator=(const Session&) = delete;
 
-        bool Available() const { return initialized; }
+        bool Available() const { return lan || relay; }
+        bool HasLan() const { return lan; }            // дотоод сүлжээ (ENet; хөтөч дээр байхгүй)
+        bool UsesRoomCodes() const { return relay; }   // интернэт (relay сервер, өрөөний код)
+        // Компьютер, Android: relay серверийн хаяг (хоосон бол интернэтээр тоглохгүй). Хөтөч дээр үйлчлэхгүй.
+        void SetRelayServer(const std::string& hostName, uint16_t port);
         Role GetRole() const { return role; }
-        bool Connected() const { return (peer != nullptr || partner) && connected; }
-        // Хөтөч: хайлтын оронд өрөөний кодоор нэгдэнэ (relay сервер). RoomCode: хостын код (0 = хараахан аваагүй).
-        static constexpr bool UsesRoomCodes()
-        {
-#if defined(__EMSCRIPTEN__)
-            return true;
-#else
-            return false;
-#endif
-        }
+        bool Connected() const { return connected && ((link == Link::Lan && peer) || (link == Link::Relay && partner)); }
+        // Хостын өрөөний код (0 = хараахан аваагүй эсвэл сервер хүрэхгүй).
         int RoomCode() const { return roomCode; }
         const std::string& LocalName() const { return name; }
         void SetName(const std::string& value) { name = value; }
 
-        // Хост: даалгаврын үед сонсож эхэлнэ (хайлтад хариулна, хүсэлт хүлээнэ).
+        // Хост: даалгаврын үед сонсож эхэлнэ (хайлтад хариулна, хүсэлт хүлээнэ). Frame бүрд дуудаж болно:
+        // сервер хүрэхгүй бол хэсэг хугацааны дараа дахин оролдоно.
         void StartHosting(int province);
         // Хост: хүсэлтэд хариулна.
         void AnswerJoin(bool accept, int province);
@@ -217,8 +220,16 @@ namespace Net
         void Send(const std::vector<uint8_t>& data, bool reliable);
         void HandleDiscovery();
         void HandlePacket(const uint8_t* data, size_t size, std::vector<Event>& events);
+        void PollRelay(std::vector<Event>& events);
 
-        bool initialized = false;
+        // Нэгдсэн зочин аль замаар холбогдсон (хост нэг л зочин хүлээн авна)
+        enum class Link { None, Lan, Relay };
+
+        bool lan = false;    // ENet ажиллаж байна
+        bool relay = false;  // relay серверийн хаяг тохируулсан
+        Link link = Link::None;
+        bool relayOpen = false;    // relay сервертэй холболт нээлттэй (эсвэл нээгдэж байна)
+        double lanRetryAt = 0.0;   // ENet-ийн порт эзлэгдсэн бол дахин оролдох цаг
         Role role = Role::None;
         std::string name;
         int hostedProvince = 0;
@@ -232,7 +243,7 @@ namespace Net
         std::vector<FoundGame> found;
         Snapshot latest;
         bool hasLatest = false;
-        // Хөтөч (relay): нөгөө тал өрөөнд байгаа эсэх, өрөөний код, сервер унасан үед дахин холбогдох цаг
+        // Relay: нөгөө тал өрөөнд байгаа эсэх, өрөөний код, сервер хүрэхгүй үед дахин холбогдох цаг
         bool partner = false;
         int roomCode = 0;
         double retryAt = 0.0;
