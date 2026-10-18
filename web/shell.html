@@ -119,15 +119,14 @@
   if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
     canvas.addEventListener('touchend', enterFullscreen, { passive: true });
   }
-  // Хамтарсан тоглолтын relay сервер (server/relay.js). Байршуулсныхаа дараа хаягийг энд бичнэ
-  // (жишээ нь 'wss://zombie-mongolia-relay.onrender.com'). Хоосон бол хөтөч дээр хамтарсан тоглолт харагдахгүй.
-  // Туршилтад: ?relay=ws://... хаягаар солино. Хоосон бөгөөд хуудас http:// (өөрийн компьютер, дотоод сүлжээ)
-  // бол хуудастай ижил хаягийн 8090 порт (server/relay.js-ийг тэр компьютер дээр ажиллуулна).
-  var RELAY_URL = '';
+  // Хамтарсан тоглолтын relay сервер (server/relay.js). https:// хуудас (байршуулсан сайт) RELAY_URL-д,
+  // http:// хуудас (өөрийн компьютер, дотоод сүлжээ) хуудастай ижил хаягийн 8090 портод холбогдоно.
+  // Туршилтад: ?relay=ws://... хаягаар солино. RELAY_URL хоосон бол https сайт дээр хамтарсан тоглолт харагдахгүй.
+  var RELAY_URL = 'wss://play-zombie.apps.mn/relay';
   var relayParam = new URLSearchParams(location.search).get('relay');
-  var sameHost = location.protocol === 'http:' ? 'ws://' + location.hostname + ':8090' : '';
+  var sameHost = 'ws://' + location.hostname + ':8090';
   var Module = {
-    zmRelayUrl: relayParam || RELAY_URL || sameHost,
+    zmRelayUrl: relayParam || (location.protocol === 'http:' ? sameHost : RELAY_URL),
     canvas: canvas,
     print: function (t) { console.log(t); debugLog(t); },
     printErr: function (t) { console.warn(t); debugLog(t); },
