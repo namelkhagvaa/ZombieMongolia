@@ -3332,6 +3332,12 @@ void Game::UpdateCoopMission(float dt)
     {
         guestView = snapshot;
         dayClock = snapshot.dayClock; // хосттой ижил цаг
+        // Хосттой ижил цаг агаар (зочин даалгавраа эхлүүлэхдээ санамсаргүй сонгосон байж болно)
+        if (snapshot.weather >= 0 && snapshot.weather <= (int)WeatherKind::Dust && snapshot.weather != (int)environment.Weather())
+        {
+            environment.SetWeather((WeatherKind)snapshot.weather);
+            TraceLog(LOG_INFO, "COOP: weather %d from host", snapshot.weather);
+        }
         horde.ApplySnapshot(snapshot.zombies, params);
         UpdateRemoteFigure(hostFigure, snapshot.host, dt, !guestPlaced);
         hostSoldiers.resize(snapshot.soldiers.size());
@@ -3471,6 +3477,7 @@ void Game::SendHostSnapshot(float dt)
     snapshot.hordeBig = mission.QuotaBig() - mission.KilledBig();
     snapshot.zombieSpeed = horde.SpeedMultiplier();
     snapshot.dayClock = dayClock;
+    snapshot.weather = (int)environment.Weather();
     net.SendSnapshot(snapshot);
 }
 

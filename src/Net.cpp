@@ -1062,6 +1062,8 @@ namespace Net
             s.hordeBig = r.I32();
             s.zombieSpeed = r.F();
             s.dayClock = r.F();
+            // Цаг агаар: төгсгөлд нэмсэн (хуучин хост илгээдэггүй, хуучин зочин үл тоомсорлоно)
+            if (r.ok && r.at < r.size) s.weather = r.U8();
             if (r.ok)
             {
                 latest = std::move(s);
@@ -1185,6 +1187,7 @@ namespace Net
         w.I32(s.hordeBig);
         w.F(s.zombieSpeed);
         w.F(s.dayClock);
+        w.U8((uint8_t)std::max(0, s.weather));
         Send(w.data, false);
     }
 

@@ -124,6 +124,7 @@ namespace Net
         int hordeSmall = 0, hordeBig = 0;
         float zombieSpeed = 1.0f;
         float dayClock = 0.0f; // өдөр шөнийн мөчлөг (секунд): зочин хосттой ижил цагтай
+        int weather = -1;      // хостын цаг агаар (WeatherKind); -1 = илгээгээгүй (хуучин хувилбар)
     };
 
     // Хайлтаар олдсон хост
