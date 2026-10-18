@@ -12,6 +12,9 @@
 // Хайлт: даалгавар тоглож буй тоглоом бүр kDiscoveryPort дээр сонсож, асуултад хариулна. Зочин өөрийн бүх
 // сүлжээний картын дэд сүлжээний хаяг бүр (x.x.x.1-254) болон broadcast руу асуулт илгээнэ (Android дээр
 // broadcast найдваргүй тул).
+//
+// Хөтөч (Emscripten) дээр UDP байхгүй тул WebSocket relay сервер (server/relay.js) ашиглана: хост өрөөний
+// 4 оронтой код авч, зочин тэр кодоор нэгдэнэ (хайлт байхгүй). Мессежүүд нь ижил.
 namespace Net
 {
     constexpr uint16_t kGamePort = 47810;
@@ -119,7 +122,7 @@ namespace Net
     struct FoundGame
     {
         std::string name;
-        uint32_t address = 0; // IPv4 (ENet-ийн хэлбэр)
+        uint32_t address = 0; // IPv4 (ENet-ийн хэлбэр); хөтөч дээр өрөөний код
         int province = 0;
         float age = 0.0f;     // сүүлд хариулснаас хойш
     };
@@ -128,7 +131,7 @@ namespace Net
     struct Event
     {
         Msg type;
-        std::string text;      // JoinRequest: нэр
+        std::string text;      // JoinRequest: нэр; Leave (хөтөч): холбогдож чадаагүй шалтгаан
         bool accepted = false; // JoinReply
         int province = 0;      // JoinReply
         int version = 0;       // JoinRequest / JoinReply: нөгөө талын протоколын хувилбар (0 = хуучин, хувилбаргүй)
@@ -158,7 +161,17 @@ namespace Net
 
         bool Available() const { return initialized; }
         Role GetRole() const { return role; }
-        bool Connected() const { return peer != nullptr && connected; }
+        bool Connected() const { return (peer != nullptr || partner) && connected; }
+        // Хөтөч: хайлтын оронд өрөөний кодоор нэгдэнэ (relay сервер). RoomCode: хостын код (0 = хараахан аваагүй).
+        static constexpr bool UsesRoomCodes()
+        {
+#if defined(__EMSCRIPTEN__)
+            return true;
+#else
+            return false;
+#endif
+        }
+        int RoomCode() const { return roomCode; }
         const std::string& LocalName() const { return name; }
         void SetName(const std::string& value) { name = value; }
 
@@ -216,5 +229,9 @@ namespace Net
         std::vector<FoundGame> found;
         Snapshot latest;
         bool hasLatest = false;
+        // Хөтөч (relay): нөгөө тал өрөөнд байгаа эсэх, өрөөний код, сервер унасан үед дахин холбогдох цаг
+        bool partner = false;
+        int roomCode = 0;
+        double retryAt = 0.0;
     };
 }

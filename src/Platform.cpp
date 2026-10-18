@@ -41,6 +41,16 @@ namespace
         return count;
     });
 
+    EM_JS(int, PromptNumber, (const char* message), {
+        var text = window.prompt(UTF8ToString(message), '');
+        var value = parseInt((text || '').replace(/\D/g, ''), 10);
+        return isNaN(value) ? 0 : value;
+    });
+
+    EM_JS(void, HideLoader, (), {
+        if (typeof Module.zmHideLoader === 'function') Module.zmHideLoader();
+    });
+
     EM_JS(void, RestoreFromStorage, (const char* path), {
         try {
             var name = UTF8ToString(path);
@@ -61,6 +71,8 @@ bool AppShouldClose() { return false; }
 void FrameYield() { WaitAnimationFrame(); }
 bool WebIsTouchDevice() { return IsCoarsePointer() != 0; }
 int WebReadTouches(float* xy, int* ids, int capacity) { return ReadCanvasTouches(xy, ids, capacity); }
+int WebPromptNumber(const char* message) { return PromptNumber(message); }
+void WebHideLoader() { HideLoader(); }
 void WebRestoreFile(const char* path) { RestoreFromStorage(path); }
 void WebPersistFile(const char* path) { PersistToStorage(path); }
 
@@ -70,6 +82,8 @@ bool AppShouldClose() { return WindowShouldClose(); }
 void FrameYield() {}
 bool WebIsTouchDevice() { return false; }
 int WebReadTouches(float*, int*, int) { return 0; }
+int WebPromptNumber(const char*) { return 0; }
+void WebHideLoader() {}
 void WebRestoreFile(const char*) {}
 void WebPersistFile(const char*) {}
 

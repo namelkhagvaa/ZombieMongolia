@@ -1,5 +1,8 @@
 #include "Net.h"
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#else
 // raylib-ийн Rectangle, CloseWindow, ShowCursor зэрэг нэр windows.h-тэй давхцахаас сэргийлнэ.
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -15,6 +18,7 @@
 #include <net/if.h>
 #include <netinet/in.h>
 #endif
+#endif
 
 #include <algorithm>
 #include <cstring>
@@ -28,8 +32,10 @@ namespace Net
         const float kProbeInterval = 1.5f;
         const float kForgetAfter = 5.0f;
 
+#if !defined(__EMSCRIPTEN__)
         ENetHost* AsHost(void* p) { return static_cast<ENetHost*>(p); }
         ENetPeer* AsPeer(void* p) { return static_cast<ENetPeer*>(p); }
+#endif
 
         // ---- Цуваа болгох ----
         struct Writer
@@ -94,6 +100,7 @@ namespace Net
             return a;
         }
 
+#if !defined(__EMSCRIPTEN__)
         // Ашиглах боломжгүй хаяг: 0.0.0.0, 127.x (loopback), 169.254.x (DHCP-гүй автомат хаяг).
         bool UsableAddress(uint32_t host)
         {
@@ -121,8 +128,10 @@ namespace Net
             enet_socket_destroy(socket);
             return result;
         }
+#endif
     }
 
+#if !defined(__EMSCRIPTEN__)
     namespace
     {
         std::vector<uint32_t> FindLocalAddresses()
@@ -167,11 +176,6 @@ namespace Net
 
     Session::Session()
     {
-#if defined(__EMSCRIPTEN__)
-        // Хөтөч UDP сокет нээж чадахгүй: хамтарсан тоглолт (ба газрын зургийн самбар) хөтөч дээр байхгүй.
-        initialized = false;
-        return;
-#endif
         initialized = enet_initialize() == 0;
         if (!initialized) TraceLog(LOG_WARNING, "NET: enet_initialize failed, co-op disabled");
     }
@@ -454,6 +458,223 @@ namespace Net
         }
     }
 
+#else
+    // ================================================================ Хөтөч: WebSocket relay (server/relay.js)
+    // Хуудас (web/shell.html) нь Module.zmRelayUrl-д серверийн хаягийг өгнө. Ирсэн мессежүүд JS-ийн дараалалд
+    // хуримтлагдаж, Poll нэг бүрчлэн авна.
+    namespace
+    {
+        // Мессежийн дараалал дахь төрөл
+        enum WebKind { kWebNone = 0, kWebOpen, kWebRoom, kWebPaired, kWebLeft, kWebError, kWebClosed, kWebData };
+
+        EM_JS(int, WebRelayConfigured, (), {
+            return (typeof Module.zmRelayUrl === 'string' && Module.zmRelayUrl.length > 0) ? 1 : 0;
+        });
+
+        EM_JS(void, WebOpen, (const char* query), {
+            if (Module.zmWs) { try { Module.zmWs.close(); } catch (e) {} }
+            Module.zmQueue = [];
+            var queue = Module.zmQueue;
+            var ws;
+            try { ws = new WebSocket(Module.zmRelayUrl + UTF8ToString(query)); }
+            catch (e) { queue.push({ k: 6 }); return; }
+            ws.binaryType = 'arraybuffer';
+            ws.onopen = function() { queue.push({ k: 1 }); };
+            ws.onmessage = function(e) {
+                if (typeof e.data === 'string') {
+                    var m = {};
+                    try { m = JSON.parse(e.data); } catch (err) {}
+                    if (m.type === 'room') queue.push({ k: 2, v: m.code | 0 });
+                    else if (m.type === 'paired') queue.push({ k: 3 });
+                    else if (m.type === 'left') queue.push({ k: 4 });
+                    else if (m.type === 'error') queue.push({ k: 5, v: m.reason === 'notfound' ? 1 : m.reason === 'full' ? 2 : 0 });
+                } else {
+                    queue.push({ k: 7, d: new Uint8Array(e.data) });
+                }
+            };
+            ws.onclose = function() { queue.push({ k: 6 }); };
+            Module.zmWs = ws;
+        });
+
+        EM_JS(void, WebClose, (), {
+            if (Module.zmWs) { try { Module.zmWs.close(); } catch (e) {} }
+            Module.zmWs = null;
+            Module.zmQueue = [];
+        });
+
+        EM_JS(void, WebSend, (const uint8_t* data, int size, int reliable), {
+            var ws = Module.zmWs;
+            if (!ws || ws.readyState !== 1) return;
+            // Тасралтгүй мессежүүдийг (snapshot, байдал) сүлжээ удаан үед хаяна: хоцрогдол хуримтлагдахгүй.
+            if (!reliable && ws.bufferedAmount > 262144) return;
+            ws.send(HEAPU8.slice(data, data + size));
+        });
+
+        // Дараалал дахь эхний мессежийн төрөл, утга; өгөгдлийн хэмжээг буцаана (авахгүй).
+        EM_JS(int, WebPeek, (int* kind, int* value), {
+            var queue = Module.zmQueue;
+            if (!queue || queue.length === 0) { HEAP32[kind >> 2] = 0; return 0; }
+            HEAP32[kind >> 2] = queue[0].k;
+            HEAP32[value >> 2] = queue[0].v | 0;
+            return queue[0].d ? queue[0].d.length : 0;
+        });
+
+        // Эхний мессежийг дарааллаас авч, өгөгдлийг нь buffer-т хуулна.
+        EM_JS(void, WebPop, (uint8_t* buffer), {
+            var item = Module.zmQueue.shift();
+            if (item && item.d && buffer) HEAPU8.set(item.d, buffer);
+        });
+
+        const double kRetrySeconds = 5.0; // сервер хүрэхгүй бол хост ийм завсартай дахин оролдоно
+    }
+
+    Session::Session()
+    {
+        initialized = WebRelayConfigured() != 0;
+        if (!initialized) TraceLog(LOG_INFO, "NET: no relay server configured, co-op disabled");
+    }
+
+    Session::~Session()
+    {
+        Stop();
+    }
+
+    void Session::StartHosting(int province)
+    {
+        if (!initialized) return;
+        hostedProvince = province;
+        if (role == Role::Host || GetTime() < retryAt) return;
+        Stop();
+        WebOpen("?host");
+        role = Role::Host;
+        roomCode = 0;
+    }
+
+    void Session::Stop()
+    {
+        if (partner && connected)
+        {
+            Writer w;
+            w.U8((uint8_t)Msg::Leave);
+            Send(w.data, true);
+        }
+        if (role != Role::None) WebClose();
+        partner = false;
+        connected = false;
+        joinPending = false;
+        hasLatest = false;
+        roomCode = 0;
+        role = Role::None;
+    }
+
+    void Session::AnswerJoin(bool accept, int province)
+    {
+        if (!partner) return;
+        Writer w;
+        w.U8((uint8_t)Msg::JoinReply);
+        w.U8(accept ? 1 : 0);
+        w.U8((uint8_t)province);
+        w.U16(kProtocolVersion);
+        Send(w.data, true);
+        // Татгалзвал зочин өөрөө гарна (relay түүнийг өрөөнөөс гаргаж, хостод "left" илгээнэ).
+        connected = accept;
+    }
+
+    void Session::RequestJoin(const FoundGame& game)
+    {
+        if (!initialized) return;
+        Stop();
+        WebOpen(TextFormat("?join=%u", game.address));
+        role = Role::Guest;
+        joinPending = true;
+        connected = false;
+    }
+
+    void Session::StopDiscovery() { found.clear(); }
+    void Session::Discover(float) {}
+    void Session::HandleDiscovery() {}
+
+    void Session::Poll(std::vector<Event>& events)
+    {
+        if (!initialized || role == Role::None) return;
+        std::vector<uint8_t> buffer;
+        for (int guard = 0; guard < 256; ++guard)
+        {
+            int kind = 0, value = 0;
+            const int size = WebPeek(&kind, &value);
+            if (kind == kWebNone) break;
+            if (kind == kWebData)
+            {
+                buffer.resize((size_t)std::max(size, 1));
+                WebPop(buffer.data());
+                HandlePacket(buffer.data(), (size_t)size, events);
+                continue;
+            }
+            WebPop(nullptr);
+            switch (kind)
+            {
+            case kWebRoom:
+                roomCode = value;
+                TraceLog(LOG_INFO, "NET: hosting province %d, room %d", hostedProvince, roomCode);
+                break;
+            case kWebPaired:
+                partner = true;
+                if (role == Role::Guest)
+                {
+                    // ENet-ийн CONNECT-тэй адил: хостод нэгдэх хүсэлт илгээнэ.
+                    Writer w;
+                    w.U8((uint8_t)Msg::JoinRequest);
+                    w.Str(name);
+                    w.U16(kProtocolVersion);
+                    Send(w.data, true);
+                }
+                break;
+            case kWebLeft:
+            {
+                const bool wasActive = connected || joinPending || role == Role::Guest || partner;
+                partner = false;
+                connected = false;
+                joinPending = false;
+                if (wasActive)
+                {
+                    Event e;
+                    e.type = Msg::Leave;
+                    events.push_back(e);
+                }
+                break;
+            }
+            case kWebError:
+            case kWebClosed:
+            {
+                // Сервер хүрэхгүй, өрөө олдсонгүй, эсвэл холболт тасарсан.
+                const bool wasActive = connected || joinPending || role == Role::Guest || partner;
+                if (kind == kWebClosed && role == Role::Host) retryAt = GetTime() + kRetrySeconds;
+                Event e;
+                e.type = Msg::Leave;
+                if (kind == kWebError) e.text = value == 1 ? "Ийм кодтой тоглолт олдсонгүй" : value == 2 ? "Тоглолт дүүрсэн байна" : "";
+                else if (role == Role::Guest && joinPending) e.text = "Сервертэй холбогдож чадсангүй";
+                partner = false;
+                connected = false;
+                joinPending = false;
+                roomCode = 0;
+                WebClose();
+                role = Role::None;
+                if (wasActive) events.push_back(e);
+                return;
+            }
+            default:
+                break;
+            }
+        }
+    }
+
+    void Session::Send(const std::vector<uint8_t>& data, bool reliable)
+    {
+        if (!partner || data.empty()) return;
+        WebSend(data.data(), (int)data.size(), reliable ? 1 : 0);
+    }
+#endif
+
     void Session::HandlePacket(const uint8_t* data, size_t size, std::vector<Event>& events)
     {
         if (size < 1) return;
@@ -600,6 +821,7 @@ namespace Net
         return true;
     }
 
+#if !defined(__EMSCRIPTEN__)
     void Session::Send(const std::vector<uint8_t>& data, bool reliable)
     {
         if (!host || !peer) return;
@@ -608,6 +830,7 @@ namespace Net
         enet_peer_send(AsPeer(peer), reliable ? 0 : 1, packet);
         enet_host_flush(AsHost(host));
     }
+#endif
 
     void Session::SendGuestState(const AvatarState& state)
     {

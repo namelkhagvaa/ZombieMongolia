@@ -18,6 +18,12 @@ bool WebIsTouchDevice();
 // capacity = 0 бол зөвхөн тоог буцаана. Бусад платформд 0.
 int WebReadTouches(float* xy, int* ids, int capacity);
 
+// Хөтөч: хуудасны ачааллын дэлгэцийг (web/shell.html) нууна; тоглоомын эхлэлийн дэлгэц түүнийг орлоно.
+void WebHideLoader();
+
+// Хөтөч: хэрэглэгчээс тоо асууна (prompt цонх). Цуцалсан эсвэл тоо биш бол 0. Бусад платформд 0.
+int WebPromptNumber(const char* message);
+
 // Хадгалалтын файлыг хөтчийн localStorage-тэй тааруулна (бусад платформд юу ч хийхгүй).
 void WebRestoreFile(const char* path); // localStorage -> файл (уншихаас өмнө)
 void WebPersistFile(const char* path); // файл -> localStorage (бичсэний дараа)

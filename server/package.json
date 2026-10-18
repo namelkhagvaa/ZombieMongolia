@@ -1,0 +1,16 @@
+{
+  "name": "zombie-mongolia-relay",
+  "version": "1.0.0",
+  "description": "WebSocket relay for Zombie Mongolia browser co-op",
+  "main": "relay.js",
+  "private": true,
+  "scripts": {
+    "start": "node relay.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "8.18.0"
+  }
+}
