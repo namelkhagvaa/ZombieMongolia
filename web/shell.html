@@ -45,6 +45,15 @@
   #start button { padding: 18px 56px; border: 0; border-radius: 14px; background: rgb(255,192,64); color: #14100a;
                   font-family: "ZmUi", "Segoe UI", Arial, sans-serif; font-size: 28px; font-weight: 700; letter-spacing: 2px;
                   box-shadow: 0 8px 30px rgba(0,0,0,.6); cursor: pointer; }
+  /* iPhone: бүтэн дэлгэц болох цорын ганц арга — нүүр дэлгэцэд нэмэх зөвлөмж */
+  #iosHint { position: fixed; top: max(8px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 3;
+             display: none; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 8px 8px 8px 14px;
+             border-radius: 12px; background: rgba(10,13,19,.88); border: 1px solid rgba(255,192,64,.5); color: rgb(242,240,234);
+             font-family: "ZmUi", "Segoe UI", Arial, sans-serif; font-size: 14px; line-height: 1.3; }
+  #iosHint svg { flex: none; width: 18px; height: 22px; vertical-align: -4px; }
+  #iosHint b { color: rgb(255,192,64); font-weight: 700; }
+  #iosHint button { flex: none; width: 30px; height: 30px; border: 0; border-radius: 8px; background: rgba(255,255,255,.12);
+                    color: inherit; font-size: 16px; }
   #error { position: fixed; inset: 0; z-index: 5; display: none; flex-direction: column; align-items: center; justify-content: center;
            gap: 14px; padding: 0 24px; background: rgba(6,8,12,.94); text-align: center; font-size: 15px; line-height: 1.5; }
   #error b { color: rgb(255,192,64); font-size: 18px; }
@@ -72,6 +81,14 @@
 </div></div>
 <button id="fs" title="Бүтэн дэлгэц">⛶ Бүтэн дэлгэц</button>
 <div id="start"><button id="startButton">ТОГЛОХ</button></div>
+<div id="iosHint">
+  <span>Бүтэн дэлгэцээр тоглох бол:
+    <svg viewBox="0 0 18 22" fill="none" stroke="rgb(255,192,64)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 14V2M5 5.5 9 1.5l4 4M6 9H3.5A1.5 1.5 0 0 0 2 10.5v8A1.5 1.5 0 0 0 3.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-8A1.5 1.5 0 0 0 14.5 9H12"/>
+    </svg>
+    → <b>Add to Home Screen</b></span>
+  <button id="iosHintClose" aria-label="Хаах">✕</button>
+</div>
 <div id="error"><b>Тоглоом зогслоо</b><div id="errorText"></div><button onclick="location.reload()">Дахин ачаалах</button></div>
 <div id="debug"></div>
 <div id="rotate"><div class="icon"></div><div>Утсаа хэвтээ болгож эргүүлнэ үү</div></div>
@@ -143,6 +160,17 @@
       if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function () {});
     }).catch(function () {});
   }
+  // iPhone-ий зөвлөмж: хаавал энэ төхөөрөмж дээр дахин харуулахгүй; хаагаагүй ч 15 секундын дараа алга болно.
+  var iosHint = document.getElementById('iosHint');
+  function showIosHint() {
+    try { if (localStorage.getItem('ZombieMongolia:iosHintClosed')) return; } catch (e) {}
+    iosHint.style.display = 'flex';
+    setTimeout(function () { iosHint.style.display = 'none'; }, 15000);
+  }
+  document.getElementById('iosHintClose').addEventListener('click', function () {
+    iosHint.style.display = 'none';
+    try { localStorage.setItem('ZombieMongolia:iosHintClosed', '1'); } catch (e) {}
+  });
   document.getElementById('startButton').addEventListener('click', function () {
     document.getElementById('start').style.display = 'none';
     enterFullscreen();
@@ -181,9 +209,14 @@
     // Эхлэлийн дэлгэц дууссан (src/Splash.cpp): бүтэн дэлгэц боломжтой бол "ТОГЛОХ" товч харуулна.
     // iPhone (бүтэн дэлгэцгүй) болон нүүр дэлгэцээс апп хэлбэрээр нээсэн үед шаардлагагүй.
     zmLoadingFinished: function () {
-      var standalone = window.matchMedia && window.matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
-      if (!document.getElementById('stage').requestFullscreen || document.fullscreenElement || standalone) return;
-      document.getElementById('start').style.display = 'flex';
+      var standalone = navigator.standalone === true ||
+                       (window.matchMedia && window.matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches);
+      if (standalone || document.fullscreenElement) return;
+      if (document.getElementById('stage').requestFullscreen) {
+        document.getElementById('start').style.display = 'flex';
+      } else if (/iPhone|iPod/.test(navigator.userAgent)) {
+        showIosHint();
+      }
     },
     onAbort: function (what) { showError('Алдаа: ' + what); }
   };
