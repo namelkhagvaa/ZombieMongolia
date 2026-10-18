@@ -36,6 +36,9 @@ Copy-Item (Join-Path $build "ZombieMongolia.html") (Join-Path $site "index.html"
 foreach ($ext in "js", "wasm", "data") {
     Copy-Item (Join-Path $build "ZombieMongolia.$ext") $site -Force
 }
+# Хуудасны ачааллын дэлгэц тоглоомынхтой ижил зураг, фонт хэрэглэнэ (web/shell.html)
+Copy-Item (Join-Path $root "assets\splash.png") $site -Force
+Copy-Item (Join-Path $root "android\ui_font.ttf") $site -Force
 $size = (Get-ChildItem $site | Measure-Object -Property Length -Sum).Sum / 1MB
 Write-Host ("Done: {0} ({1:N0} MB)" -f $site, $size)
 

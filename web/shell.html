@@ -9,11 +9,24 @@
   #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
   canvas#canvas { display: block; max-width: 100vw; max-height: 100vh; aspect-ratio: 16 / 9; width: 100vw; height: auto; outline: none; background: #000; }
   @media (min-aspect-ratio: 16/9) { canvas#canvas { width: auto; height: 100vh; } }
-  #loader { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #0a0c12; z-index: 2; }
-  #loader h1 { margin: 0; font-size: 28px; letter-spacing: 2px; }
-  #bar { width: min(420px, 80vw); height: 8px; background: #22262f; border-radius: 4px; overflow: hidden; }
-  #fill { width: 0; height: 100%; background: #c9a24a; transition: width .2s; }
-  #status { font-size: 14px; color: #a9a497; }
+  /* Ачааллын дэлгэц: тоглоомын эхлэлийн дэлгэцтэй (src/Splash.cpp) яг ижил — зураг, доод сүүдэр, алтан зурвас.
+     Хэмжээсүүд нь 720 өндөрт тооцсон пикселийг canvas-ийн өндөрт (cqh) хувиргасан. Файл татах нь 0..50%,
+     дараа нь тоглоом өөрөө 50..100% үргэлжлүүлж, анхны кадраа зурмагц энэ дэлгэцийг нууна. */
+  @font-face { font-family: "ZmUi"; src: url("ui_font.ttf"); }
+  #loader { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; z-index: 2; }
+  #frame { position: relative; aspect-ratio: 16 / 9; width: 100vw; max-height: 100vh; container-type: size; overflow: hidden;
+           background: #000 url("splash.png") center / cover no-repeat; font-family: "ZmUi", "Segoe UI", Arial, sans-serif; }
+  @media (min-aspect-ratio: 16/9) { #frame { width: auto; height: 100vh; } }
+  #frame::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 20.83cqh;
+                  background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.8)); }
+  #bar { position: absolute; z-index: 1; left: 50%; transform: translateX(-50%); bottom: 5.28cqh; width: min(60cqw, 105.6cqh);
+         height: 1.11cqh; border-radius: 1cqh; background: rgba(255,255,255,.16); }
+  #fill { position: relative; height: 100%; min-width: 1.11cqh; width: 0; border-radius: 1cqh; background: rgb(255,192,64); transition: width .2s; }
+  #fill::after { content: ""; position: absolute; left: 2px; right: 2px; top: 1px; height: 35%; border-radius: 1cqh; background: rgba(255,255,255,.18); }
+  #row { position: absolute; z-index: 1; left: 50%; transform: translateX(-50%); bottom: calc(5.28cqh + 1.11cqh + 1.4cqh);
+         width: min(60cqw, 105.6cqh); display: flex; justify-content: space-between; font-size: 2.22cqh; line-height: 1; }
+  #status { color: rgb(242,240,234); }
+  #percent { color: rgb(255,192,64); font-weight: 700; }
   #fs { position: fixed; right: 12px; bottom: 12px; z-index: 3; padding: 8px 12px; border: 0; border-radius: 6px; background: rgba(20,24,32,.75); color: #e8e4da; font: inherit; font-size: 13px; cursor: pointer; }
   /* Утас: хуудас гүйлгэх, томруулахыг хааж бүх хүрэлтийг тоглоомд өгнө */
   html, body, canvas#canvas { touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -27,11 +40,10 @@
 </head>
 <body>
 <div id="stage"><canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas></div>
-<div id="loader">
-  <h1>ZOMBIE MONGOLIA</h1>
+<div id="loader"><div id="frame">
+  <div id="row"><span id="status">Ачаалж байна...</span><span id="percent">0%</span></div>
   <div id="bar"><div id="fill"></div></div>
-  <div id="status">Ачаалж байна...</div>
-</div>
+</div></div>
 <button id="fs" title="Бүтэн дэлгэц">⛶ Бүтэн дэлгэц</button>
 <div id="rotate"><div class="icon">⟳</div><div>Утсаа хэвтээ болгож эргүүлнэ үү</div></div>
 <script>
@@ -39,6 +51,13 @@
   var fill = document.getElementById('fill');
   var statusEl = document.getElementById('status');
   var loader = document.getElementById('loader');
+  var percentEl = document.getElementById('percent');
+  function showProgress(ratio, text) {
+    var pct = Math.round(100 * Math.max(0, Math.min(1, ratio)));
+    fill.style.width = pct + '%';
+    percentEl.textContent = pct + '%';
+    if (text) statusEl.textContent = text;
+  }
   canvas.addEventListener('webglcontextlost', function (e) { statusEl.textContent = 'WebGL алдаа: хуудсыг дахин ачаална уу'; e.preventDefault(); }, false);
   canvas.addEventListener('mousedown', function () { canvas.focus(); });
   function enterFullscreen() {
@@ -56,21 +75,25 @@
   if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
     canvas.addEventListener('touchend', enterFullscreen, { passive: true });
   }
+  // Хамтарсан тоглолтын relay сервер (server/relay.js). Байршуулсныхаа дараа хаягийг энд бичнэ
+  // (жишээ нь 'wss://zombie-mongolia-relay.onrender.com'). Хоосон бол хөтөч дээр хамтарсан тоглолт харагдахгүй.
+  // Туршилтад: ?relay=ws://... хаягаар солино. Хоосон бөгөөд хуудас http:// (өөрийн компьютер, дотоод сүлжээ)
+  // бол хуудастай ижил хаягийн 8090 порт (server/relay.js-ийг тэр компьютер дээр ажиллуулна).
+  var RELAY_URL = '';
+  var relayParam = new URLSearchParams(location.search).get('relay');
+  var sameHost = location.protocol === 'http:' ? 'ws://' + location.hostname + ':8090' : '';
   var Module = {
+    zmRelayUrl: relayParam || RELAY_URL || sameHost,
     canvas: canvas,
     print: function (t) { console.log(t); },
     printErr: function (t) { console.warn(t); },
     setStatus: function (text) {
       var m = text.match(/\((\d+(\.\d+)?)\/(\d+)\)/);
-      if (m) {
-        var pct = Math.round(100 * parseInt(m[1]) / parseInt(m[3]));
-        fill.style.width = pct + '%';
-        statusEl.textContent = 'Файлуудыг татаж байна... ' + pct + '%';
-      } else if (!text) {
-        loader.style.display = 'none';
-        canvas.focus();
-      }
+      if (m) showProgress(0.5 * parseInt(m[1]) / parseInt(m[3]), 'Файлуудыг татаж байна...');
+      else if (!text) showProgress(0.5, 'Тоглоомыг эхлүүлж байна...'); // тоглоомын дэлгэц 50%-аас үргэлжлүүлнэ
     },
+    // Тоглоом эхлэлийн дэлгэцийнхээ анхны кадрыг зурмагц дуудна (src/Platform.cpp)
+    zmHideLoader: function () { loader.style.display = 'none'; canvas.focus(); },
     onAbort: function (what) { loader.style.display = 'flex'; statusEl.textContent = 'Алдаа гарлаа: ' + what; }
   };
   window.onerror = function (msg) { statusEl.textContent = 'Алдаа гарлаа: ' + msg; };

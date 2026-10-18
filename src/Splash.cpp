@@ -17,6 +17,13 @@ namespace
     double startTime = 0.0;
     std::string status;
 
+    // Хөтөч: хуудас файлуудаа татахдаа зурвасыг 0..50% дүүргэдэг (web/shell.html); тоглоом үлдсэнийг үргэлжлүүлнэ.
+#if defined(__EMSCRIPTEN__)
+    const float kStartShare = 0.5f;
+#else
+    const float kStartShare = 0.0f;
+#endif
+
     // Эхлэлийн дэлгэц хамгийн багадаа ингэж удаан харагдана (хэт хурдан анивчихгүй), сек
     const double kMinimumSeconds = 1.6;
 
@@ -80,18 +87,23 @@ namespace Splash
     void Begin(bool enabled)
     {
         active = enabled;
-        if (!active) return;
+        if (!active)
+        {
+            WebHideLoader();
+            return;
+        }
         LoadSplashTexture();
         startTime = GetTime();
-        shown = 0.0f;
+        shown = kStartShare;
         status = "Ачаалж байна...";
         DrawFrame(1.0f);
+        WebHideLoader(); // хуудасны ачааллын дэлгэцийг ижил харагдах энэ дэлгэцээр солино
     }
 
     void Step(float progress, const char* text)
     {
         if (!active) return;
-        shown = std::clamp(std::max(shown, progress), 0.0f, 1.0f);
+        shown = std::clamp(std::max(shown, kStartShare + (1.0f - kStartShare) * progress), 0.0f, 1.0f);
         status = text;
         TraceLog(LOG_INFO, "SPLASH: %3d%% %.2f s  %s", (int)(shown * 100.0f), GetTime() - startTime, text);
         DrawFrame(1.0f);
