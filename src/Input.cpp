@@ -1,5 +1,6 @@
 #include "Input.h"
 
+#include "Platform.h"
 #include "UiFont.h"
 #include "UiStyle.h"
 #include "raymath.h"
@@ -262,6 +263,14 @@ namespace
             ids[i] = GetTouchPointId(i);
         }
         return count;
+#elif defined(__EMSCRIPTEN__)
+        float xy[2 * 10];
+        const int count = WebReadTouches(xy, ids, std::min(capacity, 10));
+        for (int i = 0; i < count; ++i)
+        {
+            positions[i] = ToView({ xy[2 * i], xy[2 * i + 1] });
+        }
+        return count;
 #else
         if (capacity > 0 && IsMouseButtonDown(MOUSE_BUTTON_LEFT))
         {
@@ -367,6 +376,10 @@ void InBeginFrame(const TouchState& state)
     move = { 0.0f, 0.0f };
     wheel = 0.0f;
 
+#if defined(__EMSCRIPTEN__)
+    // Хөтөч: дэлгэцэд хүрмэгц мэдрэгчтэй горимд шилжинэ (утас гэж танигдаагүй таблет г.м.)
+    if (!touchMode && WebReadTouches(nullptr, nullptr, 0) > 0) touchMode = true;
+#endif
     if (!touchMode)
     {
         pointer = ToView(GetMousePosition());

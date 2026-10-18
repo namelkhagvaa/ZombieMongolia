@@ -106,7 +106,7 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
         UnloadImage(icon);
         break;
     }
-    InSetTouchMode(options.touch);
+    InSetTouchMode(options.touch || WebIsTouchDevice()); // хөтөч: утас, таблет дээр мэдрэгчтэй товчлуурууд
     ViewInit(options.viewHeight);
 #endif
 #if defined(__EMSCRIPTEN__)
