@@ -43,6 +43,7 @@ namespace
 
     const float kLookScale = 1.7f;      // хуруугаар чирэх нь хулганаас удаан тул үржүүлнэ
     const float kStickRadius = 78.0f;   // хөдлөх хүрдний хүрээ, харагдацын пикселээр
+    const float kStickGrab = 1.7f;      // хүрдний төвөөс ийм (радиусын) зайд буусан хуруу хүрдийг барина
     // Хүрдийг хажуу тийш хазайлгахад камер тэр зүг рүү эргэнэ: нэг хуруугаар явж, зүглэж болно.
     const float kStickTurn = 720.0f;    // бүрэн хазайлтад секундэд эргэх хэмжээ, "хулганы пиксел"-ээр (~125 градус/сек)
     const float kStickStrafe = 0.35f;   // хүрдээр хажуу тийш алхах хурдны хувь
@@ -392,10 +393,8 @@ void InBeginFrame(const TouchState& state)
     {
         aimLatched = false;
     }
-    if (stickCenter.y == 0.0f)
-    {
-        stickCenter = { 160.0f, (float)ViewHeight() - 190.0f };
-    }
+    // Хөдлөх хүрд нэг байрандаа (зүүн доод буланд) байна: хуруу хаана ч буусан тийш нүүхгүй.
+    stickCenter = { 160.0f, (float)ViewHeight() - 190.0f };
 
     Vector2 positions[10] = {};
     int ids[10] = {};
@@ -446,10 +445,9 @@ void InBeginFrame(const TouchState& state)
                 case Kind::Wheel: wheel += (float)button.key; break;
                 }
             }
-            else if (gameplay && position.x < (float)ViewWidth() * 0.42f && position.y > (float)ViewHeight() * 0.3f)
+            else if (gameplay && Vector2Distance(position, stickCenter) < kStickRadius * kStickGrab)
             {
-                finger->role = Role::Stick; // хөдлөх хүрд хуруу буусан газраас эхэлнэ
-                stickCenter = position;
+                finger->role = Role::Stick; // хүрд дээр (эсвэл ойролцоо) буусан хуруу хөдөлгөөнийг удирдана
             }
             else if (gameplay)
             {
