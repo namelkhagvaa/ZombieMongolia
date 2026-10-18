@@ -7,9 +7,16 @@
 
 namespace
 {
-    // Хөтчийн дараагийн кадр хүртэл үндсэн урсгалыг түр зогсооно (ASYNCIFY).
+    // Хөтчийн дараагийн кадр хүртэл үндсэн урсгалыг түр зогсооно (ASYNCIFY). requestAnimationFrame ирэхгүй бол
+    // (iPhone-ий Safari ачааллын төгсгөлд зарим үед, нуусан tab) 100 мс-ийн дараа таймераар үргэлжлүүлнэ:
+    // эс бөгөөс тоглоом бүрмөсөн зогсдог байсан. Module.zmFrames: ?debug-ийн тоолуур (web/shell.html).
     EM_ASYNC_JS(void, WaitAnimationFrame, (), {
-        await new Promise(function(resolve) { requestAnimationFrame(resolve); });
+        var stats = Module.zmFrames || (Module.zmFrames = { raf: 0, timeout: 0 });
+        await new Promise(function(resolve) {
+            var done = false;
+            requestAnimationFrame(function() { if (!done) { done = true; stats.raf++; resolve(); } });
+            setTimeout(function() { if (!done) { done = true; stats.timeout++; resolve(); } }, 100);
+        });
     });
 
     EM_JS(int, IsCoarsePointer, (), {

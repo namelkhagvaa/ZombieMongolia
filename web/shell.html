@@ -87,14 +87,16 @@
   }
   // Тоглоом ажиллаж байгаа эсэх: тоглоом кадр бүрд requestAnimationFrame дууддаг (src/Platform.cpp FrameYield).
   if (debugOn) {
-    var rafCalls = 0, rawRaf = window.requestAnimationFrame.bind(window);
-    window.requestAnimationFrame = function (cb) { rafCalls++; return rawRaf(cb); };
-    var debugStart = Date.now();
+    var debugStart = Date.now(), lastFrames = { raf: 0, timeout: 0 };
     setInterval(function () {
       var mem = typeof wasmMemory !== 'undefined' ? Math.round(wasmMemory.buffer.byteLength / 1048576) : 0;
-      debugStatus = 'time ' + Math.round((Date.now() - debugStart) / 1000) + ' s, frames/s ' + Math.round(rafCalls / 2) +
-                    ', memory ' + mem + ' MB, ' + (innerWidth > innerHeight ? 'landscape' : 'portrait');
-      rafCalls = 0;
+      var f = Module.zmFrames || { raf: 0, timeout: 0 };
+      // frames/s: тоглоомын кадрууд; timeout: requestAnimationFrame ирээгүй тул таймераар үргэлжилсэн кадрууд
+      debugStatus = 'time ' + Math.round((Date.now() - debugStart) / 1000) + ' s, frames/s ' +
+                    Math.round((f.raf + f.timeout - lastFrames.raf - lastFrames.timeout) / 2) +
+                    ' (timeout ' + (f.timeout - lastFrames.timeout) + '), memory ' + mem + ' MB, ' +
+                    (innerWidth > innerHeight ? 'landscape' : 'portrait') + (document.hidden ? ', hidden' : '');
+      lastFrames = { raf: f.raf, timeout: f.timeout };
       debugLog('', false);
     }, 2000);
   }
@@ -154,6 +156,11 @@
     onAbort: function (what) { showError('Алдаа: ' + what); }
   };
   window.onerror = function (msg) { showError('Алдаа: ' + msg); };
+  // Тоглоомын кадар хүлээх (ASYNCIFY) Promise дотор гарсан алдаа window.onerror-т ирдэггүй.
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason;
+    showError('Алдаа: ' + (r && (r.stack || r.message) ? (r.message || '') + ' ' + (r.stack || '') : String(r)));
+  });
   if (!document.createElement('canvas').getContext('webgl2')) {
     showError('Энэ хөтөч WebGL2 дэмждэггүй. iPhone дээр iOS 15 ба түүнээс шинэ, эсвэл Chrome, Edge-ийн шинэ хувилбар хэрэгтэй.');
   }
