@@ -144,7 +144,7 @@ if(EMSCRIPTEN)
         -sASYNCIFY                 # үндсэн давталт хэвээрээ: frame бүрд хөтчид удирдлагыг буцаана (Platform.cpp)
         -sASYNCIFY_STACK_SIZE=1048576
         -sALLOW_MEMORY_GROWTH=1
-        -sINITIAL_MEMORY=512MB
+        -sINITIAL_MEMORY=256MB      # утасны Safari том санах ойг эхэнд нь өгч чаддаггүй; хэрэгтэй үед өснө
         -sSTACK_SIZE=8MB
         -sEXPORTED_RUNTIME_METHODS=HEAPF32  # raylib-ийн дууны сан (miniaudio) Module.HEAPF32-оор дуу гаргана
         --preload-file ${WEB_ASSETS}@/

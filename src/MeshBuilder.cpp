@@ -328,6 +328,12 @@ namespace
         std::memcpy(mesh.colors, vertexColors.data(), vertexColors.size());
 
         UploadMesh(&mesh, false);
+        // GPU-д хуулагдсан тул санах ой дахь хуулбарыг чөлөөлнө (суурингууд л гэхэд хэдэн арван MB; утсан дээрх
+        // хөтөч санах ой хэтэрвэл хуудсыг зогсоодог). Зурахад хэрэггүй, UnloadMesh нь nullptr-ийг алгасна.
+        MemFree(mesh.vertices);
+        MemFree(mesh.colors);
+        mesh.vertices = nullptr;
+        mesh.colors = nullptr;
         return mesh;
     }
 }

@@ -30,6 +30,10 @@
   #fs { position: fixed; right: 12px; bottom: 12px; z-index: 3; padding: 8px 12px; border: 0; border-radius: 6px; background: rgba(20,24,32,.75); color: #e8e4da; font: inherit; font-size: 13px; cursor: pointer; }
   /* Утас: хуудас гүйлгэх, томруулахыг хааж бүх хүрэлтийг тоглоомд өгнө */
   html, body, canvas#canvas { touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  #error { position: fixed; inset: 0; z-index: 5; display: none; flex-direction: column; align-items: center; justify-content: center;
+           gap: 14px; padding: 0 24px; background: rgba(6,8,12,.94); text-align: center; font-size: 15px; line-height: 1.5; }
+  #error b { color: rgb(255,192,64); font-size: 18px; }
+  #error button { padding: 10px 18px; border: 0; border-radius: 8px; background: rgb(255,192,64); color: #111; font: inherit; font-weight: 700; }
   #rotate { position: fixed; inset: 0; z-index: 4; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: #0a0c12; font-size: 16px; text-align: center; padding: 0 16px; }
   #rotate .icon { font-size: 48px; }
   @media (pointer: coarse) {
@@ -45,6 +49,7 @@
   <div id="bar"><div id="fill"></div></div>
 </div></div>
 <button id="fs" title="Бүтэн дэлгэц">⛶ Бүтэн дэлгэц</button>
+<div id="error"><b>Тоглоом зогслоо</b><div id="errorText"></div><button onclick="location.reload()">Дахин ачаалах</button></div>
 <div id="rotate"><div class="icon">⟳</div><div>Утсаа хэвтээ болгож эргүүлнэ үү</div></div>
 <script>
   var canvas = document.getElementById('canvas');
@@ -58,7 +63,15 @@
     percentEl.textContent = pct + '%';
     if (text) statusEl.textContent = text;
   }
-  canvas.addEventListener('webglcontextlost', function (e) { statusEl.textContent = 'WebGL алдаа: хуудсыг дахин ачаална уу'; e.preventDefault(); }, false);
+  // Алдааг дэлгэцэнд харуулна (утсан дээр консол байхгүй тул шалтгааныг эндээс уншина).
+  function showError(text) {
+    document.getElementById('errorText').textContent = text;
+    document.getElementById('error').style.display = 'flex';
+  }
+  canvas.addEventListener('webglcontextlost', function (e) {
+    e.preventDefault();
+    showError('График (WebGL) тасарлаа. Төхөөрөмжийн санах ой хүрэлцээгүй байж магадгүй — бусад tab, апп-аа хаагаад дахин оролдоно уу.');
+  }, false);
   canvas.addEventListener('mousedown', function () { canvas.focus(); });
   function enterFullscreen() {
     var el = document.getElementById('stage');
@@ -94,9 +107,12 @@
     },
     // Тоглоом эхлэлийн дэлгэцийнхээ анхны кадрыг зурмагц дуудна (src/Platform.cpp)
     zmHideLoader: function () { loader.style.display = 'none'; canvas.focus(); },
-    onAbort: function (what) { loader.style.display = 'flex'; statusEl.textContent = 'Алдаа гарлаа: ' + what; }
+    onAbort: function (what) { showError('Алдаа: ' + what); }
   };
-  window.onerror = function (msg) { statusEl.textContent = 'Алдаа гарлаа: ' + msg; };
+  window.onerror = function (msg) { showError('Алдаа: ' + msg); };
+  if (!document.createElement('canvas').getContext('webgl2')) {
+    showError('Энэ хөтөч WebGL2 дэмждэггүй. iPhone дээр iOS 15 ба түүнээс шинэ, эсвэл Chrome, Edge-ийн шинэ хувилбар хэрэгтэй.');
+  }
 </script>
 {{{ SCRIPT }}}
 </body>
