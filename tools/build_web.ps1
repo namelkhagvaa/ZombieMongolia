@@ -46,6 +46,12 @@ foreach ($ext in "js", "wasm", "data") {
 # Хуудасны ачааллын дэлгэц тоглоомынхтой ижил зураг, фонт хэрэглэнэ (web/shell.html)
 Copy-Item (Join-Path $root "assets\splash.png") $site -Force
 Copy-Item (Join-Path $root "android\ui_font.ttf") $site -Force
+# Вэб апп (нүүр дэлгэцэд нэмэх): бүтэн дэлгэцээр, хэвтээ нээгдэнэ
+Copy-Item (Join-Path $root "android\res\mipmap-xxxhdpi\ic_launcher.png") (Join-Path $site "icon-192.png") -Force
+$manifest = '{ "name": "Zombie Mongolia", "short_name": "Zombie MN", "start_url": ".", "display": "fullscreen", ' +
+            '"orientation": "landscape", "background_color": "#000000", "theme_color": "#000000", ' +
+            '"icons": [ { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" } ] }'
+[System.IO.File]::WriteAllText((Join-Path $site "manifest.json"), $manifest, (New-Object System.Text.UTF8Encoding $false))
 $size = (Get-ChildItem $site | Measure-Object -Property Length -Sum).Sum / 1MB
 Write-Host ("Done: {0} ({1:N0} MB)" -f $site, $size)
 

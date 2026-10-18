@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Zombie Mongolia</title>
+<!-- Нүүр дэлгэцэд нэмбэл (Add to Home Screen) апп шиг бүтэн дэлгэцээр, хэвтээ нээгдэнэ: iPhone-ий Safari
+     хуудсыг өөр аргаар бүтэн дэлгэц болгодоггүй. -->
+<link rel="manifest" href="manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Zombie MN">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#000000">
 <style>
   html, body { margin: 0; height: 100%; background: #0a0c12; color: #e8e4da; font-family: "Segoe UI", Arial, sans-serif; overflow: hidden; }
   #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
@@ -30,6 +39,12 @@
   #fs { position: fixed; right: 12px; bottom: 12px; z-index: 3; padding: 8px 12px; border: 0; border-radius: 6px; background: rgba(20,24,32,.75); color: #e8e4da; font: inherit; font-size: 13px; cursor: pointer; }
   /* Утас: хуудас гүйлгэх, томруулахыг хааж бүх хүрэлтийг тоглоомд өгнө */
   html, body, canvas#canvas { touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  /* Ачаалал дуусахад: "ТОГЛОХ" товч — дарахад бүтэн дэлгэц (хөтөч зөвхөн хэрэглэгчийн үйлдлээр зөвшөөрдөг) */
+  #start { position: fixed; inset: 0; z-index: 3; display: none; align-items: center; justify-content: center;
+           background: rgba(0,0,0,.45); }
+  #start button { padding: 18px 56px; border: 0; border-radius: 14px; background: rgb(255,192,64); color: #14100a;
+                  font-family: "ZmUi", "Segoe UI", Arial, sans-serif; font-size: 28px; font-weight: 700; letter-spacing: 2px;
+                  box-shadow: 0 8px 30px rgba(0,0,0,.6); cursor: pointer; }
   #error { position: fixed; inset: 0; z-index: 5; display: none; flex-direction: column; align-items: center; justify-content: center;
            gap: 14px; padding: 0 24px; background: rgba(6,8,12,.94); text-align: center; font-size: 15px; line-height: 1.5; }
   #error b { color: rgb(255,192,64); font-size: 18px; }
@@ -56,6 +71,7 @@
   <div id="bar"><div id="fill"></div></div>
 </div></div>
 <button id="fs" title="Бүтэн дэлгэц">⛶ Бүтэн дэлгэц</button>
+<div id="start"><button id="startButton">ТОГЛОХ</button></div>
 <div id="error"><b>Тоглоом зогслоо</b><div id="errorText"></div><button onclick="location.reload()">Дахин ачаалах</button></div>
 <div id="debug"></div>
 <div id="rotate"><div class="icon"></div><div>Утсаа хэвтээ болгож эргүүлнэ үү</div></div>
@@ -127,6 +143,11 @@
       if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function () {});
     }).catch(function () {});
   }
+  document.getElementById('startButton').addEventListener('click', function () {
+    document.getElementById('start').style.display = 'none';
+    enterFullscreen();
+    canvas.focus();
+  });
   document.getElementById('fs').addEventListener('click', function () {
     if (document.fullscreenElement) document.exitFullscreen(); else enterFullscreen();
     canvas.focus();
@@ -157,6 +178,13 @@
     },
     // Тоглоом эхлэлийн дэлгэцийнхээ анхны кадрыг зурмагц дуудна (src/Platform.cpp)
     zmHideLoader: function () { loader.style.display = 'none'; canvas.focus(); },
+    // Эхлэлийн дэлгэц дууссан (src/Splash.cpp): бүтэн дэлгэц боломжтой бол "ТОГЛОХ" товч харуулна.
+    // iPhone (бүтэн дэлгэцгүй) болон нүүр дэлгэцээс апп хэлбэрээр нээсэн үед шаардлагагүй.
+    zmLoadingFinished: function () {
+      var standalone = window.matchMedia && window.matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+      if (!document.getElementById('stage').requestFullscreen || document.fullscreenElement || standalone) return;
+      document.getElementById('start').style.display = 'flex';
+    },
     onAbort: function (what) { showError('Алдаа: ' + what); }
   };
   window.onerror = function (msg) { showError('Алдаа: ' + msg); };

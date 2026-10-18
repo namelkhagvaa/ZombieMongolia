@@ -79,6 +79,10 @@ namespace
         if (typeof Module.zmHideLoader === 'function') Module.zmHideLoader();
     });
 
+    EM_JS(void, LoadingFinished, (), {
+        if (typeof Module.zmLoadingFinished === 'function') Module.zmLoadingFinished();
+    });
+
     EM_JS(void, RestoreFromStorage, (const char* path), {
         try {
             var name = UTF8ToString(path);
@@ -101,6 +105,7 @@ bool WebIsTouchDevice() { return IsCoarsePointer() != 0; }
 int WebReadTouches(float* xy, int* ids, int capacity) { return ReadCanvasTouches(xy, ids, capacity); }
 int WebPromptNumber(const char* message) { return PromptNumber(message); }
 void WebHideLoader() { HideLoader(); }
+void WebLoadingFinished() { LoadingFinished(); }
 bool WebPointerLockLost() { return TakePointerLockLost() != 0; }
 void WebRestoreFile(const char* path) { RestoreFromStorage(path); }
 void WebPersistFile(const char* path) { PersistToStorage(path); }
@@ -113,6 +118,7 @@ bool WebIsTouchDevice() { return false; }
 int WebReadTouches(float*, int*, int) { return 0; }
 int WebPromptNumber(const char*) { return 0; }
 void WebHideLoader() {}
+void WebLoadingFinished() {}
 bool WebPointerLockLost() { return false; }
 void WebRestoreFile(const char*) {}
 void WebPersistFile(const char*) {}

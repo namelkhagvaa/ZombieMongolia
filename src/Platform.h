@@ -21,6 +21,9 @@ int WebReadTouches(float* xy, int* ids, int capacity);
 // Хөтөч: хуудасны ачааллын дэлгэцийг (web/shell.html) нууна; тоглоомын эхлэлийн дэлгэц түүнийг орлоно.
 void WebHideLoader();
 
+// Хөтөч: эхлэлийн дэлгэц дууссан (тоглоом бэлэн) — хуудас "ТОГЛОХ" товч гаргаж, дарахад бүтэн дэлгэц болгоно.
+void WebLoadingFinished();
+
 // Хөтөч: хулганы түгжээ (pointer lock) сүүлд асуухаас хойш алдагдсан бол true (tab солих, ESC г.м.).
 // Бусад платформд үргэлж false.
 bool WebPointerLockLost();

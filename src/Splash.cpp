@@ -135,5 +135,6 @@ namespace Splash
         }
         if (texture.id != 0) UnloadTexture(texture);
         texture = {};
+        WebLoadingFinished(); // хөтөч: "ТОГЛОХ" товч (бүтэн дэлгэц хэрэглэгчийн үйлдлээр л нээгддэг)
     }
 }
