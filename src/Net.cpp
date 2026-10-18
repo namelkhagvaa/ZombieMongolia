@@ -167,6 +167,11 @@ namespace Net
 
     Session::Session()
     {
+#if defined(__EMSCRIPTEN__)
+        // Хөтөч UDP сокет нээж чадахгүй: хамтарсан тоглолт (ба газрын зургийн самбар) хөтөч дээр байхгүй.
+        initialized = false;
+        return;
+#endif
         initialized = enet_initialize() == 0;
         if (!initialized) TraceLog(LOG_WARNING, "NET: enet_initialize failed, co-op disabled");
     }

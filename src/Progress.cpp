@@ -6,6 +6,7 @@ extern "C" struct android_app* GetAndroidApp(void); // raylib-ийн Android д�
 
 #include "Progress.h"
 
+#include "Platform.h"
 #include "Shop.h"
 #include "raylib.h"
 
@@ -40,6 +41,9 @@ namespace
             to << from.rdbuf();
         }
         return path;
+#elif defined(__EMSCRIPTEN__)
+        // Хөтөч: санах ойн файлын системд; WebPersistFile нь localStorage-д хуулна.
+        return overridePath.empty() ? std::string("/savegame.txt") : overridePath;
 #else
         return overridePath.empty() ? std::string(GetApplicationDirectory()) + "savegame.txt" : overridePath;
 #endif
@@ -62,6 +66,7 @@ bool LoadProgress(Progress& progress, int provinceCount)
     progress.liberated.assign(provinceCount, false);
     progress.stages.assign(provinceCount, StageSave{});
 
+    WebRestoreFile(SavePath().c_str()); // хөтөч: localStorage-оос сэргээнэ
     std::ifstream file(SavePath());
     if (!file)
     {
@@ -192,5 +197,7 @@ bool SaveProgress(const Progress& progress)
         file << ' ' << stage.clearedZones << ' ' << stage.killedSmall << ' ' << stage.killedBig << '\n';
     }
 
-    return file.good();
+    file.close();
+    WebPersistFile(SavePath().c_str()); // хөтөч: localStorage-д хадгална
+    return !file.fail();
 }

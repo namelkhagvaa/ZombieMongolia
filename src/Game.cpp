@@ -2,6 +2,7 @@
 #include "VehicleModel.h"
 
 #include "Audio.h"
+#include "Platform.h"
 #include "Input.h"
 
 #include "CharacterModel.h"
@@ -108,7 +109,11 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
     InSetTouchMode(options.touch);
     ViewInit(options.viewHeight);
 #endif
+#if defined(__EMSCRIPTEN__)
+    SetTargetFPS(0); // хөтөч: кадрын хурдыг requestAnimationFrame тогтооно (FrameYield)
+#else
     SetTargetFPS(benchmark ? 0 : config.targetFps); // хэмжилтийн үед FPS-ийг хязгаарлахгүй
+#endif
     SetExitKey(KEY_NULL); // ESC-ийг өөрсдөө боловсруулна: эхлээд нээлттэй цонхыг хаана, дараа нь л гарна
     LoadUiFont();
     Splash::Begin(!benchmark); // туршилтын горимд эхлэлийн дэлгэцгүй
@@ -152,7 +157,7 @@ Game::Game(const LaunchOptions& launchOptions)
     }
     config.touchAimAssist = progress.aimAssist;
     mapScreen.SelectNextTarget(progress);
-#if !defined(__ANDROID__)
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
     // Компьютер: хадгалсан сонголтоор бүтэн дэлгэц (туршилтын горимд цонхоор).
     if (progress.fullscreen && !options.screenshotPath && !options.touch) SetFullscreen(true);
 #endif
@@ -304,7 +309,7 @@ void Game::Run()
         }
     }
 
-    while (!WindowShouldClose())
+    while (!AppShouldClose())
     {
         if (benchmark)
         {
@@ -410,7 +415,7 @@ void Game::Run()
                 OpenPause(); // тоглоомын цэс: шууд гарахгүй
             }
         }
-#if !defined(__ANDROID__)
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
         if (IsKeyPressed(KEY_F11)) SetFullscreen(!progress.fullscreen);
 #endif
         if (paused)
@@ -492,7 +497,7 @@ void Game::Run()
 
         Draw();
     }
-    if (benchmark && WindowShouldClose())
+    if (benchmark && AppShouldClose())
     {
         TraceLog(LOG_INFO, "BENCH: stopped early because the window was closed at frame %d", frame);
     }
@@ -1962,7 +1967,7 @@ namespace
         out[count++] = PauseItem::Resume;
         out[count++] = PauseItem::Graphics;
         out[count++] = PauseItem::Sound;
-#if !defined(__ANDROID__)
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
         if (!InTouchMode()) out[count++] = PauseItem::Fullscreen;
 #endif
         if (playing) out[count++] = PauseItem::Map;
@@ -1993,7 +1998,7 @@ void Game::ClosePause()
 
 void Game::SetFullscreen(bool enabled)
 {
-#if !defined(__ANDROID__)
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
     // Хүрээгүй бүтэн цонх (alt-tab хурдан). UI 1280x720-д зориулсан тул бүтэн дэлгэцэд 720 өндөртэй
     // дотоод зургаар зурж, дэлгэцэнд сунгана (газрын зураг, HUD-ийн байрлал ижил хэвээр).
     if (enabled != IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE)) ToggleBorderlessWindowed();
@@ -2849,6 +2854,7 @@ void Game::Draw() const
     InDrawTouch(touchState);
     ViewEnd();
     EndDrawing();
+    FrameYield(); // хөтөч: зургийг дэлгэцэнд гаргана
 }
 
 

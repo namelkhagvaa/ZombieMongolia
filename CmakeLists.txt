@@ -22,6 +22,13 @@ if(ANDROID)
     set(OPENGL_VERSION "ES 3.0" CACHE STRING "" FORCE)
 endif()
 
+# Хөтөч (Emscripten-ий toolchain-аар тохируулсан үед; tools\build_web.ps1 үүнийг хийнэ):
+# raylib-ийг Web платформоор, OpenGL ES 3.0 (WebGL2)-оор хөрвүүлнэ.
+if(EMSCRIPTEN)
+    set(PLATFORM "Web" CACHE STRING "" FORCE)
+    set(OPENGL_VERSION "ES 3.0" CACHE STRING "" FORCE)
+endif()
+
 FetchContent_Declare(
     raylib
     GIT_REPOSITORY https://github.com/raysan5/raylib.git
@@ -62,6 +69,7 @@ set(GAME_SOURCES
     src/Mover.cpp
     src/Net.cpp
     src/Particles.cpp
+    src/Platform.cpp
     src/Player.cpp
     src/Polygon.cpp
     src/Procedural.cpp
@@ -106,6 +114,42 @@ if(WIN32)
     # консол цонх гаргахгүй.
     target_link_options(ZombieMongolia PRIVATE -static)
     set_target_properties(ZombieMongolia PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
+
+if(EMSCRIPTEN)
+    # Хөтчийн хуудас: ZombieMongolia.html + .js + .wasm + .data (assets). Тоглоомд хэрэгтэй файлууд л
+    # (Android-ийн APK-тай ижил): эх .glb загварууд хэт том тул орохгүй.
+    set(WEB_ASSETS ${CMAKE_BINARY_DIR}/web_assets)
+    file(REMOVE_RECURSE ${WEB_ASSETS})
+    file(GLOB WEB_TOP ${CMAKE_SOURCE_DIR}/assets/*_mesh.glb ${CMAKE_SOURCE_DIR}/assets/*_color.png
+         ${CMAKE_SOURCE_DIR}/assets/home_back.png ${CMAKE_SOURCE_DIR}/assets/splash.png)
+    file(COPY ${WEB_TOP} DESTINATION ${WEB_ASSETS}/assets)
+    foreach(sub icons huds terrain)
+        file(GLOB files ${CMAKE_SOURCE_DIR}/assets/${sub}/*.png)
+        file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/${sub})
+    endforeach()
+    foreach(sub cars buu)
+        file(GLOB files ${CMAKE_SOURCE_DIR}/assets/${sub}/*.vmesh ${CMAKE_SOURCE_DIR}/assets/${sub}/*_color.png)
+        file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/${sub})
+    endforeach()
+    file(GLOB files ${CMAKE_SOURCE_DIR}/assets/sounds/*.wav)
+    file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/sounds)
+    file(COPY ${CMAKE_SOURCE_DIR}/android/ui_font.ttf DESTINATION ${WEB_ASSETS})
+
+    set_target_properties(ZombieMongolia PROPERTIES SUFFIX ".html")
+    target_link_options(ZombieMongolia PRIVATE
+        -sUSE_GLFW=3
+        -sMIN_WEBGL_VERSION=2
+        -sMAX_WEBGL_VERSION=2
+        -sASYNCIFY                 # үндсэн давталт хэвээрээ: frame бүрд хөтчид удирдлагыг буцаана (Platform.cpp)
+        -sASYNCIFY_STACK_SIZE=1048576
+        -sALLOW_MEMORY_GROWTH=1
+        -sINITIAL_MEMORY=512MB
+        -sSTACK_SIZE=8MB
+        -sEXPORTED_RUNTIME_METHODS=HEAPF32  # raylib-ийн дууны сан (miniaudio) Module.HEAPF32-оор дуу гаргана
+        --preload-file ${WEB_ASSETS}@/
+        --shell-file ${CMAKE_SOURCE_DIR}/web/shell.html
+    )
 endif()
 
 if(NOT MSVC)

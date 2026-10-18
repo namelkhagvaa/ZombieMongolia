@@ -263,7 +263,7 @@ void DrawHorseModel(float animation, float gait, float steer, float seed, float 
         matrix.m12 = offset.x;
         matrix.m13 = offset.y;
         matrix.m14 = offset.z;
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
         matrix = MatrixTranspose(matrix); // CharacterModel-тэй адил (OpenGL ES)
 #endif
         if (mesh.boneMatrices && bone < mesh.boneCount) mesh.boneMatrices[bone] = matrix;

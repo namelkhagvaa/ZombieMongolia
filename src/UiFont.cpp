@@ -29,6 +29,10 @@ void LoadUiFont()
     // APK-ийн assets дотор хамт ирсэн чөлөөт лицензтэй фонт (FileExists нь assets-ийг хардаггүй тул шалгахгүй).
     const char* candidates[] = { "ui_font.ttf" };
     const bool checkExists = false;
+#elif defined(__EMSCRIPTEN__)
+    // Хөтөч: Android-тай ижил фонтыг хуудасны файлын системд урьдчилан ачаалсан (CMakeLists.txt)
+    const char* candidates[] = { "ui_font.ttf" };
+    const bool checkExists = true;
 #else
     const char* candidates[] = {
         "C:/Windows/Fonts/segoeui.ttf",
@@ -37,7 +41,7 @@ void LoadUiFont()
     };
     const bool checkExists = true;
 #endif
-#if !defined(__ANDROID__)
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
     // Тод фонт: Segoe UI Semibold, эсвэл Bold
     for (const char* path : { "C:/Windows/Fonts/seguisb.ttf", "C:/Windows/Fonts/segoeuib.ttf", "C:/Windows/Fonts/arialbd.ttf" })
     {

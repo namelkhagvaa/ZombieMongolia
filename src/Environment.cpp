@@ -8,6 +8,10 @@
 #include "raymath.h"
 #include "rlgl.h"
 
+#if defined(__EMSCRIPTEN__)
+#include <GLES3/gl3.h> // сүүдрийн гүний текстур (LoadShadowTarget)
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -594,8 +598,8 @@ void main()
 }
 )";
 
-    // Shader-ийн эхлэл: компьютер дээр OpenGL 3.3, утсан дээр OpenGL ES 3.0.
-#if defined(__ANDROID__)
+    // Shader-ийн эхлэл: компьютер дээр OpenGL 3.3, утсан ба хөтөч дээр OpenGL ES 3.0 (WebGL2).
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
     const char* kShaderHeader = "#version 300 es\nprecision highp float;\n";
     const char* kLightingDefines = "";
     const int kShadowMapSize = 1024;
@@ -737,7 +741,16 @@ void main()
         target.texture.height = size;
         if (target.id == 0) return target;
         rlEnableFramebuffer(target.id);
+#if defined(__EMSCRIPTEN__)
+        // WebGL2: raylib-ийн сонгосон гүний форматыг (DEPTH_COMPONENT эсвэл 32_OES) хүлээн авдаггүй тул
+        // хэмжээтэй формат шууд заана.
+        glGenTextures(1, &target.depth.id);
+        glBindTexture(GL_TEXTURE_2D, target.depth.id);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, size, size, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+        glBindTexture(GL_TEXTURE_2D, 0);
+#else
         target.depth.id = rlLoadTextureDepth(size, size, false);
+#endif
         target.depth.width = size;
         target.depth.height = size;
         target.depth.format = 19; // DEPTH_COMPONENT_24BIT

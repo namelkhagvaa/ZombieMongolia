@@ -390,7 +390,7 @@ namespace
             matrix.m12 = offset.x;
             matrix.m13 = offset.y;
             matrix.m14 = offset.z;
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
             // raylib нь OpenGL ES дээр матрицын массивыг хөрвүүлэлгүй (transpose хийлгүй) илгээдэг:
             // компьютер дээрхтэй ижил үр дүн гарахын тулд энд урьдчилж хөрвүүлнэ.
             matrix = MatrixTranspose(matrix);

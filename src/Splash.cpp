@@ -1,5 +1,6 @@
 #include "Splash.h"
 
+#include "Platform.h"
 #include "UiStyle.h"
 
 #include "raylib.h"
@@ -70,6 +71,7 @@ namespace
         Ui::TextBold(percent, (int)(bar.x + bar.width) - Ui::MeasureBold(percent, size), (int)(bar.y - 26.0f * scale), size,
                      Fade(Ui::kAccent, alpha));
         EndDrawing();
+        FrameYield();
     }
 }
 
@@ -104,7 +106,7 @@ namespace Splash
         const float from = shown;
         const double fillStart = GetTime();
         const double fillSeconds = std::max(0.35, kMinimumSeconds - (fillStart - startTime));
-        while (!WindowShouldClose())
+        while (!AppShouldClose())
         {
             const float t = (float)std::min(1.0, (GetTime() - fillStart) / fillSeconds);
             shown = from + (1.0f - from) * t;
@@ -113,7 +115,7 @@ namespace Splash
         }
         // Бүдгэрэх
         const double fadeStart = GetTime();
-        while (!WindowShouldClose())
+        while (!AppShouldClose())
         {
             const float t = (float)std::min(1.0, (GetTime() - fadeStart) / 0.35);
             DrawFrame(1.0f - t);

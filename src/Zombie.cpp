@@ -23,7 +23,7 @@ namespace
     const float kModelDistance = 60.0f;   // үүнээс хол зомбийг загварын хөнгөн хувилбараар зурна
     // Зэрэг харагдах зомби олон тул зөвхөн хамгийн ойрын хэдийг нь олон гурвалжинтай загвараар зурна
     // (утсан дээр цөөн). Бусад нь хөнгөн дүрсээр зурагдана.
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
     const int kModelBudget = 8;
     const float kSimpleDistance = 70.0f;  // үүнээс хол кодоор үүсгэсэн хамгийн хөнгөн дүрсээр (утас сул)
 #else
