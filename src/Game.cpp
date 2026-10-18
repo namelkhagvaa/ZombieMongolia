@@ -636,6 +636,7 @@ void Game::StartMission(int index)
     environment.SetDryness(ProvinceDryness(index));
     environment.SetMountainScale(ProvinceMountains(index));
     TraceLog(LOG_INFO, "MISSION: start setup %.2f s (graphics %d)", GetTime() - startTime, environment.Quality());
+    if (WebHeapMegabytes() > 0) TraceLog(LOG_INFO, "MEMORY: heap %d MB after mission setup", WebHeapMegabytes());
     perfTime = -3.0f; // эхний секундүүдэд газар ачаалагддаг тул хэмжихгүй
     perfFrames = 0;
     environment.SetTimeOfDay(dayClock / kDayLength);
@@ -1238,6 +1239,13 @@ void Game::UpdateVehicles(float dt)
         }
     }
     garage.Update(dt, world, horde, throttle, steer, handbrake, garage.IsDriving() && (InSprint() || autoDrive));
+    // Хост: зочны унаа мөргөж устгасан зомбины зоосыг зочинд илгээнэ (зочин "+N" ба зоосоо авна).
+    remoteRewardBuffer.clear();
+    horde.TakeRemoteRewards(remoteRewardBuffer);
+    for (const ZombieHorde::KillReward& reward : remoteRewardBuffer)
+    {
+        if (remoteActive && net.Connected()) net.SendKillReward(reward.coins, reward.position);
+    }
     UpdateSounds(dt, throttle);
 
     // Дэлбэрэлт (гранат, торх, пуужин) ойрын унааг гэмтээнэ
@@ -3034,6 +3042,7 @@ Net::AvatarState Game::LocalAvatar() const
         state.vehicleHeading = vehicle.heading;
         state.vehicleSpeed = vehicle.speed;
         state.vehicleSteer = vehicle.steer;
+        state.vehicleHealth = vehicle.wrecked ? 0.0f : vehicle.health;
     }
     return state;
 }
@@ -3128,6 +3137,7 @@ void Game::UpdateNetwork(float dt)
                 {
                     garage.SetRemote(guestVehicle, event.avatar.vehiclePosition, event.avatar.vehicleHeading,
                                      event.avatar.vehicleSpeed, event.avatar.vehicleSteer, true);
+                    garage.SyncHealth(guestVehicle, event.avatar.vehicleHealth); // зочин өөрийн унааг тооцно
                 }
             }
             break;
@@ -3327,6 +3337,7 @@ void Game::UpdateCoopMission(float dt)
             if ((int)v.index >= garage.Count() || (int)v.index == garage.Driven()) continue;
             if ((int)garage.At(v.index).type != (int)v.type) continue; // (ертөнц таарахгүй бол хөндөхгүй)
             garage.SetRemote(v.index, v.position, v.heading, v.speed, v.steer, v.occupied != 0);
+            garage.SyncHealth(v.index, v.health); // хост тооцсон (зочин зөвхөн өөрийн унааг гэмтээнэ)
         }
         // Хаалга: хостынхтой ижил (сая өөрөө өөрчилсөн хаалгыг хост хүлээн авах хүртэл хөндөхгүй)
         for (int i = 0; i < std::min(snapshot.doorCount, world.DoorCount()); ++i)
@@ -3423,6 +3434,7 @@ void Game::SendHostSnapshot(float dt)
         v.speed = vehicle.speed;
         v.steer = vehicle.steer;
         v.occupied = (i == garage.Driven() || i == teamVehicle) ? 1 : 0;
+        v.health = vehicle.wrecked ? 0.0f : vehicle.health;
         snapshot.vehicles.push_back(v);
         if (snapshot.vehicles.size() >= 255) break;
     }

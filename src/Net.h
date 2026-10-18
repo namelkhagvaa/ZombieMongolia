@@ -21,7 +21,7 @@ namespace Net
     constexpr uint16_t kDiscoveryPort = 47811;
     // Сүлжээний мессежийн хувилбар: мессежийн бүтэц өөрчлөгдөх бүрд нэмэгдүүлнэ. Хост ба зочин ижил хувилбартай
     // байж л нэгдэнэ (эс бөгөөс өгөгдөл буруу уншигдаж, жишээ нь цэргүүд "үхсэн" мэт харагдана).
-    constexpr uint16_t kProtocolVersion = 3;
+    constexpr uint16_t kProtocolVersion = 4; // 4: унааны эрүүл мэнд, нисэж буй зомби
 
     // Мессежийн төрөл (пакетийн эхний байт)
     enum class Msg : uint8_t
@@ -63,6 +63,7 @@ namespace Net
         int8_t vehicle = -1;
         Vector3 vehiclePosition = { 0.0f, 0.0f, 0.0f };
         float vehicleHeading = 0.0f, vehicleSpeed = 0.0f, vehicleSteer = 0.0f;
+        float vehicleHealth = 0.0f; // унааны эрүүл мэнд: унааг жолоодож буй тал л тооцно
     };
     constexpr uint8_t kAlive = 1, kCrouch = 2, kProne = 4, kAiming = 8, kFired = 16, kRiding = 32;
 
@@ -75,6 +76,7 @@ namespace Net
         float facing = 0.0f;
     };
     constexpr uint8_t kZombieAlive = 1, kZombieBoss = 2, kZombieAttack = 4;
+    constexpr uint8_t kZombieAirborne = 8; // унаанд мөргүүлж агаарт нисэж яваа (зочин эргэлдүүлж зурна)
 
     struct SoldierState
     {
@@ -101,6 +103,7 @@ namespace Net
         Vector3 position = { 0.0f, 0.0f, 0.0f };
         float heading = 0.0f, speed = 0.0f, steer = 0.0f;
         uint8_t occupied = 0; // хост эсвэл түүний баг сууж яваа: зочин сууж болохгүй
+        float health = 0.0f;  // хостын тооцсон эрүүл мэнд (0 = эвдэрсэн / үхсэн морь)
     };
 
     struct Snapshot

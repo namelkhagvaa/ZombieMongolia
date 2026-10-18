@@ -907,7 +907,9 @@ float Garage::Repair(int index, float amount)
 void Garage::Damage(int index, float amount)
 {
     Vehicle& vehicle = vehicles[(size_t)index];
-    if (vehicle.wrecked || amount <= 0.0f) return;
+    // Хамтарсан тоглолт: нөгөө талын жолоодож буй унааг энд гэмтээвэл хоёр талд зөрнө (жишээ нь зочны дэлгэцэнд
+    // хостын морь үхчихээд давхисаар). Эрүүл мэндийг нь SyncHealth-ээр авна.
+    if (vehicle.wrecked || amount <= 0.0f || vehicle.remote) return;
     vehicle.health -= amount;
     vehicle.hurtTimer = 0.0f;
     if (vehicle.health <= 0.0f)
@@ -952,6 +954,23 @@ void Garage::SetRemote(int index, Vector3 position, float heading, float speed, 
     vehicle.netHeading = heading;
     vehicle.netSpeed = speed;
     vehicle.netSteer = steer;
+}
+
+void Garage::SyncHealth(int index, float health)
+{
+    if (index < 0 || index >= Count() || index == driven) return;
+    Vehicle& vehicle = vehicles[(size_t)index];
+    vehicle.health = std::max(0.0f, health);
+    if (vehicle.health <= 0.0f && !vehicle.wrecked)
+    {
+        vehicle.wrecked = true;
+        Audio::Play(vehicle.type == VehicleType::Horse ? Sfx::Thud : Sfx::Explosion, vehicle.position, 0.8f,
+                    vehicle.type == VehicleType::Horse ? 0.7f : 1.3f);
+    }
+    else if (vehicle.health > 0.0f && vehicle.wrecked)
+    {
+        vehicle.wrecked = false; // нөгөө тал засварласан
+    }
 }
 
 void Garage::ClearRemote(int index)
@@ -1094,7 +1113,9 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
                 const float impact = speed * remoteSpec.ramDamage;
                 const float sign = vehicle.speed >= 0.0f ? 1.0f : -1.0f;
                 const Vector3 push = { std::sin(vehicle.heading) * speed * sign, 0.0f, std::cos(vehicle.heading) * speed * sign };
+                horde.SetCreditRemote(true); // хост: зочны унаа мөргөсөн зомбины зоос зочинд
                 horde.Ram(vehicle.position, remoteSpec.radius + 0.5f, impact * dt * 6.0f, speed >= RamLaunchSpeed(vehicle.type), push);
+                horde.SetCreditRemote(false);
             }
             continue;
         }

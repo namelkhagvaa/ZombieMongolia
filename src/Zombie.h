@@ -150,6 +150,14 @@ public:
         out.insert(out.end(), killRewards.begin(), killRewards.end());
         killRewards.clear();
     }
+    // Хамтарсан тоглолт (хост): true үед устгасан зомбины зоос зочинд очно (зочны унаа мөргөхөд).
+    // Үеийн тоололд (нөөц) тоологдсоор.
+    void SetCreditRemote(bool enabled) { creditRemote = enabled; }
+    void TakeRemoteRewards(std::vector<KillReward>& out)
+    {
+        out.insert(out.end(), remoteRewards.begin(), remoteRewards.end());
+        remoteRewards.clear();
+    }
 
     int AliveCount() const;
     int Count() const { return (int)zombies.size(); } // цогцсыг оруулаад
@@ -179,6 +187,8 @@ private:
     Vector3 remotePosition = { 0.0f, 0.0f, 0.0f };
     float remoteDamage = 0.0f;
     std::vector<KillReward> killRewards;
+    bool creditRemote = false;
+    std::vector<KillReward> remoteRewards; // зочинд илгээх зоос
     float navClock = 0.0f; // орох гарцыг дахин сонгох хугацааг тоолно
     int pendingSmallKills = 0; // алхагч + гүйгч
     int pendingBigKills = 0;   // том зомби (аварга орохгүй)

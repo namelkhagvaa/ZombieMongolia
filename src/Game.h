@@ -259,6 +259,7 @@ private:
     bool coopGuest = false;         // өөр хүний тоглолтод зочноор нэгдсэн
     bool guestPlaced = false;       // зочин: хостын дэргэд гарч ирсэн
     float guestRespawnTimer = 0.0f;
+    std::vector<ZombieHorde::KillReward> remoteRewardBuffer; // хост: зочны унаа устгасан зомбины зоос
     bool joinRequestPending = false; // хост: хариу өгөөгүй хүсэлт
     std::string joinRequester;
     bool remoteActive = false;      // хост: зочин холбогдсон

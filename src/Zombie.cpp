@@ -775,13 +775,18 @@ void ZombieHorde::Damage(int index, float amount)
         zombie.deathTimer = 0.0f;
         Audio::Play(zombie.boss ? Sfx::BossRoar : Sfx::ZombieDie, Vector3Add(zombie.mover.position, { 0.0f, 1.4f * zombie.scale, 0.0f }),
                     0.9f, zombie.boss ? 0.7f : zombie.type == ZombieType::Brute ? 0.8f : 1.0f);
-        pendingCoins += zombie.reward;
-        ++pendingKills;
-        if (killRewards.size() < 64)
+        const float top = 1.9f * zombie.scale;
+        const KillReward reward = { { zombie.mover.position.x, zombie.mover.position.y + top, zombie.mover.position.z },
+                                    zombie.reward };
+        if (creditRemote)
         {
-            const float top = 1.9f * zombie.scale;
-            killRewards.push_back({ { zombie.mover.position.x, zombie.mover.position.y + top, zombie.mover.position.z },
-                                    zombie.reward });
+            if (remoteRewards.size() < 64) remoteRewards.push_back(reward); // зочны унаа мөргөсөн
+        }
+        else
+        {
+            pendingCoins += zombie.reward;
+            ++pendingKills;
+            if (killRewards.size() < 64) killRewards.push_back(reward);
         }
         if (!zombie.boss)
         {
@@ -998,7 +1003,8 @@ void ZombieHorde::CollectStates(Vector3 around, float radius, std::vector<Net::Z
         state.id = zombie.id;
         state.type = (uint8_t)zombie.type;
         state.flags = (uint8_t)((zombie.IsAlive() ? Net::kZombieAlive : 0) | (zombie.boss ? Net::kZombieBoss : 0) |
-                                (zombie.attackAnim > 0.0f ? Net::kZombieAttack : 0));
+                                (zombie.attackAnim > 0.0f ? Net::kZombieAttack : 0) |
+                                (zombie.airborne ? Net::kZombieAirborne : 0));
         state.position = zombie.mover.position;
         state.facing = zombie.mover.facing;
         out.push_back(state);
@@ -1034,6 +1040,10 @@ void ZombieHorde::ApplySnapshot(const std::vector<Net::ZombieState>& states, con
             zombie->health = 0.0f;
             zombie->deathTimer = 0.0f;
         }
+        // Унаанд мөргүүлж нисэж буй: зочин хостын байрлалыг дагаж эргэлдүүлж зурна, газардмагц хэвтэнэ.
+        const bool airborne = !alive && (state.flags & Net::kZombieAirborne) != 0;
+        if (zombie->airborne && !airborne) zombie->deathTimer = std::max(zombie->deathTimer, kFallTime);
+        zombie->airborne = airborne;
         if ((state.flags & Net::kZombieAttack) && zombie->attackAnim <= 0.0f)
         {
             zombie->attackAnim = kAttackAnimTime;
@@ -1053,12 +1063,17 @@ void ZombieHorde::UpdatePuppets(float dt)
         AdvanceGait(zombie, dt);
         zombie.netSeen += dt;
         zombie.attackAnim -= dt;
+        Vector3& pos = zombie.mover.position;
         if (!zombie.IsAlive())
         {
             zombie.deathTimer += dt;
+            if (zombie.airborne)
+            {
+                pos = Vector3Add(pos, Vector3Scale(Vector3Subtract(zombie.netTarget, pos), std::min(1.0f, 12.0f * dt)));
+                zombie.tumble += 420.0f * dt;
+            }
             continue;
         }
-        Vector3& pos = zombie.mover.position;
         const Vector3 delta = Vector3Subtract(zombie.netTarget, pos);
         const float distance = Vector3Length(delta);
         if (distance > 8.0f)

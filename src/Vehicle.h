@@ -85,6 +85,9 @@ public:
     // Хамтарсан тоглолт: сүлжээнээс ирсэн төлөв (зөөлөн дагана). occupied: нөгөө тал сууж яваа.
     void SetRemote(int index, Vector3 position, float heading, float speed, float steer, bool occupied);
     void ClearRemote(int index);
+    // Хамтарсан тоглолт: унааг жолоодож буй тал тооцсон эрүүл мэнд (0 бол эвдэрнэ / морь үхнэ).
+    // Өөрийн жолоодож буй унаанд үйлчлэхгүй.
+    void SyncHealth(int index, float health);
     const Vehicle& At(int index) const { return vehicles[index]; }
 
     // position-д хамгийн ойр, maxDistance доторх хэрэгсэл; -1 = байхгүй.
@@ -117,7 +120,7 @@ public:
     // Шатахуун түгээх газар: бензин нэмж (0..1 хувиар), засварлана. Нэмсэн хэмжээг буцаана.
     float Refuel(int index, float amount);
     float Repair(int index, float amount);
-    // Гадны хохирол (дэлбэрэлт г.м.)
+    // Гадны хохирол (дэлбэрэлт г.м.). Нөгөө тоглогчийн жолоодож буй (remote) унааг тэр тал өөрөө тооцно.
     void Damage(int index, float amount);
 
     // Явган хүнийг зогсож буй хэрэгсэл дундуур гарахаас сэргийлнэ.

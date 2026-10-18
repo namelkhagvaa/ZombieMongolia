@@ -88,6 +88,7 @@ namespace Net
             w.U8(a.held); w.U8(a.member); w.U8(a.flags); w.F(a.health);
             w.U8(a.shots); w.V3(a.shotEnd);
             w.U8((uint8_t)a.vehicle); w.V3(a.vehiclePosition); w.F(a.vehicleHeading); w.F(a.vehicleSpeed); w.F(a.vehicleSteer);
+            w.F(a.vehicleHealth);
         }
         AvatarState ReadAvatar(Reader& r)
         {
@@ -97,6 +98,7 @@ namespace Net
             a.shots = r.U8(); a.shotEnd = r.V3();
             a.vehicle = (int8_t)r.U8(); a.vehiclePosition = r.V3(); a.vehicleHeading = r.F(); a.vehicleSpeed = r.F();
             a.vehicleSteer = r.F();
+            a.vehicleHealth = r.F();
             return a;
         }
 
@@ -756,6 +758,7 @@ namespace Net
                 v.speed = r.F();
                 v.steer = r.F();
                 v.occupied = r.U8();
+                v.health = r.F();
                 s.vehicles.push_back(v);
             }
             s.doorCount = r.U16();
@@ -890,7 +893,7 @@ namespace Net
         w.U16((uint16_t)s.vehicles.size());
         for (const VehicleState& v : s.vehicles)
         {
-            w.U8(v.index); w.U8(v.type); w.V3(v.position); w.F(v.heading); w.F(v.speed); w.F(v.steer); w.U8(v.occupied);
+            w.U8(v.index); w.U8(v.type); w.V3(v.position); w.F(v.heading); w.F(v.speed); w.F(v.steer); w.U8(v.occupied); w.F(v.health);
         }
         w.U16((uint16_t)s.doorCount);
         for (uint8_t bits : s.doors) w.U8(bits);
