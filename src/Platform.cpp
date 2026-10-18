@@ -60,6 +60,8 @@ namespace
         if (!Module.zmLockWatch) {
             Module.zmLockWatch = true;
             Module.zmLockLost = false;
+            // iPhone-ий Safari зэрэгт pointer lock огт байхгүй: түгжээ алдагдах ч үгүй.
+            if (typeof document.exitPointerLock !== 'function') return 0;
             var expected = false;
             var exit = document.exitPointerLock.bind(document);
             document.exitPointerLock = function() { if (document.pointerLockElement) expected = true; exit(); };
