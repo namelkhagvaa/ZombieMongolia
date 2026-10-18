@@ -418,6 +418,9 @@ void Game::Run()
 #if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
         if (IsKeyPressed(KEY_F11)) SetFullscreen(!progress.fullscreen);
 #endif
+        // Хөтөч: өөр tab руу шилжих, ESC зэргээр хулганы түгжээ алдагдвал тоглоомын цэсийг нээнэ
+        // (эс бөгөөс хулганы сум гарч ирээд харах чиглэл удирдагдахгүй). "Үргэлжлүүлэх" нь дахин түгжинэ.
+        if (WebPointerLockLost() && state == GameState::Playing && !paused && !InTouchMode()) OpenPause();
         if (paused)
         {
             UpdatePauseMenu();
@@ -1643,7 +1646,8 @@ void Game::UpdateMission(float dt)
     HandleSettingsInput();
     AdvanceDay(dt);
 
-    if (InKeyPressed(KEY_TAB))
+    // Ухрах (газрын зураг руу): утасны "УХРАХ" товч. Компьютер дээр тоглоомын цэсний "Газрын зураг".
+    if (InTouchMode() && InKeyPressed(KEY_END))
     {
         ReturnToMap();
         return;
@@ -1657,19 +1661,24 @@ void Game::UpdateMission(float dt)
 
     const bool enclosed = garage.IsDriving() && SpecFor(garage.At(garage.Driven()).type).enclosed;
     const float cameraExtra = garage.IsDriving() ? SpecFor(garage.At(garage.Driven()).type).cameraExtra : 0.0f;
-    // H: "Энд бай" — удирдаж буй гишүүнийг тэмдэглэнэ; өөр гишүүн рүү (F1-F3) шилжихэд тэр байрандаа үлдэж байлдана.
+    // H: "Энд бай" — удирдаж буй гишүүнийг тэмдэглэнэ; өөр гишүүн рүү (Tab) шилжихэд тэр байрандаа үлдэж байлдана.
     if (InKeyPressed(KEY_H) && !coopGuest && !garage.IsDriving())
     {
         holdMark[activeMember] = !holdMark[activeMember];
-        SetNotice(holdMark[activeMember] ? "ЭНД БАЙНА — өөр гишүүн рүү шилжинэ үү (F1-F3)" : "ЭНД БАЙХ ТУШААЛ ЦУЦЛАГДЛАА", 2.5f);
+        SetNotice(holdMark[activeMember] ? "ЭНД БАЙНА — өөр гишүүн рүү шилжинэ үү (Tab)" : "ЭНД БАЙХ ТУШААЛ ЦУЦЛАГДЛАА", 2.5f);
     }
-    // F1, F2, F3: багийн гишүүд рүү шилжинэ.
-    for (int member = 0; member < kTeamSize; ++member)
+    // Tab: дараагийн амьд гишүүн рүү шилжинэ (F1-F3 нь хөтчийн тусламж, хайлттай давхцдаг тул хэрэглэхгүй).
+    if (InKeyPressed(KEY_TAB) && !coopGuest)
     {
-        if (InKeyPressed(KEY_F1 + member) && !coopGuest)
+        for (int step = 1; step < kTeamSize; ++step)
         {
-            SwitchMember(member, false);
+            if (SwitchMember((activeMember + step) % kTeamSize, false)) break;
         }
+    }
+    // Утас: багийн картыг товшиход тэр гишүүн рүү (картууд дотооддоо F1-F3 виртуал товч илгээдэг).
+    for (int member = 0; member < kTeamSize && InTouchMode() && !coopGuest; ++member)
+    {
+        if (InKeyPressed(KEY_F1 + member)) SwitchMember(member, false);
     }
 
     const bool forceAim = options.screenshotPath && options.scope; // туршилтын горим
@@ -1971,7 +1980,9 @@ namespace
         if (!InTouchMode()) out[count++] = PauseItem::Fullscreen;
 #endif
         if (playing) out[count++] = PauseItem::Map;
+#if !defined(__EMSCRIPTEN__) // хөтөч дээр "гарах" хэрэггүй: tab-аа хаана
         out[count++] = PauseItem::Quit;
+#endif
         return count;
     }
 

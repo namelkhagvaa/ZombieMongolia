@@ -47,6 +47,25 @@ namespace
         return isNaN(value) ? 0 : value;
     });
 
+    // Түгжээ гаднаас (tab солих, ESC) алдагдсаныг тэмдэглэнэ; тоглоом өөрөө суллавал (EnableCursor ->
+    // document.exitPointerLock) тооцохгүй. Анх удаа дуудахад сонсогчийг суулгана.
+    EM_JS(int, TakePointerLockLost, (), {
+        if (!Module.zmLockWatch) {
+            Module.zmLockWatch = true;
+            Module.zmLockLost = false;
+            var expected = false;
+            var exit = document.exitPointerLock.bind(document);
+            document.exitPointerLock = function() { if (document.pointerLockElement) expected = true; exit(); };
+            document.addEventListener('pointerlockchange', function() {
+                if (!document.pointerLockElement && !expected) Module.zmLockLost = true;
+                expected = false;
+            });
+        }
+        var lost = Module.zmLockLost;
+        Module.zmLockLost = false;
+        return lost ? 1 : 0;
+    });
+
     EM_JS(void, HideLoader, (), {
         if (typeof Module.zmHideLoader === 'function') Module.zmHideLoader();
     });
@@ -73,6 +92,7 @@ bool WebIsTouchDevice() { return IsCoarsePointer() != 0; }
 int WebReadTouches(float* xy, int* ids, int capacity) { return ReadCanvasTouches(xy, ids, capacity); }
 int WebPromptNumber(const char* message) { return PromptNumber(message); }
 void WebHideLoader() { HideLoader(); }
+bool WebPointerLockLost() { return TakePointerLockLost() != 0; }
 void WebRestoreFile(const char* path) { RestoreFromStorage(path); }
 void WebPersistFile(const char* path) { PersistToStorage(path); }
 
@@ -84,6 +104,7 @@ bool WebIsTouchDevice() { return false; }
 int WebReadTouches(float*, int*, int) { return 0; }
 int WebPromptNumber(const char*) { return 0; }
 void WebHideLoader() {}
+bool WebPointerLockLost() { return false; }
 void WebRestoreFile(const char*) {}
 void WebPersistFile(const char*) {}
 

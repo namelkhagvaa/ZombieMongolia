@@ -21,6 +21,10 @@ int WebReadTouches(float* xy, int* ids, int capacity);
 // Хөтөч: хуудасны ачааллын дэлгэцийг (web/shell.html) нууна; тоглоомын эхлэлийн дэлгэц түүнийг орлоно.
 void WebHideLoader();
 
+// Хөтөч: хулганы түгжээ (pointer lock) сүүлд асуухаас хойш алдагдсан бол true (tab солих, ESC г.м.).
+// Бусад платформд үргэлж false.
+bool WebPointerLockLost();
+
 // Хөтөч: хэрэглэгчээс тоо асууна (prompt цонх). Цуцалсан эсвэл тоо биш бол 0. Бусад платформд 0.
 int WebPromptNumber(const char* message);
 

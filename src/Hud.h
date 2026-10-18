@@ -41,7 +41,7 @@ struct HudInfo
     int teamCount = 3;
     const char* partnerName = nullptr; // хост: хамт тоглож буй хүн (чип)
     int partnerHealth = -1;            // 0 = унасан  // хамтарсан тоглолтын зочин: өөрөө ба хост (2)
-    const char* teamKeys[3] = { "F1", "F2", "F3" };
+    const char* teamKeys[3] = { "", "", "" }; // картын товчны тэмдэг (хоосон бол харуулахгүй)
     bool usesAmmo = true;      // хутганд сум харуулахгүй
     bool showMagazine = true;  // гранатад зөвхөн үлдсэн тоо
     int squadAlive = 0;

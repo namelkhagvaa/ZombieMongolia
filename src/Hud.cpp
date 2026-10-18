@@ -238,7 +238,7 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         (void)killsWidth;
         drawDayNight((float)width / 2.0f, 34.0f, true); // дэлгэцийн дээд голд
 
-        // Баг: F1, F2, F3 картууд, амины зурвастай; удирдаж буй нь алтан хүрээтэй.
+        // Баг: гишүүдийн картууд (Tab-аар солино), амины зурвастай; удирдаж буй нь алтан хүрээтэй.
         int teamY = 58;
         const int cardWidth = 230, cardHeight = 44;
         for (int i = 0; i < info.teamCount; ++i)
@@ -247,8 +247,11 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
             const Rectangle card = { (float)(right - cardWidth), (float)teamY, (float)cardWidth, (float)cardHeight };
             Ui::Panel(card, entry.active ? Color{ 40, 32, 14, 200 } : Ui::kPanel);
             if (entry.active) Ui::Outline(card, Ui::kAccent, 2.0f);
-            const int keyWidth = Ui::KeyBadge(info.teamKeys[i], (int)card.x + 10, teamY + 9, 14,
-                                              entry.active ? Ui::kAccent : Ui::kTextDim);
+            // Товчны тэмдэг (зочин: "Та", "2", "3"); ганцаараа тоглоход хоосон — гишүүнийг Tab-аар солино.
+            const bool badge = info.teamKeys[i] && info.teamKeys[i][0];
+            const int keyWidth = badge ? Ui::KeyBadge(info.teamKeys[i], (int)card.x + 10, teamY + 9, 14,
+                                                      entry.active ? Ui::kAccent : Ui::kTextDim)
+                                       : -8;
             const int textX = (int)card.x + 18 + keyWidth;
             const Color nameColor = !entry.alive ? Ui::kDanger : entry.active ? Ui::kAccent : Ui::kText;
             Ui::TextBold(entry.name, textX, teamY + 5, 16, nameColor);
@@ -388,8 +391,8 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         const char* help[][2] = {
             { "WASD", "явах" },        { "Shift", "гүйх" },        { "Space", "үсрэх / босох" },  { "C", "суух" },
             { "Z", "хэвтэх" },         { "LMB", "буудах" },        { "RMB", "онилох" },           { "R", "цэнэглэх" },
-            { "1–5", "зэвсэг" },       { "F1–F3", "гишүүн солих" }, { "F", "унах / хаалга / цонх" }, { "E", "үйлдэл" },
-            { "Q", "журнал" },         { "M", "газрын зураг" },    { "TAB", "ухрах" },            { "V", "камер 1-р / 3-р" },
+            { "1–5", "зэвсэг" },       { "TAB", "гишүүн солих" }, { "F", "унах / хаалга / цонх" }, { "E", "үйлдэл" },
+            { "Q", "журнал" },         { "M", "газрын зураг" },    { "ESC", "цэс, ухрах" },            { "V", "камер 1-р / 3-р" },
             { "H", "энд бай (гишүүн)" }, { "F10", "тусламж нуух" },
         };
         const int columns = 2, rowHeight = 26;

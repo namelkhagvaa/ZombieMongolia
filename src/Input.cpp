@@ -173,7 +173,7 @@ namespace
             // --- Зүүн дээд, даалгаврын мөрийн доор: журнал, буцах ---
             Add({ 16.0f, 112.0f, 130.0f, 42.0f }, "ДААЛГАВАР", Kind::Key, KEY_Q, false);
             buttons.back().uiIcon = (int)Ui::Icon::Mission;
-            Add({ 154.0f, 112.0f, 130.0f, 42.0f }, "УХРАХ", Kind::Key, KEY_TAB, false);
+            Add({ 154.0f, 112.0f, 130.0f, 42.0f }, "УХРАХ", Kind::Key, KEY_END, false); // Game: газрын зураг руу буцна
             // Автомат онилгоо: чагтлагдсан бол хараа ойрын зомби руу өөрөө татагдана, үгүй бол өөрөө онилно.
             Add({ 292.0f, 112.0f, 200.0f, 42.0f }, "АВТО ОНИЛГОО", Kind::Key, KEY_T, false, state.aimAssist);
             buttons.back().check = state.aimAssist ? 1 : 0;
