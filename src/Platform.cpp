@@ -4,6 +4,7 @@
 
 #if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
+#include <emscripten/heap.h>
 
 namespace
 {
@@ -50,7 +51,7 @@ namespace
 
     EM_JS(int, PromptNumber, (const char* message), {
         var text = window.prompt(UTF8ToString(message), '');
-        var value = parseInt((text || '').replace(/\D/g, ''), 10);
+        var value = parseInt((text || '').replace(/[^0-9]/g, ''), 10); // (EM_JS дотор "\" алга болдог)
         return isNaN(value) ? 0 : value;
     });
 
@@ -77,6 +78,39 @@ namespace
 
     EM_JS(void, HideLoader, (), {
         if (typeof Module.zmHideLoader === 'function') Module.zmHideLoader();
+    });
+
+    // Урьдчилан ачаалсан файлууд нь нэг том татсан buffer-ийн хэсгүүд: бүгдийг нь устгавал buffer бүхэлдээ
+    // чөлөөлөгдөнө. Үлдэх файлуудыг тусдаа хуулбар болгож бичнэ.
+    EM_JS(void, ReleaseLoadedAssets, (), {
+        // (EM_JS дотор "\" тэмдэгт алга болдог тул regex биш, мөр харьцуулалт)
+        function keep(path) {
+            return path.indexOf('/assets/huds/') === 0 || path.indexOf('/assets/icons/') === 0 || path === '/assets/home_back.png';
+        }
+        var removed = 0, kept = 0;
+        function walk(dir) {
+            FS.readdir(dir).forEach(function(name) {
+                if (name === '.' || name === '..') return;
+                var path = dir + '/' + name;
+                if (FS.isDir(FS.stat(path).mode)) { walk(path); return; }
+                if (keep(path)) {
+                    var data = FS.readFile(path); // хуулбар
+                    FS.unlink(path);
+                    FS.writeFile(path, data);
+                    kept++;
+                } else {
+                    FS.unlink(path);
+                    removed++;
+                }
+            });
+        }
+        try {
+            walk('/assets');
+            try { FS.unlink('/ui_font.ttf'); removed++; } catch (e) {}
+            out('INFO: WEB: released ' + removed + ' loaded asset files, kept ' + kept);
+        } catch (e) {
+            err('WARNING: WEB: could not release asset files: ' + e);
+        }
     });
 
     EM_JS(void, LoadingFinished, (), {
@@ -106,6 +140,8 @@ int WebReadTouches(float* xy, int* ids, int capacity) { return ReadCanvasTouches
 int WebPromptNumber(const char* message) { return PromptNumber(message); }
 void WebHideLoader() { HideLoader(); }
 void WebLoadingFinished() { LoadingFinished(); }
+void WebReleaseLoadedAssets() { ReleaseLoadedAssets(); }
+int WebHeapMegabytes() { return (int)(emscripten_get_heap_size() / (1024 * 1024)); }
 bool WebPointerLockLost() { return TakePointerLockLost() != 0; }
 void WebRestoreFile(const char* path) { RestoreFromStorage(path); }
 void WebPersistFile(const char* path) { PersistToStorage(path); }
@@ -119,6 +155,8 @@ int WebReadTouches(float*, int*, int) { return 0; }
 int WebPromptNumber(const char*) { return 0; }
 void WebHideLoader() {}
 void WebLoadingFinished() {}
+void WebReleaseLoadedAssets() {}
+int WebHeapMegabytes() { return 0; }
 bool WebPointerLockLost() { return false; }
 void WebRestoreFile(const char*) {}
 void WebPersistFile(const char*) {}

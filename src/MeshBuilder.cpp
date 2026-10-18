@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <map>
 #include <utility>
@@ -345,29 +346,31 @@ Mesh MeshBuilder::Upload() const
 
 std::vector<MeshPiece> MeshBuilder::UploadPartitioned(float cellSize) const
 {
-    struct Bucket
-    {
-        std::vector<float> positions;
-        std::vector<unsigned char> vertexColors;
-    };
-    std::map<std::pair<int, int>, Bucket> buckets;
-
-    // Гурвалжин бүрийг хүндийн төвийнх нь нүдэнд хийнэ.
+    // Гурвалжин бүрийг хүндийн төвийнх нь нүдэнд хийнэ: зөвхөн дугаарыг нь (бүх геометрийг дахин хуулбал
+    // суурингууд дээр санах ой хэдэн арван MB-аар өсөж, утсан дээрх хөтөч хуудсыг зогсоодог байсан).
+    std::map<std::pair<int, int>, std::vector<uint32_t>> buckets;
     const size_t triangleCount = vertices.size() / 9;
     for (size_t t = 0; t < triangleCount; ++t)
     {
         const float* v = &vertices[t * 9];
         const float cx = (v[0] + v[3] + v[6]) / 3.0f;
         const float cz = (v[2] + v[5] + v[8]) / 3.0f;
-        Bucket& bucket = buckets[{ (int)std::floor(cx / cellSize), (int)std::floor(cz / cellSize) }];
-        bucket.positions.insert(bucket.positions.end(), v, v + 9);
-        bucket.vertexColors.insert(bucket.vertexColors.end(), &colors[t * 12], &colors[t * 12] + 12);
+        buckets[{ (int)std::floor(cx / cellSize), (int)std::floor(cz / cellSize) }].push_back((uint32_t)t);
     }
 
+    // Нүд бүрийн геометрийг нэг нэгээр нь цуглуулж, GPU-д хуулна (нэг л нүдний хуулбар зэрэг байна).
     std::vector<MeshPiece> pieces;
+    std::vector<float> p;
+    std::vector<unsigned char> pieceColors;
     for (const auto& entry : buckets)
     {
-        const std::vector<float>& p = entry.second.positions;
+        p.clear();
+        pieceColors.clear();
+        for (const uint32_t t : entry.second)
+        {
+            p.insert(p.end(), &vertices[(size_t)t * 9], &vertices[(size_t)t * 9] + 9);
+            pieceColors.insert(pieceColors.end(), &colors[(size_t)t * 12], &colors[(size_t)t * 12] + 12);
+        }
 
         // Хамрах бөмбөлөг: хязгаарын хайрцгийн төв ба хамгийн алсын орой
         Vector3 low = { p[0], p[1], p[2] }, high = low;
@@ -380,7 +383,7 @@ std::vector<MeshPiece> MeshBuilder::UploadPartitioned(float cellSize) const
         MeshPiece piece;
         piece.center = Vector3Scale(Vector3Add(low, high), 0.5f);
         piece.radius = Vector3Distance(low, high) * 0.5f;
-        piece.mesh = UploadArrays(p, entry.second.vertexColors);
+        piece.mesh = UploadArrays(p, pieceColors);
         pieces.push_back(piece);
     }
     return pieces;

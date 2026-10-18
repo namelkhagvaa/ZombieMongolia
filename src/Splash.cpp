@@ -135,6 +135,9 @@ namespace Splash
         }
         if (texture.id != 0) UnloadTexture(texture);
         texture = {};
+        // Хөтөч: загвар, текстур, дуу бүгд ачаалагдсан тул файлуудыг санах ойгоос чөлөөлнө (утасны хязгаарт багтах).
+        WebReleaseLoadedAssets();
+        if (WebHeapMegabytes() > 0) TraceLog(LOG_INFO, "MEMORY: heap %d MB after loading", WebHeapMegabytes());
         WebLoadingFinished(); // хөтөч: "ТОГЛОХ" товч (бүтэн дэлгэц хэрэглэгчийн үйлдлээр л нээгддэг)
     }
 }
