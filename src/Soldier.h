@@ -20,6 +20,7 @@ struct Soldier
     float fireCooldown = 0.0f;
     float walkCycle = 0.0f;
     float moveAmount = 0.0f; // 1 = алхаа, >1 = гүйлт
+    float speed = 0.0f;      // одоогийн хурд, м/с: зорилтот хурд руу зөөлөн шилжинэ (EaseSpeed)
     float recoil = 0.0f;     // 1 = дөнгөж буудсан
     float aimHold = 0.0f;    // >0 үед буугаа онилсон хэвээр барина (буудсаны дараа, тулааны үед)
     float aimPose = 0.0f;    // 0 = бэлэн барьсан .. 1 = онилсон (зөөлөн шилжинэ)

@@ -35,7 +35,7 @@ void MoveToward(Mover& mover, Vector3 target, float speed, float dt, const World
     }
 
     const Vector3 before = mover.position;
-    const float step = speed * dt;
+    const float step = std::min(speed * dt, dist); // урт кадр (хөтөч, утас) дээр зорилтоо давж эргэлдэхгүй
     mover.position.x += dirX * step;
     mover.position.z += dirZ * step;
     world.ResolveHorizontal(mover.position, radius, height, stepHeight);

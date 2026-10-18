@@ -50,6 +50,14 @@ namespace
     const float kFallTime = 0.6f;
     const float kStuckTime = 4.0f; // ийм удаан ахицгүй байвал тойрох зүгээ сольж оролдоно
 
+    // Хурдыг гэнэт солихгүй: алхаа / гүйлт / хурдан гүйлтийн босгон дээр (жишээ нь тоглогч 9.6 м/с гүйхэд
+    // 25 м-ийн босго) хурд frame бүр солигдож, хөл чичрэх мэт харагддаг байсан.
+    float EaseSpeed(Soldier& soldier, float target, float dt)
+    {
+        soldier.speed += (target - soldier.speed) * std::min(1.0f, 4.0f * dt);
+        return soldier.speed;
+    }
+
     HumanoidLook MakeLook()
     {
         HumanoidLook look;
@@ -195,6 +203,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
             continue;
         }
 
+        if (!soldier.moving) soldier.speed = 0.0f; // зогссон: дараа нь тайван хурдалж эхэлнэ
         soldier.recoil = std::max(0.0f, soldier.recoil - dt * 9.0f);
         soldier.aimHold -= dt;
         soldier.aimPose += ((soldier.aimHold > 0.0f ? 1.0f : 0.0f) - soldier.aimPose) * std::min(1.0f, 8.0f * dt);
@@ -234,9 +243,10 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
             if (soldier.moving)
             {
                 const float speed = off > 6.0f ? kCatchUpSpeed : kWalkSpeed;
-                MoveToward(soldier.mover, soldier.holdPoint, speed, dt, world, kRadius, kHeight, 0.0f);
-                soldier.walkCycle += dt * HumanoidGaitRate(speed);
-                soldier.moveAmount = speed / kWalkSpeed;
+                const float eased = EaseSpeed(soldier, speed, dt);
+                MoveToward(soldier.mover, soldier.holdPoint, eased, dt, world, kRadius, kHeight, 0.0f);
+                soldier.walkCycle += dt * HumanoidGaitRate(eased);
+                soldier.moveAmount = eased / kWalkSpeed;
             }
             soldier.routeFrom = soldier.routeTo = -2;
             soldier.stuckTimer = 0.0f;
@@ -245,9 +255,10 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
         else if (soldier.boarding)
         {
             // Суух хэрэгсэл рүүгээ гүйнэ.
-            MoveToward(soldier.mover, soldier.boardPoint, kCatchUpSpeed, dt, world, kRadius, kHeight, 0.0f);
-            soldier.walkCycle += dt * HumanoidGaitRate(kCatchUpSpeed);
-            soldier.moveAmount = kCatchUpSpeed / kWalkSpeed;
+            const float eased = EaseSpeed(soldier, kCatchUpSpeed, dt);
+            MoveToward(soldier.mover, soldier.boardPoint, eased, dt, world, kRadius, kHeight, 0.0f);
+            soldier.walkCycle += dt * HumanoidGaitRate(eased);
+            soldier.moveAmount = eased / kWalkSpeed;
             soldier.moving = true;
             soldier.routeFrom = soldier.routeTo = -2;
             soldier.stuckTimer = 0.0f;
@@ -315,9 +326,10 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
             soldier.moving = move;
             if (move)
             {
-                MoveToward(soldier.mover, point, speed, dt, world, kRadius, kHeight, 0.0f);
-                soldier.walkCycle += dt * HumanoidGaitRate(speed);
-                soldier.moveAmount = speed / kWalkSpeed;
+                const float eased = EaseSpeed(soldier, speed, dt);
+                MoveToward(soldier.mover, point, eased, dt, world, kRadius, kHeight, 0.0f);
+                soldier.walkCycle += dt * HumanoidGaitRate(eased);
+                soldier.moveAmount = eased / kWalkSpeed;
             }
 
             // Дагах замын төлөвийг цэвэрлэнэ: тулаан дуусмагц шинээр эхэлнэ.
@@ -447,9 +459,10 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
                 const float catchUp = toSlot > 25.0f ? kSprintSpeed : kCatchUpSpeed;
                 const float speed = guarding ? (toSlot > 20.0f ? catchUp : toSlot > 7.0f ? kWalkSpeed : kGuardStroll)
                                              : (toSlot > 8.0f ? catchUp : kWalkSpeed);
-                MoveToward(soldier.mover, target, speed, dt, world, kRadius, kHeight, 0.0f);
-                soldier.walkCycle += dt * HumanoidGaitRate(speed);
-                soldier.moveAmount = speed / kWalkSpeed;
+                const float eased = EaseSpeed(soldier, speed, dt);
+                MoveToward(soldier.mover, target, eased, dt, world, kRadius, kHeight, 0.0f);
+                soldier.walkCycle += dt * HumanoidGaitRate(eased);
+                soldier.moveAmount = eased / kWalkSpeed;
             }
             else if (guarding)
             {
