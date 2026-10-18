@@ -141,7 +141,11 @@
   var RELAY_URL = 'wss://play-zombie.apps.mn/relay';
   var relayParam = new URLSearchParams(location.search).get('relay');
   var sameHost = 'ws://' + location.hostname + ':8090';
+  // Build бүрийн дугаар (tools/build_web.ps1 бичнэ): файлуудыг ?v=... -аар ачаалж, хөтөч хуучин .js-ийг
+  // шинэ .wasm-тай хольж ачаалахаас сэргийлнэ (Safari кэшээс хуучин .js өгч "ASM_CONSTS" алдаа гарч байсан).
+  var BUILD_ID = '{{{ BUILD_ID }}}';
   var Module = {
+    locateFile: function (path) { return path + '?v=' + BUILD_ID; },
     zmRelayUrl: relayParam || (location.protocol === 'http:' ? sameHost : RELAY_URL),
     canvas: canvas,
     print: function (t) { console.log(t); debugLog(t); },

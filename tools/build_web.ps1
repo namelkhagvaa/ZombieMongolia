@@ -33,8 +33,12 @@ Run "cmake" @("--build", $build)
 $site = Join-Path $build "web"
 New-Item -ItemType Directory -Force $site | Out-Null
 # index.html-ийг web\shell.html-ээс шууд үүсгэнэ: хуудсыг засахад тоглоомыг дахин холбох (link) шаардлагагүй.
+# BUILD_ID: .wasm ба .data-ийн хэшээс (код эсвэл assets өөрчлөгдөх бүрд шинэ): хөтөч кэшээс хуучин файл хольж ачаалахгүй.
+$hash = (Get-FileHash (Join-Path $build "ZombieMongolia.wasm") -Algorithm SHA256).Hash.Substring(0, 8) +
+        (Get-FileHash (Join-Path $build "ZombieMongolia.data") -Algorithm SHA256).Hash.Substring(0, 4)
 $shell = [System.IO.File]::ReadAllText((Join-Path $root "web\shell.html"))
-$page = $shell.Replace("{{{ SCRIPT }}}", '<script async type="text/javascript" src="ZombieMongolia.js"></script>')
+$page = $shell.Replace("{{{ SCRIPT }}}", "<script async type=`"text/javascript`" src=`"ZombieMongolia.js?v=$hash`"></script>")
+$page = $page.Replace("{{{ BUILD_ID }}}", $hash.ToLower())
 [System.IO.File]::WriteAllText((Join-Path $site "index.html"), $page, (New-Object System.Text.UTF8Encoding $false))
 foreach ($ext in "js", "wasm", "data") {
     Copy-Item (Join-Path $build "ZombieMongolia.$ext") $site -Force
