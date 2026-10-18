@@ -1,4 +1,4 @@
-# Zombie Mongolia-г хөтөч дээр тоглох хуудас (WebAssembly + WebGL2) болгон бүтээнэ.
+﻿# Zombie Mongolia-г хөтөч дээр тоглох хуудас (WebAssembly + WebGL2) болгон бүтээнэ.
 #
 # Шаардлага: Emscripten SDK (C:\emsdk; өөр газар бол -Emsdk заана), Ninja (C:\msys64\ucrt64\bin)
 #   git clone https://github.com/emscripten-core/emsdk.git C:\emsdk

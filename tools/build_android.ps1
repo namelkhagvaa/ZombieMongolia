@@ -1,4 +1,4 @@
-# Zombie Mongolia-г Android APK болгон бүтээнэ.
+﻿# Zombie Mongolia-г Android APK болгон бүтээнэ.
 #
 # Шаардлага (C:\Android дотор; өөр газар бол -AndroidRoot заана):
 #   jdk\                      Java 17 (keytool, apksigner-т)
@@ -16,7 +16,8 @@ param(
     [string]$Platform = "android-34"
 )
 
-$ErrorActionPreference = "Stop"
+# Continue: PowerShell 5.1 нь гаралтыг дамжуулахад cmake-ийн stderr мөрийг алдаа гэж үздэг; алдааг Run шалгана.
+$ErrorActionPreference = "Continue"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $out = Join-Path $root "build_android"
 $sdk = Join-Path $AndroidRoot "sdk"
@@ -41,7 +42,9 @@ if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
 New-Item -ItemType Directory -Force (Join-Path $staging "assets") | Out-Null
 
 foreach ($abi in $Abis) {
-    $build = Join-Path $out "native-$abi"
+    # Хөрвүүлэлтийн хавтас git-ээс гадуур (.gitignore: cmake-build-*): build_android
+ative-* нь өөр замд тохируулагдсан байсан
+    $build = Join-Path $root "cmake-build-android-$abi"
     Run "cmake" @("-S", $root, "-B", $build, "-G", "Ninja",
                   "-DCMAKE_TOOLCHAIN_FILE=$ndk\build\cmake\android.toolchain.cmake",
                   "-DANDROID_ABI=$abi", "-DANDROID_PLATFORM=android-24", "-DANDROID_STL=c++_static",
