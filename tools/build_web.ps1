@@ -32,7 +32,10 @@ Run "cmake" @("--build", $build)
 # Байршуулах хавтас: index.html нэртэй
 $site = Join-Path $build "web"
 New-Item -ItemType Directory -Force $site | Out-Null
-Copy-Item (Join-Path $build "ZombieMongolia.html") (Join-Path $site "index.html") -Force
+# index.html-ийг web\shell.html-ээс шууд үүсгэнэ: хуудсыг засахад тоглоомыг дахин холбох (link) шаардлагагүй.
+$shell = [System.IO.File]::ReadAllText((Join-Path $root "web\shell.html"))
+$page = $shell.Replace("{{{ SCRIPT }}}", '<script async type="text/javascript" src="ZombieMongolia.js"></script>')
+[System.IO.File]::WriteAllText((Join-Path $site "index.html"), $page, (New-Object System.Text.UTF8Encoding $false))
 foreach ($ext in "js", "wasm", "data") {
     Copy-Item (Join-Path $build "ZombieMongolia.$ext") $site -Force
 }

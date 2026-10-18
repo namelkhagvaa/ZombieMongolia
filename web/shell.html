@@ -34,6 +34,9 @@
            gap: 14px; padding: 0 24px; background: rgba(6,8,12,.94); text-align: center; font-size: 15px; line-height: 1.5; }
   #error b { color: rgb(255,192,64); font-size: 18px; }
   #error button { padding: 10px 18px; border: 0; border-radius: 8px; background: rgb(255,192,64); color: #111; font: inherit; font-weight: 700; }
+  #debug { position: fixed; left: 0; top: 0; z-index: 6; display: none; max-width: 70vw; max-height: 60vh; overflow: hidden;
+           padding: 6px 8px; background: rgba(0,0,0,.72); color: #9fe39f; font: 11px/1.35 monospace; white-space: pre-wrap;
+           pointer-events: none; }
   #rotate { position: fixed; inset: 0; z-index: 4; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: #0a0c12; font-size: 16px; text-align: center; padding: 0 16px; }
   #rotate .icon { font-size: 48px; }
   @media (pointer: coarse) {
@@ -50,6 +53,7 @@
 </div></div>
 <button id="fs" title="Бүтэн дэлгэц">⛶ Бүтэн дэлгэц</button>
 <div id="error"><b>Тоглоом зогслоо</b><div id="errorText"></div><button onclick="location.reload()">Дахин ачаалах</button></div>
+<div id="debug"></div>
 <div id="rotate"><div class="icon">⟳</div><div>Утсаа хэвтээ болгож эргүүлнэ үү</div></div>
 <script>
   var canvas = document.getElementById('canvas');
@@ -63,8 +67,35 @@
     percentEl.textContent = pct + '%';
     if (text) statusEl.textContent = text;
   }
+  // ?debug: тоглоомын логийг дэлгэцийн буланд харуулна (утсан дээр консол байхгүй үед шалтгааныг олоход).
+  // Олон давтагддаг "амжилттай ачааллаа" мөрүүдийг алгасна.
+  var debugEl = document.getElementById('debug');
+  var debugOn = new URLSearchParams(location.search).has('debug');
+  var debugHeader = [], debugLines = [];
+  var noisy = /(TEXTURE|VAO|VBO|IMAGE|FILEIO|MODEL|MESH|WAVE|SHADER): \[?.*(loaded|uploaded|generated|Data loaded|Unloaded|successfully)|> (Meshes|Materials) count/;
+  function debugLog(text, pinned) {
+    if (!debugOn || noisy.test(text)) return;
+    if (pinned) debugHeader.push(text);
+    else { debugLines.push(text); if (debugLines.length > 30) debugLines.shift(); }
+    debugEl.textContent = debugHeader.concat(['----'], debugLines).join('\n');
+  }
+  if (debugOn) {
+    debugEl.style.display = 'block';
+    var gl = document.createElement('canvas').getContext('webgl2');
+    var info = gl && gl.getExtension('WEBGL_debug_renderer_info');
+    debugLog(navigator.userAgent, true);
+    debugLog('WebGL2: ' + (gl ? 'yes' : 'NO') + (info ? ', ' + gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : '') +
+             (gl ? ', max texture ' + gl.getParameter(gl.MAX_TEXTURE_SIZE) : '') + ', screen ' + screen.width + 'x' + screen.height +
+             ' @' + devicePixelRatio, true);
+    var lastMem = 0;
+    setInterval(function () {
+      var mem = typeof wasmMemory !== 'undefined' ? Math.round(wasmMemory.buffer.byteLength / 1048576) : 0;
+      if (mem !== lastMem) { lastMem = mem; debugLog('memory: ' + mem + ' MB'); }
+    }, 1000);
+  }
   // Алдааг дэлгэцэнд харуулна (утсан дээр консол байхгүй тул шалтгааныг эндээс уншина).
   function showError(text) {
+    debugLog('ERROR: ' + text);
     document.getElementById('errorText').textContent = text;
     document.getElementById('error').style.display = 'flex';
   }
@@ -98,8 +129,8 @@
   var Module = {
     zmRelayUrl: relayParam || RELAY_URL || sameHost,
     canvas: canvas,
-    print: function (t) { console.log(t); },
-    printErr: function (t) { console.warn(t); },
+    print: function (t) { console.log(t); debugLog(t); },
+    printErr: function (t) { console.warn(t); debugLog(t); },
     setStatus: function (text) {
       var m = text.match(/\((\d+(\.\d+)?)\/(\d+)\)/);
       if (m) showProgress(0.5 * parseInt(m[1]) / parseInt(m[3]), 'Файлуудыг татаж байна...');
