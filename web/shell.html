@@ -195,6 +195,8 @@
   var BUILD_ID = '{{{ BUILD_ID }}}';
   var Module = {
     locateFile: function (path) { return path + '?v=' + BUILD_ID; },
+    // Туршилт: ?args=--join+1234 гэх мэт тоглоомын командын мөрийн сонголтууд (main.cpp)
+    arguments: (new URLSearchParams(location.search).get('args') || '').split(' ').filter(Boolean),
     zmRelayUrl: relayParam || (location.protocol === 'http:' ? sameHost : RELAY_URL),
     canvas: canvas,
     print: function (t) { console.log(t); debugLog(t); },

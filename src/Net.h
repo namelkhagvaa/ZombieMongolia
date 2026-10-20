@@ -26,7 +26,7 @@ namespace Net
     constexpr uint16_t kDiscoveryPort = 47811;
     // Сүлжээний мессежийн хувилбар: мессежийн бүтэц өөрчлөгдөх бүрд нэмэгдүүлнэ. Хост ба зочин ижил хувилбартай
     // байж л нэгдэнэ (эс бөгөөс өгөгдөл буруу уншигдаж, жишээ нь цэргүүд "үхсэн" мэт харагдана).
-    constexpr uint16_t kProtocolVersion = 4; // 4: унааны эрүүл мэнд, нисэж буй зомби
+    constexpr uint16_t kProtocolVersion = 5; // 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris
 
     // Мессежийн төрөл (пакетийн эхний байт)
     enum class Msg : uint8_t
@@ -244,6 +244,8 @@ namespace Net
         std::vector<FoundGame> found;
         Snapshot latest;
         bool hasLatest = false;
+        int snapshotsReceived = 0;   // оношлогоо: сүүлийн тайлангаас хойш ирсэн snapshot
+        double snapshotReportAt = 0.0;
         // Relay: нөгөө тал өрөөнд байгаа эсэх, өрөөний код, сервер хүрэхгүй үед дахин холбогдох цаг
         bool partner = false;
         int roomCode = 0;

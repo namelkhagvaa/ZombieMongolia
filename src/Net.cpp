@@ -1068,6 +1068,14 @@ namespace Net
             {
                 latest = std::move(s);
                 hasLatest = true;
+                // Оношлогоо: хост хэр давтамжтай илгээж байгаа (?debug, log.txt). Хост 15/с илгээдэг.
+                ++snapshotsReceived;
+                if (GetTime() >= snapshotReportAt)
+                {
+                    if (snapshotReportAt > 0.0) TraceLog(LOG_INFO, "NET: %d snapshots from host in 5 s", snapshotsReceived);
+                    snapshotsReceived = 0;
+                    snapshotReportAt = GetTime() + 5.0;
+                }
             }
             return; // үйл явдал биш: TakeSnapshot-оор авна
         }
