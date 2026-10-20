@@ -1061,6 +1061,8 @@ void Game::SpawnVehicles()
     place(VehicleType::Trike, -9.5f, 6.8f, 90.0f);
     place(VehicleType::Horse, 14.0f, 7.6f, 60.0f);
     place(VehicleType::Truck, 22.0f, -14.0f, 90.0f); // ачааны машин: шатахуун түгээх газрын дэргэд
+    place(VehicleType::Hatchback, -12.0f, -7.0f, 90.0f); // Yaris: жийпийн ард
+    place(VehicleType::Suv, -19.0f, -7.0f, 90.0f);       // X-Trail
 
     // Талбараар тархсан нэмэлт унаа: суурин, шатахуун түгээх газар, цэргийн пост, малчдын отор
     place(VehicleType::Trike, 37.0f, -8.6f, -90.0f);
@@ -1078,11 +1080,12 @@ void Game::SpawnVehicles()
         ++index;
     }
 
-    // Жижиг суурин бүрд: гудамжинд жийп эсвэл гурван дугуйт
+    // Жижиг суурин бүрд: гудамжинд жийп, Yaris, гурван дугуйт, X-Trail ээлжлэн
     index = 0;
+    static const VehicleType kHamletVehicles[] = { VehicleType::Jeep, VehicleType::Hatchback, VehicleType::Trike, VehicleType::Suv };
     for (const Vector2& hamlet : world.GetLayout().hamlets)
     {
-        place(index % 2 == 0 ? VehicleType::Jeep : VehicleType::Trike, hamlet.x - 30.0f, hamlet.y - 5.0f, 180.0f);
+        place(kHamletVehicles[index % 4], hamlet.x - 30.0f, hamlet.y - 5.0f, 180.0f);
         ++index;
     }
 }
@@ -1767,6 +1770,7 @@ void Game::UpdateMission(float dt)
         {
         case VehicleType::Truck: height = 3.4f; break;
         case VehicleType::Jeep: height = 2.3f; break;
+        case VehicleType::Suv: height = 2.2f; break;
         case VehicleType::Horse: height = 2.4f; break;
         default: height = 1.9f; break;
         }

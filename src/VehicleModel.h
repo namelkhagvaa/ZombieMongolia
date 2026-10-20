@@ -9,6 +9,8 @@ enum class VehicleModelId
 {
     Jeep,  // G-Class
     Truck, // Mercedes Zetros маягийн 6x6
+    Suv,       // Nissan X-Trail
+    Hatchback, // Toyota Yaris
     Count
 };
 

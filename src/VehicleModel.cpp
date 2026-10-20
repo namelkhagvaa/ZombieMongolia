@@ -26,7 +26,7 @@ namespace
     };
 
     Model3 models[(int)VehicleModelId::Count];
-    const char* kNames[(int)VehicleModelId::Count] = { "gclass", "truck" };
+    const char* kNames[(int)VehicleModelId::Count] = { "gclass", "truck", "xtrail", "yaris" };
 
     Model3 props[(int)PropModelId::Count];
     const char* kPropNames[(int)PropModelId::Count] = { "ak47", "sum", "sniper", "pistol", "shotgun", "knife" };

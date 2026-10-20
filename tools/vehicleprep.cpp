@@ -174,6 +174,18 @@ int main(int argc, char** argv)
     SetTraceLogLevel(LOG_WARNING);
     setvbuf(stdout, nullptr, _IONBF, 0);
     if (argc >= 5 && std::strcmp(argv[1], "views") == 0) return Views(argv[2], argv[3], argv[4]);
+    if (argc >= 5 && std::strcmp(argv[1], "texture") == 0)
+    {
+        // texture <in.jpg|png> <out.png> <size>: glb_extract-ийн гаргасан өнгөний зургийг size px PNG болгоно
+        Image image = LoadImage(argv[2]);
+        if (!image.data) { std::printf("cannot load %s\n", argv[2]); return 1; }
+        const int size = std::atoi(argv[4]);
+        if (image.width > size || image.height > size) ImageResize(&image, size, size);
+        const bool ok = ExportImage(image, argv[3]);
+        std::printf("%s %dx%d\n", ok ? "saved" : "FAILED", image.width, image.height);
+        UnloadImage(image);
+        return ok ? 0 : 1;
+    }
     if (argc >= 10 && std::strcmp(argv[1], "build") == 0) return Build(argc, argv);
     if (argc >= 6 && std::strcmp(argv[1], "prop") == 0)
     {

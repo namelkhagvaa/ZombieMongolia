@@ -37,6 +37,8 @@ const VehicleSpec& SpecFor(VehicleType type)
         /* Trike */ { "ГУРВАН ДУГУЙТ",      17.0f, 6.0f, 14.0f, 4.0f, 1.8f, 1.0f, 1.00f, 0.85f, 0.70f, 1.4f, 4.5f, false, { 0.0f, 0.92f, 0.05f },  2.0f, 90.0f, 6.0f, 0.7f },
         /* Horse */ { "МОРЬ",      17.0f, 9.0f, 12.0f, 2.0f, 2.8f, 0.8f, 0.85f, 1.00f, 0.95f, 0.6f, 2.0f, false, { 0.0f, 1.5f, -0.05f },  1.5f, 90.0f, 0.0f, 0.6f },
         /* Truck */ { "АЧААНЫ МАШИН", 22.0f, 4.5f, 12.0f, 4.0f, 1.25f, 2.1f, 1.00f, 0.78f, 0.55f, 1.9f, 16.0f, true, { 0.5f, 1.75f, 1.25f }, 7.0f, 420.0f, 8.0f, 6.0f },
+        /* Suv   */ { "X-TRAIL",    31.0f, 9.5f, 20.0f, 7.0f, 1.95f, 1.5f, 1.00f, 0.72f, 0.50f, 1.5f, 8.0f, true,  { 0.0f, 0.95f, 0.0f },  4.0f, 140.0f, 10.0f, 1.45f },
+        /* Hatch */ { "YARIS",      35.0f, 10.0f, 21.0f, 7.0f, 2.15f, 1.35f, 1.00f, 0.62f, 0.35f, 2.0f, 6.0f, true, { 0.0f, 0.85f, 0.0f },  3.5f, 105.0f, 12.0f, 1.05f },
     };
     return specs[(int)type];
 }
@@ -336,11 +338,14 @@ namespace
 
     void DrawJeep(const Vehicle& v)
     {
-        // Текстуртай загвар (G-Class) байвал түүгээр; эс бөгөөс кодоор угсарсан УАЗ
-        if (HasVehicleModel(VehicleModelId::Jeep))
+        // Текстуртай загвар (G-Class, X-Trail, Yaris) байвал түүгээр; эс бөгөөс кодоор угсарсан УАЗ
+        const VehicleModelId model = v.type == VehicleType::Suv         ? VehicleModelId::Suv
+                                     : v.type == VehicleType::Hatchback ? VehicleModelId::Hatchback
+                                                                        : VehicleModelId::Jeep;
+        if (HasVehicleModel(model))
         {
             const Color tint = propMaterial && !modelDepthMaterial ? propMaterial->maps[MATERIAL_MAP_DIFFUSE].color : WHITE;
-            DrawVehicleModel(VehicleModelId::Jeep, v.animation, v.steer, modelDepthMaterial, tint);
+            DrawVehicleModel(model, v.animation, v.steer, modelDepthMaterial, tint);
             return;
         }
         DrawProp(JeepBody());
@@ -760,6 +765,8 @@ namespace
         case VehicleType::Trike: return 1.1f;
         case VehicleType::Motorcycle: return 1.3f;
         case VehicleType::Horse: return 1.2f;
+        case VehicleType::Suv: return 1.05f;
+        case VehicleType::Hatchback: return 1.25f;
         }
         return 1.0f;
     }
@@ -774,6 +781,8 @@ namespace
         case VehicleType::Trike: return { 1.0f, 0.7f };
         case VehicleType::Motorcycle: return { 0.75f, 0.38f };
         case VehicleType::Horse: return { 0.85f, 0.42f };
+        case VehicleType::Suv: return { 1.45f, 0.9f };       // 4.69 м урт
+        case VehicleType::Hatchback: return { 1.15f, 0.85f }; // 3.94 м урт
         }
         return { 1.0f, 0.8f };
     }
@@ -1033,9 +1042,11 @@ Vector3 Garage::SeatWorld(int index, bool passenger) const
         case VehicleType::Trike: seat = { -0.22f, 0.98f, -1.0f }; break;      // ачааны тэвшин дээр
         case VehicleType::Horse: seat = { 0.0f, 1.5f, -0.52f }; break;        // сундлана
         case VehicleType::Truck: seat = { -0.5f, 1.75f, -1.6f }; break;       // тэвшин дээр
+        case VehicleType::Suv:
+        case VehicleType::Hatchback: seat.x = -0.45f; break;                   // жолоочийн эсрэг талын суудал
         }
     }
-    else if (vehicle.type == VehicleType::Jeep)
+    else if (IsCar(vehicle.type))
     {
         seat.x = 0.45f; // жолоочийн суудал
     }
@@ -1440,6 +1451,8 @@ void Garage::Draw(Vector3 viewPosition, float maxDistance, const Material* mater
         case VehicleType::Trike: DrawTrike(vehicle); break;
         case VehicleType::Horse: DrawHorse(vehicle); break;
         case VehicleType::Truck: DrawTruck(vehicle); break;
+        case VehicleType::Suv:
+        case VehicleType::Hatchback: DrawJeep(vehicle); break;
         }
         if (tintable) tintable->maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
         rlPopMatrix();
