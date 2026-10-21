@@ -68,11 +68,17 @@ namespace
         std::vector<CityMapShape> areas, buildings;
     };
 
+    // Идэвхтэй хотын (аймгийн) зураг: аймаг солигдоход дахин үүсгэнэ.
     const CityMapCache& CityMap()
     {
-        static const CityMapCache cache = [] {
+        static CityMapCache cache;
+        static int province = -2;
+        if (province != CurrentCity().province)
+        {
+            province = CurrentCity().province;
+            cache = [] {
             CityMapCache c;
-            const CityData& city = UlaanbaatarCity();
+            const CityData& city = CurrentCity();
             auto add = [&](std::vector<CityMapShape>& list, const std::vector<Vector2>& outline, Color color) {
                 CityMapShape shape = { 1e9f, 1e9f, -1e9f, -1e9f, c.triangles.size(), 0, color };
                 for (const Vector2& p : outline)
@@ -96,7 +102,8 @@ namespace
                 add(c.buildings, building.outline, color);
             }
             return c;
-        }();
+            }();
+        }
         return cache;
     }
 
@@ -566,24 +573,33 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     // Газрын нэрс
     BeginScissorMode((int)view.area.x, (int)view.area.y, (int)view.area.width, (int)view.area.height);
     struct Place { float x, z; const char* name; };
-    static const Place cityPlaces[] = {
-        { 0.0f, 60.0f, "СҮХБААТАРЫН ТАЛБАЙ" }, { kOutpost.x, kOutpost.y, "ЗАСТАВ" }, { kShopCenter.x, kShopCenter.y + 5.5f, "ДЭЛГҮҮР" },
-        { kCityTownSite.x, kCityTownSite.y - 60.0f, "ЧОЙЖИН ЛАМЫН СҮМ" }, { kCityGasSite.x, kCityGasSite.y - 14.0f, "ШТС" },
-        { 96.0f, -1857.0f, "ТӨВ ЦЭНГЭЛДЭХ" }, { 166.0f, 221.0f, "ҮНДЭСНИЙ МУЗЕЙ" }, { 590.0f, 147.0f, "ЗАНАБАЗАРЫН МУЗЕЙ" },
-        { 793.0f, -2385.0f, "БОГД ХААНЫ ОРДОН" }, { -360.0f, -974.0f, "ҮНДЭСНИЙ ЦЭЦЭРЛЭГТ ХҮРЭЭЛЭН" },
+    const CityData& cityData = CurrentCity();
+    const Vector2 townSite = CityTownSite(cityData), gasSite = CityGasSite(cityData), storeSite = CityWarehouseSite(cityData);
+    static const Place capitalPlaces[] = {
+        { 0.0f, 60.0f, "СҮХБААТАРЫН ТАЛБАЙ" }, { 96.0f, -1857.0f, "ТӨВ ЦЭНГЭЛДЭХ" }, { 166.0f, 221.0f, "ҮНДЭСНИЙ МУЗЕЙ" },
+        { 590.0f, 147.0f, "ЗАНАБАЗАРЫН МУЗЕЙ" }, { 793.0f, -2385.0f, "БОГД ХААНЫ ОРДОН" }, { -360.0f, -974.0f, "ҮНДЭСНИЙ ЦЭЦЭРЛЭГТ ХҮРЭЭЛЭН" },
     };
+    bool isCity = false;
+    static std::string townLabel;
+    townLabel = TownName(cityData.province, isCity);
+    std::vector<Place> cityPlaces = {
+        { kOutpost.x, kOutpost.y, "ЗАСТАВ" }, { kShopCenter.x, kShopCenter.y + 5.5f, "ДЭЛГҮҮР" },
+        { townSite.x, townSite.y - 40.0f, cityData.province == kUlaanbaatarProvince ? "ЧОЙЖИН ЛАМЫН СҮМ" : townLabel.c_str() },
+        { gasSite.x, gasSite.y - 14.0f, "ШТС" },
+    };
+    if (storeSite.x != townSite.x || storeSite.y != townSite.y) cityPlaces.push_back({ storeSite.x - 17.0f, storeSite.y + 10.0f, "АГУУЛАХ" });
+    if (cityData.province == kUlaanbaatarProvince) cityPlaces.insert(cityPlaces.end(), std::begin(capitalPlaces), std::end(capitalPlaces));
     const Place places[] = {
         { 28.0f, 34.0f, "СУУРИН" },  { kOutpost.x, kOutpost.y, "ЗАСТАВ" }, { 38.0f, -13.0f, "ШАТАХУУН ТҮГЭЭХ ГАЗАР" },
         { 10.0f, 70.0f, "АГУУЛАХ" }, { kTownCenter.x, kTownCenter.y, "АЙМГИЙН ТӨВ" }, { kShopCenter.x, kShopCenter.y + 5.5f, "ДЭЛГҮҮР" },
         { airport::kTerminal.x, airport::kTerminal.y - 60.0f, world.GetLayout().AirfieldActive() ? "БУЯНТ-УХАА НИСЭХ БУУДАЛ" : nullptr },
     };
     const bool city = world.CityActive();
-    std::vector<Place> shown = city ? std::vector<Place>(std::begin(cityPlaces), std::end(cityPlaces))
-                                    : std::vector<Place>(std::begin(places), std::end(places));
+    std::vector<Place> shown = city ? cityPlaces : std::vector<Place>(std::begin(places), std::end(places));
     if (city)
     {
         bool first = true; // эхнийх нь (даалгаврын ШТС) cityPlaces-д бий
-        for (const CityPoi& poi : UlaanbaatarCity().pois)
+        for (const CityPoi& poi : cityData.pois)
         {
             if (poi.kind != CityPoiKind::Station) continue;
             if (!first) shown.push_back({ poi.position.x + 31.0f, poi.position.y - 35.0f, "ШТС" });
@@ -606,7 +622,7 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     if (city)
     {
         // ODbL: Улаанбаатарын гудамж, барилга OpenStreetMap-ийн өгөгдлөөр
-        UiText("Улаанбаатарын газрын зураг: (c) OpenStreetMap contributors (ODbL)", (int)view.area.x + 10,
+        UiText("Газрын зураг: (c) OpenStreetMap contributors (ODbL)", (int)view.area.x + 10,
                (int)(view.area.y + view.area.height) - 22, 14, Fade(kFrame, 0.75f));
     }
     else if (world.GetLayout().AirfieldActive())

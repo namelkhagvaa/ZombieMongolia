@@ -25,10 +25,9 @@ World::World(float halfSize) : halfSize(halfSize), layout(MakeLayout()), terrain
     // Тогтмол хэсэг: зам, пост, агуулах, шон, чулуу. Нэг удаа үүснэ (Улаанбаатарын хотод орох, гарахад дахин).
     BuildStatic();
     terrain.SetObstacles(&obstacles); // өвс, чулууг саад дотор ургуулахгүй
-    UlaanbaatarCity();                // хотын өгөгдлийг эхэнд нь уншина (вэб: ачаалсан файлуудыг дараа нь чөлөөлдөг)
 
-    // Суурингууд: эхлээд 0-р хувилбараар; үе эхлэх бүрд тухайн үеийнхээр солигдоно.
-    BuildSettlements(0);
+    // Суурингууд: эхлээд зохиомол хээр талаар (99: аль ч аймгийн хот биш); үе эхлэх бүрд тухайн үеийнхээр солигдоно.
+    BuildSettlements(99);
 
     // Даалгавар эхлэх хүртэл: бүх талбарыг хамарсан дөрвөлжин хязгаар (тэмдэг шонгүй).
     const float edge = halfSize - 1.0f;
@@ -73,14 +72,14 @@ void World::BuildStatic()
              (int)structures.size(), (int)obstacles.size());
 }
 
-void World::SwitchCity(bool city)
+void World::SwitchCity(int province)
 {
     const double start = GetTime();
-    cityActive = city;
-    if (city)
+    if (cityProvince < 0) steppeLayout = std::move(layout); // хээр талаас гарахдаа хадгална
+    cityProvince = province;
+    if (province >= 0)
     {
-        steppeLayout = std::move(layout);
-        layout = MakeCityLayout(UlaanbaatarCity());
+        layout = MakeCityLayout(CityFor(province));
     }
     else
     {
@@ -89,7 +88,7 @@ void World::SwitchCity(bool city)
     }
     terrain.Rebuild();
     BuildStatic();
-    TraceLog(LOG_INFO, "WORLD: %s layout ready in %.2f s", city ? "Ulaanbaatar city" : "steppe", GetTime() - start);
+    TraceLog(LOG_INFO, "WORLD: %s layout ready in %.2f s", province >= 0 ? "city" : "steppe", GetTime() - start);
 }
 
 void World::BuildSettlements(int variant)
@@ -100,9 +99,9 @@ void World::BuildSettlements(int variant)
     }
     settlementVariant = variant;
 
-    // Улаанбаатар: жинхэнэ хотын төв (өгөгдөл байвал), бусад үе: хээр тал
-    const bool city = variant == kUlaanbaatarProvince && UlaanbaatarCity().Loaded();
-    if (city != cityActive)
+    // Аймгийн жинхэнэ төв (assets/city-д өгөгдөл байвал), эс бөгөөс зохиомол хээр тал
+    const int city = CityFor(variant).Loaded() ? variant : -1;
+    if (city != cityProvince)
     {
         SwitchCity(city);
     }
@@ -117,7 +116,7 @@ void World::BuildSettlements(int variant)
     passages.resize(staticPassageCount);
 
     // Буянт-Ухаа нисэх буудлын хучилт зөвхөн хуучин (зохиомол) Улаанбаатарын үед (өвс ургахгүй, засмал замын хурд)
-    layout.SetAirfieldActive(variant == kUlaanbaatarProvince && !cityActive);
+    layout.SetAirfieldActive(variant == kUlaanbaatarProvince && cityProvince < 0);
 
     MeshBuilder solidBuilder, shadowBuilder, glassBuilder;
     BuildSettlementStructures(variant, layout, terrain, obstacles, solidBuilder, shadowBuilder, glassBuilder, interiors,

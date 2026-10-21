@@ -143,9 +143,17 @@ void Terrain::Rebuild()
         {
             const float x = -halfExtent + (float)ix * cellSize;
             float height;
-            if (layout.IsCity())
+            if (layout.IsCapital())
             {
-                height = CityHills(x, z) - layout.LakeDepth(x, z);
+                // Улаанбаатар: хойд зүгийн толгод; ШТС, застав зэрэг байгууламжийн доор тэгш
+                height = CityHills(x, z) * SmoothStep(0.0f, 30.0f, layout.ZoneDistance(x, z)) - layout.LakeDepth(x, z);
+            }
+            else if (layout.IsCity())
+            {
+                // Аймгийн төв: барилгажсан хэсэг тэгш, хотоос гарах тусам хээр талын толгод (зам, хот айлын дэргэд тэгш)
+                float mask = SmoothStep(60.0f, 420.0f, layout.CityBuiltDistance(x, z));
+                if (mask > 0.0f) mask *= SmoothStep(0.0f, 30.0f, layout.FlatDistance(x, z));
+                height = (mask > 0.0f ? Hills(x, z) * mask : 0.0f) - layout.LakeDepth(x, z);
             }
             else
             {
@@ -211,9 +219,12 @@ Color Terrain::GroundColor(int ix, int iz, Vector3 normal) const
     // Өнгө нь зөвхөн байрлалаас хамаарна: хөрш хэсэг, нарийн/бүдүүн тор ирмэгээрээ яг таарна.
     const float x = -halfExtent + (float)ix * cellSize, z = -halfExtent + (float)iz * cellSize;
     const float h = GridHeight(ix, iz);
+    // Хот: тоостой хөрс, цэцэрлэг; аймгийн төвөөс гарахад хээр талын өнгө рүү аажим шилжинэ
+    float urban = 0.0f;
     if (layout.IsCity())
     {
-        return CityGroundColor(x, z, normal);
+        urban = layout.IsCapital() ? 1.0f : SmoothStep(220.0f, 90.0f, layout.CityBuiltDistance(x, z));
+        if (urban >= 1.0f) return CityGroundColor(x, z, normal);
     }
 
     // Том толбо: чийглэг ногоон хөндий ба хуурай шаргал тал
@@ -250,6 +261,7 @@ Color Terrain::GroundColor(int ix, int iz, Vector3 normal) const
     const float flat = layout.FlatDistance(x, z);
     color = MixColor(color, kTrampled, SmoothStep(6.0f, -10.0f, flat) * 0.55f);
     color = MixColor(color, kEarth, SmoothStep(3.0f, 0.0f, layout.RoadDistance(x, z)) * 0.5f);
+    if (urban > 0.0f) color = MixColor(color, CityGroundColor(x, z, normal), urban);
     return color;
 }
 
@@ -368,6 +380,10 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
 
     MeshBuilder builder;
     Rng rng((uint32_t)(chunk.cellX * 31337 + chunk.cellZ * 2713 + 99));
+    // Хотын барилгажсан хэсэг (Улаанбаатар бүхэлдээ)
+    auto InUrban = [&](float x, float z) {
+        return layout.IsCity() && (layout.IsCapital() || layout.CityBuiltDistance(x, z) < 150.0f);
+    };
 
     // --- Өвс: бөөгнөрч ургана ---
     for (int i = 0; i < 800; ++i)
@@ -376,7 +392,7 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
         const float z = z0 + rng.Next() * chunkSize;
         const bool keep = rng.Chance(0.75f);
 
-        if (layout.IsCity())
+        if (InUrban(x, z))
         {
             const int ground = layout.CityGround(x, z);
             if (ground >= 5 || (ground == 0 && !rng.Chance(0.3f))) continue;
@@ -396,7 +412,7 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
         const float pz = z0 + rng.Next() * chunkSize;
         const Color petal = kFlowers[rng.Int(0, 3)];
         if (layout.FlatDistance(px, pz) < 2.0f) continue; // суурин, замын ойролцоо гишгэгдсэн
-        if (layout.IsCity() && layout.CityGround(px, pz) != 1) continue; // хотод зөвхөн цэцэрлэгт
+        if (InUrban(px, pz) && layout.CityGround(px, pz) != 1) continue; // хотод зөвхөн цэцэрлэгт
         for (int i = 0; i < 14; ++i)
         {
             const float x = px + rng.Range(-2.5f, 2.5f), z = pz + rng.Range(-2.5f, 2.5f);
@@ -414,7 +430,7 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
         const Vector3 radii = { radius * rng.Range(0.8f, 1.4f), radius * 0.6f, radius * rng.Range(0.8f, 1.4f) };
 
         if (layout.RoadDistance(x, z) < 1.0f || layout.Paved(x, z)) continue;
-        if (layout.IsCity() && (layout.CityGround(x, z) != 0 || !rng.Chance(0.35f))) continue;
+        if (InUrban(x, z) && (layout.CityGround(x, z) != 0 || !rng.Chance(0.35f))) continue;
         if (InsideObstacle(nearby, x, z, 0.6f)) continue;
 
         const float ground = HeightAt(x, z);
@@ -442,7 +458,7 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
 
         if (Fbm(x * 0.02f + 7.0f, z * 0.02f + 3.0f, 2) < 0.48f) continue;
         if (layout.RoadDistance(x, z) < 2.0f || layout.Paved(x, z)) continue;
-        if (layout.IsCity() && layout.CityGround(x, z) != 1 && layout.CityGround(x, z) != 3) continue;
+        if (InUrban(x, z) && layout.CityGround(x, z) != 1 && layout.CityGround(x, z) != 3) continue;
         if (InsideObstacle(nearby, x, z, 1.2f)) continue;
 
         // Харгана: доороо бараан, дээшээ цайвар бөмбөлгүүд, ёроолоос хуурай мөчир цухуйна

@@ -217,6 +217,30 @@ float Layout::LakeDepth(float x, float z) const
     return depth;
 }
 
+float Layout::CityBuiltDistance(float x, float z) const
+{
+    if (!city || builtDistance.empty()) return 0.0f;
+    // Нүдний төвүүдийн хооронд шугаман завсарлана (газрын хэлбэр гөлгөр)
+    const float fx = (x + kWorldHalfExtent) / kBuiltCell - 0.5f, fz = (z + kWorldHalfExtent) / kBuiltCell - 0.5f;
+    const int ix = std::clamp((int)std::floor(fx), 0, builtCells - 2), iz = std::clamp((int)std::floor(fz), 0, builtCells - 2);
+    const float tx = std::clamp(fx - (float)ix, 0.0f, 1.0f), tz = std::clamp(fz - (float)iz, 0.0f, 1.0f);
+    auto at = [&](int cx, int cz) { return (float)builtDistance[(size_t)cz * builtCells + cx]; };
+    const float top = at(ix, iz) + (at(ix + 1, iz) - at(ix, iz)) * tx;
+    const float bottom = at(ix, iz + 1) + (at(ix + 1, iz + 1) - at(ix, iz + 1)) * tx;
+    return top + (bottom - top) * tz;
+}
+
+float Layout::ZoneDistance(float x, float z) const
+{
+    float best = kFarDistance;
+    for (uint32_t index : cellZones[CellIndex(x, z)])
+    {
+        const FlatZone& zone = zones[index];
+        best = std::min(best, std::sqrt((x - zone.center.x) * (x - zone.center.x) + (z - zone.center.y) * (z - zone.center.y)) - zone.radius);
+    }
+    return best;
+}
+
 int Layout::CityGround(float x, float z) const
 {
     if (!city) return 0;
@@ -550,6 +574,29 @@ Layout MakeCityLayout(const CityData& data)
 {
     Layout layout;
     layout.city = true;
+    layout.capital = data.province == kUlaanbaatarProvince;
+
+    // Даалгаврын байгууламжууд тэгш газарт (Structures-ийн загварууд газрын түвшин 0-д барина):
+    // застав (хуаран, дэлгүүр), ШТС, агуулах, хот айл, жижиг суурин
+    layout.zones.push_back({ { -40.0f, 0.0f }, 55.0f });
+    for (const CityPoi& poi : data.pois)
+    {
+        const Vector2 p = poi.position;
+        switch (poi.kind)
+        {
+        case CityPoiKind::Station: layout.zones.push_back({ { p.x + 35.0f, p.y - 11.0f }, 24.0f }); break;
+        case CityPoiKind::Warehouse: layout.zones.push_back({ { p.x + 5.0f, p.y }, 20.0f }); break;
+        case CityPoiKind::Camp:
+            layout.camps.push_back(p);
+            layout.zones.push_back({ p, 26.0f });
+            break;
+        case CityPoiKind::Hamlet:
+            layout.hamlets.push_back(p);
+            layout.zones.push_back({ { p.x - 4.0f, p.y }, 46.0f });
+            break;
+        default: break;
+        }
+    }
 
     // Гудамжууд: засмал нь эхэнд (огтлолцол дээр засмал давамгайлна). Явган гудамж засмал.
     for (int pass = 0; pass < 2; ++pass)
@@ -562,6 +609,46 @@ Layout MakeCityLayout(const CityData& data)
         }
     }
     layout.BuildIndex();
+
+    // Барилгаас хэр хол: барилгатай нүднүүдээс эхлэн (8 хөрш, 24 м алхмаар) тархаана
+    {
+        const int cells = (int)std::ceil(kWorldHalfExtent * 2.0f / Layout::kBuiltCell);
+        layout.builtCells = cells;
+        layout.builtDistance.assign((size_t)cells * cells, 600);
+        std::vector<int> queue;
+        for (const CityBuilding& b : data.buildings)
+        {
+            for (const Vector2& p : b.outline)
+            {
+                const int ix = (int)((p.x + kWorldHalfExtent) / Layout::kBuiltCell), iz = (int)((p.y + kWorldHalfExtent) / Layout::kBuiltCell);
+                if (ix < 0 || iz < 0 || ix >= cells || iz >= cells) continue;
+                uint16_t& d = layout.builtDistance[(size_t)iz * cells + ix];
+                if (d != 0) queue.push_back(iz * cells + ix);
+                d = 0;
+            }
+        }
+        const uint16_t step = (uint16_t)Layout::kBuiltCell;
+        for (size_t head = 0; head < queue.size(); ++head)
+        {
+            const int k = queue[head], ix = k % cells, iz = k / cells;
+            const uint16_t next = (uint16_t)(layout.builtDistance[(size_t)k] + step);
+            if (next >= 600) continue;
+            for (int dz = -1; dz <= 1; ++dz)
+            {
+                for (int dx = -1; dx <= 1; ++dx)
+                {
+                    const int nx = ix + dx, nz = iz + dz;
+                    if ((dx == 0 && dz == 0) || nx < 0 || nz < 0 || nx >= cells || nz >= cells) continue;
+                    uint16_t& d = layout.builtDistance[(size_t)nz * cells + nx];
+                    if (d > next)
+                    {
+                        d = next;
+                        queue.push_back(nz * cells + nx);
+                    }
+                }
+            }
+        }
+    }
 
     // Газрын бүрхэвч ба усны тор
     const float cell = Layout::kCityCell;

@@ -3865,6 +3865,7 @@ namespace
             {
                 const float x = rng.Range(-extent, extent), z = rng.Range(-extent, extent);
                 if (s.layout.FlatDistance(x, z) < 14.0f) continue;
+                if (s.layout.IsCity() && s.layout.CityBuiltDistance(x, z) < 130.0f) continue; // аймгийн төвийн гадна
                 const Vector3 n = GroundNormalAt(s, x, z);
                 const float h = s.terrain.HeightAt(x, z);
                 if (kind <= 1)
@@ -4107,12 +4108,13 @@ namespace
     };
     std::vector<CityClearing> CityClearings(const CityData& city)
     {
-        std::vector<CityClearing> clearings = { { -70.0f, -35.0f, -16.0f, 35.0f } }; // застав (Сүхбаатарын талбай)
+        // Застав (хуаран, дэлгүүр) ба тоглогчийн эхлэх цэг, эхний унаанууд (Улаанбаатарт Сүхбаатарын талбай)
+        std::vector<CityClearing> clearings = { { -74.0f, -41.0f, 41.0f, 41.0f } };
         for (const CityPoi& poi : city.pois)
         {
-            if (poi.kind != CityPoiKind::Station) continue;
             const Vector2 o = poi.position;
-            clearings.push_back({ 18.0f + o.x, -20.0f + o.y, 52.0f + o.x, -3.0f + o.y }); // ШТС
+            if (poi.kind == CityPoiKind::Station) clearings.push_back({ 18.0f + o.x, -20.0f + o.y, 52.0f + o.x, -3.0f + o.y }); // ШТС
+            if (poi.kind == CityPoiKind::Warehouse) clearings.push_back({ o.x - 12.0f, o.y - 10.0f, o.x + 22.0f, o.y + 10.0f }); // агуулах
         }
         return clearings;
     }
@@ -4444,7 +4446,8 @@ namespace
     // Гол, горхи (ус) ба төмөр зам (хайрга, хоёр төмөр)
     void CityLineMesh(Scene& s, const CityLine& line)
     {
-        const std::vector<Vector2> path = Resample(line.points, 6.0f);
+        const bool fence = line.kind == CityLineKind::Fence || line.kind == CityLineKind::Wall;
+        const std::vector<Vector2> path = fence ? line.points : Resample(line.points, 6.0f);
         const int count = (int)path.size();
         std::vector<Vector2> side(count);
         for (int i = 0; i < count; ++i)
@@ -4455,6 +4458,19 @@ namespace
         auto at = [&](int i, float offset) { return Vector2{ path[i].x + side[i].x * offset, path[i].y + side[i].y * offset }; };
         for (int i = 0; i + 1 < count; ++i)
         {
+            if (line.kind == CityLineKind::Fence || line.kind == CityLineKind::Wall)
+            {
+                // Хашаа: газрын налууг дагасан банз (саарал, хүрэн) эсвэл чулуун хана. Мөргөлдөөнгүй (хаалга нь
+                // OSM-д тэмдэглэгддэггүй тул хашаан доторх гэр, байшинд орох замыг хаахгүй).
+                const bool wall = line.kind == CityLineKind::Wall;
+                const float height = wall ? 2.0f : 1.7f;
+                const Color color = wall ? JitterColor({ 150, 144, 132, 255 }, s.rng, 0.05f)
+                                         : JitterColor(s.rng.Chance(0.5f) ? kWood : kWoodGrey, s.rng, 0.08f);
+                const Vector2 a = path[i], b = path[i + 1];
+                const float ha = s.terrain.HeightAt(a.x, a.y), hb = s.terrain.HeightAt(b.x, b.y);
+                s.solid.Quad({ a.x, ha - 0.1f, a.y }, { b.x, hb - 0.1f, b.y }, { b.x, hb + height, b.y }, { a.x, ha + height, a.y }, color);
+                continue;
+            }
             if (line.kind == CityLineKind::Railway)
             {
                 auto g = [&](int k, float offset, float lift) {
@@ -4503,6 +4519,7 @@ namespace
         }
         for (const CityLine& line : city.lines)
         {
+            if ((line.kind == CityLineKind::Fence || line.kind == CityLineKind::Wall) && InCityClearing(clearings, line.points)) continue;
             CityLineMesh(s, line);
         }
 
@@ -4569,6 +4586,9 @@ namespace
             }
             return false;
         };
+        // Хотын хэмжээнээс хамаарах тоо: Улаанбаатарт 3200 зогссон, 110 унаж болох машин
+        const int parkedLimit = std::min(3200, (int)city.buildings.size() / 6);
+        const size_t vehicleLimit = (size_t)std::clamp((int)city.buildings.size() / 90, 30, 110);
         std::vector<Vector3> spots; // x, z, y = чиглэл
         auto addSpot = [&](float x, float z, float heading, float spacing) {
             if (std::fabs(x) > kCityHalfExtent - 20.0f || std::fabs(z) > kCityHalfExtent - 20.0f) return;
@@ -4620,12 +4640,12 @@ namespace
         int parked = 0;
         for (size_t i = 0; i < spots.size(); ++i)
         {
-            if (gCityVehicleSpots.size() < 110 && i % 5 == 0)
+            if (gCityVehicleSpots.size() < vehicleLimit && i % 5 == 0)
             {
                 gCityVehicleSpots.push_back(spots[i]);
                 continue;
             }
-            if (parked >= 3200) break;
+            if (parked >= parkedLimit) break;
             CityParkedCar(s, spots[i].x, spots[i].z, spots[i].y);
             ++parked;
         }
@@ -4636,11 +4656,21 @@ namespace
     // Хотын үеийн байгууламжууд: застав (Сүхбаатарын талбай дээр), ШТС, хөшөө, орхигдсон машинууд.
     void BuildCitySettlement(Scene& s)
     {
+        const CityData& city = CurrentCity();
         BuildCheckpoint(s);
         int station = 0;
-        for (const CityPoi& poi : UlaanbaatarCity().pois)
+        for (const CityPoi& poi : city.pois)
         {
-            if (poi.kind == CityPoiKind::Station) GasStation(s, poi.position.x, poi.position.y, station++);
+            if (poi.kind == CityPoiKind::Station) GasStation(s, poi.position.x, poi.position.y, s.variant + station++);
+            if (poi.kind == CityPoiKind::Warehouse) Warehouse(s, poi.position.x, poi.position.y);
+        }
+        if (!s.layout.IsCapital())
+        {
+            // Аймгийн төвөөс гадна: хот айл, жижиг суурин, мод, овоо, мал (бүс нутгаас хамаарна)
+            BuildHerderCamps(s);
+            BuildHamlets(s);
+            BuildNature(s);
+            return;
         }
         SukhbaatarStatue(s, 0.0f, 0.0f);
         for (float x : { -60.0f, 60.0f })
@@ -4667,6 +4697,7 @@ namespace
             {
                 continue;
             }
+            if (s.layout.IsCity() && s.layout.CityBuiltDistance(x, z) < 150.0f) continue; // аймгийн төвийн гадна
 
             const float rx = rng.Range(1.0f, 2.2f);
             const float ry = rng.Range(0.8f, 1.7f);
@@ -4693,7 +4724,8 @@ void BuildStaticStructures(const Layout& layout, const Terrain& terrain, std::ve
     Scene scene = { layout, terrain, obstacles, solid, shadows, glass, interiors, doors, passages };
     if (layout.IsCity())
     {
-        BuildCity(scene, UlaanbaatarCity()); // Улаанбаатарын жинхэнэ төв
+        BuildCity(scene, CurrentCity()); // Улаанбаатар / аймгийн жинхэнэ төв
+        if (!layout.IsCapital()) BuildBoulders(scene); // хотоос гадна хээр тал
         return;
     }
 

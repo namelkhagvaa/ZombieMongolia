@@ -763,7 +763,7 @@ void Game::StartMission(int index)
     world.BuildSettlements(index);
     if (world.CityActive())
     {
-        // Улаанбаатарын жинхэнэ төв: Сүхбаатарын талбайг төвлөсөн 5.2 x 5.2 км дөрвөлжин
+        // Аймгийн жинхэнэ төв: заставыг төвлөсөн 5.2 x 5.2 км дөрвөлжин
         const float edge = kCityHalfExtent;
         Shape square;
         square.outline = { { -edge, -edge }, { edge, -edge }, { edge, edge }, { -edge, edge } };
@@ -777,7 +777,7 @@ void Game::StartMission(int index)
     player.Reset(config.playerBaseHealth + kHealthPerLevel * (float)progress.healthLevel);
     if (world.CityActive())
     {
-        player.Teleport({ 0.0f, 0.0f, -14.0f }); // талбайн төвд Сүхбаатарын хөшөө зогсоно: түүний урд
+        if (index == kUlaanbaatarProvince) player.Teleport({ 0.0f, 0.0f, -14.0f }); // Сүхбаатарын хөшөөний урд
     }
 
     // Баг: 1, 2-р гишүүн дайчин, 3-р гишүүн мэргэн буудагч. Тоглогч 1-р гишүүнээр эхэлнэ.
@@ -1234,7 +1234,7 @@ void Game::SpawnVehicles()
         {
             place(kCityVehicles[k++ % 10], spot.x, spot.z, spot.y * RAD2DEG);
         }
-        for (const CityPoi& poi : UlaanbaatarCity().pois)
+        for (const CityPoi& poi : CurrentCity().pois)
         {
             if (poi.kind == CityPoiKind::Station)
             {

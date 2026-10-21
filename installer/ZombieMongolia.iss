@@ -49,7 +49,7 @@ Source: "..\assets\cars\*_color.png"; DestDir: "{app}\assets\cars"; Flags: ignor
 Source: "..\assets\buu\*.vmesh"; DestDir: "{app}\assets\buu"; Flags: ignoreversion
 Source: "..\assets\buu\*_color.png"; DestDir: "{app}\assets\buu"; Flags: ignoreversion
 Source: "..\assets\sounds\*.wav"; DestDir: "{app}\assets\sounds"; Flags: ignoreversion
-Source: "..\assets\city\ub.bin"; DestDir: "{app}\assets\city"; Flags: ignoreversion
+Source: "..\assets\city\*.bin"; DestDir: "{app}\assets\city"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"

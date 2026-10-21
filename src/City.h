@@ -6,8 +6,9 @@
 #include <string>
 #include <vector>
 
-// Улаанбаатарын төв (Сүхбаатарын талбайгаас ±2.65 км): OpenStreetMap-ийн жинхэнэ зам, барилга, ус, цэцэрлэг.
-// assets/city/ub.bin-ийг tools/gen_city.py үүсгэнэ. Координат нь тоглоомын (x, z) метр: хойд = +Z, зүүн = -X.
+// Улаанбаатар ба аймгийн төвүүд (төвөөс ±2.65 км): OpenStreetMap-ийн жинхэнэ зам, барилга, хашаа, ус, цэцэрлэг.
+// assets/city/ub.bin (Улаанбаатар), assets/city/pNN.bin (аймаг, аяны дугаараар)-ийг tools/gen_city.py үүсгэнэ.
+// Координат нь тоглоомын (x, z) метр: хойд = +Z, зүүн = -X. Аймгийн төвд (0, 0) нь застав (хуаран, дэлгүүр).
 // Өгөгдөл: (c) OpenStreetMap contributors, ODbL 1.0.
 
 // Замын анги (tools/gen_city.py-ийн ROAD_CLASS)
@@ -38,14 +39,20 @@ enum class CityAreaKind : uint8_t
 // Шугаман зүйл
 enum class CityLineKind : uint8_t
 {
-    River, Stream, Railway
+    River, Stream, Railway,
+    Fence, // банзан хашаа (гэр хорооллын хашаа)
+    Wall   // чулуун, тоосгон хана
 };
 
 // Онцлох газар
 enum class CityPoiKind : uint8_t
 {
     Fuel, Square, Stadium, Police, Hospital, Museum, Government,
-    Station // тоглоомын ШТС барих жинхэнэ бензин колонк: position нь ШТС-ийн загварыг шилжүүлэх зөрүү
+    Station,  // тоглоомын ШТС барих жинхэнэ бензин колонк: position нь ШТС-ийн загварыг шилжүүлэх зөрүү
+    TownSite, // хотын төвийн даалгаврын газар (төвийн талбай)
+    Warehouse,// тоглоомын агуулахын төв (Warehouse(cx, cz))
+    Camp,     // хот айл (малчдын отор)
+    Hamlet    // хотоос гадна жижиг суурин
 };
 
 struct CityRoad
@@ -92,19 +99,26 @@ struct CityData
     std::vector<CityLine> lines;
     std::vector<CityPoi> pois;
 
+    int province = -1;
+
     bool Loaded() const { return !buildings.empty(); }
+    // ordinal дахь тухайн төрлийн газар; байхгүй бол false.
+    bool Find(CityPoiKind kind, int ordinal, Vector2& out) const;
 };
 
-// Эхний дуудалтаар файлыг уншина (олдохгүй бол хоосон: Улаанбаатар хуучин, зохиомол хэлбэрээрээ үлдэнэ).
-const CityData& UlaanbaatarCity();
+// Тухайн аймгийн (аяны дугаар) хотын өгөгдөл. Сүүлд уншсанаа л хадгална; файл байхгүй бол хоосон
+// (аймаг хуучин, зохиомол хэлбэрээрээ үлдэнэ).
+const CityData& CityFor(int province);
+// Сүүлд CityFor-оор уншсан хот (World хотын горимд шилжихдээ уншина).
+const CityData& CurrentCity();
 
-// Даалгаврын жинхэнэ газрууд (хотын горимд)
-// Застав (дэлгүүртэй цэргийн хуаран): Сүхбаатарын талбай дээр, бусад аймгийнхтай ижил байрлалд (-48, 17).
-// Хотын төв: Чойжин ламын сүм музейн хойд талын талбай (Сүхбаатарын талбайгаас 350 м урагш).
-constexpr Vector2 kCityTownSite = { -18.0f, -342.0f };
-// Шатахуун түгээх газар: "Петровис" ШТС (Төв цэнгэлдэхийн хойд талд). Тоглоомын ШТС-ийн загварыг
-// (бусад аймагт (30, -11.5) орчимд) энэ зөрүүгээр шилжүүлж, OSM-ийн саравчны оронд барина.
-constexpr Vector2 kCityGasOffset = { 320.0f, -1103.5f };
-constexpr Vector2 kCityGasSite = { 31.0f + kCityGasOffset.x, -21.0f + kCityGasOffset.y };
+// Даалгаврын жинхэнэ газрууд (хотын горимд). Застав (дэлгүүртэй цэргийн хуаран): бусад аймгийнхтай ижил
+// байрлалд (-48, 17); Улаанбаатарт Сүхбаатарын талбай дээр, аймгийн төвд gen_city-ийн сонгосон задгай газар.
+// Хотын төв: TownSite (Улаанбаатарт Чойжин ламын сүмийн хойд талын талбай).
+Vector2 CityTownSite(const CityData& city);
+// ШТС: эхний Station (тоглоомын ШТС-ийн загварыг (30, -11.5) орчмоос энэ зөрүүгээр шилжүүлсэн).
+Vector2 CityGasSite(const CityData& city);
+// Агуулахын хаалганы өмнө (агуулахгүй бол хотын төв)
+Vector2 CityWarehouseSite(const CityData& city);
 // Хотын хил (тоглох талбайн хагас өргөн)
 constexpr float kCityHalfExtent = 2600.0f;

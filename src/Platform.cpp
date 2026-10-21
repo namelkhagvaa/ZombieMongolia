@@ -85,7 +85,8 @@ namespace
     EM_JS(void, ReleaseLoadedAssets, (), {
         // (EM_JS дотор "\" тэмдэгт алга болдог тул regex биш, мөр харьцуулалт)
         function keep(path) {
-            return path.indexOf('/assets/huds/') === 0 || path.indexOf('/assets/icons/') === 0 || path === '/assets/home_back.png';
+            return path.indexOf('/assets/huds/') === 0 || path.indexOf('/assets/icons/') === 0 || path === '/assets/home_back.png' ||
+                   path.indexOf('/assets/city/') === 0;
         }
         var removed = 0, kept = 0;
         function walk(dir) {

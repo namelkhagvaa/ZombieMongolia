@@ -62,6 +62,7 @@ namespace
         int size = 0;
 #if defined(__ANDROID__)
         unsigned char* bytes = LoadFileData(path, &size); // APK-ийн assets-ийг FileExists хардаггүй
+        if (!bytes) return city;
 #else
         unsigned char* bytes = FileExists(path) ? LoadFileData(path, &size) : nullptr;
 #endif
@@ -133,20 +134,74 @@ namespace
     }
 }
 
-const CityData& UlaanbaatarCity()
+namespace
 {
-    static const CityData city = [] {
+    CityData current;
+}
+
+const CityData& CityFor(int province)
+{
+    if (current.province == province) return current;
+    const std::string file = province == 15 ? std::string("city/ub.bin") : TextFormat("city/p%02d.bin", province);
+    current = CityData{};
 #if defined(__ANDROID__)
-        return Load("city/ub.bin"); // APK-ийн assets-ийн үндсэнд
-#endif
-        // Ажлын хавтас, exe-ийн хавтас эсвэл түүний эх хавтас (хөгжүүлэлтийн build)
-        const std::string application = GetApplicationDirectory();
-        for (const std::string& folder : { std::string("assets/"), application + "assets/", application + "../assets/" })
+    current = Load(file.c_str()); // APK-ийн assets-ийн үндсэнд
+#else
+    // Ажлын хавтас, exe-ийн хавтас эсвэл түүний эх хавтас (хөгжүүлэлтийн build)
+    const std::string application = GetApplicationDirectory();
+    bool found = false;
+    for (const std::string& folder : { std::string("assets/"), application + "assets/", application + "../assets/" })
+    {
+        const std::string path = folder + file;
+        if (FileExists(path.c_str()))
         {
-            const std::string path = folder + "city/ub.bin";
-            if (FileExists(path.c_str())) return Load(path.c_str());
+            current = Load(path.c_str());
+            found = true;
+            break;
         }
-        return Load("assets/city/ub.bin");
-    }();
-    return city;
+    }
+    if (!found) TraceLog(LOG_INFO, "CITY: no %s (province %d keeps its generated map)", file.c_str(), province);
+#endif
+    current.province = province;
+    return current;
+}
+
+const CityData& CurrentCity()
+{
+    return current;
+}
+
+bool CityData::Find(CityPoiKind kind, int ordinal, Vector2& out) const
+{
+    for (const CityPoi& poi : pois)
+    {
+        if (poi.kind != kind) continue;
+        if (ordinal-- == 0)
+        {
+            out = poi.position;
+            return true;
+        }
+    }
+    return false;
+}
+
+Vector2 CityTownSite(const CityData& city)
+{
+    Vector2 site = { 60.0f, 60.0f };
+    city.Find(CityPoiKind::TownSite, 0, site);
+    return site;
+}
+
+Vector2 CityGasSite(const CityData& city)
+{
+    Vector2 offset = { 0.0f, 0.0f };
+    if (!city.Find(CityPoiKind::Station, 0, offset)) return CityTownSite(city);
+    return { offset.x + 31.0f, offset.y - 21.0f };
+}
+
+Vector2 CityWarehouseSite(const CityData& city)
+{
+    Vector2 center = { 0.0f, 0.0f };
+    if (!city.Find(CityPoiKind::Warehouse, 0, center)) return CityTownSite(city);
+    return { center.x + 17.0f, center.y };
 }

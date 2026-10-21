@@ -39,8 +39,9 @@ public:
     // Улаанбаатарын үед (assets/city/ub.bin байвал) талбар бүхэлдээ хотын жинхэнэ төвөөр солигдоно.
     void BuildSettlements(int variant);
 
-    // Улаанбаатарын жинхэнэ төв (OpenStreetMap) идэвхтэй эсэх
-    bool CityActive() const { return cityActive; }
+    // Улаанбаатар / аймгийн жинхэнэ төв (OpenStreetMap) идэвхтэй эсэх
+    bool CityActive() const { return cityProvince >= 0; }
+    int CityProvince() const { return cityProvince; }
     // obstacles-ийн эхний ийм тооны саад нь тогтмол хэсгийнх (хотод: OSM-ийн барилга, мод, шон)
     size_t StaticObstacleCount() const { return staticObstacleCount; }
 
@@ -134,8 +135,8 @@ public:
 private:
     // Тогтмол хэсгийг (зам, пост, чулуу / хотын барилга) одоогийн layout-аар үүсгэнэ.
     void BuildStatic();
-    // Хээр тал <-> Улаанбаатарын жинхэнэ хот: layout, газар, тогтмол хэсгийг солино.
-    void SwitchCity(bool city);
+    // Хээр тал <-> аймгийн жинхэнэ хот (province = -1 бол хээр тал): layout, газар, тогтмол хэсгийг солино.
+    void SwitchCity(int province);
     void BuildObstacleGrid();
     // Цонхны гарцын зогсох цэгүүд хашаа, тавилга зэрэг саадтай давхцвал ойрын чөлөөт газар руу шилжүүлнэ;
     // хол шилжүүлэх шаардлагатай бол (давсны дараа гацна) гарцыг хасна.
@@ -167,7 +168,7 @@ private:
     std::vector<MeshPiece> settlementGlass;
     size_t staticObstacleCount = 0; // obstacles-ийн эхний хэсэг нь тогтмол, үлдсэн нь суурингийнх
     int settlementVariant = -1;
-    bool cityActive = false;
+    int cityProvince = -1;          // идэвхтэй хотын аймаг (-1 = зохиомол хээр тал)
     Layout steppeLayout;            // хотод байх үед хээр талын layout-ийн хуулбар (буцахад)
 
     Shape boundary;

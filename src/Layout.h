@@ -84,6 +84,12 @@ public:
     // --- Улаанбаатарын жинхэнэ төв (OpenStreetMap, City.h) ---
     // city = true бол газрын хэлбэр нь хотынх (Terrain), зам нь жинхэнэ гудамжууд, суурин отор байхгүй.
     bool IsCity() const { return city; }
+    // Улаанбаатар (хотын газрын хэлбэр нь хойд зүгт өгсдөг толгод); бусад аймгийн төвд хотоос гарахад хээр тал
+    bool IsCapital() const { return capital; }
+    // Хамгийн ойрын барилга хүртэлх зай (24 м тор, 600 м хүртэл): хотын хил, газрын хэлбэрт
+    float CityBuiltDistance(float x, float z) const;
+    // Тэгш бүсээс хэр хол (зам тооцохгүй, хурдан)
+    float ZoneDistance(float x, float z) const;
     // Хотын газрын бүрхэвч (3 м тор): 0 = энгийн (тоостой хөрс), 1 = цэцэрлэг, зүлэг, 2 = спорт талбай,
     // 3 = ой, 4 = оршуулгын газар, 5 = хучилттай талбай, 6 = ус.
     int CityGround(float x, float z) const;
@@ -111,7 +117,11 @@ private:
     // Хот
     friend Layout MakeCityLayout(const CityData& data);
     bool city = false;
+    bool capital = false;
     static constexpr float kCityCell = 3.0f;
+    static constexpr float kBuiltCell = 24.0f;
+    int builtCells = 0;
+    std::vector<uint16_t> builtDistance;            // барилгаас хэр хол (м)
     int cityCells = 0;                              // нэг талын нүдний тоо (тор нь ертөнцийг бүрэн хамарна)
     std::vector<uint8_t> cityGround;                // CityGround-ийн утга (0..6)
     std::vector<uint8_t> cityWater;                 // усны гүн (1/40 м нэгжээр): гол, цөөрөм

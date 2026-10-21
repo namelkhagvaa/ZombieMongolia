@@ -80,7 +80,7 @@ Copy-Item (Join-Path $root "assets\buu\*.vmesh") (Join-Path $staging "assets\buu
 Copy-Item (Join-Path $root "assets\buu\*_color.png") (Join-Path $staging "assets\buu")
 # Улаанбаатарын төвийн газрын зураг (OpenStreetMap)
 New-Item -ItemType Directory -Force (Join-Path $staging "assets\city") | Out-Null
-Copy-Item (Join-Path $root "assets\city\ub.bin") (Join-Path $staging "assets\city")
+Copy-Item (Join-Path $root "assets\city\*.bin") (Join-Path $staging "assets\city")
 New-Item -ItemType Directory -Force (Join-Path $staging "assets\sounds") | Out-Null
 Copy-Item (Join-Path $root "assets\sounds\*.wav") (Join-Path $staging "assets\sounds")
 

@@ -258,13 +258,21 @@ Vector3 Mission::ResolveSite(const World& world, SiteRef site) const
     Vector2 point;
     if (world.CityActive())
     {
-        // Улаанбаатарын жинхэнэ газрууд (City.h): застав Сүхбаатарын талбай дээр
+        // Аймгийн жинхэнэ газрууд (City.h): застав тоглоомын (0, 0)-ийн дэргэд, хот айл, суурин нь layout-д
+        const CityData& city = CurrentCity();
         switch (site.kind)
         {
         case SiteKind::Checkpoint: return ground(-48.0f, 17.0f);
-        case SiteKind::GasStation: return ground(kCityGasSite.x, kCityGasSite.y);
-        default: return ground(kCityTownSite.x, kCityTownSite.y);
+        case SiteKind::GasStation: { const Vector2 p = CityGasSite(city); return ground(p.x, p.y); }
+        case SiteKind::Warehouse: { const Vector2 p = CityWarehouseSite(city); return ground(p.x, p.y); }
+        case SiteKind::Camp:
+        case SiteKind::Hamlet: break; // доорх ердийн дүрмээр
+        default: { const Vector2 p = CityTownSite(city); return ground(p.x, p.y); }
         }
+        if (site.kind == SiteKind::Camp && nth(world.GetLayout().camps, site.ordinal, point)) return ground(point.x - 3.0f, point.y - 9.0f);
+        if (site.kind == SiteKind::Hamlet && nth(world.GetLayout().hamlets, site.ordinal, point)) return ground(point.x - 34.0f, point.y + 8.0f);
+        const Vector2 p = CityTownSite(city);
+        return ground(p.x, p.y);
     }
     switch (site.kind)
     {
