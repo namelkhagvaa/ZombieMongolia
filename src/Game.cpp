@@ -580,8 +580,8 @@ void Game::UpdateMap()
 
 Rectangle Game::CharacterCardRect(int skin) const
 {
-    const float width = 300.0f, height = 400.0f, gap = 60.0f;
-    const float left = ((float)ViewWidth() - (width * 2.0f + gap)) * 0.5f;
+    const float width = 300.0f, height = 400.0f, gap = 40.0f;
+    const float left = ((float)ViewWidth() - (width * (float)kLeaderSkinCount + gap * (float)(kLeaderSkinCount - 1))) * 0.5f;
     return { left + (float)skin * (width + gap), 120.0f, width, height };
 }
 
@@ -592,8 +592,12 @@ Rectangle Game::CharacterStartRect() const
 
 void Game::UpdateCharacterSelect()
 {
-    if (InKeyPressed(KEY_LEFT) || InKeyPressed(KEY_A) || InKeyPressed(KEY_ONE)) characterChoice = 0;
-    if (InKeyPressed(KEY_RIGHT) || InKeyPressed(KEY_D) || InKeyPressed(KEY_TWO)) characterChoice = 1;
+    if (InKeyPressed(KEY_LEFT) || InKeyPressed(KEY_A)) characterChoice = (characterChoice + kLeaderSkinCount - 1) % kLeaderSkinCount;
+    if (InKeyPressed(KEY_RIGHT) || InKeyPressed(KEY_D)) characterChoice = (characterChoice + 1) % kLeaderSkinCount;
+    for (int skin = 0; skin < kLeaderSkinCount && skin < 9; ++skin)
+    {
+        if (InKeyPressed(KEY_ONE + skin)) characterChoice = skin; // 1, 2, 3 товч
+    }
     bool start = InKeyPressed(KEY_ENTER) || InKeyPressed(KEY_KP_ENTER) || InKeyPressed(KEY_SPACE);
     if (InMousePressed(MOUSE_BUTTON_LEFT))
     {

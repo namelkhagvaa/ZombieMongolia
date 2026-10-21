@@ -14,7 +14,7 @@ const char* TeamMemberName(int member)
 
 const char* LeaderSkinName(int skin)
 {
-    return skin == 1 ? "MODEL-1" : "ЦЭРЭГ";
+    return skin == 1 ? "MODEL-1" : skin == 2 ? "MODEL-3" : "ЦЭРЭГ";
 }
 
 HumanoidLook TeamMemberLook(int member, int leaderSkin)
@@ -30,7 +30,7 @@ HumanoidLook TeamMemberLook(int member, int leaderSkin)
     switch (member)
     {
     case 0: // хөх дээл, улаан оройтой малгай (assets\fighter1 загвар байвал түүгээр зурагдана)
-        look.model = leaderSkin == 1 ? kCharacterModel1 : kCharacterFighter1;
+        look.model = leaderSkin == 1 ? kCharacterModel1 : leaderSkin == 2 ? kCharacterModel3 : kCharacterFighter1;
         look.body = { 40, 70, 150, 255 };
         look.trim = { 230, 150, 30, 255 };
         look.hat = { 160, 34, 34, 255 };
