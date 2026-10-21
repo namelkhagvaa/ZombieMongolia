@@ -26,7 +26,7 @@ namespace Net
     constexpr uint16_t kDiscoveryPort = 47811;
     // Сүлжээний мессежийн хувилбар: мессежийн бүтэц өөрчлөгдөх бүрд нэмэгдүүлнэ. Хост ба зочин ижил хувилбартай
     // байж л нэгдэнэ (эс бөгөөс өгөгдөл буруу уншигдаж, жишээ нь цэргүүд "үхсэн" мэт харагдана).
-    constexpr uint16_t kProtocolVersion = 5; // 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris
+    constexpr uint16_t kProtocolVersion = 6; // 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris; 6: 1-р дайчны дүр
 
     // Мессежийн төрөл (пакетийн эхний байт)
     enum class Msg : uint8_t
@@ -69,6 +69,7 @@ namespace Net
         Vector3 vehiclePosition = { 0.0f, 0.0f, 0.0f };
         float vehicleHeading = 0.0f, vehicleSpeed = 0.0f, vehicleSteer = 0.0f;
         float vehicleHealth = 0.0f; // унааны эрүүл мэнд: унааг жолоодож буй тал л тооцно
+        uint8_t leaderSkin = 0;     // энэ тоглогчийн 1-р дайчны дүр (Team.h)
     };
     constexpr uint8_t kAlive = 1, kCrouch = 2, kProne = 4, kAiming = 8, kFired = 16, kRiding = 32;
 

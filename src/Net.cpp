@@ -91,6 +91,7 @@ namespace Net
             w.U8(a.shots); w.V3(a.shotEnd);
             w.U8((uint8_t)a.vehicle); w.V3(a.vehiclePosition); w.F(a.vehicleHeading); w.F(a.vehicleSpeed); w.F(a.vehicleSteer);
             w.F(a.vehicleHealth);
+            w.U8(a.leaderSkin);
         }
         AvatarState ReadAvatar(Reader& r)
         {
@@ -101,6 +102,7 @@ namespace Net
             a.vehicle = (int8_t)r.U8(); a.vehiclePosition = r.V3(); a.vehicleHeading = r.F(); a.vehicleSpeed = r.F();
             a.vehicleSteer = r.F();
             a.vehicleHealth = r.F();
+            a.leaderSkin = r.U8();
             return a;
         }
 

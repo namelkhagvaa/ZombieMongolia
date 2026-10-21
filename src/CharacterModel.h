@@ -23,7 +23,8 @@ constexpr int kCharacterZombieWalker = 5; // assets\zombie_walker
 constexpr int kCharacterZombieRunner = 6; // assets\zombie_runner
 constexpr int kCharacterZombieBrute = 7;  // assets\zombie_brute
 constexpr int kCharacterZombieBoss = 8;   // assets\giant_zombie (аварга)
-constexpr int kCharacterCount = 9;
+constexpr int kCharacterLkhagva = 9;      // assets\lkhagva (1-р дайчны сонгож болох дүр)
+constexpr int kCharacterCount = 10;
 
 // shader: текстур, гэрэлтүүлэг, манантай дүрийн shader (Environment::CharacterShader).
 void LoadCharacterModels(Shader shader);

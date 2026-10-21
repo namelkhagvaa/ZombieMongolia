@@ -60,6 +60,7 @@ struct LaunchOptions
     float timeScale = 1.0f;   // туршилтад тоглоомын цагийг хурдасгана (--timescale X)
     bool journal = false;     // даалгаврын журналыг нээлттэй эхлүүлнэ (--journal)
     bool shop = false;        // дэлгүүрийн цэсийг нээлттэй эхлүүлнэ (--shop)
+    bool characterSelect = false; // газрын зураг дээр дүр сонгох цонхыг нээнэ (--campaign --select)
     bool airstrike = false;   // бөмбөгдөлтийн киног шууд эхлүүлнэ (--airstrike)
     float dayTime = -1.0f;    // туршилт: өдрийн цагийг 0..1 тогтооно (--daytime t)
     bool pause = false;       // тоглоомын цэсийг нээлттэй эхлүүлнэ (--pause)
@@ -241,6 +242,7 @@ private:
         Vector3 position = { 0.0f, 0.0f, 0.0f }, target = { 0.0f, 0.0f, 0.0f };
         float facing = 0.0f, targetFacing = 0.0f, speed = 0.0f, aimPitch = 0.0f, walk = 0.0f;
         uint8_t held = 0, member = 0, flags = 0;
+        uint8_t skin = 0;         // тэр тоглогчийн 1-р дайчны дүр
         bool alive = true;
         uint8_t shots = 0;        // сүүлд харуулсан буудлагын тоолуур
         bool synced = false;      // тоолуурыг анх авсан эсэх (эхний мэдээнд хуучин сумыг зурахгүй)
@@ -271,6 +273,9 @@ private:
     Net::Snapshot guestView;        // зочин: хостын сүүлийн мэдээлэл (даалгаврын бичиг г.м.)
     float coopSendTimer = 0.0f;
     bool waitingForReply = false;   // зочин: хүсэлт илгээгээд хүлээж байна
+    bool characterSelectOpen = false; // даалгавар эхлэхийн өмнө 1-р дайчны дүр сонгох цонх
+    int characterChoice = 0;
+    int pendingProvince = -1;         // сонгосны дараа эхлэх аймаг
     bool codeEntryOpen = false;     // өрөөний код оруулах цонх нээлттэй
     std::string codeEntry;          // оруулсан цифрүүд
     float waitTimer = 0.0f;
@@ -290,6 +295,10 @@ private:
     Rectangle CoopButtonRect(int row) const;
     Rectangle CodeButtonRect() const; // "КОДООР НЭГДЭХ" (интернэт)
     // Өрөөний код оруулах цонх (тоон товчлуур; гарны тоо ч болно)
+    void UpdateCharacterSelect();
+    void DrawCharacterSelect() const;
+    Rectangle CharacterCardRect(int skin) const;
+    Rectangle CharacterStartRect() const;
     void OpenCodeEntry();
     void UpdateCodeEntry();
     void DrawCodeEntry() const;

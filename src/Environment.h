@@ -77,6 +77,8 @@ public:
     // --- Нарны сүүдэр ---
     void SetShadowsEnabled(bool enabled) { shadowsEnabled = enabled; }
     bool ShadowsEnabled() const { return shadowsEnabled && shadowMap.id != 0; }
+    // Өмнөх сүүдрийн зургийг хэрэглэхгүй (сүүдрийн давхаргагүй дэлгэц, жишээ нь дүр сонгох цонх)
+    void ClearShadow() { shadowReady = false; }
     // Сүүдрийн зураг: center орчмыг нарны зүгээс зурна. Begin/End хооронд сүүдэр тусгах зүйлсийг
     // DepthMaterial-аар (эсвэл өөрсдийн shader-ээр) зурна. Нэг frame-д нэг удаа, Begin(camera)-с өмнө.
     bool BeginShadowPass(Vector3 center); // false: сүүдэр унтраалттай (шөнө г.м.), зурах шаардлагагүй

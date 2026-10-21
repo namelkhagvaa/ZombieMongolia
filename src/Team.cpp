@@ -12,7 +12,12 @@ const char* TeamMemberName(int member)
     }
 }
 
-HumanoidLook TeamMemberLook(int member)
+const char* LeaderSkinName(int skin)
+{
+    return skin == 1 ? "ЛХАГВА" : "ЦЭРЭГ";
+}
+
+HumanoidLook TeamMemberLook(int member, int leaderSkin)
 {
     HumanoidLook look;
     look.kind = HumanoidKind::Player;
@@ -25,7 +30,7 @@ HumanoidLook TeamMemberLook(int member)
     switch (member)
     {
     case 0: // хөх дээл, улаан оройтой малгай (assets\fighter1 загвар байвал түүгээр зурагдана)
-        look.model = kCharacterFighter1;
+        look.model = leaderSkin == 1 ? kCharacterLkhagva : kCharacterFighter1;
         look.body = { 40, 70, 150, 255 };
         look.trim = { 230, 150, 30, 255 };
         look.hat = { 160, 34, 34, 255 };

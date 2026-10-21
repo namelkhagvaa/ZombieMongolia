@@ -575,8 +575,9 @@ void SoldierSquad::Draw(Vector3 viewPosition, bool showColliders) const
     for (const Soldier& soldier : soldiers)
     {
         static const HumanoidLook recruitLook = MakeLook();
-        static const HumanoidLook memberLooks[kTeamSize] = { TeamMemberLook(0), TeamMemberLook(1), TeamMemberLook(2) };
-        const HumanoidLook& look = soldier.member >= 0 ? memberLooks[soldier.member] : recruitLook;
+        const HumanoidLook memberLook =
+            soldier.member >= 0 ? TeamMemberLook(soldier.member, soldier.guestTeam ? guestLeaderSkin : leaderSkin) : recruitLook;
+        const HumanoidLook& look = memberLook;
         const bool detailed = HorizontalDistance(viewPosition, soldier.mover.position) < kHumanoidDetailDistance;
         HumanoidPose pose = MakeSoldierPose(soldier.walkCycle, soldier.moving ? soldier.moveAmount : 0.0f, true,
                                             (float)GetTime() + soldier.walkCycle, soldier.recoil, look.held);

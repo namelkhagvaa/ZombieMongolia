@@ -156,6 +156,10 @@ int main(int argc, char** argv)
         {
             options.shop = true;
         }
+        else if (std::strcmp(argv[i], "--select") == 0)
+        {
+            options.characterSelect = true;
+        }
         else if (std::strcmp(argv[i], "--airstrike") == 0)
         {
             options.airstrike = true;

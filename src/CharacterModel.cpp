@@ -15,7 +15,8 @@ namespace
 {
     const char* const kNames[kCharacterCount] = { "fighter1",     "fighter2",       "fighter3",
                                                   "survivor_man", "survivor_woman", "zombie_walker",
-                                                  "zombie_runner", "zombie_brute",  "giant_zombie" };
+                                                  "zombie_runner", "zombie_brute",  "giant_zombie",
+                                                  "lkhagva" };
 
     // Загварын өндөр тоглоомын хүний өндөртэй (~1.9 м) таарахаар томруулна.
     const float kTargetHeight = 1.9f;

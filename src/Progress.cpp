@@ -8,6 +8,7 @@ extern "C" struct android_app* GetAndroidApp(void); // raylib-ийн Android д�
 
 #include "Platform.h"
 #include "Shop.h"
+#include "Team.h"
 #include "raylib.h"
 
 #include <algorithm>
@@ -131,6 +132,7 @@ bool LoadProgress(Progress& progress, int provinceCount)
         else if (key == "sound") progress.sound = value != 0;
         else if (key == "soundLevel") progress.soundLevel = std::clamp(value, 0, 2);
         else if (key == "netTag") progress.netTag = value;
+        else if (key == "leaderSkin") progress.leaderSkin = std::clamp(value, 0, kLeaderSkinCount - 1);
         else if (key == "format") format = value;
     }
 
@@ -178,6 +180,7 @@ bool SaveProgress(const Progress& progress)
     file << "sound " << (progress.sound ? 1 : 0) << '\n';
     file << "soundLevel " << progress.soundLevel << '\n';
     file << "netTag " << progress.netTag << '\n';
+    file << "leaderSkin " << progress.leaderSkin << '\n';
 
     file << "liberated ";
     for (bool flag : progress.liberated)

@@ -87,6 +87,12 @@ public:
     void Damage(int index, float amount);
     // viewPosition: камерын байрлал (холын цэргийг хялбар хувилбараар зурна).
     void Draw(Vector3 viewPosition, bool showColliders) const;
+    // 1-р дайчны дүр: өөрийн баг ба (хамтарсан тоглолтод) зочны баг
+    void SetLeaderSkins(int own, int guest)
+    {
+        leaderSkin = own;
+        guestLeaderSkin = guest;
+    }
 
     std::vector<Soldier>& All() { return soldiers; }
     const std::vector<Soldier>& All() const { return soldiers; }
@@ -94,6 +100,7 @@ public:
     int AliveCount() const;
 
 private:
+    int leaderSkin = 0, guestLeaderSkin = 0;
     Vector3 SlotPosition(int index, Vector3 playerPosition, float radius) const;
     // Элсүүлсэн цэргийн дараагийн харуулын байр: өөрийн хэсэг (сектор) дотор, удирдагчаас 6-12 м.
     void ChooseGuardPost(int index, Vector3 playerPosition, const World& world);

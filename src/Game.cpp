@@ -204,6 +204,12 @@ void Game::Run()
     {
         // Аяны газрын зургийн дэлгэцийг шалгах: сонгосон аймгийг тодруулна.
         mapScreen.Select(std::clamp(options.province - 1, 0, (int)Provinces().size() - 1));
+        if (options.characterSelect)
+        {
+            pendingProvince = mapScreen.Selected();
+            characterChoice = progress.leaderSkin;
+            characterSelectOpen = true;
+        }
     }
     else if (benchmark)
     {
@@ -401,6 +407,10 @@ void Game::Run()
             {
                 codeEntryOpen = false; // өрөөний код оруулах цонх
             }
+            else if (characterSelectOpen)
+            {
+                characterSelectOpen = false; // дүр сонгох цонх: газрын зураг руу буцна
+            }
             else if (paused)
             {
                 ClosePause();
@@ -541,6 +551,11 @@ void Game::HandleSettingsInput()
 
 void Game::UpdateMap()
 {
+    if (characterSelectOpen)
+    {
+        UpdateCharacterSelect();
+        return;
+    }
     if (codeEntryOpen)
     {
         UpdateCodeEntry(); // газрын зургийн товч (1-5, Enter) кодын цифртэй давхцахгүй
@@ -556,7 +571,113 @@ void Game::UpdateMap()
     }
     if (result == MapScreen::Result::StartMission)
     {
-        StartMission(mapScreen.Selected());
+        // Эхлэхийн өмнө 1-р дайчны дүрийг сонгоно (сүүлд сонгосон нь урьдчилан тэмдэглэгдсэн)
+        pendingProvince = mapScreen.Selected();
+        characterChoice = std::clamp(progress.leaderSkin, 0, kLeaderSkinCount - 1);
+        characterSelectOpen = true;
+    }
+}
+
+Rectangle Game::CharacterCardRect(int skin) const
+{
+    const float width = 300.0f, height = 400.0f, gap = 60.0f;
+    const float left = ((float)ViewWidth() - (width * 2.0f + gap)) * 0.5f;
+    return { left + (float)skin * (width + gap), 120.0f, width, height };
+}
+
+Rectangle Game::CharacterStartRect() const
+{
+    return { (float)ViewWidth() * 0.5f - 130.0f, 560.0f, 260.0f, 58.0f };
+}
+
+void Game::UpdateCharacterSelect()
+{
+    if (InKeyPressed(KEY_LEFT) || InKeyPressed(KEY_A) || InKeyPressed(KEY_ONE)) characterChoice = 0;
+    if (InKeyPressed(KEY_RIGHT) || InKeyPressed(KEY_D) || InKeyPressed(KEY_TWO)) characterChoice = 1;
+    bool start = InKeyPressed(KEY_ENTER) || InKeyPressed(KEY_KP_ENTER) || InKeyPressed(KEY_SPACE);
+    if (InMousePressed(MOUSE_BUTTON_LEFT))
+    {
+        const Vector2 pointer = InPointer();
+        for (int skin = 0; skin < kLeaderSkinCount; ++skin)
+        {
+            if (CheckCollisionPointRec(pointer, CharacterCardRect(skin))) characterChoice = skin;
+        }
+        if (CheckCollisionPointRec(pointer, CharacterStartRect())) start = true;
+    }
+    if (!start) return;
+    characterSelectOpen = false;
+    if (progress.leaderSkin != characterChoice)
+    {
+        progress.leaderSkin = characterChoice;
+        Save();
+    }
+    StartMission(pendingProvince);
+}
+
+void Game::DrawCharacterSelect() const
+{
+    const int width = ViewWidth(), height = ViewHeight();
+    // Бүтэн дэлгэцийн дэвсгэр (доорх газрын зургийг цэвэрлэж, 3D-д гүний buffer шинээр)
+    rlDrawRenderBatchActive();
+    ClearBackground({ 8, 10, 14, 255 });
+    DrawRectangleGradientV(0, 0, width, height, { 26, 32, 44, 255 }, { 8, 10, 14, 255 });
+    const char* title = "ДҮРЭЭ СОНГО";
+    Ui::TextBold(title, (width - Ui::MeasureBold(title, 30)) / 2, 50, 30, Ui::kAccent);
+    const char* subtitle = "1-р дайчин энэ дүрээр тоглоно";
+    Ui::Text(subtitle, (width - Ui::Measure(subtitle, 15)) / 2, 88, 15, Ui::kTextDim);
+
+    for (int skin = 0; skin < kLeaderSkinCount; ++skin)
+    {
+        const Rectangle card = CharacterCardRect(skin);
+        const bool selected = skin == characterChoice;
+        Ui::Panel(card, selected ? Color{ 40, 32, 14, 230 } : Color{ 16, 20, 28, 220 });
+        Ui::Outline(card, selected ? Ui::kAccent : Color{ 255, 255, 255, 40 }, selected ? 3.0f : 1.0f, 12.0f);
+    }
+
+    // 3D: хоёр дүр картуудынхаа дотор аажим эргэнэ (жинхэнэ загвар, буу барьсан)
+    Camera3D camera = {};
+    camera.position = { 0.0f, 0.85f, 8.0f }; // дүр картын дотор: хөл нь нэрийн дээр, толгой нь дээд ирмэгийн доор
+    camera.target = { 0.0f, 0.65f, 0.0f };
+    camera.up = { 0.0f, 1.0f, 0.0f };
+    camera.fovy = 30.0f;
+    camera.projection = CAMERA_PERSPECTIVE;
+    environment.SetTimeOfDay(0.3f); // өдрийн гэрэл
+    environment.ClearShadow();
+    BeginMode3D(camera);
+    rlEnableDepthTest();
+    environment.Begin(camera);
+    for (int skin = 0; skin < kLeaderSkinCount; ++skin)
+    {
+        // Картын төвийн дэлгэцийн x-ийг ертөнцийн x болгоно (камерын фокусын хавтгай дээр)
+        const Rectangle card = CharacterCardRect(skin);
+        const float screenX = (card.x + card.width * 0.5f) / (float)width * 2.0f - 1.0f;
+        const float halfWidth = std::tan(camera.fovy * 0.5f * DEG2RAD) * camera.position.z * (float)width / (float)height;
+        const float worldX = screenX * halfWidth;
+        const HumanoidLook look = TeamMemberLook(0, skin);
+        HumanoidPose pose = MakeSoldierPose(0.0f, 0.0f, true, (float)GetTime() + (float)skin, 0.0f, look.held);
+        const float facing = (float)GetTime() * 0.5f + (skin == characterChoice ? 0.0f : 0.6f);
+        DrawHumanoid({ worldX, 0.0f, 0.0f }, facing, 1.0f, pose, look, true);
+    }
+    environment.End();
+    EndMode3D();
+
+    for (int skin = 0; skin < kLeaderSkinCount; ++skin)
+    {
+        const Rectangle card = CharacterCardRect(skin);
+        const char* name = LeaderSkinName(skin);
+        const bool selected = skin == characterChoice;
+        Ui::TextBold(name, (int)(card.x + (card.width - (float)Ui::MeasureBold(name, 24)) / 2.0f), (int)(card.y + card.height) - 44, 24,
+                     selected ? Ui::kAccent : Ui::kText);
+    }
+    const Rectangle button = CharacterStartRect();
+    DrawRectangleRounded(button, 0.4f, 8, Ui::kAccent);
+    const char* label = "ЭХЛЭХ";
+    Ui::TextBold(label, (int)(button.x + (button.width - (float)Ui::MeasureBold(label, 24)) / 2.0f), (int)button.y + 16, 24,
+                 { 20, 16, 10, 255 });
+    if (!InTouchMode())
+    {
+        const char* hint = "← → сонгох     ENTER эхлэх     ESC буцах";
+        Ui::Text(hint, (width - Ui::Measure(hint, 14)) / 2, height - 40, 14, Ui::kTextDim);
     }
 }
 
@@ -662,7 +783,7 @@ void Game::StartMission(int index)
     progress.firstPerson = true; // даалгавар бүр 1-р этгээдээр (зөвхөн зэвсэг харагдана) эхэлнэ; V-ээр 3-р этгээд рүү шилжинэ
     for (bool& mark : holdMark) mark = false;
     arsenal = arsenals[0];
-    player.SetLook(TeamMemberLook(0));
+    player.SetLook(TeamMemberLook(0, progress.leaderSkin));
     grenades.Clear();
     horde.Clear();
     tracers.Clear();
@@ -773,7 +894,7 @@ bool Game::SwitchMember(int target, bool leaveDead)
         if (soldier.member < 0) soldier.guardTimer = 0.0f;
     }
     arsenal = arsenals[target];
-    player.SetLook(TeamMemberLook(target));
+    player.SetLook(TeamMemberLook(target, progress.leaderSkin));
     player.SetHeld(HeldFor(arsenal.Current()));
     return true;
 }
@@ -1672,6 +1793,7 @@ void Game::AdvanceDay(float dt)
 
 void Game::UpdateMission(float dt)
 {
+    squad.SetLeaderSkins(progress.leaderSkin, guestFigure.skin); // 1-р дайчны дүр (өөрийн ба зочны баг)
     HandleSettingsInput();
     AdvanceDay(dt);
 
@@ -2190,11 +2312,11 @@ void Game::RenderShadows() const
     horde.Draw(view.position, 12.0f, false); // зомби олон тул зөвхөн хамгийн ойрынх нь сүүдэр тусгана
     if (player.IsAlive()) player.Draw(config, false); // 1-р этгээдийн үед ч өөрийн сүүдэр харагдана
     barrels.Draw(center);
-    if (remoteActive && !coopGuest) DrawRemoteFigure(guestFigure, TeamMemberLook(guestFigure.member));
+    if (remoteActive && !coopGuest) DrawRemoteFigure(guestFigure, TeamMemberLook(guestFigure.member, guestFigure.skin));
     if (coopGuest && guestPlaced)
     {
-        DrawRemoteFigure(hostFigure, TeamMemberLook(hostFigure.member));
-        for (const RemoteFigure& soldier : hostSoldiers) DrawRemoteFigure(soldier, TeamMemberLook(soldier.member));
+        DrawRemoteFigure(hostFigure, TeamMemberLook(hostFigure.member, hostFigure.skin));
+        for (const RemoteFigure& soldier : hostSoldiers) DrawRemoteFigure(soldier, TeamMemberLook(soldier.member, soldier.skin));
     }
     SetPropDepthMaterial(nullptr);
     environment.EndShadowPass();
@@ -2228,11 +2350,11 @@ void Game::DrawMissionScene() const
     airstrike.Draw();
     barrels.Draw(view.position);
     medKits.Draw(view.position);
-    if (remoteActive && !coopGuest) DrawRemoteFigure(guestFigure, TeamMemberLook(guestFigure.member));
+    if (remoteActive && !coopGuest) DrawRemoteFigure(guestFigure, TeamMemberLook(guestFigure.member, guestFigure.skin));
     if (coopGuest && guestPlaced)
     {
-        DrawRemoteFigure(hostFigure, TeamMemberLook(hostFigure.member));
-        for (const RemoteFigure& soldier : hostSoldiers) DrawRemoteFigure(soldier, TeamMemberLook(soldier.member));
+        DrawRemoteFigure(hostFigure, TeamMemberLook(hostFigure.member, hostFigure.skin));
+        for (const RemoteFigure& soldier : hostSoldiers) DrawRemoteFigure(soldier, TeamMemberLook(soldier.member, soldier.skin));
     }
     particles.Draw();
     grenades.Draw();
@@ -2882,6 +3004,7 @@ void Game::Draw() const
         mapScreen.Draw(progress);
         DrawCoopMap();
         if (codeEntryOpen) DrawCodeEntry();
+        if (characterSelectOpen) DrawCharacterSelect();
         // Хувилбар: хөрвүүлсэн огноо, цаг (аль хувилбар ажиллаж байгааг ялгахад)
         const char* build = "Хувилбар: " __DATE__ " " __TIME__;
         UiText(build, ViewWidth() - UiMeasure(build, 14) - 12, ViewHeight() - 22, 14, Fade(WHITE, 0.55f));
@@ -2929,6 +3052,7 @@ void Game::UpdateRemoteFigure(RemoteFigure& figure, const Net::AvatarState& stat
     figure.aimPitch = state.aimPitch;
     figure.held = state.held;
     figure.member = state.member;
+    figure.skin = state.leaderSkin;
     figure.flags = state.flags;
     figure.alive = (state.flags & Net::kAlive) != 0;
     figure.aiming = (state.flags & Net::kAiming) != 0;
@@ -3050,6 +3174,7 @@ Net::AvatarState Game::LocalAvatar() const
     state.speed = player.HorizontalSpeed();
     state.held = (uint8_t)player.Held();
     state.member = (uint8_t)activeMember;
+    state.leaderSkin = (uint8_t)progress.leaderSkin; // нөгөө тоглогч энэ дүрээр харна
     state.flags = (uint8_t)((player.IsAlive() ? Net::kAlive : 0) | (player.GetStance() == Stance::Crouch ? Net::kCrouch : 0) |
                             (player.GetStance() == Stance::Prone ? Net::kProne : 0) |
                             (player.Recoil() > 0.5f ? Net::kFired : 0) | (player.IsRiding() ? Net::kRiding : 0) |
@@ -3357,6 +3482,7 @@ void Game::UpdateCoopMission(float dt)
             a.flags = (uint8_t)((s.alive ? Net::kAlive : 0) | (s.aiming ? Net::kAiming : 0));
             a.shots = s.shots;
             a.shotEnd = s.shotEnd;
+            a.leaderSkin = (uint8_t)(s.guest ? progress.leaderSkin : snapshot.host.leaderSkin); // зочны баг: өөрийн дүр
             UpdateRemoteFigure(hostSoldiers[i], a, dt, false);
             hostSoldiers[i].seatStyle = s.vehicle >= 0 ? s.seatStyle : 0;
             hostSoldiers[i].seatOffset = Vector3Subtract(s.seat, s.position);
