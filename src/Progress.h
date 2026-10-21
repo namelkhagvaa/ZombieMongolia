@@ -4,11 +4,14 @@
 
 #include <vector>
 
+// Даалгаврын өгөгдлийн (CampaignData.cpp) хувилбар: өөрчлөгдөхөд хадгалсан дуусаагүй явц шинээр эхэлнэ.
+constexpr int kMissionsVersion = 2;
+
 // Нэг үеийн (аймгийн) даалгаврын хадгалагдах явц.
 struct StageSave
 {
-    static constexpr int kMaxObjectives = 8;  // үе шатны даалгаврын дээд тоо (done битүүд)
-    static constexpr int kEntitySlots = 4;    // хүн / зүйлтэй даалгавар эхний 4-т л байна (хадгалалтын формат)
+    static constexpr int kMaxObjectives = 12; // үе шатны даалгаврын дээд тоо (done битүүд)
+    static constexpr int kEntitySlots = 12;   // даалгавар бүрийн хүн / зүйлийн явц (эхний 4 нь "stage" мөрөнд, бусад нь "stagex")
 
     unsigned done = 0;                        // бит i = i-р даалгавар биелсэн
     unsigned entities[kEntitySlots] = {};     // даалгавар бүрд: бит k = k-р хүн аврагдсан / зүйл авагдсан
@@ -18,8 +21,12 @@ struct StageSave
 
     bool Empty() const
     {
-        return done == 0 && clearedZones == 0 && killedSmall == 0 && killedBig == 0 && entities[0] == 0 && entities[1] == 0 && entities[2] == 0 &&
-               entities[3] == 0;
+        if (done != 0 || clearedZones != 0 || killedSmall != 0 || killedBig != 0) return false;
+        for (unsigned mask : entities)
+        {
+            if (mask != 0) return false;
+        }
+        return true;
     }
 };
 

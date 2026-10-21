@@ -76,7 +76,7 @@ bool LoadProgress(Progress& progress, int provinceCount)
 
     // Мөр бүр: "түлхүүр утга"
     int format = 1; // "format" мөргүй файл бол хуучин хувилбар
-    int savedFirstPerson = -1, viewVersion = 1, graphicsVersion = 1;
+    int savedFirstPerson = -1, viewVersion = 1, graphicsVersion = 1, missionsVersion = 1;
     std::string key;
     while (file >> key)
     {
@@ -91,13 +91,32 @@ bool LoadProgress(Progress& progress, int provinceCount)
             continue;
         }
 
+        if (key == "missions")
+        {
+            // Даалгаврын өгөгдлийн хувилбар: өөрчлөгдсөн бол хуучин явц шинэ даалгавруудтай таарахгүй
+            file >> missionsVersion;
+            continue;
+        }
+        if (key == "stagex")
+        {
+            // stagex <аймгийн индекс> <entities 4..11>
+            int index = -1;
+            file >> index;
+            unsigned masks[StageSave::kEntitySlots] = {};
+            for (int k = 4; k < StageSave::kEntitySlots; ++k) file >> masks[k];
+            if (file && index >= 0 && index < (int)progress.stages.size())
+            {
+                for (int k = 4; k < StageSave::kEntitySlots; ++k) progress.stages[(size_t)index].entities[k] = masks[k];
+            }
+            continue;
+        }
         if (key == "stage")
         {
             // stage <аймгийн индекс> <done> <entities x4> <clearedZones>
             int index = -1;
             StageSave stage;
             file >> index >> stage.done;
-            for (unsigned& mask : stage.entities) file >> mask;
+            for (int k = 0; k < 4; ++k) file >> stage.entities[k];
             file >> stage.clearedZones;
             // Хуучин хадгалалтад устгасан зомбины тоо байхгүй: мөрийн үлдсэн хэсгээс байвал уншина.
             std::string rest;
@@ -142,6 +161,13 @@ bool LoadProgress(Progress& progress, int provinceCount)
     // Өгөгдмөл график "бага" болсон: хуучин хадгалалтын тохиргоог нэг удаа бууруулна (дараа нь цэснээс өөрчилж болно).
     if (graphicsVersion < 2) progress.graphics = 0;
 
+    // Даалгаврууд шинэчлэгдсэн (аймаг бүрд 6-9 холбоотой даалгавар): хуучин дуусаагүй явц таарахгүй тул шинээр эхэлнэ.
+    // Чөлөөлсөн аймгууд, зоос, сайжруулалт хэвээр.
+    if (missionsVersion < kMissionsVersion)
+    {
+        progress.stages.assign((size_t)provinceCount, StageSave{});
+    }
+
     if (format < 2)
     {
         // Хуучин хадгалалт: аймгуудын дараалал өөр байсан (Улаанбаатараас эхэлдэг).
@@ -164,6 +190,7 @@ bool SaveProgress(const Progress& progress)
     }
 
     file << "format 2\n"; // 2 = аймгууд баруунаас зүүн тийш дараалалтай
+    file << "missions " << kMissionsVersion << '\n';
     file << "coins " << progress.coins << '\n';
     file << "kills " << progress.kills << '\n';
     file << "damage " << progress.weapon.damage << '\n';
@@ -196,8 +223,16 @@ bool SaveProgress(const Progress& progress)
         if (stage.Empty()) continue;
 
         file << "stage " << i << ' ' << stage.done;
-        for (unsigned mask : stage.entities) file << ' ' << mask;
+        for (int k = 0; k < 4; ++k) file << ' ' << stage.entities[k];
         file << ' ' << stage.clearedZones << ' ' << stage.killedSmall << ' ' << stage.killedBig << '\n';
+        bool extra = false;
+        for (int k = 4; k < StageSave::kEntitySlots; ++k) extra = extra || stage.entities[k] != 0;
+        if (extra)
+        {
+            file << "stagex " << i;
+            for (int k = 4; k < StageSave::kEntitySlots; ++k) file << ' ' << stage.entities[k];
+            file << '\n';
+        }
     }
 
     file.close();

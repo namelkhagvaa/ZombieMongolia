@@ -236,6 +236,120 @@ namespace
 
 // ---------------------------------------------------------------- Эхлүүлэх
 
+namespace
+{
+    // Хотын жинхэнэ газрын цэгүүд (POI эсвэл тухайн төрлийн барилгын төв), хотын төвөөс ойроос нь эрэмбэлсэн.
+    std::vector<Vector2> CityPlaces(const CityData& city, SiteKind kind)
+    {
+        std::vector<Vector2> found;
+        auto pois = [&](CityPoiKind poiKind) {
+            for (const CityPoi& poi : city.pois)
+            {
+                if (poi.kind == poiKind) found.push_back(poi.position);
+            }
+        };
+        auto buildings = [&](CityBuildingType type, float minArea) {
+            for (const CityBuilding& b : city.buildings)
+            {
+                if (b.type != type || b.outline.size() < 3) continue;
+                float area = 0.0f;
+                Vector2 center = { 0.0f, 0.0f };
+                for (size_t i = 0, j = b.outline.size() - 1; i < b.outline.size(); j = i++)
+                {
+                    area += b.outline[j].x * b.outline[i].y - b.outline[i].x * b.outline[j].y;
+                    center = Vector2Add(center, b.outline[i]);
+                }
+                if (std::fabs(area) * 0.5f >= minArea) found.push_back(Vector2Scale(center, 1.0f / (float)b.outline.size()));
+            }
+        };
+        switch (kind)
+        {
+        case SiteKind::Hospital: pois(CityPoiKind::Hospital); break;
+        case SiteKind::Police: pois(CityPoiKind::Police); break;
+        case SiteKind::Government: pois(CityPoiKind::Government); break;
+        case SiteKind::Museum: pois(CityPoiKind::Museum); break;
+        case SiteKind::Stadium:
+            pois(CityPoiKind::Stadium);
+            if (found.empty())
+            {
+                for (const CityArea& area : city.areas)
+                {
+                    if (area.kind != CityAreaKind::Pitch || area.outline.empty()) continue;
+                    Vector2 c = { 0.0f, 0.0f };
+                    for (const Vector2& p : area.outline) c = Vector2Add(c, p);
+                    found.push_back(Vector2Scale(c, 1.0f / (float)area.outline.size()));
+                }
+            }
+            break;
+        case SiteKind::Market: pois(CityPoiKind::Square); break;
+        case SiteKind::School: buildings(CityBuildingType::School, 300.0f); break;
+        case SiteKind::Temple: buildings(CityBuildingType::Religious, 60.0f); break;
+        default: break;
+        }
+        const Vector2 town = CityTownSite(city);
+        std::sort(found.begin(), found.end(), [&](Vector2 a, Vector2 b) { return Vector2Distance(a, town) < Vector2Distance(b, town); });
+        // Бие биеэсээ 40 м-ээс ойр давхардсан цэгүүдийг нэг болгоно (нэг эмнэлгийн хэд хэдэн тэмдэглэгээ)
+        std::vector<Vector2> unique;
+        for (const Vector2& p : found)
+        {
+            bool near = false;
+            for (const Vector2& q : unique) near = near || Vector2Distance(p, q) < 40.0f;
+            if (!near) unique.push_back(p);
+        }
+        return unique;
+    }
+
+    // Байхгүй үед орлох газар (дарааллаар)
+    const SiteKind* PlaceFallbacks(SiteKind kind)
+    {
+        static const SiteKind hospital[] = { SiteKind::School, SiteKind::Government, SiteKind::Settlement };
+        static const SiteKind police[] = { SiteKind::Government, SiteKind::Market, SiteKind::Settlement };
+        static const SiteKind government[] = { SiteKind::Market, SiteKind::Museum, SiteKind::Settlement };
+        static const SiteKind museum[] = { SiteKind::Temple, SiteKind::Government, SiteKind::Settlement };
+        static const SiteKind stadium[] = { SiteKind::School, SiteKind::Market, SiteKind::Settlement };
+        static const SiteKind market[] = { SiteKind::Government, SiteKind::Museum, SiteKind::Settlement };
+        static const SiteKind school[] = { SiteKind::Stadium, SiteKind::Hospital, SiteKind::Settlement };
+        static const SiteKind temple[] = { SiteKind::Museum, SiteKind::Market, SiteKind::Settlement };
+        static const SiteKind none[] = { SiteKind::Settlement };
+        switch (kind)
+        {
+        case SiteKind::Hospital: return hospital;
+        case SiteKind::Police: return police;
+        case SiteKind::Government: return government;
+        case SiteKind::Museum: return museum;
+        case SiteKind::Stadium: return stadium;
+        case SiteKind::Market: return market;
+        case SiteKind::School: return school;
+        case SiteKind::Temple: return temple;
+        default: return none;
+        }
+    }
+
+    bool IsCityPlace(SiteKind kind) { return kind >= SiteKind::Hospital; }
+
+    // place-ийн ойрын, барилга, саадын гадна талын задгай газар (даалгаврын цэг)
+    Vector2 FreeSpotNear(const World& world, Vector2 place)
+    {
+        for (float radius = 0.0f; radius <= 70.0f; radius += 5.0f)
+        {
+            const int steps = radius == 0.0f ? 1 : 12;
+            for (int k = 0; k < steps; ++k)
+            {
+                const float a = (float)k * 2.0f * PI / (float)steps;
+                Vector3 c = { place.x + std::cos(a) * radius, 0.0f, place.y + std::sin(a) * radius };
+                c.y = world.GroundHeight(c.x, c.z);
+                const Vector3 before = c;
+                world.ResolveHorizontal(c, 1.2f, 1.8f, 0.3f);
+                if (HorizontalDistance(c, before) < 0.05f && world.InteriorAt(c.x, c.z) < 0 && world.InsideBoundary(c.x, c.z))
+                {
+                    return { c.x, c.z };
+                }
+            }
+        }
+        return place;
+    }
+}
+
 Vector3 Mission::ResolveSite(const World& world, SiteRef site) const
 {
     auto ground = [&](float x, float z) { return Vector3{ x, world.GroundHeight(x, z), z }; };
@@ -260,6 +374,23 @@ Vector3 Mission::ResolveSite(const World& world, SiteRef site) const
     {
         // Аймгийн жинхэнэ газрууд (City.h): застав тоглоомын (0, 0)-ийн дэргэд, хот айл, суурин нь layout-д
         const CityData& city = CurrentCity();
+        if (IsCityPlace(site.kind))
+        {
+            // Жинхэнэ газар, байхгүй бол орлох газар (эцэст нь хотын төв)
+            SiteKind kind = site.kind;
+            for (int attempt = 0; attempt < 4 && kind != SiteKind::Settlement; ++attempt)
+            {
+                const std::vector<Vector2> places = CityPlaces(city, kind);
+                if (!places.empty())
+                {
+                    const Vector2 p = FreeSpotNear(world, places[(size_t)std::min(site.ordinal, (int)places.size() - 1)]);
+                    return ground(p.x, p.y);
+                }
+                kind = PlaceFallbacks(site.kind)[attempt < 3 ? attempt : 2];
+            }
+            const Vector2 p = CityTownSite(city);
+            return ground(p.x, p.y);
+        }
         switch (site.kind)
         {
         case SiteKind::Checkpoint: return ground(-48.0f, 17.0f);
@@ -286,6 +417,7 @@ Vector3 Mission::ResolveSite(const World& world, SiteRef site) const
         if (nth(world.GetLayout().hamlets, site.ordinal, point)) return ground(point.x - 34.0f, point.y + 8.0f);
         break;
     case SiteKind::Settlement:
+    default: // хотын газар (зохиомол газрын зурагт): төв суурин
         break;
     }
     return ground(26.0f, 32.0f); // төв суурингийн гудамж (олдоогүй отор, суурингийн орлуулга)
@@ -317,6 +449,7 @@ void Mission::Start(int provinceIndex, const MissionParams& missionParams, const
         const bool done = (save->done >> i) & 1u;
 
         state.location = ResolveSite(world, def.site);
+        TraceLog(LOG_INFO, "MISSION: objective %d %s at (%.0f, %.0f)", i + 1, def.id, state.location.x, state.location.z);
         state.status = done ? ObjectiveStatus::Done : ObjectiveStatus::Locked;
 
         switch (def.type)
@@ -997,13 +1130,25 @@ void Mission::DrawJournal() const
     y += 12;
 
     const int focus = FocusObjective();
+    // Олон даалгавартай бол мөр бүр нам: гарчиг + нэг мөр тайлбар (багтахгүй бол "…"), явц гарчгийн хажууд
+    const int available = top + height - 56 - y;
+    const int blockHeight = std::clamp(available / std::max(1, ObjectiveCount()), 50, ObjectiveCount() > 4 ? 92 : 104);
+    const bool compact = blockHeight < 84;
+    auto fit = [](std::string line, int size, int maxWidth) {
+        if (UiMeasure(line.c_str(), size) <= maxWidth) return line;
+        while (!line.empty() && UiMeasure((line + "\xE2\x80\xA6").c_str(), size) > maxWidth)
+        {
+            line.pop_back();
+            while (!line.empty() && ((unsigned char)line.back() & 0xC0) == 0x80) line.pop_back(); // UTF-8 тэмдэгтийн дунд биш
+        }
+        return line + "\xE2\x80\xA6";
+    };
     for (int i = 0; i < ObjectiveCount(); ++i)
     {
         const ObjectiveDef& def = stage->objectives[(size_t)i];
         const ObjectiveState& state = states[(size_t)i];
         const bool done = state.status == ObjectiveStatus::Done;
         const bool locked = state.status == ObjectiveStatus::Locked;
-        const int blockHeight = ObjectiveCount() > 4 ? 92 : 104;
 
         // Одоо хийх ёстой даалгаврыг онцолно.
         if (i == focus)
@@ -1013,27 +1158,42 @@ void Mission::DrawJournal() const
         }
 
         // Тэмдэглэгээний нүд: биелсэн бол ногоон зөв тэмдэг
-        const Rectangle box = { (float)left + 34.0f, (float)y + 4.0f, 26.0f, 26.0f };
+        const float boxSize = compact ? 22.0f : 26.0f;
+        const Rectangle box = { (float)left + 34.0f, (float)y + 2.0f, boxSize, boxSize };
         Ui::Outline(box, done ? kDoneGreen : locked ? dim : kMarker, 2.0f, 6.0f);
         if (done)
         {
-            DrawLineEx({ box.x + 5.0f, box.y + 14.0f }, { box.x + 11.0f, box.y + 20.0f }, 3.0f, kDoneGreen);
-            DrawLineEx({ box.x + 11.0f, box.y + 20.0f }, { box.x + 22.0f, box.y + 6.0f }, 3.0f, kDoneGreen);
+            const float k = boxSize / 26.0f;
+            DrawLineEx({ box.x + 5.0f * k, box.y + 14.0f * k }, { box.x + 11.0f * k, box.y + 20.0f * k }, 3.0f, kDoneGreen);
+            DrawLineEx({ box.x + 11.0f * k, box.y + 20.0f * k }, { box.x + 22.0f * k, box.y + 6.0f * k }, 3.0f, kDoneGreen);
         }
 
         char title[160];
         std::snprintf(title, sizeof(title), "%d. %s", i + 1, def.title);
         const Color titleColor = done ? kDoneGreen : locked ? dim : text;
-        Ui::TextBold(title, left + 74, y, 24, titleColor);
+        Ui::TextBold(title, left + 74, y, compact ? 20 : 24, titleColor);
 
         // Төлөв: баруун талд
         const char* status = done ? "БИЕЛСЭН" : locked ? "ТҮГЖЭЭТЭЙ" : (i == focus ? "ОДОО ХИЙХ" : "ИДЭВХТЭЙ");
         Ui::Chip(status, left + width - 34, y - 2, titleColor, done ? kDoneGreen : locked ? dim : kMarker, true);
 
+        const std::string progress = ProgressText(i);
+        if (compact)
+        {
+            // Нэг мөр: тайлбар, баруун талд нь явц эсвэл шагнал
+            char right[96];
+            if (locked && def.after >= 0) std::snprintf(right, sizeof(right), "%d-р даалгаврын дараа", def.after + 1);
+            else if (!progress.empty()) std::snprintf(right, sizeof(right), "Явц: %s  ·  %d зоос", progress.c_str(), def.reward);
+            else std::snprintf(right, sizeof(right), "%d зоос", def.reward);
+            const int rightWidth = UiMeasure(right, 16);
+            UiText(right, left + width - 34 - rightWidth, y + 28, 16, done ? kDoneGreen : dim);
+            UiText(fit(def.description, 16, width - 74 - 60 - rightWidth).c_str(), left + 74, y + 28, 16, locked ? dim : text);
+            y += blockHeight;
+            continue;
+        }
         const int lines = DrawWrapped(def.description, left + 74, y + 32, 20, width - 74 - 40, locked ? dim : text);
 
         // Явц (тоо, хугацаатай даалгаварт) ба шагнал
-        const std::string progress = ProgressText(i);
         char detail[160];
         if (locked && def.after >= 0)
         {
