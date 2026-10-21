@@ -15,6 +15,8 @@ namespace
     const float kLodDistance = 230.0f;   // үүнээс холын хэсгийг хоёр дахин бүдүүн тороор зурна
     const float kDrawDistance = 680.0f;  // үүнээс холын хэсгийг зурахгүй (мананд уусчихсан байдаг)
     const float kDetailLoadDistance = 150.0f; // өвс чулууны mesh-ийг үүсгэх зай
+    const float kTallDrawDistance = 1800.0f;  // уулын (өндөр) хэсгийг бүдүүн тороор ийм хол зурна
+    const float kTallHeight = 45.0f;          // үүнээс өндөр хэсэг "уул"
 
     // Mesh-ийг чөлөөлөх зай нь үүсгэх зайнаас хол: хил дээр нааш цааш явахад дахин дахин үүсгэхгүй.
     const float kGroundKeep = 160.0f;
@@ -127,6 +129,7 @@ void Terrain::Rebuild()
     loaded.clear();
     loadedMeshes = 0;
     maxHeight = 0.0f;
+    hasTall = false;
 
     cellSize = kCellSize;
     chunksPerSide = (int)std::ceil(kWorldHalfExtent * 2.0f / (cellSize * (float)kChunkCells));
@@ -161,6 +164,17 @@ void Terrain::Rebuild()
                 const float mask = SmoothStep(0.0f, 30.0f, layout.FlatDistance(x, z));
                 height = (mask > 0.0f ? Hills(x, z) * mask : 0.0f) - layout.LakeDepth(x, z);
             }
+            if (!layout.Mountains().empty())
+            {
+                // Хотын дэргэдэх уул (Булган уул): бэлийн барилгууд, даалгаврын бүсүүд тэгш газарт үлдэнэ
+                float rise = 0.0f;
+                for (const Mountain& mountain : layout.Mountains()) rise += mountain.HeightAt(x, z);
+                if (rise > 0.0f)
+                {
+                    height += rise * SmoothStep(30.0f, 150.0f, layout.CityBuiltDistance(x, z)) *
+                              SmoothStep(0.0f, 30.0f, layout.ZoneDistance(x, z));
+                }
+            }
             heights[(size_t)iz * (size_t)side + (size_t)ix] = height;
             maxHeight = std::max(maxHeight, height);
         }
@@ -191,6 +205,12 @@ void Terrain::Rebuild()
                              -halfExtent + ((float)cz + 0.5f) * chunkSize };
             const float halfHeight = (maxY - minY) * 0.5f + 2.0f;
             chunk.radius = std::sqrt(chunkSize * chunkSize * 0.5f + halfHeight * halfHeight);
+            chunk.tall = false; // зөвхөн хотын дэргэдэх уул (хээр талын толгодыг хол зурахгүй)
+            for (const Mountain& mountain : layout.Mountains())
+            {
+                chunk.tall = chunk.tall || (maxY > kTallHeight && mountain.Profile(chunk.center.x, chunk.center.z) > 0.02f);
+            }
+            hasTall = hasTall || chunk.tall;
         }
     }
 }
@@ -262,6 +282,18 @@ Color Terrain::GroundColor(int ix, int iz, Vector3 normal) const
     color = MixColor(color, kTrampled, SmoothStep(6.0f, -10.0f, flat) * 0.55f);
     color = MixColor(color, kEarth, SmoothStep(3.0f, 0.0f, layout.RoadDistance(x, z)) * 0.5f);
     if (urban > 0.0f) color = MixColor(color, CityGroundColor(x, z, normal), urban);
+
+    // Хотын дэргэдэх уул: хойд (сүүдэртэй) энгэр ойн бараан ногоон, урд энгэр хуурай өвс, эгц газар хад
+    float mountain = 0.0f;
+    for (const Mountain& m : layout.Mountains()) mountain = std::max(mountain, m.Profile(x, z));
+    if (mountain > 0.0f)
+    {
+        const float north = SmoothStep(-0.05f, 0.25f, normal.z);
+        Color slope = MixColor(MixColor(kGrassDry, kGrassGreen, 0.45f), { 64, 86, 50, 255 }, north);
+        slope = MixColor(slope, { 134, 124, 112, 255 }, SmoothStep(0.86f, 0.66f, normal.y));      // хад
+        slope = MixColor(slope, { 150, 140, 104, 255 }, SmoothStep(0.75f, 0.95f, mountain) * 0.5f); // оройн хуурай хөрс
+        color = MixColor(color, ScaleColor(slope, 0.94f + ValueNoise(x * 0.2f, z * 0.2f) * 0.12f), SmoothStep(0.0f, 0.12f, mountain));
+    }
     return color;
 }
 
@@ -545,7 +577,7 @@ void Terrain::Stream(Vector3 viewPosition, int budget)
             chunk.hasGround = false;
             --loadedMeshes;
         }
-        if (chunk.hasFar && distance > kDrawDistance + kFarKeep)
+        if (chunk.hasFar && distance > (chunk.tall ? kTallDrawDistance : kDrawDistance) + kFarKeep)
         {
             UnloadBuiltMesh(chunk.groundFar);
             chunk.hasFar = false;
@@ -579,7 +611,7 @@ void Terrain::Stream(Vector3 viewPosition, int budget)
     std::vector<Job> jobs;
 
     int x0, x1, z0, z1;
-    ChunkRange(viewPosition, kDrawDistance + 120.0f, x0, x1, z0, z1);
+    ChunkRange(viewPosition, (hasTall ? kTallDrawDistance : kDrawDistance) + 120.0f, x0, x1, z0, z1);
     for (int cz = z0; cz <= z1; ++cz)
     {
         for (int cx = x0; cx <= x1; ++cx)
@@ -587,6 +619,13 @@ void Terrain::Stream(Vector3 viewPosition, int budget)
             const int index = cz * chunksPerSide + cx;
             const Chunk& chunk = chunks[(size_t)index];
             const float distance = Vector3Distance(chunk.center, viewPosition) - chunk.radius;
+            if (chunk.tall && distance >= kDrawDistance + 60.0f)
+            {
+                // Алсын уул: зөвхөн бүдүүн тор (хамгийн сүүлд)
+                if (distance < kTallDrawDistance && !chunk.hasFar) jobs.push_back({ distance + 400.0f, index, 1 });
+                continue;
+            }
+            if (distance > kDrawDistance + 120.0f) continue;
 
             if (distance < kLodDistance + 40.0f && !chunk.hasGround) jobs.push_back({ distance, index, 0 });
             // Бүдүүн тор: ойрын хэсэгт ч үүсгэнэ, нарийн нь бэлэн болох хүртэл газар цоорхой харагдахгүй.
@@ -650,7 +689,7 @@ void Terrain::Draw(const Camera3D& camera, const Material& material, const Mater
     const ViewCone view = ViewCone::From(camera);
 
     int x0, x1, z0, z1;
-    ChunkRange(camera.position, kDrawDistance + 60.0f, x0, x1, z0, z1);
+    ChunkRange(camera.position, (hasTall ? kTallDrawDistance : kDrawDistance) + 60.0f, x0, x1, z0, z1);
 
     lastDrawnChunks = 0;
     for (int cz = z0; cz <= z1; ++cz)
@@ -658,7 +697,7 @@ void Terrain::Draw(const Camera3D& camera, const Material& material, const Mater
         for (int cx = x0; cx <= x1; ++cx)
         {
             const Chunk& chunk = chunks[(size_t)cz * chunksPerSide + (size_t)cx];
-            if (!view.Sees(chunk.center, chunk.radius, kDrawDistance))
+            if (!view.Sees(chunk.center, chunk.radius, chunk.tall ? kTallDrawDistance : kDrawDistance))
             {
                 continue;
             }

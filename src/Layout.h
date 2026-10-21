@@ -11,6 +11,20 @@ constexpr Vector2 kShopCenter = { -58.5f, -23.5f };
 
 struct CityData;
 
+// Аймгийн төвийн дэргэдэх уул (Цэцэрлэгийн Булган уул гэх мэт): зууван бэлтэй, оргил руу өндөрсөнө.
+struct Mountain
+{
+    Vector2 peak;                     // оргил (x, z)
+    float height;                     // хотоос дээш, м
+    float west, east, south, north;   // оргилоос бэл хүртэлх зай (баруун = +X, хойд = +Z)
+    Vector2 ovoo = { 1e9f, 1e9f };    // тахилгат овоо (байхгүй бол 1e9)
+
+    // 0 (бэлээс гадна) .. 1 (оргил)
+    float Profile(float x, float z) const;
+    // Газрын өндөрт нэмэгдэх хэмжээ (хадтай ширүүн энгэр)
+    float HeightAt(float x, float z) const;
+};
+
 // Талбарын ерөнхий төлөвлөлт: замууд, тэгш талбайнууд, отор ба жижиг суурингийн байрлал.
 // Газрын гадаргуу (Terrain) болон байгууламж (Structures) хоёулаа үүнийг ашиглана.
 
@@ -90,6 +104,8 @@ public:
     float CityBuiltDistance(float x, float z) const;
     // Тэгш бүсээс хэр хол (зам тооцохгүй, хурдан)
     float ZoneDistance(float x, float z) const;
+    // Хотын дэргэдэх уулс
+    const std::vector<Mountain>& Mountains() const { return mountains; }
     // Хотын газрын бүрхэвч (3 м тор): 0 = энгийн (тоостой хөрс), 1 = цэцэрлэг, зүлэг, 2 = спорт талбай,
     // 3 = ой, 4 = оршуулгын газар, 5 = хучилттай талбай, 6 = ус.
     int CityGround(float x, float z) const;
@@ -122,6 +138,7 @@ private:
     static constexpr float kBuiltCell = 24.0f;
     int builtCells = 0;
     std::vector<uint16_t> builtDistance;            // барилгаас хэр хол (м)
+    std::vector<Mountain> mountains;
     int cityCells = 0;                              // нэг талын нүдний тоо (тор нь ертөнцийг бүрэн хамарна)
     std::vector<uint8_t> cityGround;                // CityGround-ийн утга (0..6)
     std::vector<uint8_t> cityWater;                 // усны гүн (1/40 м нэгжээр): гол, цөөрөм

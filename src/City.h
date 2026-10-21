@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Layout.h"
 #include "raylib.h"
 
 #include <cstdint>
@@ -93,6 +94,8 @@ struct CityPoi
 
 struct CityData
 {
+    std::vector<Mountain> mountains;   // хотын дэргэдэх уулс (Layout.h)
+    std::vector<std::string> mountainNames;
     std::vector<CityRoad> roads;
     std::vector<CityBuilding> buildings;
     std::vector<CityArea> areas;

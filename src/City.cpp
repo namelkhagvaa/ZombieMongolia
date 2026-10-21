@@ -75,7 +75,8 @@ namespace
         Reader r = { bytes, size };
         const bool header = r.Need(4) && std::memcmp(bytes, "CITY", 4) == 0;
         r.at = 4;
-        if (!header || r.U32() != 1)
+        const uint32_t version = header ? r.U32() : 0;
+        if (version != 1 && version != 2)
         {
             TraceLog(LOG_WARNING, "CITY: %s has an unknown format", path);
             UnloadFileData(bytes);
@@ -120,6 +121,30 @@ namespace
             const int length = r.U16();
             if (r.Need(length)) poi.name.assign((const char*)bytes + r.at, (size_t)length);
             r.at += length;
+        }
+        if (version >= 2)
+        {
+            // Уулс: оргил, өндөр, бэлийн зай, нэр, тахилгат овоо
+            const uint32_t count = r.U32();
+            for (uint32_t i = 0; i < count && r.ok; ++i)
+            {
+                Mountain m;
+                m.peak.x = r.F32();
+                m.peak.y = r.F32();
+                m.height = r.F32();
+                m.west = r.F32();
+                m.east = r.F32();
+                m.south = r.F32();
+                m.north = r.F32();
+                const int length = r.U16();
+                std::string name;
+                if (r.Need(length)) name.assign((const char*)bytes + r.at, (size_t)length);
+                r.at += length;
+                m.ovoo.x = r.F32();
+                m.ovoo.y = r.F32();
+                city.mountains.push_back(m);
+                city.mountainNames.push_back(name);
+            }
         }
         UnloadFileData(bytes);
 

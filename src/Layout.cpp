@@ -241,6 +241,26 @@ float Layout::ZoneDistance(float x, float z) const
     return best;
 }
 
+float Mountain::Profile(float x, float z) const
+{
+    const float rx = (x - peak.x) / (x > peak.x ? west : east);
+    const float rz = (z - peak.y) / (z > peak.y ? north : south);
+    const float r2 = rx * rx + rz * rz;
+    if (r2 >= 1.0f) return 0.0f;
+    const float t = 1.0f - r2;
+    return t * t * (1.5f - 0.5f * t); // бэлээрээ зөөлөн, дунд хэсэгтээ эгц, оргилдоо бөөрөнхий
+}
+
+float Mountain::HeightAt(float x, float z) const
+{
+    const float profile = Profile(x, z);
+    if (profile <= 0.0f) return 0.0f;
+    // Хадтай нуруу, хавцал: ширүүн (ridged) шуугиан, энгэрийн дунд хэсэгт хамгийн их
+    const float ridge = 1.0f - std::fabs(Fbm(x * 0.006f + 3.0f, z * 0.006f + 11.0f, 4) * 2.0f - 1.0f);
+    const float rough = (Fbm(x * 0.03f + 17.0f, z * 0.03f + 5.0f, 2) - 0.5f) * 10.0f;
+    return height * profile + (ridge * ridge * 0.16f * height + rough) * std::sqrt(profile) * (1.0f - profile * 0.5f);
+}
+
 int Layout::CityGround(float x, float z) const
 {
     if (!city) return 0;
@@ -575,6 +595,7 @@ Layout MakeCityLayout(const CityData& data)
     Layout layout;
     layout.city = true;
     layout.capital = data.province == kUlaanbaatarProvince;
+    layout.mountains = data.mountains;
 
     // Даалгаврын байгууламжууд тэгш газарт (Structures-ийн загварууд газрын түвшин 0-д барина):
     // застав (хуаран, дэлгүүр), ШТС, агуулах, хот айл, жижиг суурин

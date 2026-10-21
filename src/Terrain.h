@@ -54,6 +54,7 @@ private:
         Mesh groundFar = {}; // холоос: хоёр дахин бүдүүн тор
         Mesh details = {};   // өвс, чулуу, бут
         bool hasGround = false, hasFar = false, hasDetails = false;
+        bool tall = false; // уул: холоос (мананд бүдэгхэн) харагдах тул илүү хол зурна
         Vector3 center = {};
         float radius = 0.0f;
         int cellX = 0; // хэсгийн эхний нүд
@@ -75,6 +76,7 @@ private:
     const Layout& layout;
     const std::vector<Obstacle>* obstacles = nullptr;
 
+    bool hasTall = false;   // уултай (зарим хэсгийг холоос зурна)
     int cells = 0;          // нэг талын нүдний тоо
     int chunksPerSide = 0;
     float cellSize = 0.0f;

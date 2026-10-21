@@ -589,6 +589,10 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     };
     if (storeSite.x != townSite.x || storeSite.y != townSite.y) cityPlaces.push_back({ storeSite.x - 17.0f, storeSite.y + 10.0f, "АГУУЛАХ" });
     if (cityData.province == kUlaanbaatarProvince) cityPlaces.insert(cityPlaces.end(), std::begin(capitalPlaces), std::end(capitalPlaces));
+    for (size_t i = 0; i < cityData.mountains.size(); ++i)
+    {
+        cityPlaces.push_back({ cityData.mountains[i].peak.x, cityData.mountains[i].peak.y, cityData.mountainNames[i].c_str() });
+    }
     const Place places[] = {
         { 28.0f, 34.0f, "СУУРИН" },  { kOutpost.x, kOutpost.y, "ЗАСТАВ" }, { 38.0f, -13.0f, "ШАТАХУУН ТҮГЭЭХ ГАЗАР" },
         { 10.0f, 70.0f, "АГУУЛАХ" }, { kTownCenter.x, kTownCenter.y, "АЙМГИЙН ТӨВ" }, { kShopCenter.x, kShopCenter.y + 5.5f, "ДЭЛГҮҮР" },

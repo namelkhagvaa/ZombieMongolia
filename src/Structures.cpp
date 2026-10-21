@@ -3845,6 +3845,15 @@ namespace
         }
     }
 
+    bool InAnyMountain(const Scene& s, float x, float z)
+    {
+        for (const Mountain& m : s.layout.Mountains())
+        {
+            if (m.Profile(x, z) > 0.0f) return true;
+        }
+        return false;
+    }
+
     void BuildTrees(Scene& s)
     {
         // Бүс нутгаас хамаарсан ургамал: хойд ойт аймагт шинэс, хусан ой; баруунд уулын шинэс;
@@ -3866,6 +3875,7 @@ namespace
                 const float x = rng.Range(-extent, extent), z = rng.Range(-extent, extent);
                 if (s.layout.FlatDistance(x, z) < 14.0f) continue;
                 if (s.layout.IsCity() && s.layout.CityBuiltDistance(x, z) < 130.0f) continue; // аймгийн төвийн гадна
+                if (InAnyMountain(s, x, z)) continue; // уулын ойг BuildMountains тарина
                 const Vector3 n = GroundNormalAt(s, x, z);
                 const float h = s.terrain.HeightAt(x, z);
                 if (kind <= 1)
@@ -4653,6 +4663,52 @@ namespace
                  built, buildingTriangles, streetTriangles, trees, lamps, parked, (int)gCityVehicleSpots.size());
     }
 
+    // Хотын дэргэдэх уул (Цэцэрлэгийн Булган уул): хойд энгэрт шинэсэн ой, урд эгц энгэр, нуруундаа хад чулуу,
+    // оройн ойролцоо тахилгат овоо. Бэлийн хотын хэсэгт юу ч тавихгүй.
+    void BuildMountains(Scene& s)
+    {
+        Rng rng(5150u);
+        int larches = 0, rocks = 0;
+        for (const Mountain& m : s.layout.Mountains())
+        {
+            if (m.ovoo.x < 1e8f) Ovoo(s, m.ovoo.x, m.ovoo.y);
+            const float x0 = m.peak.x - m.east, x1 = m.peak.x + m.west, z0 = m.peak.y - m.south, z1 = m.peak.y + m.north;
+            for (float gz = z0; gz < z1; gz += 9.0f)
+            {
+                for (float gx = x0; gx < x1; gx += 9.0f)
+                {
+                    const float x = gx + rng.Range(-4.0f, 4.0f), z = gz + rng.Range(-4.0f, 4.0f);
+                    const float profile = m.Profile(x, z);
+                    if (profile < 0.06f || s.layout.CityBuiltDistance(x, z) < 160.0f || s.layout.RoadDistance(x, z) < 2.0f) continue;
+                    if (m.ovoo.x < 1e8f && std::fabs(x - m.ovoo.x) < 6.0f && std::fabs(z - m.ovoo.y) < 6.0f) continue;
+                    const Vector3 n = GroundNormalAt(s, x, z);
+                    const float grove = Fbm(x * 0.006f + 41.0f, z * 0.006f + 9.0f, 3);
+                    if (n.z > 0.05f && profile < 0.93f && grove > 0.34f && larches < 3000 && rng.Chance(0.16f + 0.3f * n.z))
+                    {
+                        // Хойд (сүүдэртэй) энгэрийн шинэсэн ой: хоёр гурваараа
+                        const int cluster = rng.Int(1, 3);
+                        for (int k = 0; k < cluster; ++k)
+                        {
+                            const float tx = x + rng.Range(-3.5f, 3.5f), tz = z + rng.Range(-3.5f, 3.5f);
+                            Larch(s, tx, tz, rng.Range(9.0f, 16.0f) * (1.0f - profile * 0.35f));
+                            ++larches;
+                        }
+                    }
+                    else if ((n.y < 0.86f || profile > 0.8f) && rocks < 700 && rng.Chance(n.z < 0.0f ? 0.035f : 0.012f))
+                    {
+                        // Хад, асга: эгц урд энгэр, нуруу
+                        const float rx = rng.Range(1.2f, 3.6f), ry = rng.Range(1.0f, 2.8f), rz = rng.Range(1.2f, 3.6f);
+                        const float ground = s.terrain.HeightAt(x, z);
+                        s.solid.Rock({ x, ground + ry * 0.3f, z }, { rx, ry, rz }, JitterColor({ 118, 110, 102, 255 }, rng, 0.12f), rng);
+                        s.Collider({ x, ground + ry * 0.5f, z }, { rx * 1.3f, ry * 1.4f, rz * 1.3f });
+                        ++rocks;
+                    }
+                }
+            }
+        }
+        if (!s.layout.Mountains().empty()) TraceLog(LOG_INFO, "CITY: mountain forest %d larches, %d rocks", larches, rocks);
+    }
+
     // Хотын үеийн байгууламжууд: застав (Сүхбаатарын талбай дээр), ШТС, хөшөө, орхигдсон машинууд.
     void BuildCitySettlement(Scene& s)
     {
@@ -4669,6 +4725,7 @@ namespace
             // Аймгийн төвөөс гадна: хот айл, жижиг суурин, мод, овоо, мал (бүс нутгаас хамаарна)
             BuildHerderCamps(s);
             BuildHamlets(s);
+            BuildMountains(s);
             BuildNature(s);
             return;
         }
@@ -4698,6 +4755,7 @@ namespace
                 continue;
             }
             if (s.layout.IsCity() && s.layout.CityBuiltDistance(x, z) < 150.0f) continue; // аймгийн төвийн гадна
+            if (InAnyMountain(s, x, z)) continue;
 
             const float rx = rng.Range(1.0f, 2.2f);
             const float ry = rng.Range(0.8f, 1.7f);

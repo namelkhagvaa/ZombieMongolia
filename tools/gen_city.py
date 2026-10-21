@@ -28,6 +28,9 @@
   u32 pois;      poi:      u8 kind, f32 x, f32 z, u16 bytes, utf-8 name
                  (kind 7: ШТС барих зөрүү, 8: төвийн талбай, 9: агуулах, 10: хот айл, 11: жижиг суурин)
   lines kind: 0 гол, 1 горхи, 2 төмөр зам, 3 банзан хашаа, 4 чулуун хана
+  (version 2) u32 mountains; mountain: f32 x, f32 z (оргил), f32 height (хотоос дээш, м),
+                 f32 west, east, south, north (оргилоос бэл хүртэлх зай, м), u16 bytes, utf-8 name;
+                 дараа нь f32 ovoo x, z (тахилгат овоо, байхгүй бол 1e9)
 """
 import gzip, json, math, os, struct, sys
 
@@ -59,6 +62,13 @@ BUILDING_TYPE = {
 }
 
 AREA_KIND = {'water': 0, 'park': 1, 'grass': 1, 'pitch': 2, 'stadium': 2, 'forest': 3, 'cemetery': 4, 'plaza': 5}
+
+# Аймгийн төвийн дэргэдэх уулс (OSM-ийн natural=peak зангилаа, тахилгат овоо): аяны дугаар ->
+# (нэр, оргилын өргөрөг, уртраг, хотоос дээш өндөр м, баруун, зүүн, урд, хойд бэл хүртэлх зай м, овооны өргөрөг, уртраг)
+MOUNTAINS = {
+    # Архангай, Цэцэрлэг: Булган уул хотын хойд талд, бэлд нь Заяын хүрээ. Урд энгэр (хот руу) эгц, хадтай.
+    7: [('Булган уул', 47.488601, 101.447309, 330.0, 1150.0, 1050.0, 880.0, 1300.0, 47.491072, 101.445262)],
+}
 
 # OSM-д буруу эсвэл дутуу өндөртэй алдартай барилгууд (нэр -> өндөр, м)
 HEIGHT_FIX = {'Засгийн газрын ордон': 24.0}
@@ -361,7 +371,17 @@ class Occupancy:
         return limit
 
 
-def choose_sites(roads, buildings, pois):
+def in_mountain(x, z, mountains, margin=1.0):
+    """(x, z) нь уулын бэлийн зууван дотор эсэх (margin < 1 бол цөм нь)."""
+    for name, px, pz, height, west, east, south, north, ovoo in mountains:
+        rx = (x - px) / (west if x > px else east)  # баруун = +X
+        rz = (z - pz) / (north if z > pz else south)
+        if rx * rx + rz * rz < margin * margin:
+            return True
+    return False
+
+
+def choose_sites(roads, buildings, pois, mountains=()):
     """Аймгийн төвийн даалгаврын газрууд (төвийн координатаар). Буцаах: (застав хүртэлх шилжилт, газрууд)."""
     occ = Occupancy(roads, buildings)
     major = [(k, h, pts) for k, d, h, pts in roads if k <= 3]
@@ -512,6 +532,8 @@ def choose_sites(roads, buildings, pois):
             continue
         if occ.clearance(x, z, 200.0, ('building', 'major', 'road')) < 60.0 or occ.clearance(x, z, 200.0) < 200.0:
             continue
+        if in_mountain(x, z, mountains, 1.1):
+            continue  # уулын энгэрт биш
         camps.append((x, z))
     camps.sort(key=lambda c: math.hypot(c[0] - ox, c[1] - oz))  # ойрынх нь эхэнд (даалгаврын Camp(0))
     for x, z in camps:
@@ -532,6 +554,8 @@ def choose_sites(roads, buildings, pois):
                     continue
                 if occ.clearance(hx, hz, 120.0) < 110.0 or not occ.free(hx - 24, hz - 28, hx + 24, hz + 28):
                     continue
+                if in_mountain(hx, hz, mountains, 1.1):
+                    continue
                 hamlets.append((hx, hz))
         if len(hamlets) >= 5:
             break
@@ -540,8 +564,8 @@ def choose_sites(roads, buildings, pois):
     return (ox, oz), sites
 
 
-def write(out_path, roads, buildings, areas, lines, pois):
-    out = bytearray(b'CITY') + struct.pack('<I', 1)
+def write(out_path, roads, buildings, areas, lines, pois, mountains=()):
+    out = bytearray(b'CITY') + struct.pack('<I', 2)
 
     def points(pts):
         out.extend(struct.pack('<H', len(pts)))
@@ -564,6 +588,11 @@ def write(out_path, roads, buildings, areas, lines, pois):
     for kind, x, z, name in pois:
         data = name.encode('utf-8')[:200]
         out.extend(struct.pack('<BffH', kind, x, z, len(data))); out.extend(data)
+    out.extend(struct.pack('<I', len(mountains)))
+    for name, x, z, height, west, east, south, north, ovoo in mountains:
+        data = name.encode('utf-8')[:200]
+        out.extend(struct.pack('<fffffffH', x, z, height, west, east, south, north, len(data))); out.extend(data)
+        out.extend(struct.pack('<ff', *(ovoo or (1e9, 1e9))))
     with open(out_path, 'wb') as f:
         f.write(out)
     kinds = {}
@@ -575,12 +604,13 @@ def write(out_path, roads, buildings, areas, lines, pois):
              count(7), count(10), count(11), len(out) // 1024))
 
 
-def shifted(origin, roads, buildings, areas, lines, pois):
+def shifted(origin, roads, buildings, areas, lines, pois, mountains=()):
     ox, oz = origin
     move = lambda pts: [(x - ox, z - oz) for x, z in pts]
     return ([(k, d, h, move(p)) for k, d, h, p in roads], [(k, l, h, move(p)) for k, l, h, p in buildings],
             [(k, move(p)) for k, p in areas], [(k, h, move(p)) for k, h, p in lines],
-            [(k, x - ox, z - oz, n) for k, x, z, n in pois])
+            [(k, x - ox, z - oz, n) for k, x, z, n in pois],
+            [(n, x - ox, z - oz, h, w, e, s, nn, (o[0] - ox, o[1] - oz) if o else None) for n, x, z, h, w, e, s, nn, o in mountains])
 
 
 def with_relations(elements):
@@ -648,10 +678,14 @@ def town(index, out_path):
     shapes = [e for e in elements if 'geometry' in e or 'members' in e]
     roads, buildings, areas, lines = features(with_relations(shapes))
     pois = places([e for e in elements if 'center' in e or e.get('type') == 'node'])
-    origin, sites = choose_sites(roads, buildings, pois)
+    mountains = []
+    for mname, mlat, mlon, height, west, east, south, north, olat, olon in MOUNTAINS.get(index, []):
+        px, pz = project({'lat': mlat, 'lon': mlon})
+        mountains.append((mname, px, pz, height, west, east, south, north, project({'lat': olat, 'lon': olon})))
+    origin, sites = choose_sites(roads, buildings, pois, mountains)
     pois += [(k, x, z, '') for k, x, z in sites]
     print('%s: outpost (game origin) at %.0f, %.0f from the town centre' % (name, origin[0], origin[1]))
-    write(out_path, *shifted(origin, roads, buildings, areas, lines, pois))
+    write(out_path, *shifted(origin, roads, buildings, areas, lines, pois, mountains))
 
 
 if __name__ == '__main__':
