@@ -4663,6 +4663,61 @@ namespace
                  built, buildingTriangles, streetTriangles, trees, lamps, parked, (int)gCityVehicleSpots.size());
     }
 
+    // Энгэр дээрх цагаан суварга (Галдан зуу) ба сүм хийдээс өгсөх шат: цагаан хашлагатай, газрыг дагасан гишгүүр.
+    void MountainStupa(Scene& s, const Mountain& m, Rng& rng)
+    {
+        const Color white = { 236, 234, 226, 255 }, gold = { 206, 168, 72, 255 };
+        const Vector2 top = m.stupa;
+        if (m.stairs.x < 1e8f)
+        {
+            const Vector2 bottom = m.stairs;
+            const float length = Vector2Distance(bottom, top);
+            const Vector2 dir = Vector2Scale(Vector2Subtract(top, bottom), 1.0f / length);
+            const Vector2 side = { -dir.y, dir.x };
+            const int steps = (int)(length / 0.8f);
+            for (int i = 0; i < steps; ++i)
+            {
+                const Vector2 p = Vector2Add(bottom, Vector2Scale(dir, ((float)i + 0.5f) * length / (float)steps));
+                const float ground = s.terrain.HeightAt(p.x, p.y);
+                s.solid.SetTransform(MatrixMultiply(MatrixRotateY(std::atan2(dir.x, dir.y)), MatrixTranslate(p.x, ground, p.y)));
+                s.solid.Box({ 0.0f, 0.12f, 0.0f }, { 3.0f, 0.3f, 0.8f }, i % 2 ? kConcrete : ScaleColor(kConcrete, 0.9f)); // гишгүүр
+                if (i % 3 == 0)
+                {
+                    for (float x : { -1.6f, 1.6f }) s.solid.Box({ x, 0.55f, 0.0f }, { 0.12f, 1.0f, 0.12f }, white); // хашлагын багана
+                }
+                s.solid.ResetTransform();
+                if (i % 3 == 0)
+                {
+                    for (float sx : { -1.6f, 1.6f })
+                    {
+                        // Хашлагын хөндлөвч: дараагийн багана хүртэл
+                        const Vector2 a = Vector2Add(p, Vector2Scale(side, sx));
+                        const Vector2 b = Vector2Add(a, Vector2Scale(dir, 3.0f * length / (float)steps));
+                        const float ha = s.terrain.HeightAt(a.x, a.y) + 1.0f, hb = s.terrain.HeightAt(b.x, b.y) + 1.0f;
+                        s.solid.Quad({ a.x, ha, a.y }, { b.x, hb, b.y }, { b.x, hb + 0.1f, b.y }, { a.x, ha + 0.1f, a.y }, white);
+                    }
+                }
+            }
+        }
+        // Суварга: тавцан, шатлалт суурь, бөмбөгөр, алтан оргил
+        const float ground = s.terrain.HeightAt(top.x, top.y);
+        float low = ground;
+        for (float dx : { -5.0f, 5.0f })
+        {
+            for (float dz : { -5.0f, 5.0f }) low = std::min(low, s.terrain.HeightAt(top.x + dx, top.y + dz));
+        }
+        s.solid.Box({ top.x, (low - 1.0f + ground + 0.5f) * 0.5f, top.y }, { 10.0f, ground + 0.5f - low + 1.0f, 10.0f }, kConcrete); // тавцан
+        s.solid.Box({ top.x, ground + 1.3f, top.y }, { 6.0f, 1.6f, 6.0f }, white);
+        s.solid.Box({ top.x, ground + 2.6f, top.y }, { 4.6f, 1.0f, 4.6f }, white);
+        s.solid.Box({ top.x, ground + 3.4f, top.y }, { 3.6f, 0.6f, 3.6f }, white);
+        s.solid.Ellipsoid({ top.x, ground + 4.9f, top.y }, { 2.0f, 1.9f, 2.0f }, 5, 10, white);
+        s.solid.Box({ top.x, ground + 7.0f, top.y }, { 1.2f, 0.6f, 1.2f }, white);
+        s.solid.Cylinder({ top.x, ground + 7.3f, top.y }, 0.55f, 0.12f, 3.0f, 8, gold);
+        s.solid.Ellipsoid({ top.x, ground + 10.5f, top.y }, { 0.3f, 0.35f, 0.3f }, 3, 6, gold);
+        s.Collider({ top.x, ground + 3.0f, top.y }, { 6.0f, 6.0f, 6.0f });
+        (void)rng;
+    }
+
     // Хотын дэргэдэх уул (Цэцэрлэгийн Булган уул): хойд энгэрт шинэсэн ой, урд эгц энгэр, нуруундаа хад чулуу,
     // оройн ойролцоо тахилгат овоо. Бэлийн хотын хэсэгт юу ч тавихгүй.
     void BuildMountains(Scene& s)
@@ -4672,6 +4727,7 @@ namespace
         for (const Mountain& m : s.layout.Mountains())
         {
             if (m.ovoo.x < 1e8f) Ovoo(s, m.ovoo.x, m.ovoo.y);
+            if (m.stupa.x < 1e8f) MountainStupa(s, m, rng);
             const float x0 = m.peak.x - m.east, x1 = m.peak.x + m.west, z0 = m.peak.y - m.south, z1 = m.peak.y + m.north;
             for (float gz = z0; gz < z1; gz += 9.0f)
             {
@@ -4679,14 +4735,14 @@ namespace
                 {
                     const float x = gx + rng.Range(-4.0f, 4.0f), z = gz + rng.Range(-4.0f, 4.0f);
                     const float profile = m.Profile(x, z);
-                    if (profile < 0.06f || s.layout.CityBuiltDistance(x, z) < 160.0f || s.layout.RoadDistance(x, z) < 2.0f) continue;
+                    if (profile < 0.06f || s.layout.CityBuiltDistance(x, z) < 50.0f || s.layout.RoadDistance(x, z) < 2.0f) continue;
                     if (m.ovoo.x < 1e8f && std::fabs(x - m.ovoo.x) < 6.0f && std::fabs(z - m.ovoo.y) < 6.0f) continue;
                     const Vector3 n = GroundNormalAt(s, x, z);
                     const float grove = Fbm(x * 0.006f + 41.0f, z * 0.006f + 9.0f, 3);
-                    if (n.z > 0.05f && profile < 0.93f && grove > 0.34f && larches < 3000 && rng.Chance(0.16f + 0.3f * n.z))
+                    if (profile < 0.9f && grove > 0.36f && larches < 1600 && rng.Chance(n.z > 0.05f ? 0.07f + 0.15f * n.z : 0.012f))
                     {
-                        // Хойд (сүүдэртэй) энгэрийн шинэсэн ой: хоёр гурваараа
-                        const int cluster = rng.Int(1, 3);
+                        // Сийрэг шинэс: хойд энгэр, хавцалд арай олон, урд энгэрт ганц нэг
+                        const int cluster = rng.Int(1, 2);
                         for (int k = 0; k < cluster; ++k)
                         {
                             const float tx = x + rng.Range(-3.5f, 3.5f), tz = z + rng.Range(-3.5f, 3.5f);
@@ -4694,12 +4750,14 @@ namespace
                             ++larches;
                         }
                     }
-                    else if ((n.y < 0.86f || profile > 0.8f) && rocks < 700 && rng.Chance(n.z < 0.0f ? 0.035f : 0.012f))
+                    else if (profile > 0.12f && rocks < 1800 && rng.Chance((n.z < 0.1f ? 0.06f : 0.025f) * (0.5f + profile)))
                     {
-                        // Хад, асга: эгц урд энгэр, нуруу
-                        const float rx = rng.Range(1.2f, 3.6f), ry = rng.Range(1.0f, 2.8f), rz = rng.Range(1.2f, 3.6f);
+                        // Боржин хад, асга: энгэр даяар, дээшээ томорно (ягаан саарал)
+                        const float size = rng.Range(1.0f, 2.2f) * (1.0f + profile * 1.6f);
+                        const float rx = size * rng.Range(0.8f, 1.4f), ry = size * rng.Range(0.6f, 1.1f), rz = size * rng.Range(0.8f, 1.4f);
                         const float ground = s.terrain.HeightAt(x, z);
-                        s.solid.Rock({ x, ground + ry * 0.3f, z }, { rx, ry, rz }, JitterColor({ 118, 110, 102, 255 }, rng, 0.12f), rng);
+                        const Color granite = MixColor({ 164, 136, 120, 255 }, { 128, 116, 108, 255 }, rng.Next());
+                        s.solid.Rock({ x, ground + ry * 0.25f, z }, { rx, ry, rz }, JitterColor(granite, rng, 0.08f), rng);
                         s.Collider({ x, ground + ry * 0.5f, z }, { rx * 1.3f, ry * 1.4f, rz * 1.3f });
                         ++rocks;
                     }

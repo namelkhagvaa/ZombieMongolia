@@ -142,6 +142,10 @@ namespace
                 r.at += length;
                 m.ovoo.x = r.F32();
                 m.ovoo.y = r.F32();
+                m.stupa.x = r.F32();
+                m.stupa.y = r.F32();
+                m.stairs.x = r.F32();
+                m.stairs.y = r.F32();
                 city.mountains.push_back(m);
                 city.mountainNames.push_back(name);
             }

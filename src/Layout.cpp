@@ -247,18 +247,20 @@ float Mountain::Profile(float x, float z) const
     const float rz = (z - peak.y) / (z > peak.y ? north : south);
     const float r2 = rx * rx + rz * rz;
     if (r2 >= 1.0f) return 0.0f;
-    const float t = 1.0f - r2;
-    return t * t * (1.5f - 0.5f * t); // бэлээрээ зөөлөн, дунд хэсэгтээ эгц, оргилдоо бөөрөнхий
+    // Шовх оройтой конус: энгэр нь хотгор (бэлдээ зөөлөн хормой, дээшээ эгц), оргилдоо бага зэрэг бөөрөнхий
+    const float t = 1.0f - std::sqrt(r2);
+    return std::pow(t, 1.45f) * (1.0f - 0.25f * std::exp(-t * t * 60.0f) * 0.0f);
 }
 
 float Mountain::HeightAt(float x, float z) const
 {
     const float profile = Profile(x, z);
     if (profile <= 0.0f) return 0.0f;
-    // Хадтай нуруу, хавцал: ширүүн (ridged) шуугиан, энгэрийн дунд хэсэгт хамгийн их
-    const float ridge = 1.0f - std::fabs(Fbm(x * 0.006f + 3.0f, z * 0.006f + 11.0f, 4) * 2.0f - 1.0f);
-    const float rough = (Fbm(x * 0.03f + 17.0f, z * 0.03f + 5.0f, 2) - 0.5f) * 10.0f;
-    return height * profile + (ridge * ridge * 0.16f * height + rough) * std::sqrt(profile) * (1.0f - profile * 0.5f);
+    // Боржин хадны нуруу, хавцал: ширүүн (ridged) шуугиан энгэрийн дээд хэсэгт, бэлдээ гөлгөр ногоон хормой
+    const float ridge = 1.0f - std::fabs(Fbm(x * 0.009f + 3.0f, z * 0.009f + 11.0f, 4) * 2.0f - 1.0f);
+    const float crag = (Fbm(x * 0.045f + 17.0f, z * 0.045f + 5.0f, 3) - 0.5f) * 14.0f; // хадан цохио
+    const float rocky = SmoothStep(0.08f, 0.35f, profile);
+    return height * profile + (ridge * ridge * 0.12f * height * std::sqrt(profile) + crag * rocky) * (1.0f - profile * 0.4f);
 }
 
 int Layout::CityGround(float x, float z) const

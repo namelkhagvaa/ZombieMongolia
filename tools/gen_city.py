@@ -30,7 +30,8 @@
   lines kind: 0 гол, 1 горхи, 2 төмөр зам, 3 банзан хашаа, 4 чулуун хана
   (version 2) u32 mountains; mountain: f32 x, f32 z (оргил), f32 height (хотоос дээш, м),
                  f32 west, east, south, north (оргилоос бэл хүртэлх зай, м), u16 bytes, utf-8 name;
-                 дараа нь f32 ovoo x, z (тахилгат овоо, байхгүй бол 1e9)
+                 дараа нь f32 ovoo x, z (тахилгат овоо), f32 stupa x, z (суварга), f32 stairs x, z (шатны доод үзүүр)
+                 (байхгүй бол 1e9)
 """
 import gzip, json, math, os, struct, sys
 
@@ -64,10 +65,13 @@ BUILDING_TYPE = {
 AREA_KIND = {'water': 0, 'park': 1, 'grass': 1, 'pitch': 2, 'stadium': 2, 'forest': 3, 'cemetery': 4, 'plaza': 5}
 
 # Аймгийн төвийн дэргэдэх уулс (OSM-ийн natural=peak зангилаа, тахилгат овоо): аяны дугаар ->
-# (нэр, оргилын өргөрөг, уртраг, хотоос дээш өндөр м, баруун, зүүн, урд, хойд бэл хүртэлх зай м, овооны өргөрөг, уртраг)
+# (нэр, оргилын өргөрөг, уртраг, хотоос дээш өндөр м, баруун, зүүн, урд, хойд бэл хүртэлх зай м,
+#  овоо, суварга, шатны доод үзүүрийн (өргөрөг, уртраг) эсвэл None)
 MOUNTAINS = {
-    # Архангай, Цэцэрлэг: Булган уул хотын хойд талд, бэлд нь Заяын хүрээ. Урд энгэр (хот руу) эгц, хадтай.
-    7: [('Булган уул', 47.488601, 101.447309, 330.0, 1150.0, 1050.0, 880.0, 1300.0, 47.491072, 101.445262)],
+    # Архангай, Цэцэрлэг: Булган уул хотын яг хойд талд өгсдөг шовх оройтой боржин хадан уул. Бэлд нь Заяын хүрээ,
+    # түүний дээд талын ногоон энгэрт Галдан зуугийн цагаан суварга, хүрээнээс өгсөх шат.
+    7: [('Булган уул', 47.488601, 101.447309, 300.0, 720.0, 680.0, 800.0, 900.0,
+         (47.491072, 101.445262), (47.482380, 101.451100), (47.480260, 101.451522))],
 }
 
 # OSM-д буруу эсвэл дутуу өндөртэй алдартай барилгууд (нэр -> өндөр, м)
@@ -592,7 +596,8 @@ def write(out_path, roads, buildings, areas, lines, pois, mountains=()):
     for name, x, z, height, west, east, south, north, ovoo in mountains:
         data = name.encode('utf-8')[:200]
         out.extend(struct.pack('<fffffffH', x, z, height, west, east, south, north, len(data))); out.extend(data)
-        out.extend(struct.pack('<ff', *(ovoo or (1e9, 1e9))))
+        for point in ovoo:
+            out.extend(struct.pack('<ff', *(point or (1e9, 1e9))))
     with open(out_path, 'wb') as f:
         f.write(out)
     kinds = {}
@@ -610,7 +615,8 @@ def shifted(origin, roads, buildings, areas, lines, pois, mountains=()):
     return ([(k, d, h, move(p)) for k, d, h, p in roads], [(k, l, h, move(p)) for k, l, h, p in buildings],
             [(k, move(p)) for k, p in areas], [(k, h, move(p)) for k, h, p in lines],
             [(k, x - ox, z - oz, n) for k, x, z, n in pois],
-            [(n, x - ox, z - oz, h, w, e, s, nn, (o[0] - ox, o[1] - oz) if o else None) for n, x, z, h, w, e, s, nn, o in mountains])
+            [(n, x - ox, z - oz, h, w, e, s, nn, [(p[0] - ox, p[1] - oz) if p else None for p in o])
+             for n, x, z, h, w, e, s, nn, o in mountains])
 
 
 def with_relations(elements):
@@ -679,9 +685,10 @@ def town(index, out_path):
     roads, buildings, areas, lines = features(with_relations(shapes))
     pois = places([e for e in elements if 'center' in e or e.get('type') == 'node'])
     mountains = []
-    for mname, mlat, mlon, height, west, east, south, north, olat, olon in MOUNTAINS.get(index, []):
+    for mname, mlat, mlon, height, west, east, south, north, *extra in MOUNTAINS.get(index, []):
         px, pz = project({'lat': mlat, 'lon': mlon})
-        mountains.append((mname, px, pz, height, west, east, south, north, project({'lat': olat, 'lon': olon})))
+        points = [project({'lat': p[0], 'lon': p[1]}) if p else None for p in extra]
+        mountains.append((mname, px, pz, height, west, east, south, north, points))
     origin, sites = choose_sites(roads, buildings, pois, mountains)
     pois += [(k, x, z, '') for k, x, z in sites]
     print('%s: outpost (game origin) at %.0f, %.0f from the town centre' % (name, origin[0], origin[1]))

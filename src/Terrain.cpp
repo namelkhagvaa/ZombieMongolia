@@ -171,7 +171,7 @@ void Terrain::Rebuild()
                 for (const Mountain& mountain : layout.Mountains()) rise += mountain.HeightAt(x, z);
                 if (rise > 0.0f)
                 {
-                    height += rise * SmoothStep(30.0f, 150.0f, layout.CityBuiltDistance(x, z)) *
+                    height += rise * SmoothStep(8.0f, 50.0f, layout.CityBuiltDistance(x, z)) *
                               SmoothStep(0.0f, 30.0f, layout.ZoneDistance(x, z));
                 }
             }
@@ -288,11 +288,15 @@ Color Terrain::GroundColor(int ix, int iz, Vector3 normal) const
     for (const Mountain& m : layout.Mountains()) mountain = std::max(mountain, m.Profile(x, z));
     if (mountain > 0.0f)
     {
-        const float north = SmoothStep(-0.05f, 0.25f, normal.z);
-        Color slope = MixColor(MixColor(kGrassDry, kGrassGreen, 0.45f), { 64, 86, 50, 255 }, north);
-        slope = MixColor(slope, { 134, 124, 112, 255 }, SmoothStep(0.86f, 0.66f, normal.y));      // хад
-        slope = MixColor(slope, { 150, 140, 104, 255 }, SmoothStep(0.75f, 0.95f, mountain) * 0.5f); // оройн хуурай хөрс
-        color = MixColor(color, ScaleColor(slope, 0.94f + ValueNoise(x * 0.2f, z * 0.2f) * 0.12f), SmoothStep(0.0f, 0.12f, mountain));
+        const float north = SmoothStep(-0.05f, 0.3f, normal.z);
+        const float granite = SmoothStep(0.1f, 0.3f, mountain) * (1.0f - 0.45f * north) *
+                              SmoothStep(0.3f, 0.6f, Fbm(x * 0.02f + 8.0f, z * 0.02f + 2.0f, 3) + mountain * 0.5f);
+        const Color grass = MixColor(kGrassGreen, kGrassLush, north * 0.6f);                     // бэлийн ногоон хормой
+        Color rock = MixColor({ 160, 132, 116, 255 }, { 132, 118, 108, 255 }, ValueNoise(x * 0.07f, z * 0.07f)); // ягаан хүрэн боржин
+        rock = ScaleColor(rock, 0.82f + 0.25f * ValueNoise(x * 0.3f + 4.0f, z * 0.3f + 1.0f));    // ан цав, толбо
+        Color slope = MixColor(grass, rock, granite);
+        slope = MixColor(slope, { 70, 92, 56, 255 }, north * SmoothStep(0.2f, 0.5f, mountain) * 0.35f); // хойд энгэрийн ой
+        color = MixColor(color, slope, SmoothStep(0.0f, 0.05f, mountain));
     }
     return color;
 }

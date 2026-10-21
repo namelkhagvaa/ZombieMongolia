@@ -18,10 +18,12 @@ struct Mountain
     float height;                     // хотоос дээш, м
     float west, east, south, north;   // оргилоос бэл хүртэлх зай (баруун = +X, хойд = +Z)
     Vector2 ovoo = { 1e9f, 1e9f };    // тахилгат овоо (байхгүй бол 1e9)
+    Vector2 stupa = { 1e9f, 1e9f };   // энгэр дээрх суварга (Галдан зуу)
+    Vector2 stairs = { 1e9f, 1e9f };  // сүм хийдээс суварга руу өгсөх шатны доод үзүүр
 
     // 0 (бэлээс гадна) .. 1 (оргил)
     float Profile(float x, float z) const;
-    // Газрын өндөрт нэмэгдэх хэмжээ (хадтай ширүүн энгэр)
+    // Газрын өндөрт нэмэгдэх хэмжээ (боржин хадтай ширүүн энгэр, шовх орой)
     float HeightAt(float x, float z) const;
 };
 
