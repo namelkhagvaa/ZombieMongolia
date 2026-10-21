@@ -1,6 +1,7 @@
 #include "Layout.h"
 
 #include "AirportData.h"
+#include "City.h"
 #include "Procedural.h"
 
 #include <algorithm>
@@ -194,6 +195,18 @@ float Layout::AirfieldFlatDistance(float x, float z) const
 
 float Layout::LakeDepth(float x, float z) const
 {
+    if (city)
+    {
+        // Хотын гол, цөөрөм: 3 м торын утгуудыг хооронд нь шугаман завсарлана (газар гөлгөр хотойно).
+        const float fx = (x + kWorldHalfExtent) / kCityCell - 0.5f, fz = (z + kWorldHalfExtent) / kCityCell - 0.5f;
+        const int ix = (int)std::floor(fx), iz = (int)std::floor(fz);
+        if (ix < 0 || iz < 0 || ix + 1 >= cityCells || iz + 1 >= cityCells) return 0.0f;
+        const float tx = fx - (float)ix, tz = fz - (float)iz;
+        auto at = [&](int cx, int cz) { return (float)cityWater[(size_t)cz * cityCells + cx]; };
+        const float top = at(ix, iz) + (at(ix + 1, iz) - at(ix, iz)) * tx;
+        const float bottom = at(ix, iz + 1) + (at(ix + 1, iz + 1) - at(ix, iz + 1)) * tx;
+        return (top + (bottom - top) * tz) / 40.0f;
+    }
     float depth = 0.0f;
     for (const Lake& lake : lakes)
     {
@@ -204,8 +217,17 @@ float Layout::LakeDepth(float x, float z) const
     return depth;
 }
 
+int Layout::CityGround(float x, float z) const
+{
+    if (!city) return 0;
+    const int ix = (int)((x + kWorldHalfExtent) / kCityCell), iz = (int)((z + kWorldHalfExtent) / kCityCell);
+    if (ix < 0 || iz < 0 || ix >= cityCells || iz >= cityCells) return 0;
+    return cityGround[(size_t)iz * cityCells + ix];
+}
+
 bool Layout::Paved(float x, float z) const
 {
+    if (city) return CityGround(x, z) == 5; // хучилттай талбай (Сүхбаатарын талбай)
     if (!airfieldActive || paved.empty()) return false;
     const int ix = (int)std::floor((x - pavedX0) / kPavedCell);
     const int iz = (int)std::floor((z - pavedZ0) / kPavedCell);
@@ -236,44 +258,37 @@ void Layout::BuildIndex()
     cellZones.assign((size_t)gridSide * gridSide, {});
 
     // Нүд бүрд: тэр нүдний аль ч цэгээс kFarDistance дотор байж болох зам, бүсүүдийг бүртгэнэ.
+    // (Хэсэг бүрийн хамрах тэгш өнцөгттэй давхцах нүднүүд: хотод хэдэн арван мянган хэсэг байдаг.)
     const float reach = kFarDistance + kRoadFlatMargin;
-    for (int iz = 0; iz < gridSide; ++iz)
-    {
-        for (int ix = 0; ix < gridSide; ++ix)
+    auto cellOf = [&](float v) { return std::clamp((int)std::floor((v + kWorldHalfExtent) / kCellSize), 0, gridSide - 1); };
+    auto mark = [&](std::vector<std::vector<uint32_t>>& cells, uint32_t index, float minX, float minZ, float maxX, float maxZ) {
+        if (maxX < -kWorldHalfExtent || minX > kWorldHalfExtent || maxZ < -kWorldHalfExtent || minZ > kWorldHalfExtent) return;
+        const int x0 = cellOf(minX), x1 = cellOf(maxX), z0 = cellOf(minZ), z1 = cellOf(maxZ);
+        for (int iz = z0; iz <= z1; ++iz)
         {
-            const float x0 = -kWorldHalfExtent + (float)ix * kCellSize, x1 = x0 + kCellSize;
-            const float z0 = -kWorldHalfExtent + (float)iz * kCellSize, z1 = z0 + kCellSize;
-            const size_t cell = (size_t)iz * gridSide + ix;
-
-            for (size_t s = 0; s < segments.size(); ++s)
+            for (int ix = x0; ix <= x1; ++ix)
             {
-                const Segment& segment = segments[s];
-                if (std::max(segment.a.x, segment.b.x) < x0 - reach || std::min(segment.a.x, segment.b.x) > x1 + reach ||
-                    std::max(segment.a.y, segment.b.y) < z0 - reach || std::min(segment.a.y, segment.b.y) > z1 + reach)
-                {
-                    continue;
-                }
-                cellSegments[cell].push_back((uint16_t)s);
-            }
-
-            for (size_t i = 0; i < zones.size(); ++i)
-            {
-                const float r = zones[i].radius + kFarDistance;
-                if (zones[i].center.x + r < x0 || zones[i].center.x - r > x1 || zones[i].center.y + r < z0 ||
-                    zones[i].center.y - r > z1)
-                {
-                    continue;
-                }
-                cellZones[cell].push_back((uint16_t)i);
+                cells[(size_t)iz * gridSide + ix].push_back(index);
             }
         }
+    };
+    for (size_t i = 0; i < segments.size(); ++i)
+    {
+        const Segment& segment = segments[i];
+        mark(cellSegments, (uint32_t)i, std::min(segment.a.x, segment.b.x) - reach, std::min(segment.a.y, segment.b.y) - reach,
+             std::max(segment.a.x, segment.b.x) + reach, std::max(segment.a.y, segment.b.y) + reach);
+    }
+    for (size_t i = 0; i < zones.size(); ++i)
+    {
+        const float r = zones[i].radius + kFarDistance;
+        mark(cellZones, (uint32_t)i, zones[i].center.x - r, zones[i].center.y - r, zones[i].center.x + r, zones[i].center.y + r);
     }
 }
 
 float Layout::RoadDistance(float x, float z) const
 {
     float best = kFarDistance;
-    for (uint16_t index : cellSegments[CellIndex(x, z)])
+    for (uint32_t index : cellSegments[CellIndex(x, z)])
     {
         const Segment& segment = segments[index];
         best = std::min(best, DistanceToSegment(x, z, segment.a, segment.b) - segment.halfWidth);
@@ -285,12 +300,12 @@ float Layout::FlatDistance(float x, float z) const
 {
     const int cell = CellIndex(x, z);
     float best = kFarDistance;
-    for (uint16_t index : cellSegments[cell])
+    for (uint32_t index : cellSegments[cell])
     {
         const Segment& segment = segments[index];
         best = std::min(best, DistanceToSegment(x, z, segment.a, segment.b) - kRoadFlatMargin);
     }
-    for (uint16_t index : cellZones[cell])
+    for (uint32_t index : cellZones[cell])
     {
         const FlatZone& zone = zones[index];
         const float dx = x - zone.center.x;
@@ -303,7 +318,7 @@ float Layout::FlatDistance(float x, float z) const
 bool Layout::RoadAt(float x, float z, RoadKind& kind) const
 {
     // Засмал зам эхэнд бүртгэгдсэн тул огтлолцол дээр засмал зам давамгайлна.
-    for (uint16_t index : cellSegments[CellIndex(x, z)])
+    for (uint32_t index : cellSegments[CellIndex(x, z)])
     {
         const Segment& segment = segments[index];
         if (DistanceToSegment(x, z, segment.a, segment.b) <= segment.halfWidth)
@@ -491,5 +506,120 @@ Layout MakeLayout()
     }
     layout.BuildIndex();
 
+    return layout;
+}
+
+// ---------------------------------------------------------------- Улаанбаатарын төв
+
+namespace
+{
+    // Олон өнцөгтийг торын нүднүүдэд (нүдний төвөөр) дүүргэнэ: мөр бүрд огтлолцлын цэгүүдийн хооронд.
+    template <typename Fill>
+    void ScanPolygon(const std::vector<Vector2>& outline, float cell, int cells, Fill fill)
+    {
+        float minZ = 1e9f, maxZ = -1e9f;
+        for (const Vector2& p : outline)
+        {
+            minZ = std::min(minZ, p.y);
+            maxZ = std::max(maxZ, p.y);
+        }
+        const int z0 = std::max(0, (int)std::floor((minZ + kWorldHalfExtent) / cell));
+        const int z1 = std::min(cells - 1, (int)std::floor((maxZ + kWorldHalfExtent) / cell));
+        std::vector<float> xs;
+        for (int iz = z0; iz <= z1; ++iz)
+        {
+            const float z = -kWorldHalfExtent + ((float)iz + 0.5f) * cell;
+            xs.clear();
+            for (size_t i = 0, j = outline.size() - 1; i < outline.size(); j = i++)
+            {
+                const Vector2 a = outline[i], b = outline[j];
+                if ((a.y > z) != (b.y > z)) xs.push_back(a.x + (z - a.y) * (b.x - a.x) / (b.y - a.y));
+            }
+            std::sort(xs.begin(), xs.end());
+            for (size_t k = 0; k + 1 < xs.size(); k += 2)
+            {
+                const int x0 = std::max(0, (int)std::ceil((xs[k] + kWorldHalfExtent) / cell - 0.5f));
+                const int x1 = std::min(cells - 1, (int)std::floor((xs[k + 1] + kWorldHalfExtent) / cell - 0.5f));
+                for (int ix = x0; ix <= x1; ++ix) fill(ix, iz);
+            }
+        }
+    }
+}
+
+Layout MakeCityLayout(const CityData& data)
+{
+    Layout layout;
+    layout.city = true;
+
+    // Гудамжууд: засмал нь эхэнд (огтлолцол дээр засмал давамгайлна). Явган гудамж засмал.
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        for (const CityRoad& road : data.roads)
+        {
+            const bool dirt = road.dirt || road.klass == CityRoadClass::Track;
+            if (dirt != (pass == 1) || road.points.size() < 2) continue;
+            layout.roads.push_back({ dirt ? RoadKind::Dirt : RoadKind::Asphalt, road.halfWidth, road.points });
+        }
+    }
+    layout.BuildIndex();
+
+    // Газрын бүрхэвч ба усны тор
+    const float cell = Layout::kCityCell;
+    const int cells = (int)std::ceil(kWorldHalfExtent * 2.0f / cell);
+    layout.cityCells = cells;
+    layout.cityGround.assign((size_t)cells * cells, 0);
+    layout.cityWater.assign((size_t)cells * cells, 0);
+
+    static const uint8_t kGroundOf[] = { 6, 1, 2, 3, 4, 5 }; // CityAreaKind -> CityGround
+    // Том талбайг эхэлж, жижгийг сүүлд нь: цэцэрлэг доторх хучилттай талбай, спорт талбай харагдана.
+    std::vector<const CityArea*> areas;
+    for (const CityArea& area : data.areas) areas.push_back(&area);
+    auto areaSize = [](const CityArea* a) {
+        float minX = 1e9f, maxX = -1e9f, minZ = 1e9f, maxZ = -1e9f;
+        for (const Vector2& p : a->outline)
+        {
+            minX = std::min(minX, p.x); maxX = std::max(maxX, p.x);
+            minZ = std::min(minZ, p.y); maxZ = std::max(maxZ, p.y);
+        }
+        return (maxX - minX) * (maxZ - minZ);
+    };
+    std::stable_sort(areas.begin(), areas.end(), [&](const CityArea* a, const CityArea* b) { return areaSize(a) > areaSize(b); });
+    for (const CityArea* area : areas)
+    {
+        const uint8_t ground = kGroundOf[(int)area->kind];
+        ScanPolygon(area->outline, cell, cells, [&](int ix, int iz) {
+            const size_t k = (size_t)iz * cells + ix;
+            layout.cityGround[k] = ground;
+            if (ground == 6) layout.cityWater[k] = 60; // цөөрөм, голын сав: 1.5 м
+        });
+    }
+
+    // Гол, горхи: тэнхлэгээс холдох тусам гүехэн
+    for (const CityLine& line : data.lines)
+    {
+        if (line.kind == CityLineKind::Railway) continue;
+        const float half = line.halfWidth + 3.0f; // эрэг налуу
+        for (size_t i = 0; i + 1 < line.points.size(); ++i)
+        {
+            const Vector2 a = line.points[i], b = line.points[i + 1];
+            const int x0 = std::max(0, (int)((std::min(a.x, b.x) - half + kWorldHalfExtent) / cell));
+            const int x1 = std::min(cells - 1, (int)((std::max(a.x, b.x) + half + kWorldHalfExtent) / cell));
+            const int z0 = std::max(0, (int)((std::min(a.y, b.y) - half + kWorldHalfExtent) / cell));
+            const int z1 = std::min(cells - 1, (int)((std::max(a.y, b.y) + half + kWorldHalfExtent) / cell));
+            for (int iz = z0; iz <= z1; ++iz)
+            {
+                for (int ix = x0; ix <= x1; ++ix)
+                {
+                    const float x = -kWorldHalfExtent + ((float)ix + 0.5f) * cell, z = -kWorldHalfExtent + ((float)iz + 0.5f) * cell;
+                    const float d = DistanceToSegment(x, z, a, b);
+                    if (d > half) continue;
+                    const float depth = (line.kind == CityLineKind::River ? 2.0f : 1.0f) * SmoothStep(half, line.halfWidth * 0.5f, d);
+                    const size_t k = (size_t)iz * cells + ix;
+                    layout.cityWater[k] = std::max(layout.cityWater[k], (uint8_t)std::min(255.0f, depth * 40.0f));
+                    if (d <= line.halfWidth) layout.cityGround[k] = 6;
+                }
+            }
+        }
+    }
     return layout;
 }

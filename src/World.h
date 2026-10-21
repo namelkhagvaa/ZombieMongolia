@@ -36,7 +36,13 @@ public:
 
     // Суурин, отор, жижиг суурингуудыг variant (аяны үеийн дугаар)-аар шинээр үүсгэнэ: үе бүрд байшингууд,
     // тэдгээрийн зохион байгуулалт өөр. Үе эхлэхэд дуудна; ижил variant-аар дахин дуудвал юу ч хийхгүй.
+    // Улаанбаатарын үед (assets/city/ub.bin байвал) талбар бүхэлдээ хотын жинхэнэ төвөөр солигдоно.
     void BuildSettlements(int variant);
+
+    // Улаанбаатарын жинхэнэ төв (OpenStreetMap) идэвхтэй эсэх
+    bool CityActive() const { return cityActive; }
+    // obstacles-ийн эхний ийм тооны саад нь тогтмол хэсгийнх (хотод: OSM-ийн барилга, мод, шон)
+    size_t StaticObstacleCount() const { return staticObstacleCount; }
 
     // Камерын ойр орчмын газрыг бэлтгэнэ. Frame бүрд дуудна; everything = true бол хэрэгтэй бүгдийг
     // нэг дор үүсгэнэ (даалгавар эхлэх, алс газар шилжих үед).
@@ -126,6 +132,10 @@ public:
     int ObstacleCount() const { return (int)obstacles.size(); }
 
 private:
+    // Тогтмол хэсгийг (зам, пост, чулуу / хотын барилга) одоогийн layout-аар үүсгэнэ.
+    void BuildStatic();
+    // Хээр тал <-> Улаанбаатарын жинхэнэ хот: layout, газар, тогтмол хэсгийг солино.
+    void SwitchCity(bool city);
     void BuildObstacleGrid();
     // Цонхны гарцын зогсох цэгүүд хашаа, тавилга зэрэг саадтай давхцвал ойрын чөлөөт газар руу шилжүүлнэ;
     // хол шилжүүлэх шаардлагатай бол (давсны дараа гацна) гарцыг хасна.
@@ -157,6 +167,8 @@ private:
     std::vector<MeshPiece> settlementGlass;
     size_t staticObstacleCount = 0; // obstacles-ийн эхний хэсэг нь тогтмол, үлдсэн нь суурингийнх
     int settlementVariant = -1;
+    bool cityActive = false;
+    Layout steppeLayout;            // хотод байх үед хээр талын layout-ийн хуулбар (буцахад)
 
     Shape boundary;
     std::vector<Vector2> boundaryFill;

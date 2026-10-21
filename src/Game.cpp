@@ -1,4 +1,6 @@
 #include "Game.h"
+
+#include "City.h"
 #include "VehicleModel.h"
 
 #include "Audio.h"
@@ -758,12 +760,24 @@ void Game::StartMission(int index)
 
     // Энэ үеийн суурин, отрууд: аймаг бүрд байшингууд, зохион байгуулалт нь өөр.
     world.BuildSettlements(index);
+    if (world.CityActive())
+    {
+        // Улаанбаатарын жинхэнэ төв: Сүхбаатарын талбайг төвлөсөн 5.2 x 5.2 км дөрвөлжин
+        const float edge = kCityHalfExtent;
+        Shape square;
+        square.outline = { { -edge, -edge }, { edge, -edge }, { edge, edge }, { -edge, edge } };
+        world.SetBoundary(square);
+    }
     missionKills = 0;
     inTown = false;
     medKitKills = 0;
     lastReward = 0;
 
     player.Reset(config.playerBaseHealth + kHealthPerLevel * (float)progress.healthLevel);
+    if (world.CityActive())
+    {
+        player.Teleport({ 0.0f, 0.0f, -14.0f }); // талбайн төвд Сүхбаатарын хөшөө зогсоно: түүний урд
+    }
 
     // Баг: 1, 2-р гишүүн дайчин, 3-р гишүүн мэргэн буудагч. Тоглогч 1-р гишүүнээр эхэлнэ.
     for (int member = 0; member < kTeamSize; ++member)
@@ -1860,7 +1874,7 @@ void Game::UpdateMission(float dt)
     }
     // --- Аймгийн төв: орох үед нэр, статусыг харуулна ---
     {
-        const bool nowInTown = InTown(player.Position().x, player.Position().z);
+        const bool nowInTown = world.CityActive() || InTown(player.Position().x, player.Position().z);
         if (nowInTown && !inTown && state == GameState::Playing)
         {
             bool city = false;

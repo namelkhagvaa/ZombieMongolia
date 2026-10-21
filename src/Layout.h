@@ -9,6 +9,8 @@ constexpr Vector2 kShopCenter = { -58.5f, -23.5f };
 #include <cstdint>
 #include <vector>
 
+struct CityData;
+
 // Талбарын ерөнхий төлөвлөлт: замууд, тэгш талбайнууд, отор ба жижиг суурингийн байрлал.
 // Газрын гадаргуу (Terrain) болон байгууламж (Structures) хоёулаа үүнийг ашиглана.
 
@@ -79,6 +81,13 @@ public:
     // Зайн асуулгыг хурдасгах торыг (дахин) байгуулна. roads, zones өөрчлөгдсөний дараа дуудна.
     void BuildIndex();
 
+    // --- Улаанбаатарын жинхэнэ төв (OpenStreetMap, City.h) ---
+    // city = true бол газрын хэлбэр нь хотынх (Terrain), зам нь жинхэнэ гудамжууд, суурин отор байхгүй.
+    bool IsCity() const { return city; }
+    // Хотын газрын бүрхэвч (3 м тор): 0 = энгийн (тоостой хөрс), 1 = цэцэрлэг, зүлэг, 2 = спорт талбай,
+    // 3 = ой, 4 = оршуулгын газар, 5 = хучилттай талбай, 6 = ус.
+    int CityGround(float x, float z) const;
+
     // Зайн асуулгууд үүнээс холыг ялгахгүй (ийм зайд газрын хэлбэр, өнгөд нөлөөлөхөө больдог).
     static constexpr float kFarDistance = 45.0f;
 
@@ -96,8 +105,16 @@ private:
 
     std::vector<Segment> segments;
     int gridSide = 0;
-    std::vector<std::vector<uint16_t>> cellSegments; // нүд бүрийн ойролцоох замын хэсгүүд
-    std::vector<std::vector<uint16_t>> cellZones;    // нүд бүрийн ойролцоох тэгш бүсүүд
+    std::vector<std::vector<uint32_t>> cellSegments; // нүд бүрийн ойролцоох замын хэсгүүд
+    std::vector<std::vector<uint32_t>> cellZones;    // нүд бүрийн ойролцоох тэгш бүсүүд
+
+    // Хот
+    friend Layout MakeCityLayout(const CityData& data);
+    bool city = false;
+    static constexpr float kCityCell = 3.0f;
+    int cityCells = 0;                              // нэг талын нүдний тоо (тор нь ертөнцийг бүрэн хамарна)
+    std::vector<uint8_t> cityGround;                // CityGround-ийн утга (0..6)
+    std::vector<uint8_t> cityWater;                 // усны гүн (1/40 м нэгжээр): гол, цөөрөм
 
     // Нисэх буудал
     friend Layout MakeLayout();
@@ -134,6 +151,8 @@ constexpr TerminalFrame kTerminalFrame = { { -563.75f, 1413.0f }, { -0.7118f, -0
 void AirportParking(Vector2 corners[4]);
 
 Layout MakeLayout();
+// Улаанбаатарын төвийн жинхэнэ зохион байгуулалт (OpenStreetMap-ийн гудамж, ус, цэцэрлэг).
+Layout MakeCityLayout(const CityData& data);
 
 // Аймгийн төв / хот: засмал замаас хойш гудамжны тортой том суурин. Гудамжнууд нь kTownStreets координатуудаар
 // (X дагуу өргөн чөлөөнүүд, Z дагуу гудамжнууд) явж, хоорондоо 4 x 4 хороолол үүсгэнэ.

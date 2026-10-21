@@ -1,5 +1,7 @@
 #include "Mission.h"
 
+#include "City.h"
+
 #include "Layout.h"
 
 #include "Input.h"
@@ -68,7 +70,7 @@ namespace
         return best;
     }
 
-    // Санамсаргүй (тоглоомын явцын) цэг: spawn-д.
+    // Санамсаргүй (тоглоомын явцын) цэг: spawn-д. Барилга, саад дотор гарахгүй (хотод барилга шигүү).
     Vector3 RandomAround(const World& world, Vector3 center, float minRadius, float maxRadius)
     {
         Vector3 position = center;
@@ -77,7 +79,13 @@ namespace
             const float angle = (float)GetRandomValue(0, 359) * DEG2RAD;
             const float distance = minRadius + (maxRadius - minRadius) * (float)GetRandomValue(0, 1000) / 1000.0f;
             position = { center.x + std::sin(angle) * distance, 0.0f, center.z + std::cos(angle) * distance };
-            if (world.InsideBoundary(position.x, position.z) && world.InteriorAt(position.x, position.z) < 0)
+            if (!world.InsideBoundary(position.x, position.z) || world.InteriorAt(position.x, position.z) >= 0)
+            {
+                continue;
+            }
+            Vector3 resolved = position;
+            world.ResolveHorizontal(resolved, 0.6f, 1.8f, 0.3f);
+            if (HorizontalDistance(resolved, position) < 0.05f || attempt == 11)
             {
                 break;
             }
@@ -248,6 +256,16 @@ Vector3 Mission::ResolveSite(const World& world, SiteRef site) const
     };
 
     Vector2 point;
+    if (world.CityActive())
+    {
+        // Улаанбаатарын жинхэнэ газрууд (City.h): застав Сүхбаатарын талбай дээр
+        switch (site.kind)
+        {
+        case SiteKind::Checkpoint: return ground(-48.0f, 17.0f);
+        case SiteKind::GasStation: return ground(kCityGasSite.x, kCityGasSite.y);
+        default: return ground(kCityTownSite.x, kCityTownSite.y);
+        }
+    }
     switch (site.kind)
     {
     case SiteKind::Checkpoint: return ground(-48.0f, 17.0f); // элсэн уутан хоргодох байрны хойд талын талбай
@@ -589,7 +607,7 @@ void Mission::UpdateAmbient(float dt, const World& world, const Player& player, 
     // Одоо хийх даалгаврын цэгт ойртоход шинээр гарах зомбины тал нь тэр цэгийг тойрон гарч, замыг хаана.
     const int alive = horde.AliveInZone(0);
     // Аймгийн төвийн гудамжинд зомби олон: гудамжаар байлдаж явна.
-    const bool inTown = InTown(player.Position().x, player.Position().z);
+    const bool inTown = world.CityActive() || InTown(player.Position().x, player.Position().z);
     const int cap = kAmbientCap + province + (inTown ? 28 : 0);
     const int batch = alive < cap / 2 ? 3 : 1;
     const int focus = FocusObjective();

@@ -1,5 +1,6 @@
 #include "World.h"
 
+#include "City.h"
 #include "Config.h"
 #include "Structures.h"
 #include "raymath.h"
@@ -21,20 +22,10 @@ namespace
 
 World::World(float halfSize) : halfSize(halfSize), layout(MakeLayout()), terrain(layout)
 {
-    // Тогтмол хэсэг: зам, пост, агуулах, шон, чулуу. Нэг удаа үүснэ.
-    MeshBuilder solidBuilder, shadowBuilder, glassBuilder;
-    BuildStaticStructures(layout, terrain, obstacles, solidBuilder, shadowBuilder, glassBuilder, interiors, doors,
-                          passages);
-    staticPassageCount = passages.size();
-
-    structures = solidBuilder.UploadPartitioned(kPieceSize);
-    shadows = shadowBuilder.UploadPartitioned(kPieceSize);
-    glass = glassBuilder.UploadPartitioned(kPieceSize);
-    staticObstacleCount = obstacles.size();
+    // Тогтмол хэсэг: зам, пост, агуулах, шон, чулуу. Нэг удаа үүснэ (Улаанбаатарын хотод орох, гарахад дахин).
+    BuildStatic();
     terrain.SetObstacles(&obstacles); // өвс, чулууг саад дотор ургуулахгүй
-
-    TraceLog(LOG_INFO, "WORLD: %d static structure triangles in %d pieces, %d colliders", solidBuilder.TriangleCount(),
-             (int)structures.size(), (int)obstacles.size());
+    UlaanbaatarCity();                // хотын өгөгдлийг эхэнд нь уншина (вэб: ачаалсан файлуудыг дараа нь чөлөөлдөг)
 
     // Суурингууд: эхлээд 0-р хувилбараар; үе эхлэх бүрд тухайн үеийнхээр солигдоно.
     BuildSettlements(0);
@@ -58,6 +49,49 @@ World::~World()
     UnloadPieces(boundaryBand);
 }
 
+void World::BuildStatic()
+{
+    UnloadPieces(structures);
+    UnloadPieces(shadows);
+    UnloadPieces(glass);
+    obstacles.clear();
+    interiors.clear();
+    doors.clear();
+    passages.clear();
+
+    MeshBuilder solidBuilder, shadowBuilder, glassBuilder;
+    BuildStaticStructures(layout, terrain, obstacles, solidBuilder, shadowBuilder, glassBuilder, interiors, doors,
+                          passages);
+    staticPassageCount = passages.size();
+
+    structures = solidBuilder.UploadPartitioned(kPieceSize);
+    shadows = shadowBuilder.UploadPartitioned(kPieceSize);
+    glass = glassBuilder.UploadPartitioned(kPieceSize);
+    staticObstacleCount = obstacles.size();
+
+    TraceLog(LOG_INFO, "WORLD: %d static structure triangles in %d pieces, %d colliders", solidBuilder.TriangleCount(),
+             (int)structures.size(), (int)obstacles.size());
+}
+
+void World::SwitchCity(bool city)
+{
+    const double start = GetTime();
+    cityActive = city;
+    if (city)
+    {
+        steppeLayout = std::move(layout);
+        layout = MakeCityLayout(UlaanbaatarCity());
+    }
+    else
+    {
+        layout = std::move(steppeLayout);
+        steppeLayout = Layout();
+    }
+    terrain.Rebuild();
+    BuildStatic();
+    TraceLog(LOG_INFO, "WORLD: %s layout ready in %.2f s", city ? "Ulaanbaatar city" : "steppe", GetTime() - start);
+}
+
 void World::BuildSettlements(int variant)
 {
     if (variant == settlementVariant)
@@ -65,6 +99,13 @@ void World::BuildSettlements(int variant)
         return;
     }
     settlementVariant = variant;
+
+    // Улаанбаатар: жинхэнэ хотын төв (өгөгдөл байвал), бусад үе: хээр тал
+    const bool city = variant == kUlaanbaatarProvince && UlaanbaatarCity().Loaded();
+    if (city != cityActive)
+    {
+        SwitchCity(city);
+    }
 
     // Өмнөх үеийн суурингуудыг арилгана: геометр, мөргөлдөөн, хаалга, дотор тал.
     UnloadPieces(settlementStructures);
@@ -75,8 +116,8 @@ void World::BuildSettlements(int variant)
     doors.clear();
     passages.resize(staticPassageCount);
 
-    // Буянт-Ухаа нисэх буудлын хучилт зөвхөн Улаанбаатарын үед (өвс ургахгүй, засмал замын хурд)
-    layout.SetAirfieldActive(variant == kUlaanbaatarProvince);
+    // Буянт-Ухаа нисэх буудлын хучилт зөвхөн хуучин (зохиомол) Улаанбаатарын үед (өвс ургахгүй, засмал замын хурд)
+    layout.SetAirfieldActive(variant == kUlaanbaatarProvince && !cityActive);
 
     MeshBuilder solidBuilder, shadowBuilder, glassBuilder;
     BuildSettlementStructures(variant, layout, terrain, obstacles, solidBuilder, shadowBuilder, glassBuilder, interiors,

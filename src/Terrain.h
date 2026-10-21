@@ -27,6 +27,9 @@ public:
     // Саадууд өөрчлөгдсөн (суурингууд дахин үүссэн): өвс, чулууны mesh-үүдийг хаяж, дахин үүсгүүлнэ.
     void InvalidateDetails();
 
+    // Layout солигдсон (Улаанбаатарын жинхэнэ хот <-> хээр тал): өндрийн торыг дахин тооцож, бүх mesh-ийг хаяна.
+    void Rebuild();
+
     // Mesh-ийн гурвалжинтай яг таарах өндөр. Ертөнцийн аль ч цэгт ажиллана.
     float HeightAt(float x, float z) const;
     float MaxHeight() const { return maxHeight; }
@@ -64,6 +67,7 @@ private:
     Mesh BuildDetails(const Chunk& chunk) const;
     Vector3 GridNormal(int ix, int iz) const;
     Color GroundColor(int ix, int iz, Vector3 normal) const;
+    Color CityGroundColor(float x, float z, Vector3 normal) const;
 
     // Камерын эргэн тойрны radius зайд багтах хэсгүүдийн индексийн муж.
     void ChunkRange(Vector3 position, float radius, int& x0, int& x1, int& z0, int& z1) const;

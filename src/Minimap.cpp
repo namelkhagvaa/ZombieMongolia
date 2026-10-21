@@ -5,6 +5,7 @@
 #include "UiStyle.h"
 
 #include "AirportData.h"
+#include "City.h"
 #include "Layout.h"
 #include "Polygon.h"
 #include "raylib.h"
@@ -54,6 +55,70 @@ namespace
         }
     };
 
+    // Улаанбаатарын хотын газрын зураг: барилга, цэцэрлэг, усны гурвалжнууд (нэг удаа үүсгэнэ).
+    struct CityMapShape
+    {
+        float minX, minZ, maxX, maxZ;
+        size_t first, count; // triangles доторх оройн муж
+        Color color;
+    };
+    struct CityMapCache
+    {
+        std::vector<Vector2> triangles;
+        std::vector<CityMapShape> areas, buildings;
+    };
+
+    const CityMapCache& CityMap()
+    {
+        static const CityMapCache cache = [] {
+            CityMapCache c;
+            const CityData& city = UlaanbaatarCity();
+            auto add = [&](std::vector<CityMapShape>& list, const std::vector<Vector2>& outline, Color color) {
+                CityMapShape shape = { 1e9f, 1e9f, -1e9f, -1e9f, c.triangles.size(), 0, color };
+                for (const Vector2& p : outline)
+                {
+                    shape.minX = std::min(shape.minX, p.x); shape.maxX = std::max(shape.maxX, p.x);
+                    shape.minZ = std::min(shape.minZ, p.y); shape.maxZ = std::max(shape.maxZ, p.y);
+                }
+                const std::vector<Vector2> t = Triangulate(outline);
+                c.triangles.insert(c.triangles.end(), t.begin(), t.end());
+                shape.count = t.size();
+                list.push_back(shape);
+            };
+            static const Color kAreaColors[] = { { 70, 104, 132, 255 }, { 70, 100, 56, 255 }, { 84, 112, 64, 255 },
+                                                 { 56, 84, 46, 255 },   { 86, 96, 70, 255 },  { 112, 110, 104, 255 } };
+            for (const CityArea& area : city.areas) add(c.areas, area.outline, kAreaColors[(int)area.kind]);
+            for (const CityBuilding& building : city.buildings)
+            {
+                const Color color = building.type == CityBuildingType::Ger ? Color{ 220, 214, 198, 255 }
+                                  : building.height > 20.0f                ? Color{ 214, 202, 176, 255 }
+                                                                           : kBuilding;
+                add(c.buildings, building.outline, color);
+            }
+            return c;
+        }();
+        return cache;
+    }
+
+    void DrawCityShapes(const MapView& view, const CityMapCache& map, const std::vector<CityMapShape>& shapes, float reach)
+    {
+        for (const CityMapShape& shape : shapes)
+        {
+            if (shape.maxX < view.origin.x - reach || shape.minX > view.origin.x + reach || shape.maxZ < view.origin.y - reach ||
+                shape.minZ > view.origin.y + reach)
+            {
+                continue;
+            }
+            if ((shape.maxX - shape.minX) * view.scale < 0.6f && (shape.maxZ - shape.minZ) * view.scale < 0.6f) continue; // пикселээс жижиг
+            for (size_t i = shape.first; i + 2 < shape.first + shape.count; i += 3)
+            {
+                DrawTriangleAnyWinding(view.ToScreen(map.triangles[i].x, map.triangles[i].y),
+                                       view.ToScreen(map.triangles[i + 1].x, map.triangles[i + 1].y),
+                                       view.ToScreen(map.triangles[i + 2].x, map.triangles[i + 2].y), shape.color);
+            }
+        }
+    }
+
     // Аймгийн нутаг дэвсгэр (дүүргэлт), зам, саад, хил. Талбайн гаднах хэсгийг тайрна.
     void DrawTerrainLayers(const MapView& view, const World& world, Color inside, Color outside)
     {
@@ -73,17 +138,33 @@ namespace
                                    view.ToScreen(holes[i + 2].x, holes[i + 2].y), outside);
         }
 
+        const float reach = std::max(view.area.width, view.area.height) * 0.75f / view.scale;
+        const bool city = world.CityActive();
+        if (city)
+        {
+            DrawCityShapes(view, CityMap(), CityMap().areas, reach);
+        }
         for (const Road& road : world.GetLayout().roads)
         {
             const Color color = road.kind == RoadKind::Asphalt ? kAsphaltRoad : kDirtRoad;
-            const float thickness = std::max(2.0f, road.halfWidth * 2.0f * view.scale);
+            const float thickness = std::max(city ? 1.0f : 2.0f, road.halfWidth * 2.0f * view.scale);
             for (size_t i = 0; i + 1 < road.points.size(); ++i)
             {
-                const Vector2 a = view.ToScreen(road.points[i].x, road.points[i].y);
-                const Vector2 b = view.ToScreen(road.points[i + 1].x, road.points[i + 1].y);
+                const Vector2 pa = road.points[i], pb = road.points[i + 1];
+                if (std::max(pa.x, pb.x) < view.origin.x - reach || std::min(pa.x, pb.x) > view.origin.x + reach ||
+                    std::max(pa.y, pb.y) < view.origin.y - reach || std::min(pa.y, pb.y) > view.origin.y + reach)
+                {
+                    continue;
+                }
+                const Vector2 a = view.ToScreen(pa.x, pa.y);
+                const Vector2 b = view.ToScreen(pb.x, pb.y);
                 DrawLineEx(a, b, thickness, color);
-                DrawCircleV(b, thickness * 0.5f, color); // нугаралтын завсрыг бөглөнө
+                if (thickness > 2.5f) DrawCircleV(b, thickness * 0.5f, color); // нугаралтын завсрыг бөглөнө
             }
+        }
+        if (city)
+        {
+            DrawCityShapes(view, CityMap(), CityMap().buildings, reach);
         }
 
         // Буянт-Ухаа нисэх буудал (Улаанбаатарын үед): перрон, ХБЗ, явгалах зам, орох зам
@@ -133,10 +214,11 @@ namespace
             polyline(access.points.data(), (int)access.points.size(), access.halfWidth, kAsphaltRoad);
         }
 
-        // Саадууд: барилга цайвар, намхан саад бараан, торон хашаа саарал
-        const float reach = std::max(view.area.width, view.area.height) * 0.75f / view.scale;
-        for (const Obstacle& o : world.Obstacles())
+        // Саадууд: барилга цайвар, намхан саад бараан, торон хашаа саарал (хотод OSM-ийн барилгыг дээр зурсан)
+        const std::vector<Obstacle>& obstacles = world.Obstacles();
+        for (size_t k = city ? world.StaticObstacleCount() : 0; k < obstacles.size(); ++k)
         {
+            const Obstacle& o = obstacles[k];
             if (std::fabs(o.center.x - view.origin.x) > reach || std::fabs(o.center.z - view.origin.y) > reach) continue;
 
             const Vector2 p = view.ToScreen(o.center.x, o.center.z);
@@ -483,12 +565,21 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
 
     // Газрын нэрс
     BeginScissorMode((int)view.area.x, (int)view.area.y, (int)view.area.width, (int)view.area.height);
-    const struct { float x, z; const char* name; } places[] = {
+    struct Place { float x, z; const char* name; };
+    static const Place cityPlaces[] = {
+        { 0.0f, 60.0f, "СҮХБААТАРЫН ТАЛБАЙ" }, { kOutpost.x, kOutpost.y, "ЗАСТАВ" }, { kShopCenter.x, kShopCenter.y + 5.5f, "ДЭЛГҮҮР" },
+        { kCityTownSite.x, kCityTownSite.y - 60.0f, "ЧОЙЖИН ЛАМЫН СҮМ" }, { kCityGasSite.x, kCityGasSite.y - 14.0f, "ШТС" },
+        { 96.0f, -1857.0f, "ТӨВ ЦЭНГЭЛДЭХ" }, { 166.0f, 221.0f, "ҮНДЭСНИЙ МУЗЕЙ" }, { 590.0f, 147.0f, "ЗАНАБАЗАРЫН МУЗЕЙ" },
+        { 793.0f, -2385.0f, "БОГД ХААНЫ ОРДОН" }, { -360.0f, -974.0f, "ҮНДЭСНИЙ ЦЭЦЭРЛЭГТ ХҮРЭЭЛЭН" },
+    };
+    const Place places[] = {
         { 28.0f, 34.0f, "СУУРИН" },  { kOutpost.x, kOutpost.y, "ЗАСТАВ" }, { 38.0f, -13.0f, "ШАТАХУУН ТҮГЭЭХ ГАЗАР" },
         { 10.0f, 70.0f, "АГУУЛАХ" }, { kTownCenter.x, kTownCenter.y, "АЙМГИЙН ТӨВ" }, { kShopCenter.x, kShopCenter.y + 5.5f, "ДЭЛГҮҮР" },
         { airport::kTerminal.x, airport::kTerminal.y - 60.0f, world.GetLayout().AirfieldActive() ? "БУЯНТ-УХАА НИСЭХ БУУДАЛ" : nullptr },
     };
-    for (const auto& place : places)
+    const bool city = world.CityActive();
+    for (const Place& place : city ? std::vector<Place>(std::begin(cityPlaces), std::end(cityPlaces))
+                                   : std::vector<Place>(std::begin(places), std::end(places)))
     {
         if (place.name == nullptr) continue;
         const Vector2 p = view.ToScreen(place.x, place.z);
@@ -501,7 +592,13 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
             Ui::DrawIcon(Ui::Icon::MapBase, { p.x - (float)textWidth * 0.5f - 26.0f, p.y - 11.0f, 22.0f, 22.0f });
         }
     }
-    if (world.GetLayout().AirfieldActive())
+    if (city)
+    {
+        // ODbL: Улаанбаатарын гудамж, барилга OpenStreetMap-ийн өгөгдлөөр
+        UiText("Улаанбаатарын газрын зураг: (c) OpenStreetMap contributors (ODbL)", (int)view.area.x + 10,
+               (int)(view.area.y + view.area.height) - 22, 14, Fade(kFrame, 0.75f));
+    }
+    else if (world.GetLayout().AirfieldActive())
     {
         // ODbL: нисэх буудлын зураг OpenStreetMap-ийн өгөгдлөөр
         UiText("Нисэх буудлын зураг: (c) OpenStreetMap contributors", (int)view.area.x + 10,
