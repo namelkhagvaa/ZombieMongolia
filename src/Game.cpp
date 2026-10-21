@@ -508,6 +508,13 @@ void Game::Run()
             else if (fullMap.IsOpen())
             {
                 fullMap.Update(world, player);
+                Vector2 point;
+                bool clear = false;
+                if (fullMap.TakeWaypoint(point, clear))
+                {
+                    if (clear) navigator.Clear();
+                    else navigator.SetTarget(world, player.Position(), point); // хөтлөх замыг тооцно
+                }
             }
             else
             {
@@ -828,6 +835,9 @@ void Game::StartMission(int index)
         mission.SetQuota(options.quotaSmall, std::max(0, options.quotaBig)); // туршилт
     }
     mission.Start(index, params, world, stageSave);
+    navigator.Clear();
+    SetMapNavigator(&navigator);
+    if (options.hasWaypoint) navigator.SetTarget(world, player.Position(), { options.waypointX, options.waypointZ });
     journalOpen = false;
     shopOpen = false;
 
@@ -1837,6 +1847,8 @@ void Game::AdvanceDay(float dt)
 void Game::UpdateMission(float dt)
 {
     squad.SetLeaderSkins(progress.leaderSkin, guestFigure.skin); // 1-р дайчны дүр (өөрийн ба зочны баг)
+    navigator.Update(world, player.Position(), dt);
+    if (navigator.TakeArrived()) SetNotice("ОЧИХ ГАЗАРТАА ХҮРЛЭЭ", 2.5f);
     HandleSettingsInput();
     AdvanceDay(dt);
 
@@ -2384,6 +2396,7 @@ void Game::DrawMissionScene() const
                environment.ShadowsEnabled());
     world.DrawDoors(view.position);
     garage.Draw(view.position, config.vehicleDrawDistance, &environment.PropMaterial());
+    navigator.Draw3D(world, player.Position()); // хөтлөх замын сумнууд
     mission.Draw(view.position);
     squad.Draw(view.position, showDebug);
     horde.Draw(view.position, config.characterDrawDistance, showDebug);
@@ -2632,6 +2645,7 @@ void Game::DrawMission() const
     DrawCoinPopups();
     DrawMinimap(world, player, camera.Yaw(), horde, squad, garage, markers, medKits.Positions());
     DrawHud(config, player, info, showDebug);
+    navigator.DrawHud(player.Position(), camera.Yaw());
     DrawCoopOverlay();
 
     if (journalOpen)

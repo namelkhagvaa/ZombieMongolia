@@ -10,6 +10,7 @@
 #include "Input.h"
 #include "Minimap.h"
 #include "Mission.h"
+#include "Navigation.h"
 #include "Net.h"
 #include "Particles.h"
 #include "Weather.h"
@@ -55,6 +56,8 @@ struct LaunchOptions
     int weapon = 0;        // 1..5 бол тэр зэвсгийг сонгож, тасралтгүй хэрэглэнэ (--weapon N)
     float fullMapZoom = 0.0f; // >0 бол бүтэн газрын зургийг энэ томруулалтаар нээнэ (--fullmap Z)
     int province = 1;         // аль аймгийн даалгаврыг эхлүүлэх, аяны дугаараар (--province N)
+    bool hasWaypoint = false; // туршилт: очих газрыг эхэнд нь тэмдэглэнэ (--waypoint X Z)
+    float waypointX = 0.0f, waypointZ = 0.0f;
     bool campaignMap = false; // даалгавар эхлүүлэхгүй, аяны газрын зургийг харуулна (--campaign)
     int ride = 0;             // 1..4: жийп, мотоцикл, гурван дугуйт, морийг унаж шууд урагш явна (--ride N)
     float timeScale = 1.0f;   // туршилтад тоглоомын цагийг хурдасгана (--timescale X)
@@ -180,6 +183,7 @@ private:
     int activeMember = 0;
     int missionFrame = 0;        // даалгаврын шинэчлэлтийн тоолуур (туршилтын командуудад)
     int teamVehicle = -1;        // багийн гишүүдийн сонгосон хэрэгсэл (-1 = байхгүй)
+    Navigator navigator;         // газрын зураг дээр тэмдэглэсэн газар руу хөтлөх зам
     // Хамтарсан тоглолт: зочинд сүүлд илгээсэн унааны байрлал, эрүүл мэнд (хөдлөөгүйг дахин илгээхгүй)
     std::vector<Vector3> sentVehiclePosition;
     std::vector<float> sentVehicleHealth;

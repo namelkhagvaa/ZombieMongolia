@@ -6,6 +6,7 @@
 
 #include "AirportData.h"
 #include "City.h"
+#include "Navigation.h"
 #include "Layout.h"
 #include "Polygon.h"
 #include "raylib.h"
@@ -13,6 +14,16 @@
 
 #include <algorithm>
 #include <cmath>
+
+namespace
+{
+    const Navigator* navigation = nullptr;
+}
+
+void SetMapNavigator(const Navigator* navigator)
+{
+    navigation = navigator;
+}
 
 namespace
 {
@@ -233,6 +244,24 @@ namespace
             const float h = std::max(1.5f, o.size.z * view.scale);
             const Color color = !o.blocksRays ? kFence : (o.size.y > 2.4f ? kBuilding : kLowObstacle);
             DrawRectanglePro({ p.x, p.y, w, h }, { w * 0.5f, h * 0.5f }, view.yaw * RAD2DEG, color);
+        }
+
+        // Хөтлөх зам ба очих газар
+        if (navigation && navigation->Active())
+        {
+            const std::vector<Vector2>& route = navigation->Route();
+            const float width = std::max(3.0f, 5.0f * view.scale);
+            for (size_t i = 0; i + 1 < route.size(); ++i)
+            {
+                const Vector2 a = view.ToScreen(route[i].x, route[i].y), b = view.ToScreen(route[i + 1].x, route[i + 1].y);
+                DrawLineEx(a, b, width + 2.0f, Fade(BLACK, 0.6f));
+                DrawLineEx(a, b, width, { 80, 200, 255, 255 });
+                DrawCircleV(b, width * 0.5f, { 80, 200, 255, 255 });
+            }
+            const Vector2 t = view.ToScreen(navigation->Target().x, navigation->Target().y);
+            DrawCircleV(t, 8.0f, Fade(BLACK, 0.6f));
+            DrawCircleV(t, 6.0f, { 255, 196, 40, 255 });
+            DrawCircleV(t, 2.5f, BLACK);
         }
 
         // Аймгийн хил ба дотор нь орж болохгүй нутгийн хил
@@ -509,6 +538,15 @@ void FullMap::Open(const World& world)
     focus = { bounds.x + bounds.width * 0.5f, bounds.y + bounds.height * 0.5f };
 }
 
+bool FullMap::TakeWaypoint(Vector2& point, bool& clear)
+{
+    clear = clearWaypoint;
+    point = waypoint;
+    const bool any = hasWaypoint || clearWaypoint;
+    hasWaypoint = clearWaypoint = false;
+    return any;
+}
+
 void FullMap::SetZoom(float newZoom)
 {
     zoom = std::clamp(newZoom, kMinZoom, kMaxZoom);
@@ -539,7 +577,34 @@ void FullMap::Update(const World& world, const Player& player)
         const float scale = BaseScale(world) * zoom;
         focus.x += delta.x / scale;
         focus.y += delta.y / scale;
+        if (!pressing)
+        {
+            pressing = true;
+            pressAt = mouse;
+            dragged = 0.0f;
+        }
+        dragged += std::fabs(delta.x) + std::fabs(delta.y);
     }
+    else if (pressing)
+    {
+        // Чирэлгүй товшилт: очих газар тэмдэглэнэ (одоо байгаа тэмдэглэгээн дээр товшвол арилна)
+        pressing = false;
+        if (dragged < 8.0f && CheckCollisionPointRec(pressAt, area))
+        {
+            const float scale = BaseScale(world) * zoom;
+            const Vector2 point = { focus.x - (pressAt.x - center.x) / scale, focus.y - (pressAt.y - center.y) / scale };
+            if (navigation && navigation->Active() && Vector2Distance(point, navigation->Target()) * scale < 14.0f)
+            {
+                clearWaypoint = true;
+            }
+            else if (world.InsideBoundary(point.x, point.y))
+            {
+                hasWaypoint = true;
+                waypoint = point;
+            }
+        }
+    }
+    if (InMousePressed(MOUSE_BUTTON_RIGHT) || InKeyPressed(KEY_X)) clearWaypoint = true;
 
     if (InKeyPressed(KEY_C))
     {
@@ -658,6 +723,7 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     DrawLegendEntry(x + 240, legendY, kVehicle, "унаа");
     DrawLegendEntry(x + 320, legendY, kObjective, "даалгавар");
     DrawLegendEntry(x + 450, legendY, kMedKit, "эмнэлэг");
-    const char* help = "Хулганы дугуй — томруулах (100–1000%)    Чирэх — зөөх    C — өөр дээрээ төвлөрүүлэх    M — хаах";
-    UiText(help, width - (int)view.area.x - UiMeasure(help, 18), legendY, 18, kFrame);
+    const char* help = InTouchMode() ? "Товш — очих газар (дахин товшвол арилна)   Чир — зөөх"
+                                     : "Товш — очих газар   X — арилгах   Дугуй — томруулах   Чир — зөөх   C — өөр дээрээ   M — хаах";
+    UiText(help, width - (int)view.area.x - UiMeasure(help, 16), legendY + 1, 16, kFrame);
 }

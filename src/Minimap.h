@@ -8,6 +8,10 @@
 
 #include <vector>
 
+class Navigator;
+// Газрын зураг дээр харуулах хөтлөх зам (nullptr бол харуулахгүй)
+void SetMapNavigator(const Navigator* navigator);
+
 // Дэлгэцийн баруун доод буланд байрлах жижиг газрын зураг.
 constexpr int kMinimapSize = 190;  // пиксел
 constexpr int kMinimapMargin = 16;
@@ -36,8 +40,10 @@ public:
     void SetZoom(float newZoom);
     float Zoom() const { return zoom; }
 
-    // Дугуй, чирэлт, C (тоглогч дээр төвлөрөх) оролтыг боловсруулна.
+    // Дугуй, чирэлт, C (тоглогч дээр төвлөрөх) оролтыг боловсруулна. Чирэлгүй товшилт = очих газар тэмдэглэх.
     void Update(const World& world, const Player& player);
+    // Товшиж тэмдэглэсэн очих газар (нэг удаа). clear = true бол тэмдэглэгээг арилгах хүсэлт.
+    bool TakeWaypoint(Vector2& point, bool& clear);
     void Draw(const World& world, const Player& player, const ZombieHorde& horde, const SoldierSquad& squad,
               const Garage& garage, const std::vector<Vector3>& markers, const std::vector<Vector3>& medKits,
               const char* title) const;
@@ -47,5 +53,10 @@ private:
 
     bool open = false;
     float zoom = 1.0f;
+    bool pressing = false;          // зүүн товч дарагдсан (товшилт эсвэл чирэлт)
+    Vector2 pressAt = { 0.0f, 0.0f };
+    float dragged = 0.0f;           // дарснаас хойш хөдөлсөн зай, пиксел
+    bool hasWaypoint = false, clearWaypoint = false;
+    Vector2 waypoint = { 0.0f, 0.0f };
     Vector2 focus = { 0.0f, 0.0f }; // дэлгэцийн төвд байх ертөнцийн цэг (x, z)
 };

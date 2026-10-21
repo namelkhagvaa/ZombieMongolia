@@ -216,6 +216,12 @@ int main(int argc, char** argv)
         {
             options.weather = std::atoi(argv[++i]);
         }
+        else if (std::strcmp(argv[i], "--waypoint") == 0 && i + 2 < argc)
+        {
+            options.hasWaypoint = true;
+            options.waypointX = (float)std::atof(argv[++i]);
+            options.waypointZ = (float)std::atof(argv[++i]);
+        }
         else if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc)
         {
             options.frames = std::atoi(argv[++i]);
