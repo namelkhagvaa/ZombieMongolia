@@ -180,6 +180,10 @@ private:
     int activeMember = 0;
     int missionFrame = 0;        // даалгаврын шинэчлэлтийн тоолуур (туршилтын командуудад)
     int teamVehicle = -1;        // багийн гишүүдийн сонгосон хэрэгсэл (-1 = байхгүй)
+    // Хамтарсан тоглолт: зочинд сүүлд илгээсэн унааны байрлал, эрүүл мэнд (хөдлөөгүйг дахин илгээхгүй)
+    std::vector<Vector3> sentVehiclePosition;
+    std::vector<float> sentVehicleHealth;
+    int vehicleResend = 0; // хөдлөөгүй унааг ч ээлжлэн илгээнэ (алдагдсан пакетыг нөхнө)
     float teamBoardTimer = 0.0f; // суух гэж эхэлснээс хойших хугацаа
     float escortStuck = 0.0f;    // дагаж буй хэрэгсэл гацсан хугацаа
     Grenades grenades;

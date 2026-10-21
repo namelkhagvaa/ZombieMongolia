@@ -1,6 +1,7 @@
 #include "Game.h"
 
 #include "City.h"
+#include "Structures.h"
 #include "VehicleModel.h"
 
 #include "Audio.h"
@@ -1168,6 +1169,8 @@ void Game::ThrowGrenade(Ray aim)
 void Game::SpawnVehicles()
 {
     garage.Clear();
+    sentVehiclePosition.clear(); // шинэ унаанууд: зочинд дахин илгээнэ
+    sentVehicleHealth.clear();
 
     // Аймгийн хилийн дотор байгаа цэгүүдэд л байрлуулна.
     // Суурингууд үе бүрд өөр тул хүссэн цэг дээр барилга, хашаа таарч болно: ойролцоох чөлөөт цэгийг хайна.
@@ -1217,6 +1220,27 @@ void Game::SpawnVehicles()
             place(VehicleType::Motorcycle, camp.x - 9.0f, camp.y + 9.0f, 120.0f);
         }
         ++index;
+    }
+
+    // Улаанбаатарын хот: гудамжны захаар тархсан унаж болох машинууд (Yaris, X-Trail, жийп, ачааны машин, мотоцикл)
+    // ба ШТС бүрийн дэргэд нэг машин
+    if (world.CityActive())
+    {
+        static const VehicleType kCityVehicles[] = { VehicleType::Hatchback, VehicleType::Suv, VehicleType::Jeep, VehicleType::Hatchback,
+                                                     VehicleType::Suv, VehicleType::Motorcycle, VehicleType::Truck, VehicleType::Hatchback,
+                                                     VehicleType::Suv, VehicleType::Jeep };
+        int k = 0;
+        for (const Vector3& spot : CityVehicleSpots())
+        {
+            place(kCityVehicles[k++ % 10], spot.x, spot.z, spot.y * RAD2DEG);
+        }
+        for (const CityPoi& poi : UlaanbaatarCity().pois)
+        {
+            if (poi.kind == CityPoiKind::Station)
+            {
+                place(k++ % 2 ? VehicleType::Hatchback : VehicleType::Truck, poi.position.x + 22.0f, poi.position.y - 14.0f, 90.0f);
+            }
+        }
     }
 
     // Жижиг суурин бүрд: гудамжинд жийп, Yaris, гурван дугуйт, X-Trail ээлжлэн
@@ -3597,9 +3621,25 @@ void Game::SendHostSnapshot(float dt)
         s.health = soldier.health;
         snapshot.soldiers.push_back(s);
     }
+    // Унаа: хөдөлсөн, гэмтсэн, сууж яваа унааг л илгээнэ (хотод зуу гаруй унаа зогсож байдаг: snapshot-ыг багасгана).
+    // Хоёр тал эхэндээ ижил байрлалд үүсгэдэг тул хөдлөөгүй унааг илгээх шаардлагагүй; гэхдээ snapshot
+    // бүрд хэдэн унааг ээлжлэн илгээж, алдагдсан пакет, хожуу нэгдсэн зочныг нөхнө.
+    sentVehiclePosition.resize((size_t)garage.Count(), { 1e9f, 0.0f, 0.0f });
+    sentVehicleHealth.resize((size_t)garage.Count(), -1.0f);
+    const int resendFrom = vehicleResend, resendCount = std::min(garage.Count(), 6);
+    vehicleResend = garage.Count() > 0 ? (vehicleResend + resendCount) % garage.Count() : 0;
     for (int i = 0; i < garage.Count(); ++i)
     {
         const Vehicle& vehicle = garage.At(i);
+        const bool occupied = i == garage.Driven() || i == teamVehicle;
+        const float health = vehicle.wrecked ? 0.0f : vehicle.health;
+        const bool changed = occupied || std::fabs(vehicle.speed) > 0.01f ||
+                             Vector3Distance(vehicle.position, sentVehiclePosition[(size_t)i]) > 0.02f ||
+                             health != sentVehicleHealth[(size_t)i];
+        const bool resend = garage.Count() > 0 && (i - resendFrom + garage.Count()) % garage.Count() < resendCount;
+        if (!changed && !resend) continue;
+        sentVehiclePosition[(size_t)i] = vehicle.position;
+        sentVehicleHealth[(size_t)i] = health;
         Net::VehicleState v;
         v.index = (uint8_t)i;
         v.type = (uint8_t)vehicle.type;
@@ -3607,8 +3647,8 @@ void Game::SendHostSnapshot(float dt)
         v.heading = vehicle.heading;
         v.speed = vehicle.speed;
         v.steer = vehicle.steer;
-        v.occupied = (i == garage.Driven() || i == teamVehicle) ? 1 : 0;
-        v.health = vehicle.wrecked ? 0.0f : vehicle.health;
+        v.occupied = occupied ? 1 : 0;
+        v.health = health;
         snapshot.vehicles.push_back(v);
         if (snapshot.vehicles.size() >= 255) break;
     }

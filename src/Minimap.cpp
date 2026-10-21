@@ -578,8 +578,19 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
         { airport::kTerminal.x, airport::kTerminal.y - 60.0f, world.GetLayout().AirfieldActive() ? "БУЯНТ-УХАА НИСЭХ БУУДАЛ" : nullptr },
     };
     const bool city = world.CityActive();
-    for (const Place& place : city ? std::vector<Place>(std::begin(cityPlaces), std::end(cityPlaces))
-                                   : std::vector<Place>(std::begin(places), std::end(places)))
+    std::vector<Place> shown = city ? std::vector<Place>(std::begin(cityPlaces), std::end(cityPlaces))
+                                    : std::vector<Place>(std::begin(places), std::end(places));
+    if (city)
+    {
+        bool first = true; // эхнийх нь (даалгаврын ШТС) cityPlaces-д бий
+        for (const CityPoi& poi : UlaanbaatarCity().pois)
+        {
+            if (poi.kind != CityPoiKind::Station) continue;
+            if (!first) shown.push_back({ poi.position.x + 31.0f, poi.position.y - 35.0f, "ШТС" });
+            first = false;
+        }
+    }
+    for (const Place& place : shown)
     {
         if (place.name == nullptr) continue;
         const Vector2 p = view.ToScreen(place.x, place.z);

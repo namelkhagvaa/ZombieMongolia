@@ -20,7 +20,7 @@
   u32 buildings; building: u8 type, u8 levels, f32 height, u16 n, n * (f32 x, f32 z)   (цагийн зүүний эсрэг)
   u32 areas;     area:     u8 kind, u16 n, n * (f32 x, f32 z)   (0 ус, 1 цэцэрлэг, 2 талбай, 3 ой, 4 оршуулга, 5 хучилттай талбай)
   u32 lines;     line:     u8 kind, f32 halfWidth, u16 n, n * (f32 x, f32 z)
-  u32 pois;      poi:      u8 kind, f32 x, f32 z, u16 bytes, utf-8 name
+  u32 pois;      poi:      u8 kind, f32 x, f32 z, u16 bytes, utf-8 name   (kind 7: ШТС барих зөрүү)
 """
 import gzip, json, math, struct, sys
 
@@ -299,6 +299,46 @@ def main(city_path, poi_path, relation_path, out_path):
         if abs(x) < EXTENT and abs(z) < EXTENT:
             pois.append((POI_KIND[kind], x, z, t.get('name', '')))
 
+    # Тоглоомын ШТС (саравч, түгээгүүр, дэлгүүр) барих жинхэнэ бензин колонкууд: POI kind 7 = station,
+    # байрлал нь ШТС-ийн загварыг шилжүүлэх зөрүү (src/Structures.cpp GasStation). Загварын эзлэх тэгш өнцөгт
+    # (18..52, -20..-3) том зам, том барилгатай давхцахгүй, бие биеэсээ 160 м-ээс хол байх ёстой.
+    # Эхнийх нь "хотын аварга" даалгаврын ШТС (src/City.h kCityGasOffset).
+    def segment_distance(px, pz, a, b):
+        dx, dz = b[0] - a[0], b[1] - a[1]
+        length = dx * dx + dz * dz
+        t = max(0.0, min(1.0, ((px - a[0]) * dx + (pz - a[1]) * dz) / length)) if length > 0 else 0.0
+        return math.hypot(px - a[0] - dx * t, pz - a[1] - dz * t)
+
+    stations = [(320.0, -1103.5)]
+    for kind, x, z, name in sorted(pois, key=lambda poi: math.hypot(poi[1], poi[2])):
+        if kind != POI_KIND['fuel'] or abs(x) > 2450 or abs(z) > 2450:
+            continue
+        ox, oz = x - 30.0, z + 11.5
+        rect = (18 + ox, -20 + oz, 52 + ox, -3 + oz)
+        if any(math.hypot(ox - sx, oz - sz) < 160 for sx, sz in stations):
+            continue
+        samples = [(rect[0] + (rect[2] - rect[0]) * i / 8, rect[1] + (rect[3] - rect[1]) * j / 4) for i in range(9) for j in range(5)]
+        blocked = False
+        for klass, dirt, half, pts in roads:
+            if klass > 4:
+                continue  # хашааны зам ШТС-аар дайрч болно
+            if max(q[0] for q in pts) < rect[0] - 15 or min(q[0] for q in pts) > rect[2] + 15 or \
+               max(q[1] for q in pts) < rect[1] - 15 or min(q[1] for q in pts) > rect[3] + 15:
+                continue
+            if any(segment_distance(px, pz, pts[i], pts[i + 1]) < half + 0.5 for px, pz in samples for i in range(len(pts) - 1)):
+                blocked = True
+                break
+        for _, _, _, pts in buildings:
+            if blocked:
+                break
+            bx = [q[0] for q in pts]; bz = [q[1] for q in pts]
+            if max(bx) > rect[0] and min(bx) < rect[2] and max(bz) > rect[1] and min(bz) < rect[3]:
+                blocked = signed_area(pts) > 450.0  # колонкын өөрийн жижиг барилга, саравчийг хасаж болно
+        if not blocked:
+            stations.append((ox, oz))
+    for ox, oz in stations:
+        pois.append((7, ox, oz, ''))
+
     out = bytearray(b'CITY') + struct.pack('<I', 1)
 
     def points(pts):
@@ -328,8 +368,9 @@ def main(city_path, poi_path, relation_path, out_path):
     kinds = {}
     for b in buildings:
         kinds[b[0]] = kinds.get(b[0], 0) + 1
-    print('roads %d (dirt %d), buildings %d %s, areas %d, lines %d, pois %d, %d KB'
-          % (len(roads), sum(r[1] for r in roads), len(buildings), kinds, len(areas), len(lines), len(pois), len(out) // 1024))
+    print('roads %d (dirt %d), buildings %d %s, areas %d, lines %d, pois %d, gas stations %d, %d KB'
+          % (len(roads), sum(r[1] for r in roads), len(buildings), kinds, len(areas), len(lines), len(pois), len(stations),
+             len(out) // 1024))
 
 
 if __name__ == '__main__':

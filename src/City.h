@@ -44,7 +44,8 @@ enum class CityLineKind : uint8_t
 // Онцлох газар
 enum class CityPoiKind : uint8_t
 {
-    Fuel, Square, Stadium, Police, Hospital, Museum, Government
+    Fuel, Square, Stadium, Police, Hospital, Museum, Government,
+    Station // тоглоомын ШТС барих жинхэнэ бензин колонк: position нь ШТС-ийн загварыг шилжүүлэх зөрүү
 };
 
 struct CityRoad

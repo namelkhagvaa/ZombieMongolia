@@ -1726,8 +1726,10 @@ namespace
 
     // Засмал замын урд талын шатахуун түгээх газар ба дэлгүүр.
     // ox, oz: бүх байгууламжийг шилжүүлэх зөрүү (Улаанбаатарын жинхэнэ ШТС дээр барихад)
-    void GasStation(Scene& s, float ox = 0.0f, float oz = 0.0f)
+    // style: брэнд ба түгээгүүрийн тоо (-1 = аймгийн дугаараар)
+    void GasStation(Scene& s, float ox = 0.0f, float oz = 0.0f, int style = -1)
     {
+        const int look = style >= 0 ? style : s.variant;
         // Аймаг бүрт өөр брэндийн өнгө (гол, туслах), дэлгүүрийн хана, түгээгүүрийн тоо
         struct Brand { Color main, accent, wall; };
         static const Brand brands[] = {
@@ -1737,7 +1739,7 @@ namespace
             { { 90, 56, 130, 255 }, { 230, 200, 60, 255 }, { 196, 186, 170, 255 } },   // нил ягаан, шар
             { { 30, 40, 60, 255 }, { 200, 50, 50, 255 }, { 170, 172, 176, 255 } },     // хар хөх, улаан
         };
-        const Brand& brand = brands[s.variant % 5];
+        const Brand& brand = brands[look % 5];
 
         // Дэлгүүр
         const float cx = 44.0f + ox, cz = -14.0f + oz, w = 10.0f, d = 5.0f, h = 3.2f;
@@ -1768,7 +1770,7 @@ namespace
         s.Shadow(px - 4.2f, pz - 2.8f, px + 4.2f, pz + 2.8f, 4.0f, 4.4f);
 
         // Түгээгүүр: 2 эсвэл 3, брэндийн өнгөтэй, хоолой, дэлгэцтэй
-        const int pumps = 2 + s.variant % 2;
+        const int pumps = 2 + look % 2;
         s.solid.Box({ px, 0.08f, pz }, { 1.0f + 2.4f * (float)pumps, 0.16f, 1.1f }, kConcrete);
         for (int i = 0; i < pumps; ++i)
         {
@@ -4045,18 +4047,77 @@ namespace
         }
     };
     CityMask gCityMask;
+    std::vector<Vector3> gCityVehicleSpots; // унаж болох машины байрлал (x, z, y = чиглэл)
+
+    // Хотын гудамжинд орхигдсон машин: энгийн хэлбэр (нэг машинд ~70 гурвалжин), газрын налууг дагана.
+    // heading: урд тал (sin, cos) зүг рүү.
+    void CityParkedCar(Scene& s, float x, float z, float heading)
+    {
+        static const Color paints[] = { { 186, 182, 170, 255 }, { 40, 42, 46, 255 },   { 196, 198, 200, 255 }, { 138, 62, 50, 255 },
+                                        { 58, 70, 96, 255 },    { 110, 122, 134, 255 }, { 150, 120, 60, 255 },  { 214, 210, 196, 255 } };
+        const float ground = s.terrain.HeightAt(x, z);
+        const bool suv = s.rng.Chance(0.35f); // жийп (Land Cruiser, X-Trail) эсвэл суудлын (Prius)
+        const bool burnt = s.rng.Chance(0.12f);
+        Color body = burnt ? Color{ 46, 40, 36, 255 } : JitterColor(paints[s.rng.Int(0, 7)], s.rng, 0.06f);
+        const Color glass = burnt ? Color{ 24, 22, 20, 255 } : kGlassDark;
+        const float length = suv ? 4.6f : 4.4f, width = suv ? 1.85f : 1.75f, sill = 0.32f, belt = suv ? 1.05f : 0.9f;
+        const float roof = suv ? 1.8f : 1.45f;
+        const float tilt = s.rng.Chance(0.15f) ? s.rng.Range(-0.08f, 0.08f) : 0.0f; // хий гарсан дугуй
+        MeshBuilder& m = s.solid;
+        m.SetTransform(MatrixMultiply(MatrixMultiply(MatrixRotateZ(tilt), MatrixRotateY(heading)), MatrixTranslate(x, ground, z)));
+        m.Box({ 0.0f, (sill + belt) * 0.5f, 0.0f }, { width, belt - sill, length }, body);                   // их бие
+        // Бүхээг: доороо өргөн, дээрээ нарийн (шил), дээвэр нь биеийн өнгөтэй
+        const float c0 = suv ? -1.9f : -1.4f, c1 = suv ? 1.0f : 0.9f, t0 = suv ? -1.8f : -0.95f, t1 = suv ? 0.55f : 0.25f;
+        const float hw = width * 0.5f - 0.05f, tw = width * 0.5f - 0.18f;
+        const Vector3 b00 = { -hw, belt, c0 }, b01 = { hw, belt, c0 }, b10 = { -hw, belt, c1 }, b11 = { hw, belt, c1 };
+        const Vector3 r00 = { -tw, roof, t0 }, r01 = { tw, roof, t0 }, r10 = { -tw, roof, t1 }, r11 = { tw, roof, t1 };
+        m.Quad(b10, b11, r11, r10, glass); // салхины шил
+        m.Quad(b01, b00, r00, r01, glass); // хойд шил
+        m.Quad(b00, b10, r10, r00, glass); // хажуу
+        m.Quad(b11, b01, r01, r11, glass);
+        m.Quad(r00, r10, r11, r01, burnt ? body : ScaleColor(body, 1.05f)); // дээвэр
+        // Дугуй: тэнхлэг бүрд нэг хар хайрцаг (хоёр талаасаа бага зэрэг цухуйна)
+        for (float axle : { -length * 0.32f, length * 0.32f })
+        {
+            m.Box({ 0.0f, 0.33f, axle }, { width + 0.06f, 0.62f, 0.66f }, kRubber);
+        }
+        // Гэрэл
+        for (float side : { -0.6f, 0.6f })
+        {
+            m.Box({ side * width * 0.5f, belt - 0.15f, length * 0.5f + 0.01f }, { 0.32f, 0.12f, 0.04f }, burnt ? glass : kWindowFrame);
+            m.Box({ side * width * 0.5f, belt - 0.15f, -length * 0.5f - 0.01f }, { 0.3f, 0.12f, 0.04f }, burnt ? glass : Color{ 150, 30, 26, 255 });
+        }
+        m.ResetTransform();
+
+        // Мөргөлдөөн: эргэлдсэн биеийг хоёр хайрцгаар (урд, хойд хагас)
+        const float fx = std::sin(heading), fz = std::cos(heading);
+        for (float along : { -length * 0.25f, length * 0.25f })
+        {
+            const float cx = x + fx * along, cz = z + fz * along;
+            const float ex = std::fabs(fx) * length * 0.25f + std::fabs(fz) * width * 0.5f;
+            const float ez = std::fabs(fz) * length * 0.25f + std::fabs(fx) * width * 0.5f;
+            s.Collider({ cx, ground + roof * 0.5f, cz }, { ex * 2.0f * 0.9f, roof, ez * 2.0f * 0.9f });
+        }
+    }
 
     // Даалгаврын газрууд: OSM-ийн барилгыг хасаж, тоглоомын өөрийн байгууламжийг барина.
     struct CityClearing
     {
         float x0, z0, x1, z1;
     };
-    const CityClearing kCityClearings[] = {
-        { -70.0f, -35.0f, -16.0f, 35.0f },                                                  // застав (Сүхбаатарын талбай)
-        { 18.0f + kCityGasOffset.x, -20.0f + kCityGasOffset.y, 52.0f + kCityGasOffset.x, -3.0f + kCityGasOffset.y }, // ШТС
-    };
+    std::vector<CityClearing> CityClearings(const CityData& city)
+    {
+        std::vector<CityClearing> clearings = { { -70.0f, -35.0f, -16.0f, 35.0f } }; // застав (Сүхбаатарын талбай)
+        for (const CityPoi& poi : city.pois)
+        {
+            if (poi.kind != CityPoiKind::Station) continue;
+            const Vector2 o = poi.position;
+            clearings.push_back({ 18.0f + o.x, -20.0f + o.y, 52.0f + o.x, -3.0f + o.y }); // ШТС
+        }
+        return clearings;
+    }
 
-    bool InCityClearing(const std::vector<Vector2>& outline)
+    bool InCityClearing(const std::vector<CityClearing>& clearings, const std::vector<Vector2>& outline)
     {
         float minX = 1e9f, maxX = -1e9f, minZ = 1e9f, maxZ = -1e9f;
         for (const Vector2& p : outline)
@@ -4064,7 +4125,7 @@ namespace
             minX = std::min(minX, p.x); maxX = std::max(maxX, p.x);
             minZ = std::min(minZ, p.y); maxZ = std::max(maxZ, p.y);
         }
-        for (const CityClearing& c : kCityClearings)
+        for (const CityClearing& c : clearings)
         {
             if (maxX > c.x0 && minX < c.x1 && maxZ > c.z0 && minZ < c.z1) return true;
         }
@@ -4426,9 +4487,10 @@ namespace
         const int streetTriangles = s.solid.TriangleCount();
 
         int built = 0;
+        const std::vector<CityClearing> clearings = CityClearings(city);
         for (const CityBuilding& building : city.buildings)
         {
-            if (building.outline.size() < 3 || InCityClearing(building.outline)) continue;
+            if (building.outline.size() < 3 || InCityClearing(clearings, building.outline)) continue;
             CityBuildingMesh(s, building);
             ++built;
         }
@@ -4499,15 +4561,87 @@ namespace
                 ++trees;
             }
         }
-        TraceLog(LOG_INFO, "CITY: %d buildings (%d triangles), streets %d triangles, %d trees, %d lamps", built, buildingTriangles,
-                 streetTriangles, trees, lamps);
+        // Гудамжны захад зогссон (орхигдсон) машинууд ба унаж болох машины байрлалууд
+        auto inClearing = [&](float x, float z) {
+            for (const CityClearing& c : clearings)
+            {
+                if (x > c.x0 - 4.0f && x < c.x1 + 4.0f && z > c.z0 - 4.0f && z < c.z1 + 4.0f) return true;
+            }
+            return false;
+        };
+        std::vector<Vector3> spots; // x, z, y = чиглэл
+        auto addSpot = [&](float x, float z, float heading, float spacing) {
+            if (std::fabs(x) > kCityHalfExtent - 20.0f || std::fabs(z) > kCityHalfExtent - 20.0f) return;
+            if (gCityMask.Blocked(x, z, 2.6f) || s.layout.CityGround(x, z) == 6 || inClearing(x, z)) return;
+            for (size_t k = spots.size() > 60 ? spots.size() - 60 : 0; k < spots.size(); ++k)
+            {
+                if (std::fabs(spots[k].x - x) < spacing && std::fabs(spots[k].z - z) < spacing) return;
+            }
+            spots.push_back({ x, heading, z });
+        };
+        for (const CityRoad& road : city.roads)
+        {
+            if (road.klass > CityRoadClass::Service || road.dirt) continue;
+            // Том замд олон: хүмүүс зугтах үед орхисон машинууд
+            const float chance = road.klass <= CityRoadClass::Primary ? 0.42f : road.klass <= CityRoadClass::Tertiary ? 0.32f
+                               : road.klass == CityRoadClass::Residential ? 0.2f : 0.16f;
+            const std::vector<Vector2> path = Resample(road.points, 9.0f);
+            for (size_t i = 0; i + 1 < path.size(); ++i)
+            {
+                const Vector2 tangent = Vector2Normalize(Vector2Subtract(path[i + 1], path[i]));
+                const Vector2 normal = { -tangent.y, tangent.x };
+                const Vector2 mid = Vector2Lerp(path[i], path[i + 1], 0.5f);
+                const float along = std::atan2(tangent.x, tangent.y);
+                if (road.halfWidth >= 6.0f && rng.Chance(0.04f))
+                {
+                    // Түгжрэл: хэдэн эгнээгээр зогссон, хазгай эргэсэн машинууд
+                    const int cars = rng.Int(4, 8);
+                    for (int c = 0; c < cars; ++c)
+                    {
+                        const float lane = rng.Range(-road.halfWidth + 1.3f, road.halfWidth - 1.3f);
+                        const float back = rng.Range(-9.0f, 9.0f);
+                        addSpot(mid.x + normal.x * lane + tangent.x * back, mid.y + normal.y * lane + tangent.y * back,
+                                along + (lane > 0.0f ? PI : 0.0f) + rng.Range(-0.5f, 0.5f), 3.2f);
+                    }
+                    continue;
+                }
+                if (!rng.Chance(chance)) continue;
+                const float sideSign = rng.Chance(0.5f) ? 1.0f : -1.0f;
+                // Өргөн замд захын эгнээнд, нарийн замд замын хажууд
+                const float offset = road.halfWidth >= 3.4f ? road.halfWidth - 1.2f : road.halfWidth + 1.4f;
+                // баруун гар талын хөдөлгөөн: зүүн талынх эсрэг зүг рүү харна
+                addSpot(mid.x + normal.x * offset * sideSign, mid.y + normal.y * offset * sideSign,
+                        along + (sideSign > 0.0f ? PI : 0.0f) + rng.Range(-0.08f, 0.08f), 6.0f);
+            }
+        }
+        // Холилдуулж: нэг хэсэг нь орхигдсон машин, нөгөө нь унаж болох машин (хотын өнцөг булан бүрд)
+        for (size_t i = spots.size(); i > 1; --i) std::swap(spots[i - 1], spots[(size_t)rng.Int(0, (int)i - 1)]);
+        gCityVehicleSpots.clear();
+        int parked = 0;
+        for (size_t i = 0; i < spots.size(); ++i)
+        {
+            if (gCityVehicleSpots.size() < 110 && i % 5 == 0)
+            {
+                gCityVehicleSpots.push_back(spots[i]);
+                continue;
+            }
+            if (parked >= 3200) break;
+            CityParkedCar(s, spots[i].x, spots[i].z, spots[i].y);
+            ++parked;
+        }
+        TraceLog(LOG_INFO, "CITY: %d buildings (%d triangles), streets %d triangles, %d trees, %d lamps, %d parked cars, %d vehicle spots",
+                 built, buildingTriangles, streetTriangles, trees, lamps, parked, (int)gCityVehicleSpots.size());
     }
 
     // Хотын үеийн байгууламжууд: застав (Сүхбаатарын талбай дээр), ШТС, хөшөө, орхигдсон машинууд.
     void BuildCitySettlement(Scene& s)
     {
         BuildCheckpoint(s);
-        GasStation(s, kCityGasOffset.x, kCityGasOffset.y);
+        int station = 0;
+        for (const CityPoi& poi : UlaanbaatarCity().pois)
+        {
+            if (poi.kind == CityPoiKind::Station) GasStation(s, poi.position.x, poi.position.y, station++);
+        }
         SukhbaatarStatue(s, 0.0f, 0.0f);
         for (float x : { -60.0f, 60.0f })
         {
@@ -4544,6 +4678,11 @@ namespace
             ++placed;
         }
     }
+}
+
+const std::vector<Vector3>& CityVehicleSpots()
+{
+    return gCityVehicleSpots;
 }
 
 void BuildStaticStructures(const Layout& layout, const Terrain& terrain, std::vector<Obstacle>& obstacles,
