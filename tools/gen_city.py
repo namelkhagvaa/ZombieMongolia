@@ -32,8 +32,11 @@
                  f32 west, east, south, north (оргилоос бэл хүртэлх зай, м), u16 bytes, utf-8 name;
                  дараа нь f32 ovoo x, z (тахилгат овоо), f32 stupa x, z (суварга), f32 stairs x, z (шатны доод үзүүр)
                  (байхгүй бол 1e9)
+  (version 3) газрын өндөр (tools/dem.py, AWS Terrain Tiles): ойрын тор, алсын тор (10 км) —
+                 f32 cell, u16 side, f32 half, u32 bytes, raw deflate int16 (0.25 м, тоглоомын (0, 0)-оос дээш);
+                 алсын ус, ой: u32 lines (u8 kind, f32 halfWidth, points), u32 areas (u8 kind, points)
 """
-import gzip, json, math, os, struct, sys
+import gzip, json, math, os, struct, sys, zlib
 
 LAT0, LON0 = 47.918850, 106.917580   # Сүхбаатарын талбай
 EXTENT = 2700.0                      # тоглох талбай (±2666 м) ба бага зэрэг илүү
@@ -568,8 +571,59 @@ def choose_sites(roads, buildings, pois, mountains=()):
     return (ox, oz), sites
 
 
-def write(out_path, roads, buildings, areas, lines, pois, mountains=()):
-    out = bytearray(b'CITY') + struct.pack('<I', 2)
+NEAR_CELL, NEAR_HALF = 15.0, 3105.0   # тоглох талбай (ертөнцийн газрын тор ±3100)
+FAR_CELL, FAR_HALF = 60.0, 10500.0    # алсын газар (10 км)
+
+
+def origin_latlon(origin):
+    return LAT0 + origin[1] / 111320.0, LON0 - origin[0] / (111320.0 * cos0)
+
+
+def dem_grids(origin):
+    """Тоглоомын (0, 0)-ийг төвлөсөн ойрын ба алсын өндрийн тор (0 = (0, 0)-ийн өндөр)."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from dem import Elevation
+    lat0, lon0 = origin_latlon(origin)
+    k = 111320.0 * math.cos(math.radians(lat0))
+    grids = []
+    for zoom, cell, half in ((13, NEAR_CELL, NEAR_HALF), (11, FAR_CELL, FAR_HALF)):
+        source = Elevation(zoom)
+        side = int(round(half * 2 / cell)) + 1
+        values = [source.at(lat0 + (-half + iz * cell) / 111320.0, lon0 - (-half + ix * cell) / k)
+                  for iz in range(side) for ix in range(side)]
+        grids.append((cell, side, half, values))
+    base = grids[0][3][(grids[0][1] // 2) * grids[0][1] + grids[0][1] // 2]
+    return base, [(c, s, h, [v - base for v in values]) for c, s, h, values in grids]
+
+
+def far_features(path, origin):
+    """10 км доторх гол мөрөн, нуур (kind 0), ой (kind 3): тоглоомын координатаар, хялбарчилсан."""
+    lines, areas = [], []
+    if not os.path.exists(path):
+        return lines, areas
+    ox, oz = origin
+    inside = lambda pts: any(abs(x - ox) < FAR_HALF + 200 and abs(z - oz) < FAR_HALF + 200 for x, z in pts)
+    for e in with_relations(load(path)):
+        t = e.get('tags', {})
+        geometry = e.get('geometry')
+        if not geometry:
+            continue
+        if t.get('waterway') in ('river', 'stream', 'canal'):
+            pts = simplify([project(p) for p in geometry], 6.0)
+            if len(pts) >= 2 and inside(pts):
+                half = {'river': 14.0, 'canal': 4.0}.get(t['waterway'], 2.5)
+                for k in range(0, len(pts) - 1, 60000):
+                    lines.append((0, half, [(x - ox, z - oz) for x, z in pts[k:k + 60001]]))
+        else:
+            forest = t.get('natural') == 'wood' or t.get('landuse') == 'forest'
+            pts = ring(geometry, 8.0)
+            if pts and len(pts) < 60000 and inside(pts) and signed_area(pts) > 400.0:
+                areas.append((3 if forest else 0, [(x - ox, z - oz) for x, z in pts]))
+    return lines, areas
+
+
+def write(out_path, roads, buildings, areas, lines, pois, mountains=(), terrain=None):
+    out = bytearray(b'CITY') + struct.pack('<I', 3 if terrain else 2)
 
     def points(pts):
         out.extend(struct.pack('<H', len(pts)))
@@ -598,6 +652,19 @@ def write(out_path, roads, buildings, areas, lines, pois, mountains=()):
         out.extend(struct.pack('<fffffffH', x, z, height, west, east, south, north, len(data))); out.extend(data)
         for point in ovoo:
             out.extend(struct.pack('<ff', *(point or (1e9, 1e9))))
+    if terrain:
+        grids, far_lines, far_areas = terrain
+        for cell, side, half, values in grids:
+            packed_values = struct.pack('<%dh' % len(values), *[max(-32767, min(32767, int(round(v * 4.0)))) for v in values])
+            compressor = zlib.compressobj(9, zlib.DEFLATED, -15)  # raylib DecompressData: raw deflate
+            data = compressor.compress(packed_values) + compressor.flush()
+            out.extend(struct.pack('<fHfI', cell, side, half, len(data))); out.extend(data)
+        out.extend(struct.pack('<I', len(far_lines)))
+        for kind, half, pts in far_lines:
+            out.extend(struct.pack('<Bf', kind, half)); points(pts)
+        out.extend(struct.pack('<I', len(far_areas)))
+        for kind, pts in far_areas:
+            out.extend(struct.pack('<B', kind)); points(pts)
     with open(out_path, 'wb') as f:
         f.write(out)
     kinds = {}
@@ -671,7 +738,10 @@ def ulaanbaatar(city_path, poi_path, relation_path, out_path):
             stations.append((ox, oz))
     pois += [(7, ox, oz, '') for ox, oz in stations]
     pois.append((8, -18.0, -342.0, 'Чойжин ламын сүм'))  # хотын төвийн даалгавар
-    write(out_path, roads, buildings, areas, lines, pois)
+    base, grids = dem_grids((0.0, 0.0))
+    far = far_features(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'towns', '15_water.json.gz'), (0.0, 0.0))
+    print('Улаанбаатар: elevation %.0f m, far water %d lines, %d areas' % (base, len(far[0]), len(far[1])))
+    write(out_path, roads, buildings, areas, lines, pois, (), (grids, far[0], far[1]))
 
 
 def town(index, out_path):
@@ -691,8 +761,12 @@ def town(index, out_path):
         mountains.append((mname, px, pz, height, west, east, south, north, points))
     origin, sites = choose_sites(roads, buildings, pois, mountains)
     pois += [(k, x, z, '') for k, x, z in sites]
-    print('%s: outpost (game origin) at %.0f, %.0f from the town centre' % (name, origin[0], origin[1]))
-    write(out_path, *shifted(origin, roads, buildings, areas, lines, pois, mountains))
+    base, grids = dem_grids(origin)
+    folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'towns')
+    far = far_features(os.path.join(folder, '%02d_water.json.gz' % index), origin)
+    print('%s: outpost (game origin) at %.0f, %.0f from the town centre, elevation %.0f m, far water %d lines, %d areas'
+          % (name, origin[0], origin[1], base, len(far[0]), len(far[1])))
+    write(out_path, *shifted(origin, roads, buildings, areas, lines, pois, mountains), terrain=(grids, far[0], far[1]))
 
 
 if __name__ == '__main__':

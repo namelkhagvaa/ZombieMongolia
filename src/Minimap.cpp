@@ -626,7 +626,7 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     if (city)
     {
         // ODbL: Улаанбаатарын гудамж, барилга OpenStreetMap-ийн өгөгдлөөр
-        UiText("Газрын зураг: (c) OpenStreetMap contributors (ODbL)", (int)view.area.x + 10,
+        UiText("Газрын зураг: (c) OpenStreetMap contributors (ODbL)  ·  Өндөр: AWS Terrain Tiles (SRTM, Mapzen)", (int)view.area.x + 10,
                (int)(view.area.y + view.area.height) - 22, 14, Fade(kFrame, 0.75f));
     }
     else if (world.GetLayout().AirfieldActive())

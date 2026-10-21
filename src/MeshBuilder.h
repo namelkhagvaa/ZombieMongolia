@@ -33,6 +33,8 @@ public:
     // Дараа нэмэгдэх бүх оройд хэрэглэгдэх хувиргалт (хазайлгах, эргүүлэх).
     void SetTransform(const Matrix& matrix);
     void ResetTransform();
+    // Бүх оройд (хувиргалтын дараа) нэмэгдэх шилжилт: байгууламжийг газрын өндөрт өргөнө.
+    void SetOffset(Vector3 value) { offset = value; }
 
     void Triangle(Vector3 a, Vector3 b, Vector3 c, Color color);
     void Triangle(Vector3 a, Vector3 b, Vector3 c, Color ca, Color cb, Color cc);
@@ -81,6 +83,7 @@ private:
     std::vector<unsigned char> colors;
     Matrix transform = {};
     bool hasTransform = false;
+    Vector3 offset = { 0.0f, 0.0f, 0.0f };
 };
 
 // vertexCount = 0 бол юу ч хийхгүй.

@@ -42,6 +42,9 @@ public:
     // Улаанбаатар / аймгийн жинхэнэ төв (OpenStreetMap) идэвхтэй эсэх
     bool CityActive() const { return cityProvince >= 0; }
     int CityProvince() const { return cityProvince; }
+    // Хотын эргэн тойрны жинхэнэ газар (10 км хүртэл): Environment::DrawFarLand зурна
+    bool HasFarLand() const { return !farLand.empty(); }
+    const std::vector<MeshPiece>& FarLand() const { return farLand; }
     // obstacles-ийн эхний ийм тооны саад нь тогтмол хэсгийнх (хотод: OSM-ийн барилга, мод, шон)
     size_t StaticObstacleCount() const { return staticObstacleCount; }
 
@@ -137,6 +140,7 @@ private:
     void BuildStatic();
     // Хээр тал <-> аймгийн жинхэнэ хот (province = -1 бол хээр тал): layout, газар, тогтмол хэсгийг солино.
     void SwitchCity(int province);
+    void BuildFarLand();
     void BuildObstacleGrid();
     // Цонхны гарцын зогсох цэгүүд хашаа, тавилга зэрэг саадтай давхцвал ойрын чөлөөт газар руу шилжүүлнэ;
     // хол шилжүүлэх шаардлагатай бол (давсны дараа гацна) гарцыг хасна.
@@ -169,6 +173,7 @@ private:
     size_t staticObstacleCount = 0; // obstacles-ийн эхний хэсэг нь тогтмол, үлдсэн нь суурингийнх
     int settlementVariant = -1;
     int cityProvince = -1;          // идэвхтэй хотын аймаг (-1 = зохиомол хээр тал)
+    std::vector<MeshPiece> farLand; // хотын эргэн тойрны жинхэнэ газар (оройн normal, өнгөтэй)
     Layout steppeLayout;            // хотод байх үед хээр талын layout-ийн хуулбар (буцахад)
 
     Shape boundary;

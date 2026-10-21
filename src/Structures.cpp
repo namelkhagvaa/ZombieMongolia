@@ -147,6 +147,38 @@ namespace
         }
     };
 
+    // Тэгш бүсэд (газрын жинхэнэ өндөртэй хотод level өндөрт) байгууламж барина: байгууламжийн код газрыг 0
+    // түвшинд гэж үздэг тул MeshBuilder-ийн шилжилт, газрын bias-аар өргөж, мөргөлдөөн, хаалга, гарцыг шилжүүлнэ.
+    template <typename Build>
+    void AtLevel(Scene& s, float level, Build build)
+    {
+        if (level == 0.0f)
+        {
+            build();
+            return;
+        }
+        const size_t obstacles = s.obstacles.size(), passages = s.passages.size();
+        const size_t doors = s.doors.size(), interiors = s.interiors.size();
+        const Vector3 lift = { 0.0f, level, 0.0f }, none = { 0.0f, 0.0f, 0.0f };
+        s.solid.SetOffset(lift);
+        s.shadows.SetOffset(lift);
+        s.glass.SetOffset(lift);
+        s.terrain.SetBuildBias(level);
+        build();
+        s.terrain.SetBuildBias(0.0f);
+        s.solid.SetOffset(none);
+        s.shadows.SetOffset(none);
+        s.glass.SetOffset(none);
+        for (size_t i = obstacles; i < s.obstacles.size(); ++i) s.obstacles[i].center.y += level;
+        for (size_t i = passages; i < s.passages.size(); ++i)
+        {
+            s.passages[i].from.y += level;
+            s.passages[i].to.y += level;
+        }
+        for (size_t i = doors; i < s.doors.size(); ++i) s.doors[i].hinge.y += level;
+        for (size_t i = interiors; i < s.interiors.size(); ++i) s.interiors[i].upperFloor += level;
+    }
+
     // ------------------------------------------------------------------ Зам
 
     std::vector<Vector2> Resample(const std::vector<Vector2>& points, float spacing)
@@ -4768,25 +4800,42 @@ namespace
     }
 
     // Хотын үеийн байгууламжууд: застав (Сүхбаатарын талбай дээр), ШТС, хөшөө, орхигдсон машинууд.
+    void CapitalSquare(Scene& s);
+
     void BuildCitySettlement(Scene& s)
     {
         const CityData& city = CurrentCity();
-        BuildCheckpoint(s);
+        const Layout& layout = s.layout;
+        AtLevel(s, layout.BuildLevel(-40.0f, 0.0f), [&] { BuildCheckpoint(s); });
         int station = 0;
         for (const CityPoi& poi : city.pois)
         {
-            if (poi.kind == CityPoiKind::Station) GasStation(s, poi.position.x, poi.position.y, s.variant + station++);
-            if (poi.kind == CityPoiKind::Warehouse) Warehouse(s, poi.position.x, poi.position.y);
+            const Vector2 p = poi.position;
+            if (poi.kind == CityPoiKind::Station)
+            {
+                const int style = s.variant + station++;
+                AtLevel(s, layout.BuildLevel(p.x + 35.0f, p.y - 11.0f), [&] { GasStation(s, p.x, p.y, style); });
+            }
+            if (poi.kind == CityPoiKind::Warehouse) AtLevel(s, layout.BuildLevel(p.x + 5.0f, p.y), [&] { Warehouse(s, p.x, p.y); });
         }
         if (!s.layout.IsCapital())
         {
             // Аймгийн төвөөс гадна: хот айл, жижиг суурин, мод, овоо, мал (бүс нутгаас хамаарна)
-            BuildHerderCamps(s);
-            BuildHamlets(s);
+            for (const Vector2& camp : layout.camps) AtLevel(s, layout.BuildLevel(camp.x, camp.y), [&] { HerderCamp(s, camp.x, camp.y); });
+            for (const Vector2& hamlet : layout.hamlets)
+            {
+                AtLevel(s, layout.BuildLevel(hamlet.x - 4.0f, hamlet.y), [&] { Hamlet(s, hamlet.x, hamlet.y); });
+            }
             BuildMountains(s);
             BuildNature(s);
             return;
         }
+        AtLevel(s, layout.BuildLevel(0.0f, 0.0f), [&] { CapitalSquare(s); });
+    }
+
+    // Сүхбаатарын талбайн хөшөө, гэрэлтүүлэг, орхигдсон машинууд
+    void CapitalSquare(Scene& s)
+    {
         SukhbaatarStatue(s, 0.0f, 0.0f);
         for (float x : { -60.0f, 60.0f })
         {

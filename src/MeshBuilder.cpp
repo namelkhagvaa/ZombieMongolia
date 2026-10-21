@@ -29,6 +29,7 @@ void MeshBuilder::Vertex(Vector3 position, Color color)
     {
         position = Vector3Transform(position, transform);
     }
+    position = Vector3Add(position, offset);
     vertices.push_back(position.x);
     vertices.push_back(position.y);
     vertices.push_back(position.z);

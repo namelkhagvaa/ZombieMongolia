@@ -9,3 +9,4 @@ cmake-build-*/
 !build/ZombieMongolia.exe
 !dist/ZombieMongolia_Setup.exe
 build_web/
+tools/data/dem_cache/

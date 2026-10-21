@@ -241,6 +241,49 @@ float Layout::ZoneDistance(float x, float z) const
     return best;
 }
 
+float HeightGrid::Sample(float x, float z) const
+{
+    const float fx = std::clamp((x + half) / cell, 0.0f, (float)(side - 1) - 0.001f);
+    const float fz = std::clamp((z + half) / cell, 0.0f, (float)(side - 1) - 0.001f);
+    const int ix = (int)fx, iz = (int)fz;
+    const float tx = fx - (float)ix, tz = fz - (float)iz;
+    const float* row = &values[(size_t)iz * side + ix];
+    const float top = row[0] + (row[1] - row[0]) * tx;
+    const float bottom = row[side] + (row[side + 1] - row[side]) * tx;
+    return top + (bottom - top) * tz;
+}
+
+float Layout::DemHeight(float x, float z) const
+{
+    if (nearDem.Covers(x, z)) return nearDem.Sample(x, z);
+    return farDem.Empty() ? nearDem.Sample(x, z) : farDem.Sample(x, z);
+}
+
+bool Layout::NearestZone(float x, float z, float& distance, float& level) const
+{
+    bool found = false;
+    distance = kFarDistance;
+    for (uint32_t index : cellZones[CellIndex(x, z)])
+    {
+        const FlatZone& zone = zones[index];
+        const float d = std::sqrt((x - zone.center.x) * (x - zone.center.x) + (z - zone.center.y) * (z - zone.center.y)) - zone.radius;
+        if (d < distance)
+        {
+            distance = d;
+            level = zone.level;
+            found = true;
+        }
+    }
+    return found;
+}
+
+float Layout::BuildLevel(float x, float z) const
+{
+    float distance = 0.0f, level = 0.0f;
+    if (NearestZone(x, z, distance, level) && distance <= 0.0f) return level;
+    return HasDem() ? DemHeight(x, z) : 0.0f;
+}
+
 float Mountain::Profile(float x, float z) const
 {
     const float rx = (x - peak.x) / (x > peak.x ? west : east);
@@ -598,6 +641,8 @@ Layout MakeCityLayout(const CityData& data)
     layout.city = true;
     layout.capital = data.province == kUlaanbaatarProvince;
     layout.mountains = data.mountains;
+    layout.nearDem = data.nearDem;
+    layout.farDem = data.farDem;
 
     // Даалгаврын байгууламжууд тэгш газарт (Structures-ийн загварууд газрын түвшин 0-д барина):
     // застав (хуаран, дэлгүүр), ШТС, агуулах, хот айл, жижиг суурин
@@ -632,6 +677,11 @@ Layout MakeCityLayout(const CityData& data)
         }
     }
     layout.BuildIndex();
+    if (layout.HasDem())
+    {
+        // Тэгш бүс бүр төвийнхөө жинхэнэ өндөрт тэгшлэгдэнэ
+        for (FlatZone& zone : layout.zones) zone.level = layout.DemHeight(zone.center.x, zone.center.y);
+    }
 
     // Барилгаас хэр хол: барилгатай нүднүүдээс эхлэн (8 хөрш, 24 м алхмаар) тархаана
     {

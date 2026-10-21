@@ -1,6 +1,9 @@
 #pragma once
 
+#include "MeshBuilder.h"
 #include "raylib.h"
+
+#include <vector>
 
 // Цаг агаар: үе (даалгавар) эхлэхэд аймгийн бүс нутгаас хамааран сонгогдоно.
 enum class WeatherKind
@@ -55,6 +58,8 @@ public:
 
     // Алсын уулс: камерыг дагаж шилждэг дэвсгэр.
     void DrawMountains(Vector3 viewPosition) const;
+    // Жинхэнэ газрын өндөртэй хотын эргэн тойрны газар (World::FarLand) — алсын уулсын оронд
+    void DrawFarLand(const std::vector<MeshPiece>& pieces, const Camera3D& camera) const;
 
     // Mesh зурахад ашиглах material (орчны shader-тэй).
     const Material& GetMaterial() const { return material; }

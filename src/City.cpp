@@ -76,7 +76,7 @@ namespace
         const bool header = r.Need(4) && std::memcmp(bytes, "CITY", 4) == 0;
         r.at = 4;
         const uint32_t version = header ? r.U32() : 0;
-        if (version != 1 && version != 2)
+        if (version < 1 || version > 3)
         {
             TraceLog(LOG_WARNING, "CITY: %s has an unknown format", path);
             UnloadFileData(bytes);
@@ -148,6 +148,46 @@ namespace
                 m.stairs.y = r.F32();
                 city.mountains.push_back(m);
                 city.mountainNames.push_back(name);
+            }
+        }
+        if (version >= 3)
+        {
+            // Газрын өндөр: raw deflate int16 (0.25 м)
+            for (HeightGrid* grid : { &city.nearDem, &city.farDem })
+            {
+                grid->cell = r.F32();
+                grid->side = r.U16();
+                grid->half = r.F32();
+                const int length = (int)r.U32();
+                if (!r.Need(length)) break;
+                int size = 0;
+                unsigned char* raw = DecompressData(bytes + r.at, length, &size);
+                r.at += length;
+                if (raw && size == grid->side * grid->side * 2)
+                {
+                    grid->values.resize((size_t)grid->side * grid->side);
+                    for (size_t i = 0; i < grid->values.size(); ++i)
+                    {
+                        int16_t v;
+                        std::memcpy(&v, raw + i * 2, 2);
+                        grid->values[i] = (float)v * 0.25f;
+                    }
+                }
+                if (raw) MemFree(raw);
+            }
+            city.farLines.resize(r.U32());
+            for (CityLine& line : city.farLines)
+            {
+                line.kind = (CityLineKind)r.U8();
+                line.halfWidth = r.F32();
+                line.points = r.Points();
+            }
+            city.farAreas.resize(r.U32());
+            for (CityArea& area : city.farAreas)
+            {
+                const int kind = r.U8();
+                area.kind = kind == 3 ? CityAreaKind::Forest : CityAreaKind::Water;
+                area.outline = r.Points();
             }
         }
         UnloadFileData(bytes);

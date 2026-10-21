@@ -32,6 +32,10 @@ public:
 
     // Mesh-ийн гурвалжинтай яг таарах өндөр. Ертөнцийн аль ч цэгт ажиллана.
     float HeightAt(float x, float z) const;
+
+    // Байгууламж барих үед: HeightAt-аас хасагдах түвшин (тэгш бүсийн өндөрт барьж буй байгууламж өөрийн
+    // орон зайд газрыг 0 гэж үзнэ; MeshBuilder-ийн шилжилт буцааж өргөнө). Барьж дуусаад 0 болгоно.
+    void SetBuildBias(float value) const { buildBias = value; }
     float MaxHeight() const { return maxHeight; }
 
     // Камерын ойр орчмын хэсгүүдийн mesh-ийг үүсгэж, холдсоныг чөлөөлнө.
@@ -77,6 +81,7 @@ private:
     const std::vector<Obstacle>* obstacles = nullptr;
 
     bool hasTall = false;   // уултай (зарим хэсгийг холоос зурна)
+    mutable float buildBias = 0.0f;
     int cells = 0;          // нэг талын нүдний тоо
     int chunksPerSide = 0;
     float cellSize = 0.0f;

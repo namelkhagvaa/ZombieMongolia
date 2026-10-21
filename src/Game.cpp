@@ -122,7 +122,8 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
     Splash::Begin(!benchmark); // туршилтын горимд эхлэлийн дэлгэцгүй
 
     // Ойрын хавтгайг холдуулснаар алсад гүний нарийвчлал сайжирна (зам, сүүдэр анивчихгүй).
-    rlSetClipPlanes(0.25, 2800.0);
+    // Алсын хавтгай 12 км: хотын эргэн тойрны жинхэнэ уулс (World::FarLand) харагдана.
+    rlSetClipPlanes(0.25, 12000.0);
 }
 
 GameWindow::~GameWindow()
@@ -2377,7 +2378,8 @@ void Game::DrawMissionScene() const
 
     // Гэрэлтүүлэг + манантай хэсэг
     environment.Begin(view);
-    environment.DrawMountains(view.position);
+    if (world.HasFarLand()) environment.DrawFarLand(world.FarLand(), view); // жинхэнэ уулс, гол (10 км)
+    else environment.DrawMountains(view.position);
     world.Draw(view, material, environment.TerrainMaterial(), environment.DetailMaterial(), config.detailDistance,
                environment.ShadowsEnabled());
     world.DrawDoors(view.position);

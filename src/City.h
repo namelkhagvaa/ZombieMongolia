@@ -96,6 +96,11 @@ struct CityData
 {
     std::vector<Mountain> mountains;   // хотын дэргэдэх уулс (Layout.h)
     std::vector<std::string> mountainNames;
+    // Газрын жинхэнэ өндөр (version 3): тоглох талбай (15 м), алсын газар 10 км хүртэл (60 м)
+    HeightGrid nearDem, farDem;
+    // Алсын газрын гол мөрөн (CityLine) ба нуур (Water), ой (Forest)
+    std::vector<CityLine> farLines;
+    std::vector<CityArea> farAreas;
     std::vector<CityRoad> roads;
     std::vector<CityBuilding> buildings;
     std::vector<CityArea> areas;

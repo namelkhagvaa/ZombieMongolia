@@ -145,8 +145,12 @@ void Terrain::Rebuild()
         for (int ix = 0; ix < side; ++ix)
         {
             const float x = -halfExtent + (float)ix * cellSize;
-            float height;
-            if (layout.IsCapital())
+            float height = 0.0f;
+            if (layout.HasDem())
+            {
+                // доор: жинхэнэ газрын өндөр
+            }
+            else if (layout.IsCapital())
             {
                 // Улаанбаатар: хойд зүгийн толгод; ШТС, застав зэрэг байгууламжийн доор тэгш
                 height = CityHills(x, z) * SmoothStep(0.0f, 30.0f, layout.ZoneDistance(x, z)) - layout.LakeDepth(x, z);
@@ -164,7 +168,18 @@ void Terrain::Rebuild()
                 const float mask = SmoothStep(0.0f, 30.0f, layout.FlatDistance(x, z));
                 height = (mask > 0.0f ? Hills(x, z) * mask : 0.0f) - layout.LakeDepth(x, z);
             }
-            if (!layout.Mountains().empty())
+            if (layout.HasDem())
+            {
+                // Газрын жинхэнэ өндөр (SRTM): тэгш бүсүүд (застав, ШТС, хот айл...) төвийнхөө өндөрт тэгшлэгдэнэ
+                height = layout.DemHeight(x, z);
+                float zoneDistance = 0.0f, level = 0.0f;
+                if (layout.NearestZone(x, z, zoneDistance, level))
+                {
+                    height = level + (height - level) * SmoothStep(0.0f, 35.0f, zoneDistance);
+                }
+                height -= layout.LakeDepth(x, z);
+            }
+            else if (!layout.Mountains().empty())
             {
                 // Хотын дэргэдэх уул (Булган уул): бэлийн барилгууд, даалгаврын бүсүүд тэгш газарт үлдэнэ
                 float rise = 0.0f;
@@ -553,9 +568,9 @@ float Terrain::HeightAt(float x, float z) const
 
     if (fx + fz <= 1.0f)
     {
-        return h00 + (h10 - h00) * fx + (h01 - h00) * fz;
+        return (h00 + (h10 - h00) * fx + (h01 - h00) * fz) - buildBias;
     }
-    return h11 + (h01 - h11) * (1.0f - fx) + (h10 - h11) * (1.0f - fz);
+    return (h11 + (h01 - h11) * (1.0f - fx) + (h10 - h11) * (1.0f - fz)) - buildBias;
 }
 
 void Terrain::ChunkRange(Vector3 position, float radius, int& x0, int& x1, int& z0, int& z1) const

@@ -2,12 +2,14 @@
 
 #include "City.h"
 #include "Config.h"
+#include "Procedural.h"
 #include "Structures.h"
 #include "raymath.h"
 #include "rlgl.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace
 {
@@ -38,6 +40,7 @@ World::World(float halfSize) : halfSize(halfSize), layout(MakeLayout()), terrain
 
 World::~World()
 {
+    for (MeshPiece& piece : farLand) UnloadMesh(piece.mesh);
     UnloadPieces(structures);
     UnloadPieces(shadows);
     UnloadPieces(glass);
@@ -88,7 +91,158 @@ void World::SwitchCity(int province)
     }
     terrain.Rebuild();
     BuildStatic();
+    BuildFarLand();
     TraceLog(LOG_INFO, "WORLD: %s layout ready in %.2f s", province >= 0 ? "city" : "steppe", GetTime() - start);
+}
+
+void World::BuildFarLand()
+{
+    for (MeshPiece& piece : farLand) UnloadMesh(piece.mesh);
+    farLand.clear();
+    const HeightGrid& grid = layout.FarDem();
+    if (grid.Empty()) return;
+    const CityData& city = CurrentCity();
+    const int n = grid.side;
+    const float cell = grid.cell, half = grid.half;
+    auto at = [&](int ix, int iz) { return grid.values[(size_t)std::clamp(iz, 0, n - 1) * n + std::clamp(ix, 0, n - 1)]; };
+
+    // Ус (1), ой (2): олон өнцөгтүүдийг торын оройнуудад
+    std::vector<uint8_t> cover((size_t)n * n, 0);
+    std::vector<float> xs;
+    for (const CityArea& area : city.farAreas)
+    {
+        const uint8_t value = area.kind == CityAreaKind::Forest ? 2 : 1;
+        float minZ = 1e9f, maxZ = -1e9f;
+        for (const Vector2& p : area.outline) { minZ = std::min(minZ, p.y); maxZ = std::max(maxZ, p.y); }
+        const int z0 = std::max(0, (int)std::ceil((minZ + half) / cell)), z1 = std::min(n - 1, (int)std::floor((maxZ + half) / cell));
+        for (int iz = z0; iz <= z1; ++iz)
+        {
+            const float z = -half + (float)iz * cell;
+            xs.clear();
+            for (size_t i = 0, j = area.outline.size() - 1; i < area.outline.size(); j = i++)
+            {
+                const Vector2 a = area.outline[i], b = area.outline[j];
+                if ((a.y > z) != (b.y > z)) xs.push_back(a.x + (z - a.y) * (b.x - a.x) / (b.y - a.y));
+            }
+            std::sort(xs.begin(), xs.end());
+            for (size_t k = 0; k + 1 < xs.size(); k += 2)
+            {
+                const int x0 = std::max(0, (int)std::ceil((xs[k] + half) / cell)), x1 = std::min(n - 1, (int)std::floor((xs[k + 1] + half) / cell));
+                for (int ix = x0; ix <= x1; ++ix)
+                {
+                    uint8_t& c = cover[(size_t)iz * n + ix];
+                    if (c != 1) c = value; // ус ойг дарна
+                }
+            }
+        }
+    }
+
+    // Тоглох талбайн доор (ойрын газар зурагдана) бага зэрэг доогуур: голын сав, хотын тэгш газар цоолж гарахгүй
+    const float inner = kWorldHalfExtent - 60.0f;
+    auto position = [&](int ix, int iz) {
+        const float x = -half + (float)ix * cell, z = -half + (float)iz * cell;
+        const bool under = std::fabs(x) < inner && std::fabs(z) < inner;
+        return Vector3{ x, at(ix, iz) - (under ? 3.0f : 0.6f), z };
+    };
+    auto normal = [&](int ix, int iz) {
+        return Vector3Normalize({ (at(ix - 1, iz) - at(ix + 1, iz)) / (2.0f * cell), 1.0f, (at(ix, iz - 1) - at(ix, iz + 1)) / (2.0f * cell) });
+    };
+    auto color = [&](int ix, int iz, Vector3 nrm) {
+        const float h = at(ix, iz);
+        const float x = -half + (float)ix * cell, z = -half + (float)iz * cell;
+        const float grain = ValueNoise(x * 0.004f + 3.0f, z * 0.004f + 7.0f);
+        Vector3 c = Vector3Lerp({ 0.44f, 0.48f, 0.28f }, { 0.58f, 0.52f, 0.35f }, SmoothStep(60.0f, 500.0f, h) * 0.8f + grain * 0.15f);
+        c = Vector3Lerp(c, Vector3Lerp({ 0.45f, 0.42f, 0.39f }, { 0.32f, 0.31f, 0.31f }, grain), SmoothStep(0.86f, 0.62f, nrm.y) * 0.85f);
+        const uint8_t kind = cover[(size_t)iz * n + ix];
+        if (kind == 2) c = Vector3Lerp(c, { 0.24f, 0.33f, 0.21f }, 0.85f);           // ой
+        const float snowLine = 1050.0f + grain * 250.0f;                               // хотоос дээш (Алтай, Хангай)
+        c = Vector3Lerp(c, { 0.92f, 0.93f, 0.96f }, SmoothStep(snowLine, snowLine + 150.0f, h) * SmoothStep(0.55f, 0.8f, nrm.y));
+        if (kind == 1) c = { 0.27f, 0.41f, 0.51f };                                   // нуур, гол
+        return c;
+    };
+
+    const int piece = 24;
+    for (int pz = 0; pz < n - 1; pz += piece)
+    {
+        for (int px = 0; px < n - 1; px += piece)
+        {
+            std::vector<float> positions, normals;
+            std::vector<unsigned char> colors;
+            Vector3 low = { 1e9f, 1e9f, 1e9f }, high = { -1e9f, -1e9f, -1e9f };
+            auto vertex = [&](int ix, int iz) {
+                const Vector3 p = position(ix, iz), nrm = normal(ix, iz), c = color(ix, iz, nrm);
+                positions.insert(positions.end(), { p.x, p.y, p.z });
+                normals.insert(normals.end(), { nrm.x, nrm.y, nrm.z });
+                colors.insert(colors.end(), { (unsigned char)(c.x * 255.0f), (unsigned char)(c.y * 255.0f), (unsigned char)(c.z * 255.0f), 255 });
+                low = Vector3Min(low, p);
+                high = Vector3Max(high, p);
+            };
+            for (int iz = pz; iz < std::min(pz + piece, n - 1); ++iz)
+            {
+                for (int ix = px; ix < std::min(px + piece, n - 1); ++ix)
+                {
+                    vertex(ix, iz); vertex(ix, iz + 1); vertex(ix + 1, iz);
+                    vertex(ix + 1, iz); vertex(ix, iz + 1); vertex(ix + 1, iz + 1);
+                }
+            }
+            MeshPiece part;
+            Mesh& mesh = part.mesh;
+            mesh.vertexCount = (int)(positions.size() / 3);
+            mesh.triangleCount = mesh.vertexCount / 3;
+            mesh.vertices = (float*)MemAlloc((unsigned int)(positions.size() * sizeof(float)));
+            mesh.normals = (float*)MemAlloc((unsigned int)(normals.size() * sizeof(float)));
+            mesh.colors = (unsigned char*)MemAlloc((unsigned int)colors.size());
+            std::memcpy(mesh.vertices, positions.data(), positions.size() * sizeof(float));
+            std::memcpy(mesh.normals, normals.data(), normals.size() * sizeof(float));
+            std::memcpy(mesh.colors, colors.data(), colors.size());
+            UploadMesh(&mesh, false);
+            part.center = Vector3Scale(Vector3Add(low, high), 0.5f);
+            part.radius = Vector3Distance(low, high) * 0.5f;
+            farLand.push_back(part);
+        }
+    }
+
+    // Гол мөрөн: алсаас харагдахаар өргөн зурвас (тоглох талбайд ойрын газрын гол бий тул алгасна)
+    std::vector<float> positions, normals;
+    std::vector<unsigned char> colors;
+    auto add = [&](Vector2 p, float y) {
+        positions.insert(positions.end(), { p.x, y, p.y });
+        normals.insert(normals.end(), { 0.0f, 1.0f, 0.0f });
+        colors.insert(colors.end(), { 70, 105, 130, 255 });
+    };
+    for (const CityLine& line : city.farLines)
+    {
+        const float width = std::max(line.halfWidth, 6.0f);
+        for (size_t i = 0; i + 1 < line.points.size(); ++i)
+        {
+            const Vector2 a = line.points[i], b = line.points[i + 1];
+            if (std::fabs(a.x) < inner && std::fabs(a.y) < inner && std::fabs(b.x) < inner && std::fabs(b.y) < inner) continue;
+            const float length = Vector2Distance(a, b);
+            if (length < 0.5f) continue;
+            const Vector2 side = { -(b.y - a.y) / length * width, (b.x - a.x) / length * width };
+            const float ya = grid.Sample(a.x, a.y) - 0.2f, yb = grid.Sample(b.x, b.y) - 0.2f;
+            add(Vector2Add(a, side), ya); add(Vector2Subtract(a, side), ya); add(Vector2Add(b, side), yb);
+            add(Vector2Add(b, side), yb); add(Vector2Subtract(a, side), ya); add(Vector2Subtract(b, side), yb);
+        }
+    }
+    if (!positions.empty())
+    {
+        MeshPiece part;
+        Mesh& mesh = part.mesh;
+        mesh.vertexCount = (int)(positions.size() / 3);
+        mesh.triangleCount = mesh.vertexCount / 3;
+        mesh.vertices = (float*)MemAlloc((unsigned int)(positions.size() * sizeof(float)));
+        mesh.normals = (float*)MemAlloc((unsigned int)(normals.size() * sizeof(float)));
+        mesh.colors = (unsigned char*)MemAlloc((unsigned int)colors.size());
+        std::memcpy(mesh.vertices, positions.data(), positions.size() * sizeof(float));
+        std::memcpy(mesh.normals, normals.data(), normals.size() * sizeof(float));
+        std::memcpy(mesh.colors, colors.data(), colors.size());
+        UploadMesh(&mesh, false);
+        part.center = { 0.0f, 0.0f, 0.0f };
+        part.radius = half * 1.5f;
+        farLand.push_back(part);
+    }
+    TraceLog(LOG_INFO, "WORLD: far land %d x %d (%.0f m), %d pieces", n, n, cell, (int)farLand.size());
 }
 
 void World::BuildSettlements(int variant)

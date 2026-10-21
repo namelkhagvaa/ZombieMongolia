@@ -6,10 +6,26 @@
 // гранат, амь худалдаж авах цэс нээгдэнэ. Зомби дотогш орохгүй.
 constexpr Vector2 kShopCenter = { -58.5f, -23.5f };
 
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
 struct CityData;
+
+// Газрын жинхэнэ өндрийн тор (DEM, tools/dem.py): тоглоомын (0, 0)-ийн өндрөөс дээш (м), cell алхамтай,
+// [-half, half] дөрвөлжинг хамарна.
+struct HeightGrid
+{
+    float cell = 0.0f;
+    int side = 0;
+    float half = 0.0f;
+    std::vector<float> values;
+
+    bool Empty() const { return values.empty(); }
+    bool Covers(float x, float z) const { return std::fabs(x) <= half && std::fabs(z) <= half; }
+    // Шугаман завсарласан өндөр (хүрээнээс гадна бол захын утга)
+    float Sample(float x, float z) const;
+};
 
 // Аймгийн төвийн дэргэдэх уул (Цэцэрлэгийн Булган уул гэх мэт): зууван бэлтэй, оргил руу өндөрсөнө.
 struct Mountain
@@ -54,6 +70,7 @@ struct FlatZone
 {
     Vector2 center; // (x, z)
     float radius;
+    float level = 0.0f; // тэгшилсэн газрын өндөр (жинхэнэ газрын өндөртэй хотод), бусад үед 0
 };
 
 // Нуур: газар хотойж, усны түвшин kLakeLevel (говьд хатсан давсны мараа)
@@ -108,6 +125,16 @@ public:
     float ZoneDistance(float x, float z) const;
     // Хотын дэргэдэх уулс
     const std::vector<Mountain>& Mountains() const { return mountains; }
+
+    // --- Газрын жинхэнэ өндөр (DEM) ---
+    bool HasDem() const { return !nearDem.Empty(); }
+    // Жинхэнэ газрын өндөр (тоглох талбайд нарийн тор, цааш нь алсын тор)
+    float DemHeight(float x, float z) const;
+    const HeightGrid& FarDem() const { return farDem; }
+    // Хамгийн ойрын тэгш бүс: зай (бүс дотор <= 0) ба тэгшилсэн өндөр. Бүс байхгүй бол false.
+    bool NearestZone(float x, float z, float& distance, float& level) const;
+    // Байгууламж барих газрын түвшин: тэгш бүс дотор бол түүний өндөр, эс бөгөөс жинхэнэ газрын өндөр
+    float BuildLevel(float x, float z) const;
     // Хотын газрын бүрхэвч (3 м тор): 0 = энгийн (тоостой хөрс), 1 = цэцэрлэг, зүлэг, 2 = спорт талбай,
     // 3 = ой, 4 = оршуулгын газар, 5 = хучилттай талбай, 6 = ус.
     int CityGround(float x, float z) const;
@@ -141,6 +168,7 @@ private:
     int builtCells = 0;
     std::vector<uint16_t> builtDistance;            // барилгаас хэр хол (м)
     std::vector<Mountain> mountains;
+    HeightGrid nearDem, farDem;
     int cityCells = 0;                              // нэг талын нүдний тоо (тор нь ертөнцийг бүрэн хамарна)
     std::vector<uint8_t> cityGround;                // CityGround-ийн утга (0..6)
     std::vector<uint8_t> cityWater;                 // усны гүн (1/40 м нэгжээр): гол, цөөрөм

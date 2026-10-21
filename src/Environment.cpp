@@ -40,6 +40,7 @@ uniform vec3 fogColor;
 uniform vec3 fogSunColor;
 uniform float fogDensity;
 uniform float fogScale;
+uniform float fogFarStart; // > 0 бол энэ зайнаас цааш fogScale үйлчилнэ (ойрын газартай тасралтгүй)
 uniform highp sampler2D shadowMap;
 uniform mat4 lightVP;
 uniform float shadowStrength;
@@ -111,7 +112,9 @@ vec3 ApplyFog(vec3 color, vec3 pos)
 {
     vec3 ray = pos - viewPos;
     float dist = length(ray);
-    float d = dist * fogDensity * fogScale;
+    // fogFarStart > 0: тэр зайнаас цааш зайг fogScale дахин шахна (манан тасралтгүй, алсын уулс бүдэгхэн харагдана)
+    float fogDist = fogFarStart > 0.0 ? min(dist, fogFarStart) + max(dist - fogFarStart, 0.0) * fogScale : dist * fogScale;
+    float d = fogDist * fogDensity;
     float fog = 1.0 - exp(-d * d);
     float toward = max(dot(ray / max(dist, 0.001), sunDirection), 0.0);
     vec3 haze = mix(fogColor, fogSunColor, pow(toward, 6.0) * 0.7);
@@ -1219,6 +1222,23 @@ void Environment::Begin(const Camera3D& camera) const
 void Environment::End() const
 {
     EndShaderMode();
+}
+
+void Environment::DrawFarLand(const std::vector<MeshPiece>& pieces, const Camera3D& camera) const
+{
+    // Хотын эргэн тойрны жинхэнэ газар (10 км): ойрын газартай ижил манан, цааш нь алсын уулс шиг бүдэгхэн
+    const ViewCone view = ViewCone::From(camera);
+    rlDrawRenderBatchActive();
+    SetFloat(terrainShader, "fogScale", 0.015f);
+    SetFloat(terrainShader, "fogFarStart", 650.0f);
+    rlDisableBackfaceCulling();
+    for (const MeshPiece& piece : pieces)
+    {
+        if (view.Sees(piece.center, piece.radius, 14000.0f)) DrawMesh(piece.mesh, terrainMaterial, MatrixIdentity());
+    }
+    rlEnableBackfaceCulling();
+    SetFloat(terrainShader, "fogScale", 1.0f);
+    SetFloat(terrainShader, "fogFarStart", 0.0f);
 }
 
 void Environment::DrawMountains(Vector3 viewPosition) const
