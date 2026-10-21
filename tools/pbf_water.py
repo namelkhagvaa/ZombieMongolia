@@ -1,4 +1,4 @@
-"""Аймгийн төв бүрээс 10.5 км доторх гол мөрөн, нуур, ойг Geofabrik .osm.pbf-ээс салгана
+"""Аймгийн төв бүрээс 10.5 км доторх гол мөрөн, нуур, ой, авто замыг Geofabrik .osm.pbf-ээс салгана
 (tools/data/towns/NN_water.json.gz): тоглоомын алсын газрын (10 км) ус, ой.
 
     python tools/pbf_water.py mongolia-latest.osm.pbf [дугаар ...]
@@ -20,6 +20,8 @@ CENTERS[15] = ('Улаанбаатар', 47.918850, 106.917580)
 def wanted(tags):
     if tags.get('waterway') in ('river', 'stream', 'canal'):
         return True
+    if tags.get('highway') in ('motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'motorway_link', 'trunk_link', 'primary_link'):
+        return True  # хот руу орж ирэх авто замууд (алсын газарт)
     if tags.get('natural') in ('water', 'wood') or 'water' in tags or tags.get('landuse') in ('reservoir', 'forest'):
         return True
     return False

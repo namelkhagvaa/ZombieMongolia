@@ -202,17 +202,21 @@ void World::BuildFarLand()
         }
     }
 
-    // Гол мөрөн: алсаас харагдахаар өргөн зурвас (тоглох талбайд ойрын газрын гол бий тул алгасна)
+    // Гол мөрөн, авто зам: алсаас харагдахаар өргөн зурвас (тоглох талбайд ойрын газрын гол, зам бий тул алгасна)
     std::vector<float> positions, normals;
     std::vector<unsigned char> colors;
+    Color tone = { 70, 105, 130, 255 };
     auto add = [&](Vector2 p, float y) {
         positions.insert(positions.end(), { p.x, y, p.y });
         normals.insert(normals.end(), { 0.0f, 1.0f, 0.0f });
-        colors.insert(colors.end(), { 70, 105, 130, 255 });
+        colors.insert(colors.end(), { tone.r, tone.g, tone.b, 255 });
     };
     for (const CityLine& line : city.farLines)
     {
-        const float width = std::max(line.halfWidth, 6.0f);
+        const bool road = line.kind == CityLineKind::Road || line.kind == CityLineKind::DirtRoad;
+        tone = line.kind == CityLineKind::Road ? Color{ 64, 64, 68, 255 } : road ? Color{ 140, 118, 88, 255 } : Color{ 70, 105, 130, 255 };
+        const float width = std::max(line.halfWidth, road ? 4.0f : 6.0f);
+        const float lift = road ? 0.1f : -0.2f; // зам гол дээгүүр (гүүр)
         for (size_t i = 0; i + 1 < line.points.size(); ++i)
         {
             const Vector2 a = line.points[i], b = line.points[i + 1];
@@ -220,7 +224,7 @@ void World::BuildFarLand()
             const float length = Vector2Distance(a, b);
             if (length < 0.5f) continue;
             const Vector2 side = { -(b.y - a.y) / length * width, (b.x - a.x) / length * width };
-            const float ya = grid.Sample(a.x, a.y) - 0.2f, yb = grid.Sample(b.x, b.y) - 0.2f;
+            const float ya = grid.Sample(a.x, a.y) + lift, yb = grid.Sample(b.x, b.y) + lift;
             add(Vector2Add(a, side), ya); add(Vector2Subtract(a, side), ya); add(Vector2Add(b, side), yb);
             add(Vector2Add(b, side), yb); add(Vector2Subtract(a, side), ya); add(Vector2Subtract(b, side), yb);
         }

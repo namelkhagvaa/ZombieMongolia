@@ -48,6 +48,8 @@ ROAD_CLASS = {
     'tertiary': (3, 5.5), 'tertiary_link': (3, 3.0), 'unclassified': (4, 3.5), 'residential': (4, 3.5),
     'living_street': (4, 3.0), 'service': (5, 2.6), 'track': (6, 2.2), 'pedestrian': (7, 3.0),
 }  # явган хүний зам (footway, path, cycleway, steps) тоглоомд хэрэггүй
+PAVED_SURFACES = {'asphalt', 'paved', 'concrete', 'concrete:plates', 'concrete:lanes', 'paving_stones', 'sett', 'chipseal',
+                  'metal', 'wood'}
 DIRT_SURFACES = {'unpaved', 'dirt', 'gravel', 'ground', 'earth', 'sand', 'mud', 'grass', 'fine_gravel', 'compacted'}
 
 # Барилгын төрөл (src/City.h-ийн CityBuilding)
@@ -225,9 +227,30 @@ def outer_rings(relation):
     return rings
 
 
-def features(elements):
-    """OSM way-уудаас зам, барилга, талбай, шугам (тоглоомын координатаар)."""
+def features(elements, aimag=False):
+    """OSM way-уудаас зам, барилга, талбай, шугам (тоглоомын координатаар).
+    aimag: аймгийн төв — хучилтын шошгогүй жижиг гудамж шороон (зөвхөн төвийн орон сууц, албан газрын дэргэд засмал)."""
     roads, buildings, areas, lines = [], [], [], []
+
+    # Хотын төвийн барилга (орон сууц, оффис, сургууль, албан газар, 3+ давхар): дэргэдэх гудамж засмал
+    central = {}
+    for e in elements:
+        t = e.get('tags', {})
+        if 'building' not in t or not e.get('geometry'):
+            continue
+        levels = number(t.get('building:levels'), 0) or 0
+        if BUILDING_TYPE.get(t['building']) in (APARTMENTS, COMMERCIAL, SCHOOL, GOVERNMENT) or levels >= 3:
+            x, z = project(e['geometry'][0])
+            key = (int(x // 50), int(z // 50))
+            central[key] = central.get(key, 0) + 1
+
+    def near_centre(pts):
+        """Замын цэгүүдийн ойролцоо (50 м нүд ба хөршүүд) төвийн барилга олон эсэх."""
+        hits = 0
+        for x, z in pts[::max(1, len(pts) // 6)]:
+            cx, cz = int(x // 50), int(z // 50)
+            hits += sum(central.get((cx + dx, cz + dz), 0) for dx in (-1, 0, 1) for dz in (-1, 0, 1))
+        return hits >= 3 * max(1, min(len(pts), 6) // 2)
 
     # Гэр хорооллын тор: олон гэртэй газрын тодорхойгүй гудамж шороон
     ger_cells = {}
@@ -285,8 +308,16 @@ def features(elements):
             surface = t.get('surface')
             dirt = surface in DIRT_SURFACES or t['highway'] in ('track', 'path')
             if surface is None and klass in (4, 5):
-                x, z = pts[len(pts) // 2]
-                dirt = ger_cells.get((int(x // 80), int(z // 80)), 0) >= 6
+                if aimag:
+                    # Аймгийн төв: гудамжны ихэнх нь шороон, төвийн хэсэгт засмал
+                    dirt = not near_centre(pts)
+                else:
+                    x, z = pts[len(pts) // 2]
+                    dirt = ger_cells.get((int(x // 80), int(z // 80)), 0) >= 6
+            elif surface is None and klass == 3 and aimag:
+                dirt = not near_centre(pts)  # тэмдэглэгээгүй гуравдугаар зэрэглэлийн зам
+            if surface in PAVED_SURFACES:
+                dirt = False
             roads.append((klass, 1 if dirt else 0, half, pts))
         elif 'railway' in t and t['railway'] in ('rail', 'light_rail'):
             pts = simplify([project(p) for p in geometry], 0.5)
@@ -597,7 +628,8 @@ def dem_grids(origin):
 
 
 def far_features(path, origin):
-    """10 км доторх гол мөрөн, нуур (kind 0), ой (kind 3): тоглоомын координатаар, хялбарчилсан."""
+    """10 км доторх гол мөрөн, нуур (kind 0), ой (kind 3), авто зам (line kind 5 засмал, 6 шороон):
+    тоглоомын координатаар, хялбарчилсан."""
     lines, areas = [], []
     if not os.path.exists(path):
         return lines, areas
@@ -607,6 +639,15 @@ def far_features(path, origin):
         t = e.get('tags', {})
         geometry = e.get('geometry')
         if not geometry:
+            continue
+        if t.get('highway'):
+            pts = simplify([project(p) for p in geometry], 4.0)
+            if len(pts) >= 2 and inside(pts):
+                klass, half = ROAD_CLASS.get(t['highway'], (3, 4.0))
+                surface = t.get('surface')
+                paved = surface in PAVED_SURFACES or (surface is None and klass <= 2)
+                for k in range(0, len(pts) - 1, 60000):
+                    lines.append((5 if paved else 6, max(half, 3.5), [(x - ox, z - oz) for x, z in pts[k:k + 60001]]))
             continue
         if t.get('waterway') in ('river', 'stream', 'canal'):
             pts = simplify([project(p) for p in geometry], 6.0)
@@ -752,7 +793,7 @@ def town(index, out_path):
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'towns', '%02d.json.gz' % index)
     elements = load(path)
     shapes = [e for e in elements if 'geometry' in e or 'members' in e]
-    roads, buildings, areas, lines = features(with_relations(shapes))
+    roads, buildings, areas, lines = features(with_relations(shapes), aimag=True)
     pois = places([e for e in elements if 'center' in e or e.get('type') == 'node'])
     mountains = []
     for mname, mlat, mlon, height, west, east, south, north, *extra in MOUNTAINS.get(index, []):

@@ -42,7 +42,9 @@ enum class CityLineKind : uint8_t
 {
     River, Stream, Railway,
     Fence, // банзан хашаа (гэр хорооллын хашаа)
-    Wall   // чулуун, тоосгон хана
+    Wall,  // чулуун, тоосгон хана
+    Road,  // алсын газрын засмал авто зам (farLines)
+    DirtRoad
 };
 
 // Онцлох газар
@@ -98,7 +100,7 @@ struct CityData
     std::vector<std::string> mountainNames;
     // Газрын жинхэнэ өндөр (version 3): тоглох талбай (15 м), алсын газар 10 км хүртэл (60 м)
     HeightGrid nearDem, farDem;
-    // Алсын газрын гол мөрөн (CityLine) ба нуур (Water), ой (Forest)
+    // Алсын газрын гол мөрөн, авто зам (CityLine) ба нуур (Water), ой (Forest)
     std::vector<CityLine> farLines;
     std::vector<CityArea> farAreas;
     std::vector<CityRoad> roads;
