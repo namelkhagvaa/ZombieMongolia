@@ -173,6 +173,12 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         int x = 16;
         x += Ui::IconChip(Ui::Icon::Zombie, TextFormat("Зомби  %d", info.hordeSmall), x, y, Ui::kText, Ui::kDanger) + 8;
         x += Ui::IconChip(Ui::Icon::ZombieElite, TextFormat("Том зомби  %d", info.hordeBig), x, y, Ui::kText, { 170, 60, 200, 255 }) + 8;
+        if (info.guardSmall >= 0)
+        {
+            // Тоглогч байгаа даалгаврын газрыг хамгаалж буй зомби (жижиг · том)
+            x += Ui::IconChip(Ui::Icon::Zombie, TextFormat("Хамгаалалт  %d · %d", info.guardSmall, info.guardBig), x, y, Ui::kText,
+                              Ui::kDanger) + 8;
+        }
         if (info.zombieSpeed > 1.01f)
         {
             Ui::IconChip(Ui::Icon::SpeedBoost, TextFormat("Хурд ×%d", (int)(info.zombieSpeed + 0.5f)), x, y, Ui::kDanger, Ui::kDanger);

@@ -24,12 +24,15 @@ namespace
     const float kInteractDistance = 2.8f;
     const float kReachRadius = 9.0f;
     const float kDefendRadius = 30.0f;
-    // Зомбины нягтрал: тасралтгүй тулаантай байхаар тохируулсан.
-    const int kAmbientCap = 46;            // тоглогчийг тойрон тэнүүчлэх зомбины дээд тоо
-    const float kAmbientInterval = 0.4f;   // шинэ тэнүүлч гарах хугацаа, сек
     const int kZoneScale = 3;              // бүс, аваргын бараа бологчдын тоог үржүүлнэ
-    const int kGuardScale = 6;             // даалгаврын объектыг сахих зомбины тоог үржүүлнэ
-    const float kRecycleDistance = 170.0f; // үүнээс хол хоцорсон тэнүүлч зомби нөөцөд буцна
+
+    // Даалгаврын хамгаалагч зомби (Mission::UpdateGuards)
+    const float kGuardWake = 170.0f;       // баг ийм ойртоход даалгаврын хамгаалагчид гарч ирнэ
+    const float kGuardAttack = 100.0f;     // ийм ойртоход дайрна
+    const float kGuardInterval = 0.4f;     // шинэ хамгаалагч гарах хугацаа, сек
+    const int kGuardCap = 24;              // нэг даалгаврын газарт зэрэг амьд хамгаалагч (+ аймгийн дугаарын тал)
+    const float kRecycleDistance = 230.0f; // багаас ийм хол хоцорсон хамгаалагч нөөцөд буцна
+    static_assert(kHordePools == StageSave::kMaxObjectives, "pool count must match objectives");
 
     const float kZoneRadius = 42.0f;
     const float kZoneWakeDistance = 130.0f; // тоглогч ийм ойртоход бүсийн зомби гарч эхэлнэ
@@ -433,10 +436,22 @@ void Mission::Start(int provinceIndex, const MissionParams& missionParams, const
     prompt.clear();
     notice.clear();
     noticeTimer = 0.0f;
-    ambientTimer = 4.0f;
+    guardTimer = 1.0f;
     autoTimer = 0.0f;
     rewardPending = 0;
     dirty = false;
+
+    guardedObjective = -1;
+    for (auto& alive : alivePool) alive[0] = alive[1] = 0;
+    // Хамгаалагчгүй хуучин хадгалалт: аль хэдийн устгасан зомбийг даалгавруудад тэнцүү хуваана
+    const int pools = std::max(1, std::min((int)stage->objectives.size(), StageSave::kMaxObjectives));
+    for (int big = 0; big < 2; ++big)
+    {
+        int counted = 0;
+        for (const auto& kills : save->guardKills) counted += kills[big];
+        int missing = (big ? save->killedBig : save->killedSmall) - counted;
+        for (int p = 0; missing > 0; p = (p + 1) % pools, --missing) ++save->guardKills[p][big];
+    }
 
     const int count = std::min((int)stage->objectives.size(), StageSave::kMaxObjectives);
     states.assign((size_t)count, ObjectiveState{});
@@ -636,9 +651,15 @@ float Mission::DistanceTo(int index, Vector3 from) const
 
 void Mission::Markers(std::vector<Vector3>& out) const
 {
-    for (const ObjectiveState& state : states)
+    const bool complete = IsComplete();
+    for (int i = 0; i < ObjectiveCount(); ++i)
     {
-        if (state.status == ObjectiveStatus::Active) out.push_back(state.location);
+        const ObjectiveState& state = states[(size_t)i];
+        // Бүх даалгавар биелсний дараа: хамгаалагч зомби үлдсэн газрууд (үеийг дуусгахын тулд устгана)
+        if (state.status == ObjectiveStatus::Active || (complete && PoolLeft(i, false) + PoolLeft(i, true) > 0))
+        {
+            out.push_back(state.location);
+        }
     }
 }
 
@@ -673,7 +694,7 @@ void Mission::UpdateZone(int index, float dt, const World& world, const Player& 
         {
             while (state.reserve > 0 && alive < cap && state.spawnTimer <= 0.0f)
             {
-                if (!SpawnFromPool(horde, RandomAround(world, state.location, 4.0f, state.radius), zone, false))
+                if (!SpawnFromPool(horde, RandomAround(world, state.location, 4.0f, state.radius), zone, false, index))
                 {
                     state.reserve = 0; // үеийн нөөц дууссан: энэ бүсэд дахин гарахгүй
                     break;
@@ -699,7 +720,7 @@ void Mission::UpdateZone(int index, float dt, const World& world, const Player& 
             const int cap = 22 + province / 2;
             if (state.spawnTimer <= 0.0f && horde.AliveInZone(zone) < cap)
             {
-                SpawnFromPool(horde, RandomAround(world, state.location, 42.0f, 58.0f), zone, true);
+                SpawnFromPool(horde, RandomAround(world, state.location, 42.0f, 58.0f), zone, true, index);
                 state.spawnTimer = 0.55f;
             }
         }
@@ -717,7 +738,7 @@ void Mission::UpdateZone(int index, float dt, const World& world, const Player& 
             TraceLog(LOG_INFO, "MISSION: boss spawned for objective %d", index + 1);
             for (int k = 0; k < 3 * kZoneScale; ++k)
             {
-                SpawnFromPool(horde, RandomAround(world, state.location, 4.0f, 16.0f), zone, false);
+                SpawnFromPool(horde, RandomAround(world, state.location, 4.0f, 16.0f), zone, false, index);
             }
             state.spawned = true;
         }
@@ -729,47 +750,70 @@ void Mission::UpdateZone(int index, float dt, const World& world, const Player& 
     }
 }
 
-void Mission::UpdateAmbient(float dt, const World& world, const Player& player, ZombieHorde& horde)
+void Mission::UpdateGuards(float dt, const World& world, const Player& player, ZombieHorde& horde, const SoldierSquad& squad)
 {
-    // Тэнүүчилсэн зомби: ертөнц хоосон биш байхын тулд тоглогчийн эргэн тойронд цөөн тоогоор гарна.
-    // Цэвэрлэсэн бүс дотор хэзээ ч гарахгүй.
-    ambientTimer -= dt;
-    if (ambientTimer > 0.0f)
+    // Даалгаврын газрын хамгаалагчид: баг (тоглогч, цэрэг) ойртоход тухайн даалгаврын нөөцөөс гарч ирнэ,
+    // бүр ойртоход дайрна. Бусад газар тайван. Цэвэрлэх, хамгаалах бүс (идэвхтэй үед) өөрөө гаргана (UpdateZone).
+    guardTimer -= dt;
+    if (guardTimer > 0.0f)
     {
         return;
     }
-    ambientTimer = kAmbientInterval;
+    guardTimer = kGuardInterval;
 
-    // Хол хоцорсон тэнүүлчид нөөцөд буцна: тэд тоглогчийн ойролцоо дахин гарч ирнэ.
+    // Багаас хол хоцорсон хамгаалагчид нөөцөд буцна: баг дахин ирэхэд тэнд гарч ирнэ.
     // Бүх даалгавар биелсний дараа үлдсэн бүх зомбид хамаарна, эс бөгөөс алсад үлдсэн нь үеийг дуусгахад саад болно.
-    horde.RemoveFar(player.Position(), kRecycleDistance, !IsComplete());
-
-    // Тоглогчийг тойрсон зомбины урсгал: цөөрөх тусам хурдан нөхөгдөнө, тиймээс тулаан тасрахгүй.
-    // Одоо хийх даалгаврын цэгт ойртоход шинээр гарах зомбины тал нь тэр цэгийг тойрон гарч, замыг хаана.
-    const int alive = horde.AliveInZone(0);
-    // Аймгийн төвийн гудамжинд зомби олон: гудамжаар байлдаж явна.
-    const bool inTown = world.CityActive() || InTown(player.Position().x, player.Position().z);
-    const int cap = kAmbientCap + province + (inTown ? 28 : 0);
-    const int batch = alive < cap / 2 ? 3 : 1;
-    const int focus = FocusObjective();
-    for (int k = 0; k < batch && alive + k < cap; ++k)
+    std::vector<Vector3> anchors = { player.Position() };
+    for (const Soldier& soldier : squad.All())
     {
-        const bool atObjective = focus >= 0 && GetRandomValue(0, 99) < 50 &&
-                                 HorizontalDistance(player.Position(), states[(size_t)focus].location) < 150.0f;
-        const Vector3 position = atObjective ? RandomAround(world, states[(size_t)focus].location, 8.0f, 44.0f)
-                                             : RandomAround(world, player.Position(), 48.0f, 82.0f);
-        if (!InClearedZone(position) && HorizontalDistance(position, player.Position()) > 28.0f)
+        if (soldier.alive) anchors.push_back(soldier.mover.position);
+    }
+    horde.RemoveFar(anchors, kRecycleDistance, !IsComplete());
+
+    const int cap = kGuardCap + province / 2;
+    for (int i = 0; i < ObjectiveCount(); ++i)
+    {
+        const ObjectiveState& state = states[(size_t)i];
+        const int alive = alivePool[i][0] + alivePool[i][1];
+        if (PoolLeft(i, false) + PoolLeft(i, true) - alive <= 0) continue; // нөөцөөс гараагүй зомби үлдээгүй
+        if (IsZoneType(stage->objectives[(size_t)i].type) && state.status == ObjectiveStatus::Active) continue;
+        float nearest = 1e9f;
+        for (const Vector3& anchor : anchors) nearest = std::min(nearest, HorizontalDistance(anchor, state.location));
+        if (nearest > kGuardWake) continue;
+
+        // Ойртсон баг руу дайрна; холоос бол байрандаа хамгаална
+        const bool attack = nearest < kGuardAttack;
+        if (attack) horde.AlertAround(state.location, kGuardAttack);
+        const int batch = alive < cap / 2 ? 3 : 1;
+        for (int k = 0; k < batch && alive + k < cap; ++k)
         {
-            SpawnFromPool(horde, position, 0, !atObjective);
+            const Vector3 position = RandomAround(world, state.location, 8.0f, 60.0f);
+            if (InClearedZone(position) || HorizontalDistance(position, player.Position()) < 25.0f) continue;
+            if (!SpawnFromPool(horde, position, 0, attack, i)) break;
         }
     }
 }
 
-bool Mission::SpawnFromPool(ZombieHorde& horde, Vector3 position, int zone, bool alerted)
+int Mission::PoolQuota(int objective, bool big) const
 {
-    // Үлдсэн нөөц = нийт тоо - устгагдсан - одоо амьд байгаа.
-    const int smallLeft = quotaSmall - save->killedSmall - aliveSmall;
-    const int bigLeft = quotaBig - save->killedBig - aliveBig;
+    const int pools = std::max(1, ObjectiveCount());
+    const int total = big ? quotaBig : quotaSmall;
+    return total / pools + (objective == 0 ? total % pools : 0);
+}
+
+int Mission::PoolLeft(int objective, bool big) const
+{
+    if (!save || objective < 0 || objective >= ObjectiveCount()) return 0;
+    const int quota = PoolQuota(objective, big);
+    return std::max(0, quota - std::min(save->guardKills[objective][big ? 1 : 0], quota));
+}
+
+bool Mission::SpawnFromPool(ZombieHorde& horde, Vector3 position, int zone, bool alerted, int pool)
+{
+    // Үлдсэн нөөц = даалгаврын нөөц - устгагдсан - одоо амьд байгаа (мөн үеийн нийт нөөцөөс хэтрэхгүй).
+    if (pool < 0 || pool >= ObjectiveCount()) return false;
+    const int smallLeft = std::min(quotaSmall - save->killedSmall - aliveSmall, PoolLeft(pool, false) - alivePool[pool][0]);
+    const int bigLeft = std::min(quotaBig - save->killedBig - aliveBig, PoolLeft(pool, true) - alivePool[pool][1]);
     if (smallLeft <= 0 && bigLeft <= 0)
     {
         return false;
@@ -781,13 +825,15 @@ bool Mission::SpawnFromPool(ZombieHorde& horde, Vector3 position, int zone, bool
     {
         type = ZombieType::Brute;
         ++aliveBig;
+        ++alivePool[pool][1];
     }
     else
     {
         type = GetRandomValue(0, 99) < 30 + 2 * province ? ZombieType::Runner : ZombieType::Walker;
         ++aliveSmall;
+        ++alivePool[pool][0];
     }
-    horde.Spawn(type, position, params, zone, alerted);
+    horde.Spawn(type, position, params, zone, alerted, pool);
     return true;
 }
 
@@ -810,8 +856,33 @@ void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde,
             dirty = true;
         }
     }
+    horde.TakePoolKills(save->guardKills);
     aliveSmall = aliveBig = 0;
     horde.CountAlive(aliveSmall, aliveBig);
+    horde.CountAliveByPool(alivePool);
+
+    // Хамгаалалттай даалгаврын газарт орход: хэдэн зомби хамгаалж байгааг мэдэгдэнэ
+    int guarded = -1;
+    float guardedDistance = kGuardWake;
+    for (int i = 0; i < ObjectiveCount(); ++i)
+    {
+        const float distance = HorizontalDistance(player.Position(), states[(size_t)i].location);
+        if (distance < guardedDistance && PoolLeft(i, false) + PoolLeft(i, true) > 0)
+        {
+            guardedDistance = distance;
+            guarded = i;
+        }
+    }
+    if (guarded != guardedObjective)
+    {
+        if (guarded >= 0)
+        {
+            notice = TextFormat("%s: %d зомби, %d том зомби хамгаалж байна", stage->objectives[(size_t)guarded].title,
+                                PoolLeft(guarded, false), PoolLeft(guarded, true));
+            noticeTimer = kNoticeTime;
+        }
+        guardedObjective = guarded;
+    }
 
     // Хамгийн ойрын харилцаж болох объект (идэвхтэй даалгавруудын дундаас)
     int nearestObjective = -1, nearestEntity = -1;
@@ -826,17 +897,6 @@ void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde,
             continue;
         }
         const ObjectiveDef& def = stage->objectives[(size_t)i];
-
-        // Байршлыг сахих зомби: даалгавар идэвхжихэд нэг удаа гарна.
-        if (!state.spawned && def.guards > 0 && !IsZoneType(def.type) &&
-            HorizontalDistance(position, state.location) < kZoneWakeDistance)
-        {
-            for (int k = 0; k < def.guards * kGuardScale; ++k)
-            {
-                SpawnFromPool(horde, RandomAround(world, state.location, 6.0f, 22.0f), i + 1, false);
-            }
-            state.spawned = true;
-        }
 
         switch (def.type)
         {
@@ -873,7 +933,7 @@ void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde,
         }
     }
 
-    UpdateAmbient(dt, world, player, horde);
+    UpdateGuards(dt, world, player, horde, squad);
 
     // --- E товч: ойрын объекттой харилцах ---
     if (nearestObjective < 0)

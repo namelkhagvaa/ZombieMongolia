@@ -18,6 +18,7 @@ struct StageSave
     unsigned clearedZones = 0;                // бит i = i-р даалгаврын бүс бүрэн цэвэрлэгдсэн (дахин spawn болохгүй)
     int killedSmall = 0;                      // энэ үед устгасан алхагч + гүйгч зомби
     int killedBig = 0;                        // энэ үед устгасан том зомби
+    int guardKills[kMaxObjectives][2] = {};   // даалгавар бүрийн хамгаалагч зомбиос устгасан: [0] жижиг, [1] том
 
     bool Empty() const
     {

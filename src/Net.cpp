@@ -620,6 +620,7 @@ namespace Net
         w.U8(accept ? 1 : 0);
         w.U8((uint8_t)province);
         w.U16(kProtocolVersion);
+        w.Str(name); // хостын нэр (зочны дэлгэцэд)
         Send(w.data, true);
         if (accept)
         {
@@ -985,6 +986,7 @@ namespace Net
             e.accepted = r.U8() != 0;
             e.province = r.U8();
             e.version = r.at + 2 <= r.size ? r.U16() : 0;
+            e.text = r.at + 2 <= r.size ? r.Str() : std::string(); // хостын нэр (хуучин хувилбар илгээдэггүй)
             joinPending = false;
             connected = e.accepted;
             break;

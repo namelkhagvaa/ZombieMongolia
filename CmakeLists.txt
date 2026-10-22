@@ -47,6 +47,9 @@ FetchContent_MakeAvailable(enet)
 
 set(GAME_SOURCES
     main.cpp
+    src/Account.cpp
+    src/Json.cpp
+    src/Online.cpp
     src/Airstrike.cpp
     src/Audio.cpp
     src/Campaign.cpp
@@ -111,7 +114,7 @@ endif()
 target_include_directories(ZombieMongolia PRIVATE src ${enet_SOURCE_DIR}/include)
 target_link_libraries(ZombieMongolia PRIVATE raylib enet)
 if(WIN32)
-    target_link_libraries(ZombieMongolia PRIVATE ws2_32 winmm)
+    target_link_libraries(ZombieMongolia PRIVATE ws2_32 winmm winhttp)
     # Суулгагчаар өөр компьютерт тараахад: MinGW-ийн C++ сангуудыг exe-д шингээнэ (libstdc++, libgcc DLL хэрэггүй),
     # консол цонх гаргахгүй.
     target_link_options(ZombieMongolia PRIVATE -static)
@@ -150,7 +153,8 @@ if(EMSCRIPTEN)
         -sALLOW_MEMORY_GROWTH=1
         -sINITIAL_MEMORY=256MB      # утасны Safari том санах ойг эхэнд нь өгч чаддаггүй; хэрэгтэй үед өснө
         -sSTACK_SIZE=8MB
-        -sEXPORTED_RUNTIME_METHODS=HEAPF32  # raylib-ийн дууны сан (miniaudio) Module.HEAPF32-оор дуу гаргана
+        # HEAPF32: raylib-ийн дууны сан (miniaudio); stringToUTF8, UTF8ToString, lengthBytesUTF8: fetch, localStorage (Online.cpp)
+        -sEXPORTED_RUNTIME_METHODS=HEAPF32,stringToUTF8,UTF8ToString,lengthBytesUTF8
         --preload-file ${WEB_ASSETS}@/
         --shell-file ${CMAKE_SOURCE_DIR}/web/shell.html
     )

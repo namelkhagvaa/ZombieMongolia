@@ -1,0 +1,93 @@
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: Inter, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 64px;
+  padding: 0 20px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.brand-logo {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: radial-gradient(circle at 50% 42%, #d8322a 0 38%, transparent 40%), #14181f;
+  box-shadow: inset 0 -8px 0 #f0b030;
+}
+
+.brand small {
+  display: block;
+  font-weight: 400;
+  font-size: 11px;
+  opacity: 0.55;
+  letter-spacing: 0;
+}
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.page-head h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+}
+
+.page-head p {
+  margin: 2px 0 0;
+  opacity: 0.6;
+}
+
+.stat-card .ant-statistic-title {
+  font-size: 13px;
+}
+
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background:
+    radial-gradient(1200px 600px at 20% 10%, rgba(216, 50, 42, 0.18), transparent 60%),
+    radial-gradient(900px 500px at 90% 90%, rgba(240, 176, 48, 0.14), transparent 60%),
+    #0d1015;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+}
+
+.mono {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+}
+
+.province-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}

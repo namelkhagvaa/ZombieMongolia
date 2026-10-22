@@ -13,6 +13,7 @@ extern "C" struct android_app* GetAndroidApp(void); // raylib-ийн Android д�
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <string>
 
@@ -107,6 +108,19 @@ bool LoadProgress(Progress& progress, int provinceCount)
             if (file && index >= 0 && index < (int)progress.stages.size())
             {
                 for (int k = 4; k < StageSave::kEntitySlots; ++k) progress.stages[(size_t)index].entities[k] = masks[k];
+            }
+            continue;
+        }
+        if (key == "guards")
+        {
+            // guards <аймгийн индекс> <жижиг том> x kMaxObjectives (даалгавар бүрийн хамгаалагчдаас устгасан)
+            int index = -1;
+            file >> index;
+            int kills[StageSave::kMaxObjectives][2] = {};
+            for (auto& k : kills) file >> k[0] >> k[1];
+            if (file && index >= 0 && index < (int)progress.stages.size())
+            {
+                std::memcpy(progress.stages[(size_t)index].guardKills, kills, sizeof(kills));
             }
             continue;
         }
@@ -233,6 +247,9 @@ bool SaveProgress(const Progress& progress)
             for (int k = 4; k < StageSave::kEntitySlots; ++k) file << ' ' << stage.entities[k];
             file << '\n';
         }
+        file << "guards " << i;
+        for (const auto& k : stage.guardKills) file << ' ' << k[0] << ' ' << k[1];
+        file << '\n';
     }
 
     file.close();

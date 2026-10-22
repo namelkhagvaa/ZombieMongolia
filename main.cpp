@@ -168,6 +168,18 @@ int main(int argc, char** argv)
         {
             options.dayTime = (float)std::atof(argv[++i]);
         }
+        else if (std::strcmp(argv[i], "--third") == 0)
+        {
+            options.thirdPerson = true;
+        }
+        else if (std::strcmp(argv[i], "--api") == 0 && i + 1 < argc)
+        {
+            options.apiBase = argv[++i];
+        }
+        else if (std::strcmp(argv[i], "--show") == 0)
+        {
+            options.show = true;
+        }
         else if (std::strcmp(argv[i], "--pause") == 0)
         {
             options.pause = true;

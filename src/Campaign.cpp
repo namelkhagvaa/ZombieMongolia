@@ -1,5 +1,7 @@
 #include "Campaign.h"
 
+#include "Account.h"
+
 #include "Input.h"
 #include "UiFont.h"
 #include "UiStyle.h"
@@ -73,7 +75,8 @@ namespace
     Color StatusColor(const Progress& progress, int index)
     {
         if (progress.liberated[index]) return kLiberated;
-        return IsProvinceUnlocked(progress, index) ? kAvailable : kLocked;
+        // Данстай үед: эрх нээгдээгүй аймаг саарал (сонговол эрх нээх, төлөх цонх гарна)
+        return IsProvinceUnlocked(progress, index) && Account::Unlocked(index) ? kAvailable : kLocked;
     }
 
     // Цэг бүрийн өнгө: дээрээсээ (гэрэлтэй) доошоо (бараан) шилжинэ, байрлалаас хамаарсан бага зэрэг толбо.
@@ -503,6 +506,8 @@ void MapScreen::Draw(const Progress& progress) const
     Ui::TextShadow(progressText, 32, 56, 16, Ui::kText);
     Ui::Bar({ 42.0f + (float)Ui::Measure(progressText, 16), 62.0f, 200.0f, 7.0f }, (float)liberated / (float)count, kLiberated,
             { 0, 0, 0, 140 });
+    // Данс: нэр, үнэгүй үлдсэн аймаг, худалдаж авсан эрх, "Гарах" товч
+    Account::DrawBadge(58 + Ui::Measure(progressText, 16) + 200, 52);
     if (liberated == count)
     {
         Ui::Chip("МОНГОЛ УЛС ЧӨЛӨӨЛӨГДЛӨӨ!", 420, 22, Ui::kAccent, kLiberated);
@@ -615,16 +620,18 @@ void MapScreen::Draw(const Progress& progress) const
         const int legendY = (int)(kMapRect.y + kMapRect.height) - 34;
         int legendX = (int)kMapRect.x + 8;
         const struct { Color color; const char* text; } legend[] = {
-            { kLiberated, "чөлөөлсөн" }, { kAvailable, "зомбид эзлэгдсэн" } };
-        for (const auto& entry : legend)
+            { kLiberated, "чөлөөлсөн" }, { kAvailable, "зомбид эзлэгдсэн" }, { kLocked, "түгжээтэй" } };
+        const int entries = Account::Enabled() ? 3 : 2;
+        for (int i = 0; i < entries; ++i)
         {
-            legendX += Ui::Chip(entry.text, legendX, legendY, Ui::kText, entry.color) + 8;
+            legendX += Ui::Chip(legend[i].text, legendX, legendY, Ui::kText, legend[i].color) + 8;
         }
     }
 
     // --- Сонгосон аймгийн карт ---
     const MissionParams mission = MissionFor(selected);
     const bool unlocked = IsProvinceUnlocked(progress, selected);
+    const bool owned = Account::Unlocked(selected); // данстай үед: эрх нээгдсэн эсэх
     const bool free = progress.liberated[selected];
     const int objectives = (int)StageFor(selected).objectives.size();
     const unsigned doneMask = progress.stages[(size_t)selected].done;
@@ -641,7 +648,7 @@ void MapScreen::Draw(const Progress& progress) const
         Ui::Text("АЙМАГ", panelX + 18, y + 12, 13, Ui::kTextDim);
         Ui::TextBold(TextFormat("%02d / %02d", selected + 1, count), panelX + 18 + Ui::Measure("АЙМАГ ", 13), y + 12, 13, kGold);
         Ui::TextBold(provinces[selected].name, panelX + 18, y + 28, 26, Ui::kText);
-        Ui::Text(free ? "Чөлөөлөгдсөн" : unlocked ? "Зомбид эзлэгдсэн" : "Түгжээтэй", panelX + 18, y + 62, 15,
+        Ui::Text(free ? "Чөлөөлөгдсөн" : unlocked && owned ? "Зомбид эзлэгдсэн" : "Түгжээтэй", panelX + 18, y + 62, 15,
                  StatusColor(progress, selected));
         DrawThumbnail({ (float)panelX + (float)panelWidth - 122.0f, (float)y + 12.0f, 108.0f, 64.0f }, selected);
 
@@ -688,7 +695,7 @@ void MapScreen::Draw(const Progress& progress) const
             DrawRifle(icon, 0.65f, 34.0f, ink);
             DrawRifle(icon, PI - 0.65f, 34.0f, ink);
         }
-        const char* label = "ДОВТЛОХ";
+        const char* label = owned ? "ДОВТЛОХ" : "НЭЭХ"; // түгжээтэй: эрх нээх, төлөх цонх
         Ui::TextBold(label, panelX + (panelWidth - Ui::MeasureBold(label, 22)) / 2, (int)button.y + 11, 22, ink);
         const float ax = button.x + button.width - 30.0f + 3.0f * pulse, ay = button.y + button.height * 0.5f;
         DrawLineEx({ ax - 5.0f, ay - 9.0f }, { ax + 4.0f, ay }, 3.5f, ink);

@@ -21,6 +21,8 @@ int ViewHeight();
 // BeginDrawing / EndDrawing хоёрын хооронд: бүх зураглалыг энэ хоёрын дунд хийнэ.
 void ViewBegin();
 void ViewEnd();
+// Сүүлд зурсан зураг (дотоод зураг байвал түүнээс, үгүй бол дэлгэцээс). UnloadImage-ээр чөлөөлнө.
+Image ViewCapture();
 // GetWorldToScreen-ийн харагдацын хэмжээгээр тооцсон хувилбар.
 Vector2 ViewWorldToScreen(Vector3 position, Camera3D camera);
 

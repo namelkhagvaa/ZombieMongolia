@@ -10,7 +10,6 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
 namespace
 {
     const char* const kNames[kCharacterCount] = { "fighter1",     "fighter2",       "fighter3",
@@ -330,6 +329,113 @@ namespace
         }
     }
 
+    // Автомат араг ясжуулалтын алдаа: зарим орой биеийн огт өөр хэсгийн ясанд жинтэй байдаг (Model-1-ийн гутлын
+    // ул баруун гарт 59%). Анхны байрлалд үл харагдах ч гар хөдлөхөд тэр оройнууд гарыг дагаж, гутлаас бүс хүртэл
+    // нарийн "шон" сунана. Оройд хамгийн ойр ясаас хамаагүй хол ясны нөлөөг хасаж жинг дахин хэвийн болгоно; юу ч
+    // үлдэхгүй бол хамгийн ойрын ясанд бүрэн онооно. (Том биетэй зомбины гэдэс шиг бүх яснаас хол оройд хүрэхгүй.)
+    void CleanStrayWeights(Model& model, const char* name)
+    {
+        // Ясны хэсгүүд: яс -> хүүхэд бүр (хүүхэдгүй бол цэг), анхны байрлалд
+        struct Segment
+        {
+            int bone;
+            Vector3 a, b;
+        };
+        std::vector<Segment> segments;
+        for (int bone = 0; bone < model.boneCount; ++bone)
+        {
+            const Vector3 origin = model.bindPose[bone].translation;
+            bool leaf = true;
+            for (int child = 0; child < model.boneCount; ++child)
+            {
+                if (model.bones[child].parent != bone) continue;
+                segments.push_back({ bone, origin, model.bindPose[child].translation });
+                leaf = false;
+            }
+            if (leaf) segments.push_back({ bone, origin, origin });
+        }
+        auto segmentDistance = [](const Segment& s, Vector3 point) {
+            const Vector3 axis = Vector3Subtract(s.b, s.a);
+            const float length = Vector3DotProduct(axis, axis);
+            const float t = length > 1e-8f ? std::clamp(Vector3DotProduct(Vector3Subtract(point, s.a), axis) / length, 0.0f, 1.0f) : 0.0f;
+            return Vector3Distance(point, Vector3Add(s.a, Vector3Scale(axis, t)));
+        };
+
+        std::vector<float> reach((size_t)model.boneCount);
+        for (int index = 0; index < model.meshCount; ++index)
+        {
+            Mesh& mesh = model.meshes[index];
+            if (!mesh.boneWeights || !mesh.boneIds) continue;
+
+            float top = 0.0f;
+            std::vector<uint8_t> deforming((size_t)model.boneCount, 0);
+            for (int v = 0; v < mesh.vertexCount; ++v)
+            {
+                top = std::max(top, mesh.vertices[v * 3 + 1]);
+                for (int k = 0; k < 4; ++k)
+                {
+                    if (mesh.boneWeights[v * 4 + k] > 0.0f && mesh.boneIds[v * 4 + k] < model.boneCount)
+                    {
+                        deforming[mesh.boneIds[v * 4 + k]] = 1;
+                    }
+                }
+            }
+            const float margin = 0.29f * std::max(top, 0.001f); // ~56 см хүний өндөрт
+
+            int fixed = 0;
+            for (int v = 0; v < mesh.vertexCount; ++v)
+            {
+                const Vector3 point = { mesh.vertices[v * 3], mesh.vertices[v * 3 + 1], mesh.vertices[v * 3 + 2] };
+                std::fill(reach.begin(), reach.end(), 1e9f);
+                float nearestDistance = 1e9f;
+                int nearest = 0;
+                for (const Segment& s : segments)
+                {
+                    const float distance = segmentDistance(s, point);
+                    reach[(size_t)s.bone] = std::min(reach[(size_t)s.bone], distance);
+                    if (deforming[(size_t)s.bone] && distance < nearestDistance)
+                    {
+                        nearestDistance = distance;
+                        nearest = s.bone;
+                    }
+                }
+
+                float* weights = &mesh.boneWeights[v * 4];
+                unsigned char* ids = &mesh.boneIds[v * 4];
+                bool changed = false;
+                float sum = 0.0f;
+                for (int k = 0; k < 4; ++k)
+                {
+                    if (weights[k] > 0.0f && (ids[k] >= model.boneCount || reach[ids[k]] > nearestDistance + margin))
+                    {                        weights[k] = 0.0f;
+                        changed = true;
+                    }
+                    sum += weights[k];
+                }
+                if (!changed) continue;
+                ++fixed;
+                if (sum > 1e-4f)
+                {
+                    for (int k = 0; k < 4; ++k) weights[k] /= sum;
+                    continue;
+                }
+                ids[0] = (unsigned char)nearest;
+                weights[0] = 1.0f;
+                for (int k = 1; k < 4; ++k) ids[k] = 0, weights[k] = 0.0f;
+            }
+
+            if (fixed > 0)
+            {
+                // LoadModel аль хэдийн видео карт руу хуулсан тул засварласан утгуудыг дахин илгээнэ.
+                // Буферийн дугаар: raylib config.h-ийн ATTRIB_LOCATION_BONEIDS (7), BONEWEIGHTS (8).
+                const int boneIdsBuffer = 7, boneWeightsBuffer = 8;
+                UpdateMeshBuffer(mesh, boneIdsBuffer, mesh.boneIds, mesh.vertexCount * 4, 0);
+                UpdateMeshBuffer(mesh, boneWeightsBuffer, mesh.boneWeights, mesh.vertexCount * 4 * (int)sizeof(float), 0);
+                TraceLog(LOG_INFO, "CHARACTER: %s: fixed %d vertices weighted to distant bones", name, fixed);
+            }
+        }
+    }
+
     // Гарын хуруунуудын яс, нугалах тэнхлэг, алганы зүгийг анхны байрлалаас тооцно.
     void SetupHands(Character& c)
     {
@@ -477,6 +583,7 @@ void LoadCharacterModels(Shader shader)
         {
             c.bind[bone] = c.model.bindPose[bone].translation;
         }
+        CleanStrayWeights(c.model, kNames[id]);
         SetupHands(c);
         for (int side = 0; side < 2; ++side)
         {

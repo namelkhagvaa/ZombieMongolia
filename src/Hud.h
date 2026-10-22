@@ -12,6 +12,7 @@ struct HudInfo
     int hordeSmall = -1;                   // үлдсэн жирийн зомби (-1 = харуулахгүй)
     int hordeBig = 0;                      // үлдсэн том зомби
     float zombieSpeed = 1.0f;              // зомбины хурдны үржүүлэгч (> 1 бол чип харуулна)
+    int guardSmall = -1, guardBig = 0;     // тоглогч байгаа даалгаврын газрыг хамгаалж буй зомби (-1 = харуулахгүй)
     const char* prompt = nullptr;          // харилцах заавар: "E — Генератор асаах"
     const char* notice = nullptr;          // богино мэдэгдэл: "ДААЛГАВАР БИЕЛЛЭЭ: ..."
     int coins = 0;

@@ -18,6 +18,10 @@ enum class ZombieType
     Brute   // удаан, бат бөх: хүнд алхаатай
 };
 
+// Үеийн зомбины нөөц аймгийн даалгавруудад хуваагдана: даалгавар бүрийг өөрийн зомбинууд хамгаална
+// (Mission). Нөөцийн дугаар = даалгаврын индекс (StageSave::kMaxObjectives хүртэл).
+constexpr int kHordePools = 12;
+
 struct Zombie
 {
     Mover mover;
@@ -39,6 +43,7 @@ struct Zombie
     Vector3 lastPosition = { 0.0f, 0.0f, 0.0f };
     int reward = 0;
     int zone = 0;         // аль spawn бүсэд харьяалагдах (0 = бүсгүй, тэнүүчилсэн)
+    int pool = -1;        // аль даалгаврын нөөцөөс гарсан (0..kHordePools-1), -1 = нөөцөөс бус (аварга, туршилт)
     bool alerted = false; // бай руугаа хөөж эхэлсэн; үгүй бол байрандаа зогсоно
     // Барилга руу нэвтрэх: сонгосон гарц (-1 = хаалга, бусад нь цонхны гарцын индекс), аль барилгад зориулсан
     int entryRoom = -1;
@@ -91,8 +96,8 @@ class ZombieHorde
 {
 public:
     void Clear();
-    // zone: харьяалагдах бүсийн дугаар. alerted = true бол шууд бай руугаа хөөнө.
-    void Spawn(ZombieType type, Vector3 position, const MissionParams& mission, int zone = 0, bool alerted = true);
+    // zone: харьяалагдах бүсийн дугаар. alerted = true бол шууд бай руугаа хөөнө. pool: аль даалгаврын нөөц.
+    void Spawn(ZombieType type, Vector3 position, const MissionParams& mission, int zone = 0, bool alerted = true, int pool = -1);
     // Аварга зомби: асар их амьтай, том биетэй.
     void SpawnBoss(Vector3 position, const MissionParams& mission, int zone);
     // Тухайн бүсийн амьд зомбины тоо.
@@ -164,13 +169,17 @@ public:
 
     // Сүүлийн дуудалтаас хойш устгагдсан зомбины тоо, хэмжээгээр (аварга тоологдохгүй).
     void TakeKillTypes(int& small, int& big);
+    // Мөн даалгаврын нөөцөөр: kills[нөөц][0 = жижиг, 1 = том]-д нэмнэ.
+    void TakePoolKills(int kills[kHordePools][2]);
     // Буун дуу, дэлбэрэлт: center-ээс radius доторх зомбинууд сэрж, дуу гарсан зүг рүү ирнэ.
     void AlertAround(Vector3 center, float radius);
     // Амьд зомбины тоо, хэмжээгээр (аварга тоологдохгүй).
     void CountAlive(int& small, int& big) const;
-    // center-ээс distance-аас хол байгаа амьд зомбийг шагналгүйгээр арилгана (үеийн нөөцөд буцна).
+    // Даалгаврын нөөц бүрийн амьд зомби: alive[нөөц][0 = жижиг, 1 = том] (тэглээд тоолно).
+    void CountAliveByPool(int alive[kHordePools][2]) const;
+    // centers-ийн аль алинаас distance-аас хол байгаа амьд зомбийг шагналгүйгээр арилгана (үеийн нөөцөд буцна).
     // ambientOnly: зөвхөн тэнүүлч (бүс 0) зомби.
-    void RemoveFar(Vector3 center, float distance, bool ambientOnly);
+    void RemoveFar(const std::vector<Vector3>& centers, float distance, bool ambientOnly);
     const Zombie& At(int index) const { return zombies[index]; }
 
     // viewPosition-оос maxDistance-аас хол байгаа зомбийг зурахгүй.
@@ -192,4 +201,5 @@ private:
     float navClock = 0.0f; // орох гарцыг дахин сонгох хугацааг тоолно
     int pendingSmallKills = 0; // алхагч + гүйгч
     int pendingBigKills = 0;   // том зомби (аварга орохгүй)
+    int pendingPoolKills[kHordePools][2] = {};
 };

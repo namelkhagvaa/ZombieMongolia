@@ -252,6 +252,10 @@ uniform sampler2D texture2; // хуурай шороо
 uniform sampler2D texture3; // хад
 uniform float terrainTextures; // 0 = текстургүй (файл олдоогүй)
 uniform vec3 terrainMean[4];   // текстур бүрийн дундаж өнгө (ачаалахдаа нэг удаа тооцно)
+// Алсын газар (60 м тор): камерын ойр, тоглох талбай дотор ойрын нарийн газар зурагддаг тул энд зурахгүй.
+// Бүдүүн тор нь тэгшилсэн бүс, голын сав дээр ойрын газраас дээгүүр гарч тоглогчийг "газар доор" харагдуулдаг.
+uniform float farCutRadius;    // > 0 бол камераас ийм хэвтээ зайд ...
+uniform float farCutHalf;      // ... бөгөөд |x|, |z| нь үүнээс бага пикселийг хаяна
 
 vec3 TerrainDetail(sampler2D t, vec2 uv, vec3 mean)
 {
@@ -260,6 +264,8 @@ vec3 TerrainDetail(sampler2D t, vec2 uv, vec3 mean)
 
 void main()
 {
+    if (farCutRadius > 0.0 && distance(viewPos.xz, fragPosition.xz) < farCutRadius &&
+        max(abs(fragPosition.x), abs(fragPosition.z)) < farCutHalf) discard;
     vec3 albedo = fragColor.rgb * colDiffuse.rgb;
     vec3 normal = normalize(fragNormal);
     float dist = distance(viewPos, fragPosition);
@@ -1231,6 +1237,10 @@ void Environment::DrawFarLand(const std::vector<MeshPiece>& pieces, const Camera
     rlDrawRenderBatchActive();
     SetFloat(terrainShader, "fogScale", 0.015f);
     SetFloat(terrainShader, "fogFarStart", 650.0f);
+    // Ойрын газар 680 м хүртэл зурагдана; түүнээс бага радиуст алсын газрыг хаяна (World::BuildFarLand-ийн
+    // тоглох талбайн хязгаартай ижил).
+    SetFloat(terrainShader, "farCutRadius", 600.0f);
+    SetFloat(terrainShader, "farCutHalf", kWorldHalfExtent - 60.0f);
     rlDisableBackfaceCulling();
     for (const MeshPiece& piece : pieces)
     {
@@ -1239,6 +1249,7 @@ void Environment::DrawFarLand(const std::vector<MeshPiece>& pieces, const Camera
     rlEnableBackfaceCulling();
     SetFloat(terrainShader, "fogScale", 1.0f);
     SetFloat(terrainShader, "fogFarStart", 0.0f);
+    SetFloat(terrainShader, "farCutRadius", 0.0f);
 }
 
 void Environment::DrawMountains(Vector3 viewPosition) const

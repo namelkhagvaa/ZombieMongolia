@@ -4,6 +4,7 @@
 #include "Structures.h"
 #include "VehicleModel.h"
 
+#include "Account.h"
 #include "Audio.h"
 #include "Platform.h"
 #include "Input.h"
@@ -90,6 +91,10 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
     if (config.vsync && !benchmark) flags |= FLAG_VSYNC_HINT;
     // Туршилтын цонх идэвхгүй нээгдэнэ: хэрэглэгчийн ажиллаж буй програмаас гарын оролтыг булаахгүй.
     if (benchmark) flags |= FLAG_WINDOW_UNFOCUSED;
+    // Туршилт анхнаасаа нуугдмал цонхонд ажиллана (дэлгэцэнд гарч хэрэглэгчийн ажилд саад болохгүй).
+    // Нуугдсан цонхны дэлгэцийн buffer найдваргүй тул зураглалыг дотоод зурагт хийж, дэлгэцийн зургийг тэндээс авна.
+    const bool hidden = benchmark && !options.show;
+    if (hidden) flags |= FLAG_WINDOW_HIDDEN;
     SetConfigFlags(flags);
 
 #if defined(__ANDROID__)
@@ -110,7 +115,7 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
         break;
     }
     InSetTouchMode(options.touch || WebIsTouchDevice()); // хөтөч: утас, таблет дээр мэдрэгчтэй товчлуурууд
-    ViewInit(options.viewHeight);
+    ViewInit(hidden && options.viewHeight <= 0 ? GetScreenHeight() : options.viewHeight);
 #endif
 #if defined(__EMSCRIPTEN__)
     SetTargetFPS(0); // хөтөч: кадрын хурдыг requestAnimationFrame тогтооно (FrameYield)
@@ -175,6 +180,8 @@ Game::Game(const LaunchOptions& launchOptions)
     if (progress.fullscreen && !options.screenshotPath && !options.touch) SetFullscreen(true);
 #endif
     mapScreen.Preload(); // дэвсгэр зураг, аймгуудын дүрс: эхний кадрыг гацаахгүй
+    // Данс (нэвтрэх, аймгийн эрх, төлбөр): туршилтын горимд идэвхгүй (--api заасан бол идэвхтэй)
+    Account::Init(!options.screenshotPath || options.apiBase, options.apiBase ? options.apiBase : "");
     Splash::Finish();
 }
 
@@ -231,6 +238,7 @@ void Game::Run()
             camera.Snap(player.Position());
             world.Stream(player.Position(), true);
         }
+        if (options.thirdPerson) progress.firstPerson = false;
         camera.SetView(options.yawDegrees * DEG2RAD, options.pitchDegrees * DEG2RAD);
         if (options.cameraDistance > 0.0f) camera.SetDistance(options.cameraDistance);
         if (options.ride >= 1 && options.ride <= garage.Count())
@@ -386,9 +394,7 @@ void Game::Run()
                              HorizontalDistance(escort.position, player.Position()),
                              garage.Escort() == teamVehicle ? "driving" : "boarding");
                 }
-                // LoadImageFromScreen нь DPI масштабтай дэлгэц дээр буруу хэмжээ уншдаг тул шууд уншина.
-                Image image = { rlReadScreenPixels(GetRenderWidth(), GetRenderHeight()), GetRenderWidth(),
-                                GetRenderHeight(), 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
+                Image image = ViewCapture();
                 ExportImage(image, options.screenshotPath);
                 UnloadImage(image);
                 break;
@@ -402,12 +408,23 @@ void Game::Run()
         // Мэдрэгчтэй дэлгэцийн товчлуурууд ба гар, хулганы оролтыг нэгтгэнэ.
         touchState = MakeTouchState();
         InBeginFrame(touchState);
+        // Данс: өөр төхөөрөмж дээр нэвтэрсэн бол (нэг зэрэг нэг л төхөөрөмж) даалгаврыг зогсоож газрын зураг руу
+        Account::Tick();
+        if (Account::TakeKicked() && state != GameState::Map)
+        {
+            if (paused) ClosePause();
+            ReturnToMap();
+        }
         if (!benchmark || options.coopTest) UpdateNetwork(dt);
 
         // ESC (утсан дээр "буцах" товч): нээлттэй цонхыг (даалгаврын журнал, газрын зураг) хаана; цонхгүй бол гарна.
         if (InKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_BACK))
         {
-            if (codeEntryOpen)
+            if (state == GameState::Map && !paused && Account::Back())
+            {
+                // данс, төлбөрийн цонх: өмнөх цонх руу буцна
+            }
+            else if (codeEntryOpen)
             {
                 codeEntryOpen = false; // өрөөний код оруулах цонх
             }
@@ -562,6 +579,23 @@ void Game::HandleSettingsInput()
 
 void Game::UpdateMap()
 {
+    // Туршилт (--campaign --api ...): нэвтэрсэн бол сонгосон аймгийг эхлүүлэх хүсэлт (эрх нээх, төлөх цонх)
+    static bool accountTestSent = false;
+    static double accountTestEnter = 0.0;
+    if (options.screenshotPath && options.apiBase && options.journal && accountTestSent && accountTestEnter > 0.0 &&
+        GetTime() > accountTestEnter)
+    {
+        accountTestEnter = 0.0; // --journal: аймаг нээх цонхны үндсэн товчийг нэг удаа дарна (төлөх цонх руу)
+        Account::TestEnter();
+    }
+    if (Account::Update()) return; // нэвтрэх, аймаг нээх, төлөх цонх нээлттэй
+    if (options.screenshotPath && options.apiBase && !accountTestSent && Account::SignedIn() && !options.characterSelect)
+    {
+        accountTestSent = true;
+        accountTestEnter = GetTime() + 1.0;
+        Account::RequestStart(mapScreen.Selected(), Provinces()[(size_t)mapScreen.Selected()].name);
+        return;
+    }
     if (characterSelectOpen)
     {
         UpdateCharacterSelect();
@@ -580,10 +614,20 @@ void Game::UpdateMap()
     {
         Save();
     }
+    // Данстай үед: аймгийн эрхийг сервер шалгана (үнэгүй эрх, төлбөр); зөвшөөрөгдсөний дараа эхэлнэ.
+    int startProvince = -1;
     if (result == MapScreen::Result::StartMission)
     {
+        if (Account::Enabled()) Account::RequestStart(mapScreen.Selected(), Provinces()[(size_t)mapScreen.Selected()].name);
+        else startProvince = mapScreen.Selected();
+    }
+    const int approved = Account::TakeApproved();
+    if (approved >= 0) startProvince = approved;
+    if (startProvince >= 0)
+    {
         // Эхлэхийн өмнө 1-р дайчны дүрийг сонгоно (сүүлд сонгосон нь урьдчилан тэмдэглэгдсэн)
-        pendingProvince = mapScreen.Selected();
+        pendingProvince = startProvince;
+        mapScreen.Select(startProvince);
         characterChoice = std::clamp(progress.leaderSkin, 0, kLeaderSkinCount - 1);
         characterSelectOpen = true;
     }
@@ -781,6 +825,7 @@ void Game::StartMission(int index)
     inTown = false;
     medKitKills = 0;
     lastReward = 0;
+    helpedHost = false;
 
     player.Reset(config.playerBaseHealth + kHealthPerLevel * (float)progress.healthLevel);
     if (world.CityActive())
@@ -2533,6 +2578,11 @@ void Game::DrawMission() const
     info.hordeSmall = mission.QuotaSmall() - mission.KilledSmall();
     info.hordeBig = mission.QuotaBig() - mission.KilledBig();
     info.zombieSpeed = horde.SpeedMultiplier();
+    if (!coopGuest && mission.GuardedObjective() >= 0)
+    {
+        info.guardSmall = mission.PoolLeft(mission.GuardedObjective(), false);
+        info.guardBig = mission.PoolLeft(mission.GuardedObjective(), true);
+    }
     if (coopGuest)
     {
         // Зочин: даалгавар, зомбины тоог хостоос
@@ -2555,7 +2605,7 @@ void Game::DrawMission() const
             ++info.teamCount;
         }
         info.squadTotal = 0;
-        info.partnerName = "Хост";
+        info.partnerName = hostName.empty() ? "Хост" : hostName.c_str();
         info.partnerHealth = (guestView.host.flags & Net::kAlive) != 0 ? -1 : 0;
     }
     else if (remoteActive)
@@ -2896,7 +2946,11 @@ void Game::DrawMissionCompleted() const
     std::snprintf(line, sizeof(line), "Биелүүлсэн даалгавар: %d / %d", mission.CompletedCount(), mission.ObjectiveCount());
     centered(line, 280, 26, text);
 
-    if (lastReward > 0) std::snprintf(line, sizeof(line), "Аймаг чөлөөлсний шагнал: %d зоос", lastReward);
+    if (helpedHost)
+    {
+        std::snprintf(line, sizeof(line), "Та %s-д тусалж аймгийг чөлөөллөө", hostName.empty() ? "хост" : hostName.c_str());
+    }
+    else if (lastReward > 0) std::snprintf(line, sizeof(line), "Аймаг чөлөөлсний шагнал: %d зоос", lastReward);
     else std::snprintf(line, sizeof(line), "Энэ аймаг өмнө нь чөлөөлөгдсөн тул нэмэлт шагнал олгохгүй");
     centered(line, 318, 26, gold);
     if (lastReward > 0)
@@ -2907,9 +2961,13 @@ void Game::DrawMissionCompleted() const
     std::snprintf(line, sizeof(line), "Нийт зоос: %d", progress.coins);
     centered(line, 356, 26, text);
 
-    // Дараагийн нээгдэх үе
+    // Дараагийн нээгдэх үе (зочинд: өөрийн аймаг нээгдээгүй тул)
     const int next = provinceIndex + 1;
-    if (next < (int)Provinces().size())
+    if (helpedHost)
+    {
+        centered("Энэ аймагт өөрөө тоглох бол газрын зургаас нээнэ үү", 430, 24, { 150, 220, 150, 255 });
+    }
+    else if (next < (int)Provinces().size())
     {
         std::snprintf(line, sizeof(line), "Дараагийн үе нээгдлээ: %s (%02d / %02d)", StageFor(next).provinceName, next + 1,
                       (int)Provinces().size());
@@ -2938,7 +2996,8 @@ TouchState Game::MakeTouchState() const
     }
     if (state == GameState::Map)
     {
-        touch.screen = TouchScreen::CampaignMap;
+        // Данс, төлбөрийн цонх: газрын зургийн товчлуургүй (цонх өөрөө товшилтыг уншина)
+        touch.screen = Account::Blocking() ? TouchScreen::Pause : TouchScreen::CampaignMap;
         return touch;
     }
     if (state != GameState::Playing)
@@ -3063,6 +3122,7 @@ void Game::Draw() const
         DrawCoopMap();
         if (codeEntryOpen) DrawCodeEntry();
         if (characterSelectOpen) DrawCharacterSelect();
+        Account::Draw();
         // Хувилбар: хөрвүүлсэн огноо, цаг (аль хувилбар ажиллаж байгааг ялгахад)
         const char* build = "Хувилбар: " __DATE__ " " __TIME__;
         UiText(build, ViewWidth() - UiMeasure(build, 14) - 12, ViewHeight() - 22, 14, Fade(WHITE, 0.55f));
@@ -3099,6 +3159,8 @@ void Game::SetNotice(const std::string& text, float seconds)
 
 std::string Game::PlayerName() const
 {
+    const std::string name = Account::Name(); // бүртгэлтэй нэр
+    if (!name.empty()) return name;
     return std::string("Тоглогч ") + std::to_string(progress.netTag);
 }
 
@@ -3282,7 +3344,8 @@ void Game::LeaveCoop()
 void Game::UpdateNetwork(float dt)
 {
     if (!net.Available()) return;
-    if (net.LocalName().empty()) net.SetName(PlayerName());
+    // Нэвтэрсний дараа бүртгэлтэй нэр хайлтын жагсаалт, нэгдэх хүсэлт, хариуд харагдана
+    if (net.LocalName() != PlayerName()) net.SetName(PlayerName());
 
     // Газрын зураг дээр: зочин болох гэж ойролцоох тоглолтыг хайна. Даалгаврын үед: хост болж хүсэлт хүлээнэ.
     if (state == GameState::Map)
@@ -3399,6 +3462,7 @@ void Game::UpdateNetwork(float dt)
             }
             else if (event.accepted)
             {
+                hostName = event.text;
                 StartCoopGuest(event.province);
             }
             else
@@ -3426,13 +3490,10 @@ void Game::UpdateNetwork(float dt)
             if (coopGuest && (state == GameState::Playing || state == GameState::Airstrike))
             {
                 airstrike.Stop();
+                // Зочин зөвхөн хостод тусална: аймаг зочны хадгалалтад чөлөөлөгдөхгүй, шагнал авахгүй (устгасан
+                // зомбины зоос л үлдэнэ). Өөрөө тоглох бол аймгийг өөрийн эрхээр нээнэ.
                 lastReward = 0;
-                if (!progress.liberated[provinceIndex])
-                {
-                    progress.liberated[provinceIndex] = true;
-                    lastReward = (int)event.amount;
-                    progress.coins += lastReward;
-                }
+                helpedHost = true;
                 Save();
                 state = GameState::Won;
                 LeaveCoop();

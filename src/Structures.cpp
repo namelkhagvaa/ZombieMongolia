@@ -2346,6 +2346,8 @@ namespace
     }
 
     // Сүхбаатарын морьт хөшөө: гурван шатлалт суурь дээр, гараа өргөсөн морьтон. -Z зүг рүү харна.
+    void HorseRider(Scene& s, float x, float y, float z, float yaw, float scale);
+
     void SukhbaatarStatue(Scene& s, float x, float z)
     {
         s.solid.Box({ x, 0.25f, z }, { 7.0f, 0.5f, 7.0f }, kConcrete);
@@ -2356,7 +2358,16 @@ namespace
         s.Collider({ x, 4.5f, z }, { 2.6f, 9.0f, 4.8f });
 
         // Орон нутгийн тэнхлэгт морь +Z рүү харна; бүтнээр нь эргүүлж -Z рүү харуулна.
-        PlaceFigure(s, x, 4.85f, z, PI, 1.5f);
+        HorseRider(s, x, 4.85f, z, PI, 1.5f);
+
+        s.Shadow(x - 3.5f, z - 3.5f, x + 3.5f, z + 3.5f, 0.0f, 0.5f);
+        s.Shadow(x - 1.2f, z - 2.3f, x + 1.2f, z + 2.3f, 0.5f, 9.0f);
+    }
+
+    // Хүрэл морьт хөшөө (тавцангүй): морь орон нутгийн +Z рүү харна, scale = 1 бол ~3 м өндөр
+    void HorseRider(Scene& s, float x, float y, float z, float yaw, float scale)
+    {
+        PlaceFigure(s, x, y, z, yaw, scale);
         for (float lx : { -0.28f, 0.28f })
         {
             for (float lz : { -0.85f, 0.85f })
@@ -2375,9 +2386,6 @@ namespace
         s.solid.Box({ -0.36f, 2.78f, 0.05f }, { 0.14f, 0.75f, 0.14f }, kBronze); // өргөсөн гар
         s.solid.Box({ 0.36f, 2.0f, 0.15f }, { 0.14f, 0.55f, 0.14f }, kBronze);   // жолоо барьсан гар
         s.solid.ResetTransform();
-
-        s.Shadow(x - 3.5f, z - 3.5f, x + 3.5f, z + 3.5f, 0.0f, 0.5f);
-        s.Shadow(x - 1.2f, z - 2.3f, x + 1.2f, z + 2.3f, 0.5f, 9.0f);
     }
 
     // Төрийн ордон: урд талдаа (-Z, талбай руу) багананууд, голд нь суугаа Чингис хааны хөшөө.
@@ -4294,19 +4302,602 @@ namespace
         flush();
     }
 
-    // Гэр хорооллын гэр: хана (цилиндр), дээвэр (конус), тооно, хаалга. Энгийн (нэг гэрт ~40 гурвалжин).
+    // ------------------------------------------------------------------ Аймгийн төвийн төрх
+
+    // Аймгийн төвийн өнгө, материал. Бүс нутгаас хамаарна; аймаг бүр бүс нутгийнхаа өнгөнөөс өөрийн хослолыг
+    // сонгоно (хот бүхэлдээ нэгдмэл, хөрш аймгууд ч ялгаатай харагдана).
+    struct TownStyle
+    {
+        Region region = Region::West;
+        Color walls[3];       // хувийн байшингийн хана (шохойдсон, будсан)
+        Color publicWalls[2]; // орон сууц, олон нийтийн барилга (Зөвлөлтийн үеийн пастел)
+        Color roofs[2];       // тугалган дээвэр
+        Color fenceWood[2];
+        Color fenceMetal[2];
+        Color wallFence;      // шавар, тоосгон хашаа
+        float metalFences = 0.3f; // төмөр хашааны хувь
+        float treeChance = 0.6f;  // гудамжны модны нягт
+        float logHouses = 0.0f;   // дүнзэн байшингийн хувь (ойт бүс)
+        int province = -1;
+        Vector2 site = { 0.0f, 0.0f }; // хотын төвийн талбай (TownSite)
+        const CityBuilding* mainHall = nullptr; // Засаг даргын тамгын газар (талбайн дэргэдэх)
+    };
+    TownStyle gTown;
+
+    TownStyle MakeTownStyle(int province)
+    {
+        struct Palette
+        {
+            std::vector<Color> walls, publicWalls, roofs, fenceWood, fenceMetal;
+            Color wallFence;
+            float metalFences, treeChance, logHouses;
+        };
+        Palette p;
+        const Region region = province >= 0 ? RegionFor(province) : Region::City;
+        switch (region)
+        {
+        case Region::West: // шохойдсон цагаан, цайвар хөх, ногоон; хөх, ногоон, улаан тугалга
+            p = { { { 236, 232, 222, 255 }, { 210, 224, 232, 255 }, { 226, 214, 186, 255 }, { 200, 222, 212, 255 }, { 188, 206, 226, 255 } },
+                  { { 226, 214, 170, 255 }, { 206, 218, 226, 255 }, { 232, 202, 182, 255 } },
+                  { { 46, 96, 170, 255 }, { 52, 128, 96, 255 }, { 170, 52, 44, 255 }, { 60, 140, 150, 255 } },
+                  { { 120, 104, 84, 255 }, { 132, 126, 114, 255 } },
+                  { { 52, 104, 150, 255 }, { 60, 120, 80, 255 }, { 40, 120, 160, 255 } },
+                  { 196, 186, 168, 255 }, 0.35f, 0.5f, 0.0f };
+            break;
+        case Region::Gobi: // шавар, элсэн шар; хүрэн, ногоон дээвэр, мод ховор
+            p = { { { 212, 190, 150, 255 }, { 226, 206, 170, 255 }, { 232, 224, 206, 255 }, { 214, 178, 152, 255 }, { 200, 184, 150, 255 } },
+                  { { 226, 206, 160, 255 }, { 232, 196, 170, 255 }, { 214, 214, 200, 255 } },
+                  { { 120, 96, 72, 255 }, { 80, 120, 96, 255 }, { 150, 60, 48, 255 }, { 110, 112, 116, 255 } },
+                  { { 150, 136, 112, 255 }, { 128, 118, 100, 255 } },
+                  { { 150, 90, 60, 255 }, { 90, 110, 130, 255 } },
+                  { 186, 160, 124, 255 }, 0.25f, 0.25f, 0.0f };
+            break;
+        case Region::Forest: // дүнзэн байшин, ногоон, улаан дээвэр, шигүү мод
+            p = { { { 214, 206, 180, 255 }, { 196, 210, 186, 255 }, { 226, 220, 206, 255 }, { 206, 196, 170, 255 } },
+                  { { 226, 210, 160, 255 }, { 206, 222, 196, 255 }, { 232, 206, 186, 255 } },
+                  { { 40, 110, 70, 255 }, { 150, 48, 40, 255 }, { 70, 80, 92, 255 }, { 46, 90, 150, 255 } },
+                  { { 104, 80, 58, 255 }, { 120, 100, 76, 255 } },
+                  { { 50, 100, 70, 255 }, { 60, 90, 140, 255 } },
+                  { 150, 144, 132, 255 }, 0.2f, 0.9f, 0.55f };
+            break;
+        case Region::City: // панель, саарал шаргал; төмөр хашаа
+            p = { { { 214, 210, 200, 255 }, { 200, 196, 186, 255 }, { 226, 214, 186, 255 }, { 206, 214, 220, 255 } },
+                  { { 214, 206, 186, 255 }, { 200, 200, 196, 255 }, { 226, 210, 170, 255 } },
+                  { { 100, 104, 110, 255 }, { 70, 110, 84, 255 }, { 150, 60, 48, 255 } },
+                  { { 124, 110, 90, 255 }, { 132, 126, 114, 255 } },
+                  { { 80, 110, 140, 255 }, { 70, 110, 80, 255 } },
+                  { 160, 150, 136, 255 }, 0.5f, 0.8f, 0.0f };
+            break;
+        default: // зүүн тал: цайвар шар, ягаан; улаан, ногоон дээвэр
+            p = { { { 232, 226, 210, 255 }, { 226, 214, 178, 255 }, { 232, 206, 196, 255 }, { 206, 220, 230, 255 } },
+                  { { 230, 214, 170, 255 }, { 236, 206, 186, 255 }, { 214, 222, 230, 255 } },
+                  { { 160, 56, 46, 255 }, { 52, 120, 90, 255 }, { 50, 100, 160, 255 }, { 120, 120, 124, 255 } },
+                  { { 130, 110, 86, 255 }, { 120, 116, 106, 255 } },
+                  { { 60, 110, 150, 255 }, { 150, 70, 50, 255 } },
+                  { 180, 166, 146, 255 }, 0.3f, 0.45f, 0.0f };
+            break;
+        }
+
+        // Аймаг бүрт тогтмол: бүс нутгийн өнгөнөөс өөрийн хослол
+        Rng rng((uint32_t)(province * 7919 + 1301));
+        auto pick = [&](std::vector<Color>& from) {
+            const int index = rng.Int(0, (int)from.size() - 1);
+            const Color c = from[(size_t)index];
+            if (from.size() > 1) from.erase(from.begin() + index);
+            return c;
+        };
+        TownStyle t;
+        t.region = region;
+        t.province = province;
+        for (Color& c : t.walls) c = pick(p.walls);
+        for (Color& c : t.publicWalls) c = pick(p.publicWalls);
+        for (Color& c : t.roofs) c = pick(p.roofs);
+        for (int i = 0; i < 2; ++i) t.fenceWood[i] = p.fenceWood[(size_t)i];
+        for (Color& c : t.fenceMetal) c = pick(p.fenceMetal);
+        t.wallFence = p.wallFence;
+        t.metalFences = p.metalFences;
+        t.treeChance = p.treeChance;
+        t.logHouses = p.logHouses;
+        return t;
+    }
+
+    // Суурийн чиглэлтэй хүрээ (хамгийн бага талбайтай тэгш өнцөгт): дээвэр, багана, хаалгыг үүгээр байрлуулна.
+    struct Plan
+    {
+        Vector2 center = { 0.0f, 0.0f };
+        Vector2 axis = { 1.0f, 0.0f }; // урт талын чиглэл
+        float halfLong = 0.0f, halfShort = 0.0f;
+        float area = 0.0f;              // олон өнцөгтийн жинхэнэ талбай
+        Vector2 Side() const { return { -axis.y, axis.x }; }
+        Vector2 At(float along, float across) const
+        {
+            return { center.x + axis.x * along - axis.y * across, center.y + axis.y * along + axis.x * across };
+        }
+    };
+
+    Plan MeasureFootprint(const std::vector<Vector2>& p)
+    {
+        Plan f;
+        const size_t n = p.size();
+        for (size_t i = 0, j = n - 1; i < n; j = i++) f.area += p[j].x * p[i].y - p[i].x * p[j].y;
+        f.area = std::fabs(f.area) * 0.5f;
+        float best = 1e18f;
+        for (size_t i = 0; i < n; ++i)
+        {
+            const Vector2 edge = Vector2Subtract(p[(i + 1) % n], p[i]);
+            const float length = Vector2Length(edge);
+            if (length < 0.5f) continue;
+            const Vector2 u = Vector2Scale(edge, 1.0f / length), v = { -u.y, u.x };
+            float u0 = 1e9f, u1 = -1e9f, v0 = 1e9f, v1 = -1e9f;
+            for (const Vector2& q : p)
+            {
+                const float a = Vector2DotProduct(q, u), b = Vector2DotProduct(q, v);
+                u0 = std::min(u0, a); u1 = std::max(u1, a);
+                v0 = std::min(v0, b); v1 = std::max(v1, b);
+            }
+            const float area = (u1 - u0) * (v1 - v0);
+            if (area >= best) continue;
+            best = area;
+            const float cu = (u0 + u1) * 0.5f, cv = (v0 + v1) * 0.5f;
+            f.center = Vector2Add(Vector2Scale(u, cu), Vector2Scale(v, cv));
+            if (u1 - u0 >= v1 - v0)
+            {
+                f.axis = u;
+                f.halfLong = (u1 - u0) * 0.5f;
+                f.halfShort = (v1 - v0) * 0.5f;
+            }
+            else
+            {
+                f.axis = v;
+                f.halfLong = (v1 - v0) * 0.5f;
+                f.halfShort = (u1 - u0) * 0.5f;
+            }
+        }
+        return f;
+    }
+
+    // Гэр хороолол (хашаатай хороолол) эсэх: 40 м нүдэнд хашааны урт, гэр, байшингийн тоо.
+    struct TownZones
+    {
+        static constexpr float kCell = 40.0f;
+        int side = 0;
+        std::vector<float> fence;
+        std::vector<uint16_t> homes;
+
+        void Reset()
+        {
+            side = (int)std::ceil(kWorldHalfExtent * 2.0f / kCell);
+            fence.assign((size_t)side * side, 0.0f);
+            homes.assign((size_t)side * side, 0);
+        }
+        int Index(float x, float z) const
+        {
+            const int ix = std::clamp((int)((x + kWorldHalfExtent) / kCell), 0, side - 1);
+            const int iz = std::clamp((int)((z + kWorldHalfExtent) / kCell), 0, side - 1);
+            return iz * side + ix;
+        }
+        // Хашаатай гэр хороолол: эргэн тойрны 3x3 нүдэнд хашаа олон
+        bool Khashaa(float x, float z) const
+        {
+            if (side == 0) return false;
+            float length = 0.0f;
+            int count = 0;
+            for (int dz = -1; dz <= 1; ++dz)
+            {
+                for (int dx = -1; dx <= 1; ++dx)
+                {
+                    const int i = Index(x + (float)dx * kCell, z + (float)dz * kCell);
+                    length += fence[(size_t)i];
+                    count += homes[(size_t)i];
+                }
+            }
+            return length > 260.0f || count >= 10;
+        }
+    };
+    TownZones gTownZones;
+
+    // Хашааны шугамууд (4 м тор): шинээр хашаа үүсгэхэд байгаа хашаатай давхцуулахгүй.
+    struct FenceMask
+    {
+        static constexpr float kCell = 4.0f;
+        int side = 0;
+        std::vector<bool> cells;
+
+        void Reset()
+        {
+            side = (int)std::ceil(kWorldHalfExtent * 2.0f / kCell);
+            cells.assign((size_t)side * side, false);
+        }
+        bool At(float x, float z) const
+        {
+            const int ix = (int)((x + kWorldHalfExtent) / kCell), iz = (int)((z + kWorldHalfExtent) / kCell);
+            return ix >= 0 && iz >= 0 && ix < side && iz < side && cells[(size_t)iz * side + ix];
+        }
+        bool Near(float x, float z, float radius) const
+        {
+            for (float dz = -radius; dz <= radius; dz += kCell)
+            {
+                for (float dx = -radius; dx <= radius; dx += kCell)
+                {
+                    if (At(x + dx, z + dz)) return true;
+                }
+            }
+            return false;
+        }
+        void Mark(Vector2 a, Vector2 b)
+        {
+            const int steps = std::max(1, (int)(Vector2Distance(a, b) / (kCell * 0.5f)));
+            for (int i = 0; i <= steps; ++i)
+            {
+                const Vector2 q = Vector2Lerp(a, b, (float)i / (float)steps);
+                const int ix = (int)((q.x + kWorldHalfExtent) / kCell), iz = (int)((q.y + kWorldHalfExtent) / kCell);
+                if (ix >= 0 && iz >= 0 && ix < side && iz < side) cells[(size_t)iz * side + ix] = true;
+            }
+        }
+    };
+    FenceMask gFenceMask;
+
+    // Хананы a -> c ирмэгийн гадна талд (t0..t1, y0..y1) тэгш өнцөгт
+    void WallFace(Scene& s, Vector2 a, Vector2 c, float t0, float t1, float y0, float y1, float out, Color color)
+    {
+        const float length = std::max(Vector2Distance(a, c), 0.001f);
+        const Vector2 normal = { (c.y - a.y) / length, -(c.x - a.x) / length };
+        auto q = [&](float t, float y) { return Vector3{ a.x + (c.x - a.x) * t + normal.x * out, y, a.y + (c.y - a.y) * t + normal.y * out }; };
+        s.solid.Quad(q(t1, y0), q(t0, y0), q(t0, y1), q(t1, y1), color);
+    }
+
+    // Нэг давхрын цонхны эгнээ: шил (framed бол цайвар жаазтай), хооронд нь ижил зай. Олон давхар барилгад
+    // жаазгүй: хот бүрт хэдэн зуун мянган цонх гардаг тул утсанд хүнд.
+    void WindowRow(Scene& s, Vector2 a, Vector2 c, float y, float width, float height, float spacing, Color frame, Color glass, bool framed = true)
+    {
+        const float length = Vector2Distance(a, c);
+        const int count = (int)((length - 0.8f) / spacing);
+        if (count < 1) return;
+        const float start = (length - (float)count * spacing) * 0.5f + spacing * 0.5f;
+        const float half = width * 0.5f, rim = 0.09f;
+        for (int k = 0; k < count; ++k)
+        {
+            const float mid = start + spacing * (float)k;
+            if (framed) WallFace(s, a, c, (mid - half - rim) / length, (mid + half + rim) / length, y - rim, y + height + rim, 0.04f, frame);
+            WallFace(s, a, c, (mid - half) / length, (mid + half) / length, y, y + height, 0.07f, glass);
+        }
+    }
+
+    // Хоёр налуу дээвэр (хүрээний урт тэнхлэгийн дагуу нуруутай), хоёр үзүүрт хананы өнгөтэй гурвалжин
+    void TownGableRoof(Scene& s, const Plan& f, float eave, float rise, float overhang, Color roof, Color gable)
+    {
+        const float A = f.halfLong + overhang, B = f.halfShort + overhang;
+        auto p3 = [&](float along, float across, float y) { const Vector2 q = f.At(along, across); return Vector3{ q.x, y, q.y }; };
+        const float drop = rise * overhang / std::max(f.halfShort, 0.1f); // хаяа нь хананаас доош унжина
+        const Vector3 e1 = p3(-A, -B, eave - drop), e2 = p3(A, -B, eave - drop), e3 = p3(A, B, eave - drop), e4 = p3(-A, B, eave - drop);
+        const Vector3 r1 = p3(-A, 0.0f, eave + rise), r2 = p3(A, 0.0f, eave + rise);
+        s.solid.Quad(e1, e2, r2, r1, roof);
+        s.solid.Quad(e3, e4, r1, r2, ScaleColor(roof, 0.9f));
+        const float a0 = f.halfLong, b0 = f.halfShort;
+        s.solid.Triangle(p3(-a0, -b0, eave), p3(-a0, b0, eave), p3(-a0, 0.0f, eave + rise), gable);
+        s.solid.Triangle(p3(a0, b0, eave), p3(a0, -b0, eave), p3(a0, 0.0f, eave + rise), gable);
+    }
+
+    // Дөрвөн налуу дээвэр (сүм хийд, ордон): нуруу нь богино, хаяа нь гадагш
+    void TownHipRoof(Scene& s, const Plan& f, float eave, float rise, float overhang, Color roof)
+    {
+        const float A = f.halfLong + overhang, B = f.halfShort + overhang;
+        auto p3 = [&](float along, float across, float y) { const Vector2 q = f.At(along, across); return Vector3{ q.x, y, q.y }; };
+        const float ridge = std::max(0.0f, A - B);
+        const Vector3 e1 = p3(-A, -B, eave), e2 = p3(A, -B, eave), e3 = p3(A, B, eave), e4 = p3(-A, B, eave);
+        const Vector3 r1 = p3(-ridge, 0.0f, eave + rise), r2 = p3(ridge, 0.0f, eave + rise);
+        s.solid.Quad(e1, e2, r2, r1, roof);
+        s.solid.Quad(e3, e4, r1, r2, ScaleColor(roof, 0.9f));
+        s.solid.Triangle(e2, e3, r2, ScaleColor(roof, 0.95f));
+        s.solid.Triangle(e4, e1, r1, ScaleColor(roof, 0.95f));
+    }
+
+    // Олон өнцөгт суурийн хавтгай дээвэр
+    void FlatRoof(Scene& s, const std::vector<Vector2>& p, float y, Color roof)
+    {
+        const std::vector<Vector2> triangles = Triangulate(p);
+        for (size_t i = 0; i + 2 < triangles.size(); i += 3)
+        {
+            Vector2 a = triangles[i], b = triangles[i + 1], c = triangles[i + 2];
+            if ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) > 0.0f) std::swap(b, c);
+            s.solid.Triangle({ a.x, y, a.y }, { b.x, y, b.y }, { c.x, y, c.y }, roof);
+        }
+    }
+
+    // Аймгийн төвийн барилгын хэлбэр (OSM-ийн төрөл, суурийн хэмжээ, хорооллоос)
+    enum class TownKind
+    {
+        Shed,       // жорлон, саравч, амбаар
+        House,      // хашаан доторх байшин
+        Garage,
+        Shop,       // 1-2 давхар дэлгүүр (доод давхар шилэн, хаяг)
+        Office,     // 2-3 давхар байгууллага
+        Apartments, // Зөвлөлтийн үеийн орон сууц
+        School,
+        Government, // Засаг даргын тамгын газар
+        Warehouse,  // агуулах, үйлдвэр
+        Temple      // сүм хийд (Өлгийд сүм)
+    };
+
+    TownKind ClassifyTownBuilding(const CityBuilding& b, const Plan& f, Vector2 center)
+    {
+        const float area = f.area;
+        const bool khashaa = gTownZones.Khashaa(center.x, center.y);
+        const float fromCentre = Vector2Distance(center, gTown.site);
+        switch (b.type)
+        {
+        case CityBuildingType::Religious: return TownKind::Temple;
+        case CityBuildingType::Government: return TownKind::Government;
+        case CityBuildingType::School: return TownKind::School;
+        case CityBuildingType::Industrial: return TownKind::Warehouse;
+        case CityBuildingType::Garage: return area < 14.0f ? TownKind::Shed : TownKind::Garage;
+        case CityBuildingType::Commercial: return area < 450.0f ? TownKind::Shop : TownKind::Office;
+        case CityBuildingType::Apartments: return TownKind::Apartments;
+        case CityBuildingType::House: return area < 14.0f ? TownKind::Shed : TownKind::House;
+        default: break;
+        }
+        // building=yes: хэмжээ, хорооллоос
+        if (area < 14.0f) return TownKind::Shed;
+        if (khashaa) return area < 230.0f ? TownKind::House : TownKind::Warehouse;
+        if (area < 90.0f) return TownKind::House;
+        if (area < 320.0f) return TownKind::Shop;
+        if (area < 1300.0f) return fromCentre < 750.0f ? TownKind::Office : TownKind::Warehouse;
+        return TownKind::Warehouse;
+    }
+
+    // Аймгийн төвийн барилга: хэлбэрээс хамаарсан өндөр, хана, цонх, дээвэр.
+    // Налуу газарт суурь нь хамгийн нам буланд (бусад нь газарт шигдэнэ).
+    void TownBuilding(Scene& s, const CityBuilding& b)
+    {
+        const std::vector<Vector2>& p = b.outline;
+        const int n = (int)p.size();
+        const Plan f = MeasureFootprint(p);
+        Vector2 center = { 0.0f, 0.0f };
+        float low = 1e9f, high = -1e9f;
+        for (const Vector2& q : p)
+        {
+            center = Vector2Add(center, q);
+            const float h = s.terrain.HeightAt(q.x, q.y);
+            low = std::min(low, h);
+            high = std::max(high, h);
+        }
+        center = Vector2Scale(center, 1.0f / (float)n);
+        const TownKind kind = (&b == gTown.mainHall) ? TownKind::Government : ClassifyTownBuilding(b, f, center);
+        const bool rectangular = n <= 8 && f.area > 0.82f * 4.0f * f.halfLong * f.halfShort; // дээвэр хүрээнд таарна
+
+        // --- Өндөр (давхар) ---
+        // gen_city: давхрын тоо тэмдэглэгдээгүй орон сууц 28 м (9 давхар) болдог. Аймгийн төвд ихэнх нь 2-5 давхар.
+        const bool defaultHeight = b.type == CityBuildingType::Apartments && b.height == 28.0f && b.levels == 9;
+        int floors = std::clamp(b.levels, 1, 12);
+        float floorHeight = 3.0f;
+        switch (kind)
+        {
+        case TownKind::Shed: floors = 1; floorHeight = 2.2f; break;
+        case TownKind::House: floors = (f.area > 110.0f && s.rng.Chance(0.35f)) ? 2 : 1; floorHeight = 2.8f; break;
+        case TownKind::Garage: floors = 1; floorHeight = 3.0f; break;
+        case TownKind::Shop: floors = b.type == CityBuildingType::Commercial ? std::clamp(b.levels, 1, 3) : (f.area > 180.0f ? 2 : 1); floorHeight = 3.4f; break;
+        case TownKind::Office: floors = b.type == CityBuildingType::Generic ? (f.area > 700.0f ? 3 : 2) : std::clamp(b.levels, 2, 4); floorHeight = 3.4f; break;
+        case TownKind::Apartments:
+            if (defaultHeight)
+            {
+                if (gTown.region == Region::City) floors = f.area > 900.0f ? 9 : 5; // Эрдэнэт, Дархан
+                else floors = f.area > 1000.0f ? 5 : s.rng.Chance(0.4f) ? 3 : 4;
+            }
+            floors = std::clamp(floors, 2, gTown.region == Region::City ? 12 : 6);
+            floorHeight = 3.0f;
+            break;
+        case TownKind::School: floors = std::clamp(b.levels, 2, 4); floorHeight = 3.5f; break;
+        case TownKind::Government: floors = std::clamp(b.levels, 2, 4); floorHeight = 3.8f; break;
+        case TownKind::Warehouse: floors = 1; floorHeight = f.area > 600.0f ? 7.5f : 5.0f; break;
+        case TownKind::Temple: floors = 1; floorHeight = 5.5f; break;
+        }
+        const float base = low - 0.3f;
+        const float top = high + (float)floors * floorHeight + (kind == TownKind::Apartments || kind == TownKind::Office ? 0.6f : 0.0f);
+
+        // --- Өнгө ---
+        Color wall, roof = { 92, 90, 88, 255 }, frame = kWindowFrame, glass = { 52, 66, 82, 255 };
+        bool pitched = false, windows = true;
+        switch (kind)
+        {
+        case TownKind::Shed:
+            wall = JitterColor(s.rng.Chance(0.5f) ? kWood : kWoodGrey, s.rng, 0.06f);
+            windows = false;
+            break;
+        case TownKind::House:
+            if (s.rng.Chance(gTown.logHouses)) wall = JitterColor({ 150, 112, 76, 255 }, s.rng, 0.08f); // дүнзэн байшин
+            else wall = JitterColor(gTown.walls[s.rng.Int(0, 2)], s.rng, 0.03f);
+            roof = JitterColor(gTown.roofs[s.rng.Int(0, 1)], s.rng, 0.06f);
+            frame = s.rng.Chance(0.5f) ? Color{ 236, 236, 230, 255 } : Color{ 60, 110, 170, 255 }; // цагаан эсвэл хөх жааз
+            pitched = rectangular;
+            break;
+        case TownKind::Garage: wall = JitterColor(s.rng.Chance(0.5f) ? kBrick : kConcrete, s.rng, 0.05f); windows = false; break;
+        case TownKind::Shop: wall = JitterColor(gTown.walls[s.rng.Int(0, 2)], s.rng, 0.04f); pitched = rectangular && floors == 1 && s.rng.Chance(0.4f);
+            roof = gTown.roofs[s.rng.Int(0, 1)]; break;
+        case TownKind::Office: wall = JitterColor(gTown.publicWalls[s.rng.Int(0, 1)], s.rng, 0.03f); break;
+        case TownKind::Apartments: wall = JitterColor(gTown.publicWalls[s.rng.Int(0, 1)], s.rng, 0.03f); break;
+        case TownKind::School: wall = JitterColor({ 226, 196, 150, 255 }, s.rng, 0.03f); break;
+        case TownKind::Government: wall = { 232, 228, 216, 255 }; glass = { 40, 60, 86, 255 }; break;
+        case TownKind::Warehouse:
+            wall = JitterColor(s.rng.Chance(0.5f) ? Color{ 150, 152, 150, 255 } : Color{ 120, 136, 150, 255 }, s.rng, 0.05f);
+            roof = { 120, 122, 124, 255 };
+            pitched = rectangular && s.rng.Chance(0.6f);
+            windows = false;
+            break;
+        case TownKind::Temple: wall = { 232, 226, 210, 255 }; roof = { 52, 120, 84, 255 }; windows = false; break;
+        }
+
+        // --- Хана, цонх ---
+        const bool slab = kind == TownKind::Apartments || kind == TownKind::Office || kind == TownKind::School || kind == TownKind::Government;
+        const float roofLevel = slab ? top - 0.6f : top; // хавтгай дээврийн ирмэг (парапет)
+        int longest = 0;
+        float longestLength = 0.0f;
+        for (int i = 0; i < n; ++i)
+        {
+            const float length = Vector2Distance(p[(size_t)i], p[(size_t)((i + 1) % n)]);
+            if (length > longestLength) { longestLength = length; longest = i; }
+        }
+        for (int i = 0; i < n; ++i)
+        {
+            const Vector2 a = p[(size_t)i], c = p[(size_t)((i + 1) % n)];
+            const float length = Vector2Distance(a, c);
+            if (length < 0.05f) continue;
+            s.solid.Quad({ c.x, base, c.y }, { a.x, base, a.y }, { a.x, top, a.y }, { c.x, top, c.y }, wall);
+            if (slab && length > 4.0f) WallFace(s, a, c, 0.0f, 1.0f, base, high + 0.7f, 0.03f, ScaleColor(wall, 0.72f)); // суурийн бүс
+            if (!windows || length < 2.4f) continue;
+            // Олон давхар барилгын тайрсан (богино) хана цонхгүй: Зөвлөлтийн үеийн панель байрных шиг
+            if (slab && length < 0.55f * longestLength) continue;
+            if (kind == TownKind::House)
+            {
+                // Урт хоёр хананд, хана бүрт 3 хүртэл цонх (гэр хороололд мянга мянган байшин)
+                if (length < 0.6f * longestLength) continue;
+                const float spacing = std::max(length > 9.0f ? 3.2f : 2.6f, (length - 0.8f) / 3.0f);
+                for (int floor = 0; floor < floors; ++floor) WindowRow(s, a, c, high + 0.95f + 2.8f * (float)floor, 1.0f, 1.15f, spacing, frame, glass);
+                continue;
+            }
+            if (kind == TownKind::Shop)
+            {
+                // Доод давхар: шилэн витрин, дээр нь өнгөт хаяг
+                if (length > 4.0f)
+                {
+                    WallFace(s, a, c, 0.08f, 0.92f, high + 0.4f, high + 2.6f, 0.05f, { 70, 96, 118, 255 });
+                    static const Color signs[] = { { 196, 40, 40, 255 }, { 30, 90, 180, 255 }, { 220, 170, 30, 255 }, { 40, 140, 80, 255 } };
+                    WallFace(s, a, c, 0.05f, 0.95f, high + 2.75f, high + 3.25f, 0.08f, signs[s.rng.Int(0, 3)]);
+                }
+                for (int floor = 1; floor < floors; ++floor) WindowRow(s, a, c, high + 1.0f + floorHeight * (float)floor, 1.4f, 1.4f, 3.0f, frame, glass, false);
+                continue;
+            }
+            if (length < 4.0f) continue; // олон давхар барилгын богино хана (булан, тагт)
+            for (int floor = 0; floor < floors; ++floor)
+            {
+                WindowRow(s, a, c, high + 1.0f + floorHeight * (float)floor, 1.4f, 1.5f, kind == TownKind::Apartments ? 3.0f : 3.4f, frame, glass,
+                          kind == TownKind::Government);
+            }
+        }
+
+        // Орох хаалга, саравч: урт талын дагуу (орон сууцанд орц бүрд)
+        {
+            const Vector2 a = p[(size_t)longest], c = p[(size_t)((longest + 1) % n)];
+            const float length = longestLength;
+            if (kind == TownKind::Apartments && length > 10.0f)
+            {
+                const int entrances = std::max(1, (int)(length / 18.0f));
+                for (int e = 0; e < entrances; ++e)
+                {
+                    const float t = ((float)e + 0.5f) / (float)entrances;
+                    const float half = 0.75f / length;
+                    WallFace(s, a, c, t - half, t + half, high, high + 2.2f, 0.09f, { 70, 56, 46, 255 });
+                    // саравч
+                    const Vector2 mid = Vector2Lerp(a, c, t);
+                    const Vector2 dir = Vector2Scale(Vector2Subtract(c, a), 1.0f / length);
+                    const Vector2 out = { dir.y, -dir.x };
+                    const float yaw = std::atan2(out.x, out.y);
+                    s.solid.SetTransform(MatrixMultiply(MatrixRotateY(yaw), MatrixTranslate(mid.x + out.x * 0.7f, high + 2.6f, mid.y + out.y * 0.7f)));
+                    s.solid.Box({ 0.0f, 0.0f, 0.0f }, { 2.6f, 0.16f, 1.4f }, ScaleColor(wall, 0.8f));
+                    s.solid.ResetTransform();
+                }
+            }
+            else if ((kind == TownKind::House || kind == TownKind::Shed || kind == TownKind::Office || kind == TownKind::School) && length > 2.0f)
+            {
+                const float half = (kind == TownKind::Office || kind == TownKind::School ? 0.9f : 0.45f) / length;
+                const float t = kind == TownKind::House ? 0.25f : 0.5f;
+                WallFace(s, a, c, t - half, t + half, high, high + 2.0f, 0.09f, kind == TownKind::House ? Color{ 96, 66, 46, 255 } : Color{ 70, 60, 50, 255 });
+            }
+            else if ((kind == TownKind::Garage || kind == TownKind::Warehouse) && length > 4.0f)
+            {
+                const float half = std::min(1.6f, length * 0.3f) / length;
+                WallFace(s, a, c, 0.5f - half, 0.5f + half, high, high + std::min(3.2f, top - high - 0.4f), 0.06f, { 96, 104, 110, 255 });
+            }
+        }
+
+        // --- Дээвэр ---
+        if (pitched)
+        {
+            const float rise = std::clamp(f.halfShort * (kind == TownKind::Warehouse ? 0.25f : 0.6f), 0.6f, 3.2f);
+            TownGableRoof(s, f, top, rise, kind == TownKind::Warehouse ? 0.2f : 0.4f, roof, wall);
+        }
+        else if (kind == TownKind::Shed && rectangular)
+        {
+            // Нэг налуу дээвэр
+            auto p3 = [&](float along, float across, float y) { const Vector2 q = f.At(along, across); return Vector3{ q.x, y, q.y }; };
+            const float A = f.halfLong + 0.2f, B = f.halfShort + 0.2f;
+            s.solid.Quad(p3(-A, -B, top - 0.1f), p3(A, -B, top - 0.1f), p3(A, B, top + 0.45f), p3(-A, B, top + 0.45f), { 110, 112, 116, 255 });
+        }
+        else if (kind == TownKind::Temple && rectangular)
+        {
+            // Сүм хийд: улаан бүс, хоёр давхар ногоон дээвэр, алтан ганжир
+            const Color red = { 160, 40, 36, 255 }, gold = { 214, 172, 64, 255 };
+            for (int i = 0; i < n; ++i) WallFace(s, p[(size_t)i], p[(size_t)((i + 1) % n)], 0.0f, 1.0f, top - 1.0f, top, 0.05f, red);
+            TownHipRoof(s, f, top, std::clamp(f.halfShort * 0.45f, 1.2f, 3.5f), 1.2f, roof);
+            Plan upper = f;
+            upper.halfLong *= 0.55f;
+            upper.halfShort *= 0.55f;
+            const float upperBase = top + std::clamp(f.halfShort * 0.45f, 1.2f, 3.5f) * 0.55f;
+            s.solid.Box({ f.center.x, upperBase + 0.6f, f.center.y }, { upper.halfShort * 1.4f, 1.2f, upper.halfShort * 1.4f }, red);
+            TownHipRoof(s, upper, upperBase + 1.2f, std::clamp(upper.halfShort * 0.5f, 0.8f, 2.4f), 0.8f, roof);
+            s.solid.Cylinder({ f.center.x, upperBase + 1.2f + std::clamp(upper.halfShort * 0.5f, 0.8f, 2.4f), f.center.y }, 0.35f, 0.08f, 1.6f, 8, gold);
+        }
+        else
+        {
+            FlatRoof(s, p, roofLevel, roof);
+            if (slab && f.area > 150.0f && floors >= 3)
+            {
+                s.solid.Box({ f.center.x, roofLevel + 1.1f, f.center.y }, { 3.0f, 2.2f, 3.0f }, ScaleColor(wall, 0.7f)); // лифт, шатны өрөө
+            }
+        }
+
+        // Засаг даргын тамгын газар: урд талдаа цагаан багана, туг
+        if (kind == TownKind::Government && &b == gTown.mainHall && f.area > 0.68f * 4.0f * f.halfLong * f.halfShort)
+        {
+            // Талбай руу харсан урт тал
+            const Vector2 toSite = Vector2Subtract(gTown.site, f.center);
+            const float sign = Vector2DotProduct(toSite, f.Side()) >= 0.0f ? 1.0f : -1.0f;
+            const int columns = std::clamp((int)(f.halfLong / 2.2f), 4, 8);
+            const float span = f.halfLong * 0.7f;
+            for (int k = 0; k < columns; ++k)
+            {
+                const float along = -span + 2.0f * span * (float)k / (float)(columns - 1);
+                const Vector2 q = f.At(along, sign * (f.halfShort + 2.2f));
+                s.solid.Cylinder({ q.x, high, q.y }, 0.38f, 0.32f, roofLevel - high - 0.6f, 8, { 240, 238, 230, 255 });
+                s.Collider({ q.x, high + 3.0f, q.y }, { 0.8f, 6.0f, 0.8f });
+            }
+            // Хаалт (портик) ба гишгүүр
+            const Vector2 pc = f.At(0.0f, sign * (f.halfShort + 1.3f));
+            const float yaw = std::atan2(f.axis.x, f.axis.y);
+            s.solid.SetTransform(MatrixMultiply(MatrixRotateY(yaw), MatrixTranslate(pc.x, 0.0f, pc.y)));
+            s.solid.Box({ 0.0f, roofLevel - 0.3f, 0.0f }, { 3.4f, 0.6f, span * 2.0f + 1.6f }, { 236, 234, 226, 255 });
+            s.solid.Box({ 0.0f, high + 0.15f, 0.0f }, { 4.2f, 0.3f, span * 2.0f + 2.0f }, kConcrete);
+            s.solid.ResetTransform();
+            AtLevel(s, roofLevel, [&] { Flagpole(s, f.center.x, f.center.y); });
+        }
+
+        CityColliders(s, p, base, top - base);
+        gCityMask.Fill(p);
+    }
+
+    // Гэр хорооллын гэр: хана (цилиндр), дээвэр (конус), хөх хээтэй хаяавч, тооно, яндан, хаалга (урагш).
     void CityGer(Scene& s, Vector2 center, float radius)
     {
         const float ground = s.terrain.HeightAt(center.x, center.y) - 0.1f;
         const float wall = std::min(1.9f, 1.2f + radius * 0.15f);
-        s.solid.Cylinder({ center.x, ground, center.y }, radius, radius, wall, 8, JitterColor(kGerFelt, s.rng, 0.05f), false);
-        s.solid.Cylinder({ center.x, ground + wall, center.y }, radius * 1.04f, 0.0f, radius * 0.45f, 8,
-                         JitterColor(kGerRoof, s.rng, 0.06f), false);
-        // Хаалга урд (-Z) зүгт (Монгол гэр өмнө зүг рүү харна)
+        // Гэр хороолол мянга мянган гэртэй тул хямд: 8 тал, тоонгүй (~60 гурвалжин)
+        const int sides = 8;
+        s.solid.Cylinder({ center.x, ground, center.y }, radius, radius, wall, sides, JitterColor(kGerFelt, s.rng, 0.04f), false);
+        s.solid.Cylinder({ center.x, ground + wall - 0.28f, center.y }, radius * 1.01f, radius * 1.01f, 0.22f, sides, kGerTrim, false); // хээтэй тууз
+        s.solid.Cylinder({ center.x, ground + wall, center.y }, radius * 1.05f, radius * 0.18f, radius * 0.42f, sides,
+                         JitterColor(kGerRoof, s.rng, 0.05f), false);
+        // Зуухны яндан тооноос
+        s.solid.Cylinder({ center.x + radius * 0.12f, ground + wall + radius * 0.3f, center.y }, 0.08f, 0.08f, 1.4f, 4, { 70, 70, 72, 255 }, false);
+        // Хаалга урд (-Z) зүгт (Монгол гэр өмнө зүг рүү харна): улбар шар, хүрээтэй
         const float half = std::min(0.45f, radius * 0.2f), front = center.y - radius - 0.03f;
+        s.solid.Quad({ center.x - half - 0.08f, ground, front + 0.01f }, { center.x + half + 0.08f, ground, front + 0.01f },
+                     { center.x + half + 0.08f, ground + 1.62f, front + 0.01f }, { center.x - half - 0.08f, ground + 1.62f, front + 0.01f },
+                     ScaleColor(kGerDoor, 0.7f));
         s.solid.Quad({ center.x - half, ground, front }, { center.x + half, ground, front }, { center.x + half, ground + 1.5f, front },
                      { center.x - half, ground + 1.5f, front }, kGerDoor);
         s.Collider({ center.x, ground + wall * 0.5f + 0.2f, center.y }, { radius * 1.6f, wall + 0.4f, radius * 1.6f });
+        const std::vector<Vector2> square = { { center.x - radius, center.y - radius }, { center.x + radius, center.y - radius },
+                                              { center.x + radius, center.y + radius }, { center.x - radius, center.y + radius } };
+        gCityMask.Fill(square);
     }
 
     // OSM-ийн барилга: суурийн олон өнцөгтийг өндрөөр нь босгоно. Давхар бүрд цонхны эгнээ, хавтгай дээвэр;
@@ -4333,6 +4924,11 @@ namespace
         if (b.type == CityBuildingType::Ger)
         {
             CityGer(s, center, std::clamp(std::sqrt(area / PI), 2.2f, 7.0f));
+            return;
+        }
+        if (!s.layout.IsCapital())
+        {
+            TownBuilding(s, b); // аймгийн төв: хэлбэр, бүс нутгийн өнгөөр
             return;
         }
 
@@ -4485,10 +5081,836 @@ namespace
         }
     }
 
+    // ------------------------------------------------------------------ Хашаа, талбай, дурсгалт газар, хотын үүд
+
+    // Хашаа: нэг шугам бүхэлдээ нэг материал (банз, будсан төмөр, шавар хана), булан бүрд багана, замд хамгийн
+    // ойр хэсэгт хаалга. Мөргөлдөөнгүй (OSM-д хаалга нь тэмдэглэгддэггүй тул хашаан доторх гэр, байшинд орох
+    // замыг хаахгүй).
+    void TownFence(Scene& s, const std::vector<Vector2>& path, bool masonry)
+    {
+        const int count = (int)path.size();
+        if (count < 2) return;
+        Color color;
+        float height;
+        if (masonry)
+        {
+            color = JitterColor(gTown.wallFence, s.rng, 0.04f);
+            height = 2.1f;
+        }
+        else if (s.rng.Chance(gTown.metalFences))
+        {
+            color = JitterColor(gTown.fenceMetal[s.rng.Int(0, 1)], s.rng, 0.05f); // будсан төмөр хуудас
+            height = 2.0f;
+        }
+        else
+        {
+            color = JitterColor(gTown.fenceWood[s.rng.Int(0, 1)], s.rng, 0.05f); // банз
+            height = s.rng.Range(1.8f, 2.2f);
+        }
+        const Color dusty = ScaleColor(color, 0.72f); // доод хэсэг шороонд
+        const Color post = ScaleColor(color, 0.62f);
+
+        // Хаалга: замд хамгийн ойр (9 м дотор), хангалттай урт хэсэгт
+        int gate = -1;
+        float gateDistance = 9.0f;
+        for (int i = 0; i + 1 < count; ++i)
+        {
+            if (Vector2Distance(path[(size_t)i], path[(size_t)i + 1]) < 4.5f) continue;
+            const Vector2 mid = Vector2Lerp(path[(size_t)i], path[(size_t)i + 1], 0.5f);
+            const float distance = s.layout.RoadDistance(mid.x, mid.y);
+            if (distance < gateDistance)
+            {
+                gateDistance = distance;
+                gate = i;
+            }
+        }
+
+        auto panel = [&](Vector2 a, Vector2 b, float h, Color bottom, Color upper) {
+            const float ha = s.terrain.HeightAt(a.x, a.y) - 0.1f, hb = s.terrain.HeightAt(b.x, b.y) - 0.1f;
+            const Vector3 a0 = { a.x, ha, a.y }, b0 = { b.x, hb, b.y }, b1 = { b.x, hb + h, b.y }, a1 = { a.x, ha + h, a.y };
+            s.solid.Triangle(a0, b0, b1, bottom, bottom, upper);
+            s.solid.Triangle(a0, b1, a1, bottom, upper, upper);
+        };
+        auto postAt = [&](Vector2 q, float h, Color c, float size) {
+            const float ground = s.terrain.HeightAt(q.x, q.y) - 0.1f;
+            s.solid.Box({ q.x, ground + h * 0.5f, q.y }, { size, h, size }, c);
+        };
+
+        for (int i = 0; i + 1 < count; ++i)
+        {
+            const Vector2 a = path[(size_t)i], b = path[(size_t)i + 1];
+            gFenceMask.Mark(a, b);
+            if (i != gate)
+            {
+                panel(a, b, height, dusty, color);
+                continue;
+            }
+            // Хаалга: будсан төмөр хоёр хаалт, хоёр өндөр багана, дээр нь хөндлөвч
+            static const Color paints[] = { { 40, 90, 160, 255 }, { 50, 120, 80, 255 }, { 150, 50, 40, 255 }, { 110, 80, 50, 255 } };
+            const float length = Vector2Distance(a, b);
+            const Vector2 g0 = Vector2Lerp(a, b, 0.5f - 1.6f / length), g1 = Vector2Lerp(a, b, 0.5f + 1.6f / length);
+            panel(a, g0, height, dusty, color);
+            panel(g1, b, height, dusty, color);
+            const Color paint = JitterColor(paints[s.rng.Int(0, 3)], s.rng, 0.05f);
+            const Vector2 gm = Vector2Lerp(g0, g1, 0.5f);
+            panel(g0, gm, height + 0.1f, ScaleColor(paint, 0.85f), paint);
+            panel(gm, g1, height + 0.1f, ScaleColor(paint, 0.85f), paint);
+            postAt(g0, height + 0.7f, post, 0.24f);
+            postAt(g1, height + 0.7f, post, 0.24f);
+            const Vector2 dir = Vector2Scale(Vector2Subtract(g1, g0), 1.0f / Vector2Distance(g0, g1));
+            const float ground = (s.terrain.HeightAt(g0.x, g0.y) + s.terrain.HeightAt(g1.x, g1.y)) * 0.5f - 0.1f;
+            s.solid.SetTransform(MatrixMultiply(MatrixRotateY(std::atan2(dir.x, dir.y)), MatrixTranslate(gm.x, ground + height + 0.6f, gm.y)));
+            s.solid.Box({ 0.0f, 0.0f, 0.0f }, { 0.2f, 0.24f, 3.8f }, post);
+            s.solid.ResetTransform();
+        }
+        if (!masonry)
+        {
+            // Булангийн багана: үзүүр ба 25 хэмээс их эргэлт бүрд
+            for (int i = 0; i < count; ++i)
+            {
+                bool corner = i == 0 || i == count - 1;
+                if (!corner)
+                {
+                    const Vector2 d0 = Vector2Normalize(Vector2Subtract(path[(size_t)i], path[(size_t)i - 1]));
+                    const Vector2 d1 = Vector2Normalize(Vector2Subtract(path[(size_t)i + 1], path[(size_t)i]));
+                    corner = Vector2DotProduct(d0, d1) < 0.9f;
+                }
+                if (corner) postAt(path[(size_t)i], height + 0.12f, post, 0.16f);
+            }
+        }
+    }
+
+    // Цагаан суварга: шатлалт суурь, бөмбөгөр, алтан оргил (scale = 1 бол ~9 м)
+    void TownStupa(Scene& s, float x, float z, float scale)
+    {
+        const Color white = { 236, 234, 226, 255 }, gold = { 206, 168, 72, 255 };
+        const float g = s.terrain.HeightAt(x, z) - 0.2f;
+        s.solid.Box({ x, g + 0.5f * scale, z }, { 5.0f * scale, 1.0f * scale, 5.0f * scale }, white);
+        s.solid.Box({ x, g + 1.4f * scale, z }, { 3.9f * scale, 0.8f * scale, 3.9f * scale }, white);
+        s.solid.Box({ x, g + 2.05f * scale, z }, { 3.0f * scale, 0.5f * scale, 3.0f * scale }, white);
+        s.solid.Ellipsoid({ x, g + 3.3f * scale, z }, { 1.6f * scale, 1.5f * scale, 1.6f * scale }, 5, 10, white);
+        s.solid.Box({ x, g + 4.9f * scale, z }, { 1.0f * scale, 0.5f * scale, 1.0f * scale }, white);
+        s.solid.Cylinder({ x, g + 5.15f * scale, z }, 0.45f * scale, 0.1f * scale, 2.6f * scale, 8, gold);
+        s.solid.Ellipsoid({ x, g + 7.9f * scale, z }, { 0.25f * scale, 0.3f * scale, 0.25f * scale }, 3, 6, gold);
+        s.Collider({ x, g + 2.5f * scale, z }, { 5.0f * scale, 5.0f * scale, 5.0f * scale });
+    }
+
+    // Мөргөлдөөнгүй, барилгагүй, усгүй, налуу багатай (half хагас хэмжээтэй) дөрвөлжин газар
+    bool TownFreeArea(const Scene& s, Vector2 c, float half, const std::vector<CityClearing>& clearings, bool avoidSite = true)
+    {
+        if (std::fabs(c.x) > kCityHalfExtent - half - 20.0f || std::fabs(c.y) > kCityHalfExtent - half - 20.0f) return false;
+        for (const CityClearing& k : clearings)
+        {
+            if (c.x + half > k.x0 - 10.0f && c.x - half < k.x1 + 10.0f && c.y + half > k.z0 - 10.0f && c.y - half < k.z1 + 10.0f) return false;
+        }
+        if (avoidSite && Vector2Distance(c, gTown.site) < half + 35.0f) return false; // төвийн талбай, даалгаврын газар
+        float low = 1e9f, high = -1e9f;
+        for (float dz = -half; dz <= half; dz += 4.0f)
+        {
+            for (float dx = -half; dx <= half; dx += 4.0f)
+            {
+                const float x = c.x + dx, z = c.y + dz;
+                if (gCityMask.At(x, z) || gFenceMask.At(x, z) || s.layout.RoadDistance(x, z) < 2.0f || s.layout.CityGround(x, z) == 6) return false;
+                const float h = s.terrain.HeightAt(x, z);
+                low = std::min(low, h);
+                high = std::max(high, h);
+            }
+        }
+        return high - low < 3.5f;
+    }
+
+    // from-оос rMin..rMax зайд хамгийн ойрын чөлөөт газар (олдохгүй бол false)
+    bool TownFindArea(const Scene& s, Vector2 from, float rMin, float rMax, float half, const std::vector<CityClearing>& clearings, Vector2& out)
+    {
+        for (float r = rMin; r <= rMax; r += 25.0f)
+        {
+            const int steps = std::max(8, (int)(2.0f * PI * r / 30.0f));
+            for (int k = 0; k < steps; ++k)
+            {
+                const float a = 2.0f * PI * (float)k / (float)steps + r * 0.01f;
+                const Vector2 c = { from.x + std::cos(a) * r, from.y + std::sin(a) * r };
+                if (TownFreeArea(s, c, half, clearings))
+                {
+                    out = c;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // Чөлөөт газрыг эзэлсэн гэж тэмдэглэнэ (мод, машин орохгүй)
+    void TownOccupy(Vector2 c, float halfX, float halfZ)
+    {
+        gCityMask.Fill({ { c.x - halfX, c.y - halfZ }, { c.x + halfX, c.y - halfZ }, { c.x + halfX, c.y + halfZ }, { c.x - halfX, c.y + halfZ } });
+    }
+
+    // Газрын налууг дагасан хавтан чулуун талбай (4 м нүд, ээлжилсэн өнгө)
+    void TownPaving(Scene& s, Vector2 c, Vector2 u, float halfU, float halfV, Color color)
+    {
+        const Vector2 v = { -u.y, u.x };
+        const int nu = std::max(1, (int)(halfU * 2.0f / 4.0f)), nv = std::max(1, (int)(halfV * 2.0f / 4.0f));
+        auto at = [&](int i, int j) {
+            const float a = -halfU + 2.0f * halfU * (float)i / (float)nu, b = -halfV + 2.0f * halfV * (float)j / (float)nv;
+            const Vector2 q = Vector2Add(c, Vector2Add(Vector2Scale(u, a), Vector2Scale(v, b)));
+            return Vector3{ q.x, s.terrain.HeightAt(q.x, q.y) + 0.095f, q.y };
+        };
+        for (int j = 0; j < nv; ++j)
+        {
+            for (int i = 0; i < nu; ++i)
+            {
+                const Color tile = (i + j) % 2 ? color : ScaleColor(color, 0.93f);
+                s.solid.Quad(at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1), tile);
+            }
+        }
+    }
+
+    // Аймгийн төвийн талбай: хавтан чулуу, морьт хөшөө, гурван туг, гэрэлтүүлэг, сандал, цэцгийн мандал,
+    // хоёр талдаа эгнээ мод. Талбайн голд (TownSite) даалгаврын газар тул хөшөө нь Засаг даргын байрны зүгт.
+    void TownSquare(Scene& s, const CityData& city)
+    {
+        Vector2 site = gTown.site;
+        Vector2 u = { 0.0f, 1.0f }; // талбайн урт тэнхлэг: Засаг даргын байрнаас талбай руу
+        if (gTown.mainHall)
+        {
+            const Plan hall = MeasureFootprint(gTown.mainHall->outline);
+            const Vector2 d = Vector2Subtract(site, hall.center);
+            if (Vector2Length(d) > 1.0f) u = Vector2Normalize(d);
+        }
+        const Vector2 v = { -u.y, u.x };
+        // Их зам, гудамж (3-р зэрэглэл хүртэл): талбай тэдгээрийг хаахгүй. Хорооллын гудамж, явган зам, байрны
+        // хашааны замын дээгүүр хавтан тавина (хавтан нь бүх замаас өндөр).
+        CityMask majorRoads;
+        majorRoads.Reset();
+        for (const CityRoad& road : city.roads)
+        {
+            if (road.klass > CityRoadClass::Tertiary || road.dirt) continue;
+            const std::vector<Vector2> path = Resample(road.points, 2.0f);
+            for (size_t i = 0; i + 1 < path.size(); ++i)
+            {
+                const Vector2 along = Vector2Normalize(Vector2Subtract(path[i + 1], path[i]));
+                const Vector2 side = { -along.y, along.x };
+                const float w = road.halfWidth + 1.0f;
+                majorRoads.Fill({ Vector2Add(path[i], Vector2Scale(side, -w)), Vector2Add(path[i + 1], Vector2Scale(side, -w)),
+                                  Vector2Add(path[i + 1], Vector2Scale(side, w)), Vector2Add(path[i], Vector2Scale(side, w)) });
+            }
+        }
+        // Барилга, их замгүй хамгийн том хэмжээ: даалгаврын газрыг төвд нь, эсвэл түүнийг багтаасан ойролцоох байрлалд
+        float halfU = 0.0f, halfV = 0.0f;
+        auto fits = [&](Vector2 c, float hu, float hv) {
+            for (float a = -hu; a <= hu; a += 3.0f)
+            {
+                for (float b = -hv; b <= hv; b += 3.0f)
+                {
+                    const Vector2 q = Vector2Add(c, Vector2Add(Vector2Scale(u, a), Vector2Scale(v, b)));
+                    if (gCityMask.At(q.x, q.y) || gFenceMask.At(q.x, q.y) || majorRoads.At(q.x, q.y) || s.layout.CityGround(q.x, q.y) == 6)
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        };
+        for (float scale : { 1.0f, 0.8f, 0.62f, 0.48f })
+        {
+            const float hu = 26.0f * scale, hv = 34.0f * scale;
+            for (float shiftU : { 0.0f, -0.5f, 0.5f })
+            {
+                for (float shiftV : { 0.0f, -0.5f, 0.5f })
+                {
+                    const Vector2 c = Vector2Add(gTown.site, Vector2Add(Vector2Scale(u, shiftU * hu), Vector2Scale(v, shiftV * hv)));
+                    if (halfU > 0.0f || !fits(c, hu, hv)) continue;
+                    site = c;
+                    halfU = hu;
+                    halfV = hv;
+                }
+            }
+            if (halfU > 0.0f) break;
+        }
+        if (halfU <= 0.0f)
+        {
+            // Төвийн цэг давчуу (зам, барилга ойр): 200 м дотор хамгийн ойрын чөлөөт газарт жижиг талбай
+            bool found = false;
+            for (Vector2 half : { Vector2{ 18.0f, 21.0f }, Vector2{ 14.0f, 16.0f } })
+            {
+                for (float r = 15.0f; r <= 350.0f && !found; r += 10.0f)
+                {
+                    for (int k = 0; k < 16 && !found; ++k)
+                    {
+                        const float a = 2.0f * PI * (float)k / 16.0f;
+                        const Vector2 c = { gTown.site.x + std::cos(a) * r, gTown.site.y + std::sin(a) * r };
+                        if (Vector2Distance(c, gTown.site) < half.y + 8.0f || !fits(c, half.x, half.y)) continue; // даалгаврын газрыг хаахгүй
+                        site = c;
+                        halfU = half.x;
+                        halfV = half.y;
+                        found = true;
+                    }
+                }
+            }
+            if (!found)
+            {
+                TraceLog(LOG_INFO, "TOWN: no room for the central square near (%.0f, %.0f)", gTown.site.x, gTown.site.y);
+                return;
+            }
+        }
+        auto P = [&](float a, float b) { return Vector2Add(site, Vector2Add(Vector2Scale(u, a), Vector2Scale(v, b))); };
+        TownPaving(s, site, u, halfU, halfV, kPaving);
+
+        // Хөшөө: талбайн голоос Засаг даргын байрны зүгт; даалгаврын газар (gTown.site) тэнд байвал эсрэг талд
+        const float end = Vector2Distance(P(-halfU * 0.5f, 0.0f), gTown.site) > 10.0f ? -1.0f : 1.0f;
+        const Vector2 statue = P(end * halfU * 0.5f, 0.0f);
+        AtLevel(s, s.terrain.HeightAt(statue.x, statue.y), [&] { SukhbaatarStatue(s, statue.x, statue.y); });
+        // Төрийн далбаа: хөшөөний ард гурав
+        for (float b : { -4.0f, 0.0f, 4.0f })
+        {
+            const Vector2 q = P(end * halfU * 0.86f, b);
+            AtLevel(s, s.terrain.HeightAt(q.x, q.y), [&] { Flagpole(s, q.x, q.y); });
+        }
+        // Гэрэлтүүлэг: дөрвөн буланд
+        for (float a : { -1.0f, 1.0f })
+        {
+            for (float b : { -1.0f, 1.0f })
+            {
+                const Vector2 q = P(a * (halfU - 2.0f), b * (halfV - 2.0f));
+                AtLevel(s, s.terrain.HeightAt(q.x, q.y), [&] { LightPole(s, q.x, q.y, 0); });
+            }
+        }
+        // Сандал: урт хоёр талын дагуу
+        const float yawU = std::atan2(u.x, u.y);
+        for (float b : { -1.0f, 1.0f })
+        {
+            for (float a = -halfU * 0.6f; a <= halfU * 0.6f; a += 7.0f)
+            {
+                const Vector2 q = P(a, b * (halfV - 4.5f));
+                const float g = s.terrain.HeightAt(q.x, q.y) + 0.07f;
+                s.solid.SetTransform(MatrixMultiply(MatrixRotateY(yawU), MatrixTranslate(q.x, g, q.y)));
+                s.solid.Box({ 0.0f, 0.45f, 0.0f }, { 0.5f, 0.08f, 1.8f }, kWood);
+                s.solid.Box({ b * 0.22f, 0.75f, 0.0f }, { 0.06f, 0.5f, 1.8f }, kWood);
+                for (float leg : { -0.75f, 0.75f }) s.solid.Box({ 0.0f, 0.22f, leg }, { 0.45f, 0.44f, 0.08f }, kMetal);
+                s.solid.ResetTransform();
+            }
+        }
+        // Цэцгийн мандал: хөшөөний хоёр талд
+        static const Color flowers[] = { { 206, 52, 48, 255 }, { 236, 196, 52, 255 }, { 236, 232, 220, 255 }, { 196, 90, 160, 255 } };
+        for (float b : { -1.0f, 1.0f })
+        {
+            const Vector2 q = P(end * halfU * 0.5f, b * 9.0f);
+            const float g = s.terrain.HeightAt(q.x, q.y);
+            s.solid.SetTransform(MatrixMultiply(MatrixRotateY(yawU), MatrixTranslate(q.x, g, q.y)));
+            s.solid.Box({ 0.0f, 0.2f, 0.0f }, { 7.0f, 0.4f, 3.0f }, kConcrete);
+            s.solid.Box({ 0.0f, 0.42f, 0.0f }, { 6.6f, 0.08f, 2.6f }, { 92, 120, 60, 255 });
+            for (int k = 0; k < 18; ++k)
+            {
+                s.solid.Box({ s.rng.Range(-3.0f, 3.0f), 0.52f, s.rng.Range(-1.1f, 1.1f) }, { 0.25f, 0.16f, 0.25f }, flowers[s.rng.Int(0, 3)]);
+            }
+            s.solid.ResetTransform();
+        }
+        TownOccupy(site, std::max(halfU, halfV) * 0.7f, std::max(halfU, halfV) * 0.7f);
+        // Эгнээ мод: урт хоёр талын гадна
+        for (float b : { -1.0f, 1.0f })
+        {
+            for (float a = -halfU + 3.0f; a <= halfU - 3.0f; a += 7.0f)
+            {
+                const Vector2 q = P(a, b * (halfV + 3.0f));
+                if (gCityMask.Blocked(q.x, q.y, 1.4f) || s.layout.RoadDistance(q.x, q.y) < 1.0f) continue;
+                CityTree(s, q.x, q.y, 7.5f);
+            }
+        }
+        // Хөшөөний орчмыг эзэлнэ (талбайн бусад хэсэгт машин тавихгүй)
+        gCityMask.Fill({ P(-halfU, -halfV), P(halfU, -halfV), P(halfU, halfV), P(-halfU, halfV) });
+        TraceLog(LOG_INFO, "TOWN: central square %.0f x %.0f m at (%.0f, %.0f)", halfU * 2.0f, halfV * 2.0f, site.x, site.y);
+    }
+
+    // Аймаг бүрийн онцлох газар (ойролцоо: жинхэнэ байршлыг OSM-ийн сүм хийдээс эсвэл төвийн ойролцоох
+    // чөлөөт газраас авна). Өөрчлөх бол LandmarkFor-ын хүснэгтийг засна.
+    enum class Landmark
+    {
+        None,
+        Monastery,    // сүм хийд: хашаа, гол дуган, суваргууд
+        Mosque,       // сүм (Баян-Өлгий)
+        Fortress,     // хэрмийн туурь (Ховдын Сангийн хэрэм)
+        HillPavilion, // толгой дээрх асар (Улиастай)
+        Industry,     // уулын баяжуулах үйлдвэр (Эрдэнэт)
+        Stupas,       // суваргын эгнээ
+        Station,      // төмөр замын өртөө
+        Memorial,     // хөшөө дурсгал (өндөр багана, од)
+        Chinggis      // Чингис хааны морьт хөшөө (Хэнтий)
+    };
+
+    Landmark LandmarkFor(int province)
+    {
+        static const Landmark table[22] = {
+            Landmark::Mosque,       // 0 Баян-Өлгий
+            Landmark::Monastery,    // 1 Увс
+            Landmark::Fortress,     // 2 Ховд
+            Landmark::HillPavilion, // 3 Завхан
+            Landmark::Stupas,       // 4 Говь-Алтай
+            Landmark::Monastery,    // 5 Хөвсгөл
+            Landmark::Monastery,    // 6 Баянхонгор
+            Landmark::Monastery,    // 7 Архангай
+            Landmark::Stupas,       // 8 Булган
+            Landmark::Monastery,    // 9 Өвөрхангай
+            Landmark::Industry,     // 10 Орхон
+            Landmark::Stupas,       // 11 Өмнөговь
+            Landmark::Station,      // 12 Сэлэнгэ
+            Landmark::Memorial,     // 13 Дархан-Уул
+            Landmark::Memorial,     // 14 Төв
+            Landmark::None,         // 15 Улаанбаатар (Сүхбаатарын талбай)
+            Landmark::Monastery,    // 16 Дундговь
+            Landmark::Station,      // 17 Говьсүмбэр
+            Landmark::Station,      // 18 Дорноговь
+            Landmark::Chinggis,     // 19 Хэнтий
+            Landmark::Monastery,    // 20 Сүхбаатар
+            Landmark::Memorial,     // 21 Дорнод
+        };
+        return province >= 0 && province < 22 ? table[province] : Landmark::None;
+    }
+
+    // Нэг давхар дөрвөлжин байгууламж (дуган, асар): хана, улаан бүс, дөрвөн налуу дээвэр
+    void TownHall(Scene& s, Vector2 c, Vector2 u, float halfLong, float halfShort, float wallHeight, Color wall, Color roof)
+    {
+        Plan f;
+        f.center = c;
+        f.axis = u;
+        f.halfLong = halfLong;
+        f.halfShort = halfShort;
+        float low = 1e9f;
+        for (float a : { -1.0f, 1.0f })
+        {
+            for (float b : { -1.0f, 1.0f })
+            {
+                const Vector2 q = f.At(a * halfLong, b * halfShort);
+                low = std::min(low, s.terrain.HeightAt(q.x, q.y));
+            }
+        }
+        const float yaw = std::atan2(u.x, u.y);
+        s.solid.SetTransform(MatrixMultiply(MatrixRotateY(yaw), MatrixTranslate(c.x, low - 0.3f, c.y)));
+        s.solid.Box({ 0.0f, 0.3f, 0.0f }, { halfShort * 2.0f + 1.6f, 0.9f, halfLong * 2.0f + 1.6f }, kConcrete); // тавцан
+        s.solid.Box({ 0.0f, 0.75f + wallHeight * 0.5f, 0.0f }, { halfShort * 2.0f, wallHeight, halfLong * 2.0f }, wall);
+        s.solid.Box({ 0.0f, 0.75f + wallHeight - 0.5f, 0.0f }, { halfShort * 2.0f + 0.1f, 1.0f, halfLong * 2.0f + 0.1f }, { 160, 40, 36, 255 });
+        s.solid.Box({ halfShort + 0.06f, 0.75f + 1.3f, 0.0f }, { 0.06f, 2.6f, 2.2f }, { 150, 36, 32, 255 }); // хаалга
+        s.solid.ResetTransform();
+        TownHipRoof(s, f, low + 0.45f + wallHeight, std::clamp(halfShort * 0.55f, 1.2f, 4.0f), 1.3f, roof);
+        const std::vector<Vector2> outline = { f.At(-halfLong, -halfShort), f.At(halfLong, -halfShort), f.At(halfLong, halfShort), f.At(-halfLong, halfShort) };
+        CityColliders(s, outline, low - 0.3f, wallHeight + 1.0f);
+        gCityMask.Fill(outline);
+    }
+
+    // Нэг хэсэг хана (шороон хэрэм, сүм хийдийн хашаа): газрын налууг дагана
+    void TownWall(Scene& s, Vector2 a, Vector2 b, float height, float thickness, Color color, bool collide)
+    {
+        const float length = Vector2Distance(a, b);
+        const Vector2 mid = Vector2Lerp(a, b, 0.5f);
+        const Vector2 dir = Vector2Scale(Vector2Subtract(b, a), 1.0f / std::max(length, 0.01f));
+        const float ground = std::min(s.terrain.HeightAt(a.x, a.y), s.terrain.HeightAt(b.x, b.y)) - 0.4f;
+        s.solid.SetTransform(MatrixMultiply(MatrixRotateY(std::atan2(dir.x, dir.y)), MatrixTranslate(mid.x, ground, mid.y)));
+        s.solid.Box({ 0.0f, (height + 0.4f) * 0.5f, 0.0f }, { thickness, height + 0.4f, length }, color);
+        s.solid.ResetTransform();
+        if (!collide) return;
+        // Налуу хана: богино хэсгүүдээр мөргөлдөөн
+        const int pieces = std::max(1, (int)(length / 3.0f));
+        for (int k = 0; k < pieces; ++k)
+        {
+            const Vector2 q = Vector2Lerp(a, b, ((float)k + 0.5f) / (float)pieces);
+            const float size = std::max(thickness, length / (float)pieces);
+            s.Collider({ q.x, ground + height * 0.5f, q.y }, { std::fabs(dir.x) * size + std::fabs(dir.y) * thickness, height + 0.4f,
+                                                             std::fabs(dir.y) * size + std::fabs(dir.x) * thickness });
+        }
+    }
+
+    void TownLandmark(Scene& s, const CityData& city, const std::vector<CityClearing>& clearings)
+    {
+        const Landmark landmark = LandmarkFor(gTown.province);
+        if (landmark == Landmark::None) return;
+        Vector2 at = gTown.site;
+        const Color white = { 236, 234, 226, 255 }, gold = { 206, 168, 72, 255 }, red = { 160, 40, 36, 255 };
+        const Color greenRoof = { 52, 120, 84, 255 };
+        const char* name = "";
+        switch (landmark)
+        {
+        case Landmark::Monastery:
+        {
+            // Хамгийн ойрын OSM-ийн сүм хийдийн дэргэд, эсвэл төвөөс 150-900 м-т чөлөөт газар
+            Vector2 near = gTown.site;
+            float best = 2500.0f;
+            for (const CityBuilding& b : city.buildings)
+            {
+                if (b.type != CityBuildingType::Religious) continue;
+                const Vector2 c = MeasureFootprint(b.outline).center;
+                const float d = Vector2Distance(c, gTown.site);
+                if (d < best) { best = d; near = c; }
+            }
+            if (!TownFindArea(s, near, near.x == gTown.site.x && near.y == gTown.site.y ? 150.0f : 30.0f, 900.0f, 30.0f, clearings, at)) return;
+            name = "monastery";
+            // Хашаа (цагаан хана, улаан оройтой), урд зүгт (-Z) хаалга
+            const float half = 28.0f;
+            const Vector2 corners[4] = { { at.x - half, at.y - half }, { at.x + half, at.y - half }, { at.x + half, at.y + half }, { at.x - half, at.y + half } };
+            for (int e = 0; e < 4; ++e)
+            {
+                const Vector2 a = corners[e], b = corners[(e + 1) % 4];
+                if (e == 0)
+                {
+                    TownWall(s, a, { at.x - 3.0f, a.y }, 2.6f, 0.6f, white, true);
+                    TownWall(s, { at.x + 3.0f, a.y }, b, 2.6f, 0.6f, white, true);
+                    for (float x : { -3.4f, 3.4f })
+                    {
+                        const float g = s.terrain.HeightAt(at.x + x, a.y);
+                        s.solid.Box({ at.x + x, g + 2.0f, a.y }, { 1.0f, 4.4f, 1.0f }, red);
+                    }
+                    const float g = s.terrain.HeightAt(at.x, a.y);
+                    s.solid.Box({ at.x, g + 4.4f, a.y }, { 8.4f, 0.7f, 1.6f }, greenRoof);
+                    continue;
+                }
+                TownWall(s, a, b, 2.6f, 0.6f, white, true);
+            }
+            TownHall(s, { at.x, at.y + 6.0f }, { 1.0f, 0.0f }, 9.0f, 7.0f, 5.5f, white, greenRoof); // гол дуган
+            TownHall(s, { at.x - 17.0f, at.y + 2.0f }, { 0.0f, 1.0f }, 6.0f, 4.0f, 4.0f, white, greenRoof);
+            TownHall(s, { at.x + 17.0f, at.y + 2.0f }, { 0.0f, 1.0f }, 6.0f, 4.0f, 4.0f, white, greenRoof);
+            for (float x : { -10.0f, 0.0f, 10.0f }) TownStupa(s, at.x + x, at.y - 16.0f, x == 0.0f ? 0.8f : 0.6f);
+            TownOccupy(at, half, half);
+            break;
+        }
+        case Landmark::Mosque:
+        {
+            if (!TownFindArea(s, gTown.site, 120.0f, 900.0f, 20.0f, clearings, at)) return;
+            name = "mosque";
+            const float g = s.terrain.HeightAt(at.x, at.y) - 0.3f;
+            const Color wall = { 236, 232, 222, 255 }, dome = { 40, 120, 150, 255 };
+            s.solid.Box({ at.x, g + 0.4f, at.y }, { 26.0f, 0.8f, 26.0f }, kConcrete);
+            s.solid.Box({ at.x, g + 4.0f, at.y }, { 18.0f, 7.0f, 18.0f }, wall);
+            s.solid.Box({ at.x, g + 7.2f, at.y }, { 18.4f, 0.6f, 18.4f }, dome);
+            s.solid.Cylinder({ at.x, g + 7.5f, at.y }, 6.5f, 6.5f, 1.5f, 16, wall);
+            s.solid.Ellipsoid({ at.x, g + 9.0f, at.y }, { 6.5f, 6.0f, 6.5f }, 6, 16, dome);
+            s.solid.Cylinder({ at.x, g + 14.8f, at.y }, 0.12f, 0.12f, 2.0f, 6, gold);
+            for (float x : { -1.0f, 1.0f })
+            {
+                // Хоёр минарет
+                const float mx = at.x + x * 11.5f, mz = at.y - 8.0f;
+                s.solid.Cylinder({ mx, g, mz }, 1.1f, 0.9f, 21.0f, 10, wall);
+                s.solid.Cylinder({ mx, g + 16.0f, mz }, 1.5f, 1.5f, 0.6f, 10, dome);
+                s.solid.Cylinder({ mx, g + 21.0f, mz }, 1.0f, 0.0f, 3.2f, 10, dome);
+                s.Collider({ mx, g + 10.0f, mz }, { 2.2f, 20.0f, 2.2f });
+            }
+            for (float x : { -5.0f, 0.0f, 5.0f })
+            {
+                s.solid.Box({ at.x + x, g + 3.6f, at.y - 9.05f }, { 2.0f, 4.0f, 0.1f }, { 60, 90, 120, 255 }); // нуман цонх, хаалга
+            }
+            s.Collider({ at.x, g + 6.0f, at.y }, { 18.0f, 12.0f, 18.0f });
+            TownOccupy(at, 14.0f, 14.0f);
+            break;
+        }
+        case Landmark::Fortress:
+        {
+            if (!TownFindArea(s, gTown.site, 350.0f, 1800.0f, 60.0f, clearings, at)) return;
+            name = "fortress ruins";
+            // Шороон хэрмийн туурь: зарим хэсэг нурсан, урд, хойд талд хаалга, буланд цамхгийн туурь
+            const Color earth = { 176, 150, 112, 255 };
+            const float half = 56.0f;
+            const Vector2 corners[4] = { { at.x - half, at.y - half }, { at.x + half, at.y - half }, { at.x + half, at.y + half }, { at.x - half, at.y + half } };
+            for (int e = 0; e < 4; ++e)
+            {
+                const Vector2 a = corners[e], b = corners[(e + 1) % 4];
+                const int pieces = 7;
+                for (int k = 0; k < pieces; ++k)
+                {
+                    if ((e == 0 || e == 2) && k == pieces / 2) continue; // хаалга
+                    if (s.rng.Chance(0.15f)) continue;                   // нурсан хэсэг
+                    const Vector2 p0 = Vector2Lerp(a, b, (float)k / (float)pieces), p1 = Vector2Lerp(a, b, (float)(k + 1) / (float)pieces);
+                    TownWall(s, p0, p1, s.rng.Range(2.8f, 4.5f), 3.0f, JitterColor(earth, s.rng, 0.05f), true);
+                }
+                const float g = s.terrain.HeightAt(a.x, a.y);
+                s.solid.Box({ a.x, g + 2.2f, a.y }, { 6.0f, 5.4f, 6.0f }, ScaleColor(earth, 0.94f));
+                s.Collider({ a.x, g + 2.2f, a.y }, { 6.0f, 5.4f, 6.0f });
+            }
+            TownOccupy(at, half + 3.0f, half + 3.0f);
+            break;
+        }
+        case Landmark::HillPavilion:
+        {
+            // Хотын дэргэдэх хамгийн өндөр толгой
+            float best = -1e9f;
+            bool found = false;
+            for (float r = 300.0f; r <= 1700.0f; r += 40.0f)
+            {
+                for (int k = 0; k < 36; ++k)
+                {
+                    const float a = 2.0f * PI * (float)k / 36.0f;
+                    const Vector2 c = { gTown.site.x + std::cos(a) * r, gTown.site.y + std::sin(a) * r };
+                    const float h = s.terrain.HeightAt(c.x, c.y);
+                    if (h <= best || !TownFreeArea(s, c, 9.0f, clearings)) continue;
+                    best = h;
+                    at = c;
+                    found = true;
+                }
+            }
+            if (!found) return;
+            name = "hill pavilion";
+            const float g = s.terrain.HeightAt(at.x, at.y) - 0.3f;
+            s.solid.Cylinder({ at.x, g, at.y }, 7.5f, 7.0f, 1.1f, 8, kConcrete);
+            for (int k = 0; k < 8; ++k)
+            {
+                const float a = 2.0f * PI * ((float)k + 0.5f) / 8.0f;
+                s.solid.Cylinder({ at.x + std::cos(a) * 5.4f, g + 1.1f, at.y + std::sin(a) * 5.4f }, 0.3f, 0.3f, 4.2f, 6, red);
+            }
+            s.solid.Cylinder({ at.x, g + 5.3f, at.y }, 7.4f, 7.4f, 0.5f, 8, red);
+            s.solid.Cylinder({ at.x, g + 5.8f, at.y }, 7.8f, 2.6f, 2.4f, 8, greenRoof);
+            s.solid.Cylinder({ at.x, g + 8.2f, at.y }, 2.8f, 0.2f, 2.2f, 8, greenRoof);
+            s.solid.Cylinder({ at.x, g + 10.2f, at.y }, 0.3f, 0.05f, 1.6f, 6, gold);
+            for (int k = 0; k < 8; ++k)
+            {
+                const float a = 2.0f * PI * ((float)k + 0.5f) / 8.0f;
+                s.Collider({ at.x + std::cos(a) * 5.4f, g + 3.0f, at.y + std::sin(a) * 5.4f }, { 0.6f, 4.2f, 0.6f });
+            }
+            Ovoo(s, at.x + 14.0f, at.y + 6.0f);
+            TownOccupy(at, 9.0f, 9.0f);
+            break;
+        }
+        case Landmark::Industry:
+        {
+            if (!TownFindArea(s, gTown.site, 500.0f, 2000.0f, 45.0f, clearings, at)) return;
+            name = "concentrator plant";
+            const float g = s.terrain.HeightAt(at.x, at.y) - 0.5f;
+            const Color steel = { 150, 152, 150, 255 }, rust = { 140, 96, 66, 255 };
+            s.solid.Box({ at.x, g + 9.0f, at.y }, { 60.0f, 18.0f, 26.0f }, steel);          // гол цех
+            s.solid.Box({ at.x, g + 18.6f, at.y }, { 60.4f, 1.2f, 26.4f }, ScaleColor(steel, 0.8f));
+            s.solid.Box({ at.x - 18.0f, g + 14.0f, at.y + 22.0f }, { 20.0f, 28.0f, 16.0f }, ScaleColor(steel, 0.9f));
+            for (int k = 0; k < 3; ++k) s.solid.Cylinder({ at.x + 10.0f + (float)k * 9.0f, g, at.y + 24.0f }, 3.6f, 3.6f, 16.0f, 12, rust); // силос
+            for (float x : { -26.0f, -16.0f })
+            {
+                // Улаан цагаан судалтай яндан
+                for (int band = 0; band < 6; ++band)
+                {
+                    s.solid.Cylinder({ at.x + x, g + (float)band * 8.0f, at.y - 20.0f }, 2.4f - 0.2f * (float)band, 2.2f - 0.2f * (float)band, 8.0f, 12,
+                                     band % 2 ? Color{ 232, 230, 224, 255 } : Color{ 178, 44, 40, 255 });
+                }
+                s.Collider({ at.x + x, g + 24.0f, at.y - 20.0f }, { 4.6f, 48.0f, 4.6f });
+            }
+            // Ташуу туузан дамжуулга: доод үзүүр нь газарт (36 м урт, 0.35 радиан налуу -> 12 м өргөгдөнө)
+            s.solid.SetTransform(MatrixMultiply(MatrixRotateX(-0.35f), MatrixTranslate(at.x + 20.0f, g + 6.6f, at.y - 22.0f)));
+            s.solid.Box({ 0.0f, 0.0f, 0.0f }, { 3.0f, 2.6f, 36.0f }, ScaleColor(steel, 0.75f));
+            s.solid.ResetTransform();
+            s.Collider({ at.x, g + 9.0f, at.y }, { 60.0f, 18.0f, 26.0f });
+            s.Collider({ at.x - 18.0f, g + 14.0f, at.y + 22.0f }, { 20.0f, 28.0f, 16.0f });
+            TownOccupy(at, 40.0f, 40.0f);
+            break;
+        }
+        case Landmark::Stupas:
+        {
+            if (!TownFindArea(s, gTown.site, 100.0f, 900.0f, 22.0f, clearings, at)) return;
+            name = "stupas";
+            TownStupa(s, at.x, at.y, 1.3f);
+            for (int k = 0; k < 8; ++k)
+            {
+                const float a = 2.0f * PI * (float)k / 8.0f;
+                TownStupa(s, at.x + std::cos(a) * 15.0f, at.y + std::sin(a) * 15.0f, 0.42f);
+            }
+            TownOccupy(at, 19.0f, 19.0f);
+            break;
+        }
+        case Landmark::Station:
+        {
+            // Төвд хамгийн ойр төмөр зам; түүнтэй зэрэгцээ, 16 м-т өртөө
+            float best = 1e9f;
+            Vector2 rail = gTown.site, along = { 1.0f, 0.0f };
+            for (const CityLine& line : city.lines)
+            {
+                if (line.kind != CityLineKind::Railway) continue;
+                for (size_t i = 0; i + 1 < line.points.size(); ++i)
+                {
+                    const Vector2 q = Vector2Lerp(line.points[i], line.points[i + 1], 0.5f);
+                    const float d = Vector2Distance(q, gTown.site);
+                    if (d < best && Vector2Distance(line.points[i], line.points[i + 1]) > 1.0f)
+                    {
+                        best = d;
+                        rail = q;
+                        along = Vector2Normalize(Vector2Subtract(line.points[i + 1], line.points[i]));
+                    }
+                }
+            }
+            if (best > 3000.0f) return;
+            Vector2 side = { -along.y, along.x };
+            if (Vector2DotProduct(side, Vector2Subtract(gTown.site, rail)) < 0.0f) side = Vector2Scale(side, -1.0f);
+            bool found = false;
+            for (float slide = 0.0f; slide < 400.0f && !found; slide += 20.0f)
+            {
+                for (float sign : { 1.0f, -1.0f })
+                {
+                    const Vector2 c = Vector2Add(Vector2Add(rail, Vector2Scale(along, slide * sign)), Vector2Scale(side, 18.0f));
+                    if (TownFreeArea(s, c, 14.0f, clearings))
+                    {
+                        at = c;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found) return;
+            name = "railway station";
+            Plan f;
+            f.center = at;
+            f.axis = along;
+            f.halfLong = 22.0f;
+            f.halfShort = 6.0f;
+            const std::vector<Vector2> outline = { f.At(-22.0f, -6.0f), f.At(22.0f, -6.0f), f.At(22.0f, 6.0f), f.At(-22.0f, 6.0f) };
+            CityBuilding hall;
+            hall.type = CityBuildingType::Government;
+            hall.levels = 2;
+            hall.height = 8.0f;
+            hall.outline = outline;
+            TownBuilding(s, hall);
+            // Цагны цамхаг ба тавцан
+            const float g = s.terrain.HeightAt(at.x, at.y);
+            s.solid.Box({ at.x, g + 9.0f, at.y }, { 4.0f, 18.0f, 4.0f }, gTown.publicWalls[0]);
+            s.solid.Cylinder({ at.x, g + 18.0f, at.y }, 2.6f, 0.2f, 3.0f, 4, greenRoof);
+            for (float y : { -1.0f, 1.0f }) s.solid.Box({ at.x + side.x * 2.05f * y, g + 15.0f, at.y + side.y * 2.05f * y }, { 1.6f, 1.6f, 1.6f }, white); // цаг
+            const Vector2 platform = Vector2Add(at, Vector2Scale(side, -10.0f));
+            TownPaving(s, platform, along, 40.0f, 3.0f, kConcrete);
+            s.Collider({ at.x, g + 9.0f, at.y }, { 4.0f, 18.0f, 4.0f });
+            break;
+        }
+        case Landmark::Memorial:
+        {
+            if (!TownFindArea(s, gTown.site, 90.0f, 800.0f, 16.0f, clearings, at)) return;
+            name = "memorial";
+            TownPaving(s, at, { 0.0f, 1.0f }, 16.0f, 16.0f, kPaving);
+            const float g = s.terrain.HeightAt(at.x, at.y);
+            s.solid.Box({ at.x, g + 0.5f, at.y }, { 9.0f, 1.0f, 9.0f }, kGranite);
+            s.solid.Box({ at.x, g + 1.4f, at.y }, { 6.0f, 0.8f, 6.0f }, ScaleColor(kGranite, 0.85f));
+            s.solid.Cylinder({ at.x, g + 1.8f, at.y }, 1.6f, 0.7f, 20.0f, 4, { 220, 218, 210, 255 }); // багана
+            s.solid.Ellipsoid({ at.x, g + 22.4f, at.y }, { 0.9f, 0.9f, 0.9f }, 3, 5, { 196, 40, 36, 255 });  // од
+            s.Collider({ at.x, g + 1.0f, at.y }, { 9.0f, 2.0f, 9.0f });
+            s.Collider({ at.x, g + 11.0f, at.y }, { 2.6f, 20.0f, 2.6f });
+            if (gTown.province == 21)
+            {
+                // Дорнод: тавцан дээрх танк
+                const Vector2 t = { at.x + 11.0f, at.y };
+                const Color tank = { 70, 84, 64, 255 };
+                s.solid.Box({ t.x, g + 1.0f, t.y }, { 4.0f, 2.0f, 7.5f }, kGranite);
+                s.solid.Box({ t.x, g + 2.6f, t.y }, { 3.2f, 1.2f, 6.4f }, tank);
+                s.solid.Box({ t.x, g + 3.6f, t.y - 0.4f }, { 2.2f, 0.9f, 2.6f }, tank);
+                s.solid.SetTransform(MatrixMultiply(MatrixRotateX(-0.08f), MatrixTranslate(t.x, g + 3.7f, t.y + 2.4f)));
+                s.solid.Box({ 0.0f, 0.0f, 0.0f }, { 0.22f, 0.22f, 4.4f }, ScaleColor(tank, 0.8f));
+                s.solid.ResetTransform();
+                s.Collider({ t.x, g + 2.0f, t.y }, { 4.0f, 4.0f, 7.5f });
+            }
+            TownOccupy(at, 16.0f, 16.0f);
+            break;
+        }
+        case Landmark::Chinggis:
+        {
+            if (!TownFindArea(s, gTown.site, 90.0f, 900.0f, 18.0f, clearings, at)) return;
+            name = "Chinggis Khaan statue";
+            TownPaving(s, at, { 0.0f, 1.0f }, 18.0f, 18.0f, kPaving);
+            const float g = s.terrain.HeightAt(at.x, at.y);
+            s.solid.Box({ at.x, g + 0.6f, at.y }, { 12.0f, 1.2f, 12.0f }, kGranite);
+            s.solid.Box({ at.x, g + 4.2f, at.y }, { 6.0f, 6.0f, 9.0f }, ScaleColor(kGranite, 0.9f));
+            s.Collider({ at.x, g + 3.6f, at.y }, { 12.0f, 7.2f, 12.0f });
+            HorseRider(s, at.x, g + 7.2f, at.y, PI, 3.2f);
+            s.Collider({ at.x, g + 12.0f, at.y }, { 3.0f, 10.0f, 7.0f });
+            TownOccupy(at, 18.0f, 18.0f);
+            break;
+        }
+        case Landmark::None: break;
+        }
+        TraceLog(LOG_INFO, "TOWN: landmark %s at (%.0f, %.0f)", name, at.x, at.y);
+    }
+
+    // Хот руу орох их зам: Монгол хээтэй хаалга, хажууд нь угтах самбар, ойролцоох толгод дээр овоо.
+    void TownEntrances(Scene& s, const CityData& city)
+    {
+        std::vector<Vector2> gates;
+        for (const CityRoad& road : city.roads)
+        {
+            if (road.klass > CityRoadClass::Secondary || road.dirt || gates.size() >= 3) continue;
+            const std::vector<Vector2> path = Resample(road.points, 8.0f);
+            for (size_t i = 0; i + 1 < path.size() && gates.size() < 3; ++i)
+            {
+                const float b0 = s.layout.CityBuiltDistance(path[i].x, path[i].y), b1 = s.layout.CityBuiltDistance(path[i + 1].x, path[i + 1].y);
+                if ((b0 < 140.0f) == (b1 < 140.0f)) continue;
+                const Vector2 q = b0 >= 140.0f ? path[i] : path[i + 1]; // хотын гадна тал
+                if (std::fabs(q.x) > kCityHalfExtent - 60.0f || std::fabs(q.y) > kCityHalfExtent - 60.0f) continue;
+                bool apart = true;
+                for (const Vector2& g : gates) apart = apart && Vector2Distance(g, q) > 500.0f;
+                if (!apart) continue;
+                gates.push_back(q);
+
+                const Vector2 along = Vector2Normalize(Vector2Subtract(path[i + 1], path[i]));
+                const Vector2 side = { -along.y, along.x };
+                const float span = road.halfWidth + 1.8f;
+                const Color white = { 238, 236, 228, 255 }, blue = { 30, 80, 170, 255 }, red = { 180, 40, 36, 255 }, gold = { 206, 168, 72, 255 };
+                float ground = 1e9f;
+                for (float k : { -1.0f, 1.0f }) ground = std::min(ground, s.terrain.HeightAt(q.x + side.x * span * k, q.y + side.y * span * k));
+                ground -= 0.3f;
+                const float yaw = std::atan2(side.x, side.y);
+                s.solid.SetTransform(MatrixMultiply(MatrixRotateY(yaw), MatrixTranslate(q.x, ground, q.y)));
+                for (float k : { -1.0f, 1.0f })
+                {
+                    s.solid.Box({ 0.0f, 3.8f, k * span }, { 1.4f, 7.6f, 1.4f }, white);           // багана
+                    s.solid.Box({ 0.0f, 2.2f, k * span }, { 1.5f, 0.5f, 1.5f }, blue);
+                }
+                s.solid.Box({ 0.0f, 8.0f, 0.0f }, { 1.6f, 1.4f, span * 2.0f + 1.4f }, white);    // хөндлөн дам нуруу
+                s.solid.Box({ 0.0f, 8.0f, 0.0f }, { 1.7f, 0.5f, span * 2.0f + 1.0f }, blue);      // хээтэй тууз
+                s.solid.Box({ 0.0f, 8.85f, 0.0f }, { 2.4f, 0.3f, span * 2.0f + 2.4f }, red);
+                s.solid.ResetTransform();
+                Plan roof;
+                roof.center = q;
+                roof.axis = side;
+                roof.halfLong = span + 0.8f;
+                roof.halfShort = 1.0f;
+                TownHipRoof(s, roof, ground + 9.0f, 1.3f, 0.5f, { 52, 120, 84, 255 });
+                s.solid.Cylinder({ q.x, ground + 10.3f, q.y }, 0.4f, 0.1f, 1.4f, 8, gold);
+                for (float k : { -1.0f, 1.0f })
+                {
+                    const Vector2 c = Vector2Add(q, Vector2Scale(side, span * k));
+                    s.Collider({ c.x, ground + 3.8f, c.y }, { 1.4f, 7.6f, 1.4f });
+                }
+                // Угтах самбар: замын хажууд, хотоос гарах зүгт (хөх самбар, цагаан хүрээ)
+                const Vector2 inward = s.layout.CityBuiltDistance(path[i + 1].x, path[i + 1].y) < b0 ? along : Vector2Scale(along, -1.0f);
+                const Vector2 board = Vector2Add(Vector2Add(q, Vector2Scale(inward, -30.0f)), Vector2Scale(side, span + 3.5f));
+                const float bg = s.terrain.HeightAt(board.x, board.y);
+                s.solid.SetTransform(MatrixMultiply(MatrixRotateY(std::atan2(inward.x, inward.y)), MatrixTranslate(board.x, bg, board.y)));
+                for (float x : { -1.8f, 1.8f }) s.solid.Box({ x, 1.4f, 0.0f }, { 0.16f, 2.8f, 0.16f }, kMetal);
+                s.solid.Box({ 0.0f, 3.2f, 0.0f }, { 4.8f, 2.0f, 0.14f }, white);
+                s.solid.Box({ 0.0f, 3.2f, -0.03f }, { 4.4f, 1.6f, 0.14f }, blue);
+                s.solid.Box({ 0.0f, 3.6f, -0.08f }, { 3.4f, 0.22f, 0.06f }, white); // бичгийн мөр
+                s.solid.Box({ 0.0f, 3.0f, -0.08f }, { 2.6f, 0.18f, 0.06f }, white);
+                s.solid.ResetTransform();
+
+                // Овоо: хаалганаас 80-500 м-т хамгийн өндөр, замаас хол газар
+                Vector2 ovoo = Vector2Add(q, Vector2Scale(side, span + 20.0f));
+                float best = s.terrain.HeightAt(ovoo.x, ovoo.y) + 2.0f; // тод толгод олдохгүй бол замын хажууд
+                for (float r = 80.0f; r <= 500.0f; r += 30.0f)
+                {
+                    for (int k = 0; k < 24; ++k)
+                    {
+                        const float a = 2.0f * PI * (float)k / 24.0f;
+                        const Vector2 c = { q.x + std::cos(a) * r, q.y + std::sin(a) * r };
+                        const float h = s.terrain.HeightAt(c.x, c.y);
+                        if (h <= best || s.layout.RoadDistance(c.x, c.y) < 12.0f || s.layout.CityBuiltDistance(c.x, c.y) < 60.0f ||
+                            gCityMask.Blocked(c.x, c.y, 4.0f) || std::fabs(c.x) > kCityHalfExtent - 20.0f || std::fabs(c.y) > kCityHalfExtent - 20.0f)
+                        {
+                            continue;
+                        }
+                        best = h;
+                        ovoo = c;
+                    }
+                }
+                Ovoo(s, ovoo.x, ovoo.y);
+                TownOccupy(ovoo, 4.0f, 4.0f);
+                TraceLog(LOG_INFO, "TOWN: entrance gate at (%.0f, %.0f), ovoo at (%.0f, %.0f)", q.x, q.y, ovoo.x, ovoo.y);
+            }
+        }
+    }
+
     // Гол, горхи (ус) ба төмөр зам (хайрга, хоёр төмөр)
     void CityLineMesh(Scene& s, const CityLine& line)
     {
         const bool fence = line.kind == CityLineKind::Fence || line.kind == CityLineKind::Wall;
+        if (fence && !s.layout.IsCapital())
+        {
+            TownFence(s, line.points, line.kind == CityLineKind::Wall);
+            return;
+        }
         const std::vector<Vector2> path = fence ? line.points : Resample(line.points, 6.0f);
         const int count = (int)path.size();
         std::vector<Vector2> side(count);
@@ -4535,9 +5957,76 @@ namespace
     }
 
     // Хотын тогтмол хэсэг: гудамж, барилга, ус, төмөр зам, мод, гэрэлтүүлэг.
+    // Гэр хороолол (хашаа, гэр, хувийн байшин) хот бүрт хэдэн мянгаараа байж зураглалыг удаашруулдаг тул
+    // хасагдсан: зөвхөн төвийн голлох барилгууд үлдэнэ. Гэр хороолол дотор зөвхөн олон нийтийн барилга
+    // (сургууль, засаг захиргаа, сүм хийд, орон сууц, дэлгүүр).
+    bool KeepCityBuilding(const CityBuilding& b, const Plan& f)
+    {
+        switch (b.type)
+        {
+        case CityBuildingType::Ger:
+        case CityBuildingType::House:
+        case CityBuildingType::Garage: return false;
+        default: break;
+        }
+        if (f.area < 90.0f) return false; // жижиг байшин, саравч, амбаар
+        if (!gTownZones.Khashaa(f.center.x, f.center.y)) return true;
+        switch (b.type)
+        {
+        case CityBuildingType::School:
+        case CityBuildingType::Government:
+        case CityBuildingType::Religious:
+        case CityBuildingType::Apartments:
+        case CityBuildingType::Commercial: return true;
+        default: return false;
+        }
+    }
+
     void BuildCity(Scene& s, const CityData& city)
     {
+        const bool town = !s.layout.IsCapital(); // аймгийн төв (Улаанбаатарт талбай, дурсгалт газар нэмэхгүй)
         gCityMask.Reset();
+        gFenceMask.Reset();
+        gTownZones.Reset();
+        gTown = MakeTownStyle(city.province);
+        gTown.site = CityTownSite(city);
+        // Гэр хороолол: нүд бүрийн хашааны урт, гэр байшингийн тоо (Улаанбаатарт хашаа тэмдэглэгдээгүй тул гэр, байшингаар)
+        for (const CityLine& line : city.lines)
+        {
+            if (line.kind != CityLineKind::Fence && line.kind != CityLineKind::Wall) continue;
+            for (size_t i = 0; i + 1 < line.points.size(); ++i)
+            {
+                const Vector2 mid = Vector2Lerp(line.points[i], line.points[i + 1], 0.5f);
+                gTownZones.fence[(size_t)gTownZones.Index(mid.x, mid.y)] += Vector2Distance(line.points[i], line.points[i + 1]);
+            }
+        }
+        for (const CityBuilding& b : city.buildings)
+        {
+            if (b.outline.size() < 3 || (b.type != CityBuildingType::Ger && b.type != CityBuildingType::House)) continue;
+            const Vector2 c = b.outline[0];
+            ++gTownZones.homes[(size_t)gTownZones.Index(c.x, c.y)];
+        }
+        if (town)
+        {
+            // Засаг даргын тамгын газар: талбайд хамгийн ойр засаг захиргааны барилга (эсвэл 200 м доторх том барилга)
+            float best = 400.0f;
+            for (const CityBuilding& b : city.buildings)
+            {
+                if (b.outline.size() < 3) continue;
+                const Plan f = MeasureFootprint(b.outline);
+                if (!KeepCityBuilding(b, f)) continue;
+                const float d = Vector2Distance(f.center, gTown.site);
+                const bool candidate = b.type == CityBuildingType::Government ||
+                                       ((b.type == CityBuildingType::Generic || b.type == CityBuildingType::Commercial) && f.area > 300.0f && d < 200.0f);
+                if (!candidate) continue;
+                const float score = d + (b.type == CityBuildingType::Government ? 0.0f : 120.0f);
+                if (score < best)
+                {
+                    best = score;
+                    gTown.mainHall = &b;
+                }
+            }
+        }
         for (const CityRoad& road : city.roads)
         {
             CityStreet(s, road);
@@ -4546,9 +6035,15 @@ namespace
 
         int built = 0;
         const std::vector<CityClearing> clearings = CityClearings(city);
+        int skipped = 0;
         for (const CityBuilding& building : city.buildings)
         {
             if (building.outline.size() < 3 || InCityClearing(clearings, building.outline)) continue;
+            if (!KeepCityBuilding(building, MeasureFootprint(building.outline)))
+            {
+                ++skipped;
+                continue;
+            }
             CityBuildingMesh(s, building);
             ++built;
         }
@@ -4561,8 +6056,26 @@ namespace
         }
         for (const CityLine& line : city.lines)
         {
-            if ((line.kind == CityLineKind::Fence || line.kind == CityLineKind::Wall) && InCityClearing(clearings, line.points)) continue;
+            const bool fence = line.kind == CityLineKind::Fence || line.kind == CityLineKind::Wall;
+            if (fence && InCityClearing(clearings, line.points)) continue;
+            if (fence && !line.points.empty())
+            {
+                // Гэр хорооллын хашаа хасагдсан (төвийн байгууллагын хашаа, хана үлдэнэ)
+                const Vector2 mid = line.points[line.points.size() / 2];
+                if (gTownZones.Khashaa(mid.x, mid.y)) continue;
+            }
             CityLineMesh(s, line);
+        }
+
+        if (town)
+        {
+            const int beforeTown = s.solid.TriangleCount();
+            TownSquare(s, city);
+            TownLandmark(s, city, clearings);
+            TownEntrances(s, city);
+            const Vector2 hall = gTown.mainHall ? MeasureFootprint(gTown.mainHall->outline).center : Vector2{ 0.0f, 0.0f };
+            TraceLog(LOG_INFO, "TOWN: province %d (region %d): main hall %s (%.0f, %.0f), %d triangles",
+                     city.province, (int)gTown.region, gTown.mainHall ? "found" : "none", hall.x, hall.y, s.solid.TriangleCount() - beforeTown);
         }
 
         // Гудамжны мод ба гэрэлтүүлэг: том замуудын хоёр талаар
@@ -4575,7 +6088,10 @@ namespace
         for (const CityRoad& road : city.roads)
         {
             if ((int)road.klass > (int)CityRoadClass::Tertiary || road.dirt) continue;
-            const std::vector<Vector2> path = Resample(road.points, 13.0f);
+            // Аймгийн төвд: гудамж бүхэлдээ модтой эсвэл модгүй, мод нь ижил зайтай, ижил өндөртэй эгнээ
+            const bool lined = !town || rng.Chance(std::min(1.0f, gTown.treeChance * 1.3f));
+            const float rowHeight = rng.Range(6.5f, 9.5f);
+            const std::vector<Vector2> path = Resample(road.points, town ? 10.0f : 13.0f);
             for (size_t i = 0; i + 1 < path.size(); ++i)
             {
                 const Vector2 tangent = Vector2Normalize(Vector2Subtract(path[i + 1], path[i]));
@@ -4584,7 +6100,8 @@ namespace
                 {
                     const float offset = road.halfWidth + 3.2f;
                     const float x = path[i].x + normal.x * offset * sideSign, z = path[i].y + normal.y * offset * sideSign;
-                    if (road.klass <= CityRoadClass::Primary && i % 3 == 0 && sideSign > 0.0f)
+                    const bool lampRoad = road.klass <= (town ? CityRoadClass::Tertiary : CityRoadClass::Primary);
+                    if (lampRoad && i % 3 == 0 && sideSign > 0.0f)
                     {
                         const float lx = path[i].x + normal.x * (road.halfWidth + 1.2f), lz = path[i].y + normal.y * (road.halfWidth + 1.2f);
                         if (freeSpot(lx, lz, 0.6f))
@@ -4592,6 +6109,13 @@ namespace
                             CityLamp(s, lx, lz, Vector2Scale(normal, -1.0f));
                             ++lamps;
                         }
+                        continue;
+                    }
+                    if (town)
+                    {
+                        if (!lined || !freeSpot(x, z, 1.6f)) continue;
+                        CityTree(s, x, z, rowHeight + rng.Range(-0.4f, 0.4f));
+                        ++trees;
                         continue;
                     }
                     if (!rng.Chance(0.4f) || !freeSpot(x, z, 1.6f)) continue;
@@ -4611,6 +6135,21 @@ namespace
                 minZ = std::min(minZ, p.y); maxZ = std::max(maxZ, p.y);
             }
             const float density = area.kind == CityAreaKind::Forest ? 1.0f / 110.0f : 1.0f / 280.0f;
+            if (town && area.kind != CityAreaKind::Forest)
+            {
+                // Аймгийн цэцэрлэгт хүрээлэн: 8 м зайтай эгнээ мод (бага зэрэг зөрүүтэй)
+                for (float z = minZ + 4.0f; z < maxZ && trees < 4200; z += 8.0f)
+                {
+                    for (float x = minX + 4.0f; x < maxX && trees < 4200; x += 8.0f)
+                    {
+                        const Vector2 q = { x + rng.Range(-0.6f, 0.6f), z + rng.Range(-0.6f, 0.6f) };
+                        if (!rng.Chance(gTown.treeChance + 0.2f) || !PointInPolygon(area.outline, q) || !freeSpot(q.x, q.y, 1.6f)) continue;
+                        CityTree(s, q.x, q.y, rng.Range(6.5f, 8.5f));
+                        ++trees;
+                    }
+                }
+                continue;
+            }
             const int wanted = std::min(400, (int)((maxX - minX) * (maxZ - minZ) * density));
             for (int k = 0; k < wanted && trees < 4200; ++k)
             {
@@ -4629,7 +6168,8 @@ namespace
             return false;
         };
         // Хотын хэмжээнээс хамаарах тоо: Улаанбаатарт 3200 зогссон, 110 унаж болох машин
-        const int parkedLimit = std::min(3200, (int)city.buildings.size() / 6);
+        // Аймгийн төвд машин цөөн (барилгын тоо / 28): хэт олон машин гудамжийг замбараагүй харагдуулна
+        const int parkedLimit = town ? std::clamp(built / 12, 40, 420) : std::min(3200, built / 3); // үлдсэн (төвийн) барилгаас
         const size_t vehicleLimit = (size_t)std::clamp((int)city.buildings.size() / 90, 30, 110);
         std::vector<Vector3> spots; // x, z, y = чиглэл
         auto addSpot = [&](float x, float z, float heading, float spacing) {
@@ -4654,7 +6194,7 @@ namespace
                 const Vector2 normal = { -tangent.y, tangent.x };
                 const Vector2 mid = Vector2Lerp(path[i], path[i + 1], 0.5f);
                 const float along = std::atan2(tangent.x, tangent.y);
-                if (road.halfWidth >= 6.0f && rng.Chance(0.04f))
+                if (road.halfWidth >= 6.0f && rng.Chance(town ? 0.01f : 0.04f))
                 {
                     // Түгжрэл: хэдэн эгнээгээр зогссон, хазгай эргэсэн машинууд
                     const int cars = rng.Int(4, 8);
@@ -4691,8 +6231,9 @@ namespace
             CityParkedCar(s, spots[i].x, spots[i].z, spots[i].y);
             ++parked;
         }
-        TraceLog(LOG_INFO, "CITY: %d buildings (%d triangles), streets %d triangles, %d trees, %d lamps, %d parked cars, %d vehicle spots",
-                 built, buildingTriangles, streetTriangles, trees, lamps, parked, (int)gCityVehicleSpots.size());
+        TraceLog(LOG_INFO, "CITY: %d buildings (%d triangles, %d ger district buildings left out), streets %d triangles, %d trees, %d lamps, "
+                 "%d parked cars, %d vehicle spots, %d triangles in all",
+                 built, buildingTriangles, skipped, streetTriangles, trees, lamps, parked, (int)gCityVehicleSpots.size(), s.solid.TriangleCount());
     }
 
     // Энгэр дээрх цагаан суварга (Галдан зуу) ба сүм хийдээс өгсөх шат: цагаан хашлагатай, газрыг дагасан гишгүүр.

@@ -1,0 +1,8 @@
+Django>=5.2,<5.3
+requests>=2.32,<3
+# Хөгжүүлэлт (QPAY_MODE=mock): туршилтын QR зураг
+segno>=1.6
+# Серверт MySQL ашиглах үед (DB_ENGINE=mysql):
+# mysqlclient>=2.2
+# Серверт ажиллуулах:
+# gunicorn>=23

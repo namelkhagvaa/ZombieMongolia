@@ -308,6 +308,7 @@ void ZombieHorde::Clear()
     pendingKills = 0;
     pendingSmallKills = 0;
     pendingBigKills = 0;
+    for (auto& kills : pendingPoolKills) kills[0] = kills[1] = 0;
 }
 
 void ZombieHorde::AlertAround(Vector3 center, float radius)
@@ -329,6 +330,16 @@ void ZombieHorde::TakeKillTypes(int& small, int& big)
     pendingBigKills = 0;
 }
 
+void ZombieHorde::TakePoolKills(int kills[kHordePools][2])
+{
+    for (int s = 0; s < kHordePools; ++s)
+    {
+        kills[s][0] += pendingPoolKills[s][0];
+        kills[s][1] += pendingPoolKills[s][1];
+        pendingPoolKills[s][0] = pendingPoolKills[s][1] = 0;
+    }
+}
+
 void ZombieHorde::CountAlive(int& small, int& big) const
 {
     for (const Zombie& zombie : zombies)
@@ -340,12 +351,28 @@ void ZombieHorde::CountAlive(int& small, int& big) const
     }
 }
 
-void ZombieHorde::RemoveFar(Vector3 center, float distance, bool ambientOnly)
+void ZombieHorde::CountAliveByPool(int alive[kHordePools][2]) const
+{
+    for (int s = 0; s < kHordePools; ++s) alive[s][0] = alive[s][1] = 0;
+    for (const Zombie& zombie : zombies)
+    {
+        if (zombie.IsAlive() && !zombie.boss && zombie.pool >= 0 && zombie.pool < kHordePools)
+        {
+            ++alive[zombie.pool][zombie.type == ZombieType::Brute ? 1 : 0];
+        }
+    }
+}
+
+void ZombieHorde::RemoveFar(const std::vector<Vector3>& centers, float distance, bool ambientOnly)
 {
     zombies.erase(std::remove_if(zombies.begin(), zombies.end(),
                                  [&](const Zombie& z) {
-                                     return z.IsAlive() && !z.boss && (!ambientOnly || z.zone == 0) &&
-                                            HorizontalDistance(z.mover.position, center) > distance;
+                                     if (!z.IsAlive() || z.boss || (ambientOnly && z.zone != 0)) return false;
+                                     for (const Vector3& center : centers)
+                                     {
+                                         if (HorizontalDistance(z.mover.position, center) <= distance) return false;
+                                     }
+                                     return true;
                                  }),
                   zombies.end());
 }
@@ -391,12 +418,13 @@ void ZombieHorde::SpawnBoss(Vector3 position, const MissionParams& mission, int 
     boss.missingArm = false;
 }
 
-void ZombieHorde::Spawn(ZombieType type, Vector3 position, const MissionParams& mission, int zone, bool alerted)
+void ZombieHorde::Spawn(ZombieType type, Vector3 position, const MissionParams& mission, int zone, bool alerted, int pool)
 {
     const TypeStats stats = StatsFor(type);
 
     Zombie zombie;
     zombie.zone = zone;
+    zombie.pool = pool;
     zombie.alerted = alerted;
     zombie.mover.position = position;
     zombie.lastPosition = position;
@@ -791,6 +819,7 @@ void ZombieHorde::Damage(int index, float amount)
         if (!zombie.boss)
         {
             ++(zombie.type == ZombieType::Brute ? pendingBigKills : pendingSmallKills);
+            if (zombie.pool >= 0 && zombie.pool < kHordePools) ++pendingPoolKills[zombie.pool][zombie.type == ZombieType::Brute ? 1 : 0];
         }
     }
 }

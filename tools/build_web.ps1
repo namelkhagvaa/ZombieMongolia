@@ -9,8 +9,11 @@
 # -Serve:    бүтээсний дараа http://localhost:8080 дээр туршихаар ажиллуулна (file:// -ээр нээвэл ажиллахгүй).
 param(
     [string]$Emsdk = "C:\emsdk",
+    # Байршуулсан сайтын бүтэн хаяг (/ -ээр төгсөнө): холбоос хуваалцахад гарах зураг (og:image) үүнээс
+    [string]$SiteUrl = "https://play-zombie.apps.mn/",
     [switch]$Serve
 )
+if (-not $SiteUrl.EndsWith("/")) { $SiteUrl += "/" }
 
 # Continue: PowerShell 5.1 нь гаралтыг дамжуулахад cmake-ийн stderr мөрийг алдаа гэж үздэг; алдааг Run шалгана.
 $ErrorActionPreference = "Continue"
@@ -39,6 +42,7 @@ $hash = (Get-FileHash (Join-Path $build "ZombieMongolia.wasm") -Algorithm SHA256
 $shell = [System.IO.File]::ReadAllText((Join-Path $root "web\shell.html"))
 $page = $shell.Replace("{{{ SCRIPT }}}", "<script async type=`"text/javascript`" src=`"ZombieMongolia.js?v=$hash`"></script>")
 $page = $page.Replace("{{{ BUILD_ID }}}", $hash.ToLower())
+$page = $page.Replace("{{{ SITE_URL }}}", $SiteUrl)
 [System.IO.File]::WriteAllText((Join-Path $site "index.html"), $page, (New-Object System.Text.UTF8Encoding $false))
 foreach ($ext in "js", "wasm", "data") {
     Copy-Item (Join-Path $build "ZombieMongolia.$ext") $site -Force
@@ -46,6 +50,8 @@ foreach ($ext in "js", "wasm", "data") {
 # Хуудасны ачааллын дэлгэц тоглоомынхтой ижил зураг, фонт хэрэглэнэ (web/shell.html)
 Copy-Item (Join-Path $root "assets\splash.png") $site -Force
 Copy-Item (Join-Path $root "android\ui_font.ttf") $site -Force
+# Холбоос хуваалцахад гарах зураг (1200x630, web/shell.html-ийн og:image)
+Copy-Item (Join-Path $root "web\share.jpg") $site -Force
 # Вэб апп (нүүр дэлгэцэд нэмэх): бүтэн дэлгэцээр, хэвтээ нээгдэнэ
 Copy-Item (Join-Path $root "android\res\mipmap-xxxhdpi\ic_launcher.png") (Join-Path $site "icon-192.png") -Force
 $manifest = '{ "name": "Zombie Mongolia", "short_name": "Zombie MN", "start_url": ".", "display": "fullscreen", ' +

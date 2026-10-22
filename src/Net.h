@@ -142,7 +142,7 @@ namespace Net
     struct Event
     {
         Msg type;
-        std::string text;      // JoinRequest: нэр; Leave (хөтөч): холбогдож чадаагүй шалтгаан
+        std::string text;      // JoinRequest: зочны нэр; JoinReply: хостын нэр; Leave (хөтөч): холбогдож чадаагүй шалтгаан
         bool accepted = false; // JoinReply
         int province = 0;      // JoinReply
         int version = 0;       // JoinRequest / JoinReply: нөгөө талын протоколын хувилбар (0 = хуучин, хувилбаргүй)

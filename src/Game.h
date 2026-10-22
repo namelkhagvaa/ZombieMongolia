@@ -84,8 +84,11 @@ struct LaunchOptions
     bool autoPlay = false;    // даалгавруудыг автоматаар гүйцэтгэнэ (--autoplay)
     int stopAfter = 0;        // автомат тоглолт энэ тооны даалгаврын дараа зогсоно (--stop-after N)
     const char* savePath = nullptr; // тусдаа хадгалалтын файл; заасан бол туршилт ч хадгална (--save FILE)
+    const char* apiBase = nullptr;  // данс, төлбөрийн сервер (--api http://127.0.0.1:8010/api/); хоосон бол анхдагч
     const char* relay = nullptr;    // интернэтийн relay сервер "хост:порт" эсвэл "off" (--relay 127.0.0.1:8091)
     int joinCode = 0;               // газрын зураг дээрээс энэ өрөөнд шууд нэгдэнэ (--join 1234, --campaign --coop-тай)
+    bool show = false;              // туршилтын цонхыг дэлгэцэнд харуулна; үгүй бол нуугдмал ажиллана (--show)
+    bool thirdPerson = false;       // туршилтыг 3-р этгээдийн камераар эхлүүлнэ: дүрийн бие харагдана (--third)
 };
 
 // Цонхыг бусад гишүүдээс өмнө нээж, хамгийн сүүлд хаана (mesh, shader нь цонхноос хамаардаг).
@@ -274,6 +277,8 @@ private:
     std::vector<ZombieHorde::KillReward> remoteRewardBuffer; // хост: зочны унаа устгасан зомбины зоос
     bool joinRequestPending = false; // хост: хариу өгөөгүй хүсэлт
     std::string joinRequester;
+    std::string hostName;           // зочин: нэгдсэн тоглолтын хостын (бүртгэлтэй) нэр
+    bool helpedHost = false;        // зочноор хостод тусалж аймгийг давсан (өөрийн аймаг нээгдэхгүй)
     bool remoteActive = false;      // хост: зочин холбогдсон
     RemoteFigure guestFigure;       // хост дээрх зочин
     RemoteFigure hostFigure;        // зочин дээрх хост

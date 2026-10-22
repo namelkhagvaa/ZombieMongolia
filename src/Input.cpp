@@ -348,6 +348,20 @@ void ViewEnd()
     }
 }
 
+Image ViewCapture()
+{
+    if (scaled)
+    {
+        Image image = LoadImageFromTexture(target.texture);
+        ImageFlipVertical(&image);
+        ImageFormat(&image, PIXELFORMAT_UNCOMPRESSED_R8G8B8); // хагас тунгалаг зураглалын alpha-г хаяна
+        return image;
+    }
+    // LoadImageFromScreen нь DPI масштабтай дэлгэц дээр буруу хэмжээ уншдаг тул шууд уншина.
+    return { rlReadScreenPixels(GetRenderWidth(), GetRenderHeight()), GetRenderWidth(), GetRenderHeight(), 1,
+             PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
+}
+
 Vector2 ViewWorldToScreen(Vector3 position, Camera3D camera)
 {
     return GetWorldToScreenEx(position, camera, ViewWidth(), ViewHeight());
