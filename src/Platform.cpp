@@ -70,7 +70,7 @@ namespace
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     var target = input.zmNext >= 0 ? F.list[input.zmNext] : null;
-                    if (target && target.style.display !== 'none') target.focus();
+                    if (target && target.style.display !== 'none') target.focus({ preventScroll: true });
                     else { F.enter = true; input.blur(); }
                 }
                 // raylib-ийн (GLFW) window дээрх capture сонсогч Backspace-ийн үндсэн үйлдлийг хориглодог. Зарим

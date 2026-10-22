@@ -34,16 +34,19 @@
 <style>
   html, body { margin: 0; height: 100%; background: #0a0c12; color: #e8e4da; font-family: "Segoe UI", Arial, sans-serif; overflow: hidden; }
   #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
-  canvas#canvas { display: block; max-width: 100vw; max-height: 100vh; aspect-ratio: 16 / 9; width: 100vw; height: auto; outline: none; background: #000; }
-  @media (min-aspect-ratio: 16/9) { canvas#canvas { width: auto; height: 100vh; } }
+  /* Утсан дээр 100vh нь хаягийн мөргүй (хамгийн том) өндөр тул дэлгэцээс хэтэрдэг: 100dvh (харагдах өндөр).
+     Эцсийн хэмжээг fitCanvas() (доор) #stage-ийн бодит хэмжээгээр тавина. */
+  canvas#canvas { display: block; max-width: 100vw; max-height: 100vh; max-height: 100dvh; aspect-ratio: 16 / 9; width: 100vw; height: auto;
+                  outline: none; background: #000; }
+  @media (min-aspect-ratio: 16/9) { canvas#canvas { width: auto; height: 100vh; height: 100dvh; } }
   /* Ачааллын дэлгэц: тоглоомын эхлэлийн дэлгэцтэй (src/Splash.cpp) яг ижил — зураг, доод сүүдэр, алтан зурвас.
      Хэмжээсүүд нь 720 өндөрт тооцсон пикселийг canvas-ийн өндөрт (cqh) хувиргасан. Файл татах нь 0..50%,
      дараа нь тоглоом өөрөө 50..100% үргэлжлүүлж, анхны кадраа зурмагц энэ дэлгэцийг нууна. */
   @font-face { font-family: "ZmUi"; src: url("ui_font.ttf"); }
   #loader { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; z-index: 2; }
-  #frame { position: relative; aspect-ratio: 16 / 9; width: 100vw; max-height: 100vh; container-type: size; overflow: hidden;
+  #frame { position: relative; aspect-ratio: 16 / 9; width: 100vw; max-height: 100vh; max-height: 100dvh; container-type: size; overflow: hidden;
            background: #000 url("splash.png") center / cover no-repeat; font-family: "ZmUi", "Segoe UI", Arial, sans-serif; }
-  @media (min-aspect-ratio: 16/9) { #frame { width: auto; height: 100vh; } }
+  @media (min-aspect-ratio: 16/9) { #frame { width: auto; height: 100vh; height: 100dvh; } }
   #frame::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 20.83cqh;
                   background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.8)); }
   #bar { position: absolute; z-index: 1; left: 50%; transform: translateX(-50%); bottom: 5.28cqh; width: min(60cqw, 105.6cqh);
@@ -188,13 +191,35 @@
     showError('График (WebGL) тасарлаа. Төхөөрөмжийн санах ой хүрэлцээгүй байж магадгүй — бусад tab, апп-аа хаагаад дахин оролдоно уу.');
   }, false);
   canvas.addEventListener('mousedown', function () { canvas.focus(); });
+  // Бүтэн дэлгэц. Чиглэлийг түгжихгүй: утас эргэхэд дагаж эргэнэ (босоо үед "хэвтээ болго" дэлгэц гарна).
   function enterFullscreen() {
     var el = document.getElementById('stage');
     if (document.fullscreenElement || !el.requestFullscreen) return;
-    el.requestFullscreen().then(function () {
-      if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function () {});
-    }).catch(function () {});
+    el.requestFullscreen().catch(function () {});
   }
+  // Canvas-ийг #stage-ийн бодит (харагдаж буй) хэмжээнд 16:9-өөр багтаана. Утас эргэх, бүтэн дэлгэц болох,
+  // хаягийн мөр гарах/алга болох бүрд дахин тооцно; талбарт бичихэд хуудас гүйлгэгдсэн бол буцаана.
+  function fitCanvas() {
+    var stage = document.getElementById('stage');
+    var w = stage.clientWidth, h = stage.clientHeight;
+    if (w > 0 && h > 0) {
+      var cw = Math.min(w, h * 16 / 9);
+      canvas.style.width = Math.floor(cw) + 'px';
+      canvas.style.height = Math.floor(cw * 9 / 16) + 'px';
+    }
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = document.body.scrollTop = 0;
+  }
+  function fitSoon() {
+    fitCanvas();
+    setTimeout(fitCanvas, 150); // эргэлтийн дараа зарим хөтөч хэмжээгээ хоцорч шинэчилдэг
+    setTimeout(fitCanvas, 600);
+  }
+  window.addEventListener('resize', fitSoon);
+  window.addEventListener('orientationchange', fitSoon);
+  document.addEventListener('fullscreenchange', fitSoon);
+  document.addEventListener('focusout', function () { setTimeout(fitCanvas, 50); }); // гар хаагдсаны дараа
+  fitCanvas();
   // iPhone-ий зөвлөмж: хаавал энэ төхөөрөмж дээр дахин харуулахгүй; хаагаагүй ч 15 секундын дараа алга болно.
   var iosHint = document.getElementById('iosHint');
   function showIosHint() {
