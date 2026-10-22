@@ -50,6 +50,7 @@ set(GAME_SOURCES
     src/Airstrike.cpp
     src/Audio.cpp
     src/Campaign.cpp
+    src/City.cpp
     src/Splash.cpp
     src/CampaignData.cpp
     src/CharacterModel.cpp
@@ -67,6 +68,7 @@ set(GAME_SOURCES
     src/Minimap.cpp
     src/Mission.cpp
     src/Mover.cpp
+    src/Navigation.cpp
     src/Net.cpp
     src/Particles.cpp
     src/Platform.cpp
@@ -132,6 +134,8 @@ if(EMSCRIPTEN)
         file(GLOB files ${CMAKE_SOURCE_DIR}/assets/${sub}/*.vmesh ${CMAKE_SOURCE_DIR}/assets/${sub}/*_color.png)
         file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/${sub})
     endforeach()
+    file(GLOB files ${CMAKE_SOURCE_DIR}/assets/city/*.bin) # Улаанбаатар, аймгийн төвүүдийн газрын зураг
+    file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/city)
     file(GLOB files ${CMAKE_SOURCE_DIR}/assets/sounds/*.wav)
     file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/sounds)
     file(COPY ${CMAKE_SOURCE_DIR}/android/ui_font.ttf DESTINATION ${WEB_ASSETS})
