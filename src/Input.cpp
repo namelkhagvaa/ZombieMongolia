@@ -86,7 +86,7 @@ namespace
         int glyph = kGlyphNone;
         bool opaque = false; // задрах цэсний мөр: бусад товчны дээр тод харагдана
     };
-    bool settingsOpen = false; // ⚙ задрах цэс (авто онилгоо, камер, ухрах, баг)
+    bool settingsOpen = false; // ⚙ задрах цэс (авто онилгоо, камер, энд бай)
     bool settingsRows = false; // Add() одоо задрах цэсний мөр нэмж байна
     std::vector<Button> buttons;
 
@@ -138,7 +138,8 @@ namespace
             {
                 // Явган (PUBG шиг): том БУУДАХ голд, эргэн тойронд нь ҮСРЭХ / СУУХ / ХЭВТЭХ / ЦЭНЭГЛЭХ / ОНИЛОХ
                 Add(Circle(w - 180.0f, h - 262.0f, 74.0f), "БУУДАХ", Kind::Fire, 0);
-                Add(Circle(w - 66.0f, h - 410.0f, 46.0f), state.sniper ? "ДУРАН" : "ОНИЛОХ", Kind::Aim, 0, true, aimLatched);
+                // (газрын зургийн доорх багийн мөрөөс доош)
+                Add(Circle(w - 66.0f, h - 392.0f, 46.0f), state.sniper ? "ДУРАН" : "ОНИЛОХ", Kind::Aim, 0, true, aimLatched);
                 Add(Circle(w - 74.0f, h - 122.0f, 50.0f), state.stance != 0 ? "БОСОХ" : "ҮСРЭХ", Kind::Hold, KEY_SPACE);
                 Add(Circle(w - 192.0f, h - 80.0f, 44.0f), "СУУХ", Kind::Key, KEY_C, true, state.stance == 1);
                 Add(Circle(w - 300.0f, h - 62.0f, 40.0f), "ХЭВТЭХ", Kind::Key, KEY_Z, true, state.stance == 2);
@@ -195,6 +196,16 @@ namespace
             Add({ menuX, 16.0f, iconSide, iconSide }, "", Kind::Key, KEY_ESCAPE, false);
             buttons.back().uiIcon = (int)Ui::Icon::Menu;
 
+            // Баг: газрын зургийн доор байнга харагдана (гишүүнийг товшиж удирдана)
+            for (int i = 0; i < 3; ++i)
+            {
+                const TouchState::Member& member = state.team[i];
+                if (member.alive) std::snprintf(memberLabels[i], sizeof(memberLabels[i]), "%s  %d", member.name, member.health);
+                else std::snprintf(memberLabels[i], sizeof(memberLabels[i]), "%s  —", member.name);
+                Add({ w - map - 16.0f, 16.0f + map + 20.0f + (float)i * 32.0f, map, 28.0f }, memberLabels[i], Kind::Key, KEY_F1 + i,
+                    false, member.active, !member.alive);
+            }
+
             if (settingsOpen)
             {
                 // Задрах цэс: дүрст товчнуудын доор, баруун ирмэгээ тэдэнтэй тэгшилсэн нэг багана
@@ -210,17 +221,6 @@ namespace
                 Add({ x, y, panelW, rowH }, state.firstPerson ? "КАМЕР: 1-Р" : "КАМЕР: 3-Р", Kind::Key, KEY_V, false,
                     state.firstPerson);
                 y += rowH + rowGap;
-                Add({ x, y, panelW, rowH }, "УХРАХ", Kind::Key, KEY_END, false); // Game: газрын зураг руу буцна
-                y += rowH + rowGap + 6.0f;
-                // Баг: гишүүнийг сонгож удирдана
-                for (int i = 0; i < 3; ++i)
-                {
-                    const TouchState::Member& member = state.team[i];
-                    if (member.alive) std::snprintf(memberLabels[i], sizeof(memberLabels[i]), "%s  %d", member.name, member.health);
-                    else std::snprintf(memberLabels[i], sizeof(memberLabels[i]), "%s  —", member.name);
-                    Add({ x, y, panelW, rowH }, memberLabels[i], Kind::Key, KEY_F1 + i, false, member.active, !member.alive);
-                    y += rowH + rowGap;
-                }
                 if (state.showHold)
                 {
                     // Удирдаж буй гишүүнийг байранд нь үлдээнэ (дараа нь өөр гишүүн рүү шилжинэ).
