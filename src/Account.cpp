@@ -90,6 +90,8 @@ namespace
     bool shift = false;
     bool nativeEdit = false, nativeBegun = false; // хөтөч (утас): утасны өөрийн гараар бичиж байна
     std::string nativeText;                       // хуудасны талбарын сүүлд уншсан утга
+    float panelShift = 0.0f;  // утасны гар талбарыг дарахгүйн тулд цонхыг дээш нь шилжүүлэх (пиксел, <= 0)
+    float focusBottom = 0.0f; // сүүлд зурсан идэвхтэй талбарын доод ирмэг
     int litKey = 0;           // сүүлд дарсан товч (товших мэдрэгдэл)
     double litAt = -1.0;
     double eraseHeld = -1.0, eraseNext = 0.0; // "←" дарж байхад давтан устгана
@@ -733,6 +735,7 @@ namespace
         if (drawPass)
         {
             const bool focused = focus == index;
+            if (focused) focusBottom = area.y + area.height;
             DrawRectangleRounded(area, 0.25f, 8, { 0, 0, 0, 130 });
             DrawRectangleRoundedLinesEx(area, 0.25f, 8, focused ? 2.0f : 1.0f, focused ? Ui::kAccent : Color{ 255, 255, 255, 60 });
             const int size = 20;
@@ -984,8 +987,8 @@ namespace
     Rectangle Panel(float width, float height)
     {
         const float bottom = KeyboardVisible() ? (float)ViewHeight() - KeyboardHeight() : (float)ViewHeight();
-        const Rectangle area = { std::floor(((float)ViewWidth() - width) * 0.5f), std::max(8.0f, std::floor((bottom - height) * 0.5f)),
-                                 width, height };
+        const Rectangle area = { std::floor(((float)ViewWidth() - width) * 0.5f),
+                                 std::max(8.0f, std::floor((bottom - height) * 0.5f)) + panelShift, width, height };
         if (drawPass)
         {
             Ui::Panel(area, { 12, 16, 22, 242 }, 14.0f);
@@ -1423,6 +1426,18 @@ bool Account::Update()
                 enter = true;
             }
         }
+    }
+
+    // Утасны гар дэлгэцийн доод хэсгийг дардаг: идэвхтэй талбар харагдах хэсгээс доош орвол цонхыг дээш шилжүүлнэ
+    if (nativeEdit)
+    {
+        const float visible = (float)ViewHeight() * WebVisibleFraction() - 12.0f;
+        if (focusBottom > visible) panelShift -= focusBottom - visible;
+        else if (panelShift < 0.0f && focusBottom < visible - 60.0f) panelShift = std::min(0.0f, panelShift + (visible - 60.0f - focusBottom));
+    }
+    else
+    {
+        panelShift = 0.0f;
     }
 
     // Компьютерийн гар

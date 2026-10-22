@@ -44,6 +44,8 @@ void WebEditBegin(const char* text, int kind, const char* placeholder, bool last
 // Талбарын одоогийн утгыг buffer-т хуулна. Буцаах: 0 бичиж байна, 1 Enter дарсан, -1 хаагдсан (гарыг нуусан).
 int WebEditRead(char* buffer, int capacity);
 void WebEditEnd();
+// Хөтөч: утасны гар нээгдсэн үед дэлгэцийн харагдах хэсэг (0..1, дээрээс). Бусад платформд 1.
+float WebVisibleFraction();
 
 // Хадгалалтын файлыг хөтчийн localStorage-тэй тааруулна (бусад платформд юу ч хийхгүй).
 void WebRestoreFile(const char* path); // localStorage -> файл (уншихаас өмнө)

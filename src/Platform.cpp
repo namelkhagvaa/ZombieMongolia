@@ -60,10 +60,10 @@ namespace
             input.setAttribute('autocorrect', 'off');
             input.setAttribute('autocapitalize', 'off');
             input.spellcheck = false;
-            input.style.cssText = 'position:fixed;left:50%;top:10px;transform:translateX(-50%);width:min(92vw,560px);' +
-                'z-index:20;box-sizing:border-box;padding:12px 16px;font-size:20px;border-radius:12px;' +
-                'border:2px solid rgb(255,192,64);background:rgba(8,10,14,0.96);color:#fff;outline:none;display:none;' +
-                'font-family:ZmUi,Segoe UI,Arial,sans-serif;';
+            // Үл үзэгдэх: бичсэнийг тоглоомын талбар өөрөө харуулна (давхар талбар гарахгүй).
+            // 16px: iPhone талбарт focus хийхэд хуудсыг томруулдаггүй.
+            input.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;padding:0;border:0;opacity:0;' +
+                'font-size:16px;caret-color:transparent;pointer-events:none;z-index:20;display:none;';
             Module.zmEditState = -1;
             var stop = function(e) { e.stopPropagation(); };
             input.addEventListener('keydown', function(e) {
@@ -92,6 +92,12 @@ namespace
         Module.zmEditState = 0;
         Module.zmEditWant = true;
         try { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } catch (e) {}
+    });
+
+    EM_JS(float, VisibleFraction, (), {
+        var v = window.visualViewport;
+        if (!v || !window.innerHeight) return 1;
+        return Math.max(0.2, Math.min(1, (v.height + v.offsetTop) / window.innerHeight));
     });
 
     EM_JS(int, EditRead, (char* buffer, int capacity), {
@@ -205,6 +211,7 @@ int WebPromptNumber(const char* message) { return PromptNumber(message); }
 void WebEditBegin(const char* text, int kind, const char* placeholder, bool last) { EditBegin(text, kind, placeholder, last ? 1 : 0); }
 int WebEditRead(char* buffer, int capacity) { return EditRead(buffer, capacity); }
 void WebEditEnd() { EditEnd(); }
+float WebVisibleFraction() { return VisibleFraction(); }
 void WebHideLoader() { HideLoader(); }
 void WebLoadingFinished() { LoadingFinished(); }
 void WebReleaseLoadedAssets() { ReleaseLoadedAssets(); }
@@ -227,6 +234,7 @@ int WebEditRead(char* buffer, int capacity)
     return -1;
 }
 void WebEditEnd() {}
+float WebVisibleFraction() { return 1.0f; }
 void WebHideLoader() {}
 void WebLoadingFinished() {}
 void WebReleaseLoadedAssets() {}
