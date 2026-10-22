@@ -42,7 +42,7 @@ namespace
     float wheel = 0.0f;
 
     const float kLookScale = 1.7f;      // хуруугаар чирэх нь хулганаас удаан тул үржүүлнэ
-    const float kStickRadius = 78.0f;   // хөдлөх хүрдний хүрээ, харагдацын пикселээр
+    const float kStickRadius = 92.0f;   // хөдлөх хүрдний хүрээ, харагдацын пикселээр
     const float kStickGrab = 1.7f;      // хүрдний төвөөс ийм (радиусын) зайд буусан хуруу хүрдийг барина
     // Хүрдийг хажуу тийш хазайлгахад камер тэр зүг рүү эргэнэ: нэг хуруугаар явж, зүглэж болно.
     const float kStickTurn = 720.0f;    // бүрэн хазайлтад секундэд эргэх хэмжээ, "хулганы пиксел"-ээр (~125 градус/сек)
@@ -116,35 +116,35 @@ namespace
         case TouchScreen::Gameplay:
         {
             // --- Баруун доод: тулааны товчлуурууд ---
-            Add(Circle(w - 118.0f, h - 150.0f, 62.0f), state.driving ? "" : "БУУДАХ", Kind::Fire, 0);
-            Add(Circle(w - 250.0f, h - 88.0f, 44.0f), state.sniper ? "ДУРАН" : "ОНИЛОХ", Kind::Aim, 0, true, aimLatched);
-            Add(Circle(w - 74.0f, h - 292.0f, 42.0f), state.driving ? "ТООРМОС" : state.stance != 0 ? "БОСОХ" : "ҮСРЭХ",
+            Add(Circle(w - 132.0f, h - 166.0f, 73.0f), state.driving ? "" : "БУУДАХ", Kind::Fire, 0);
+            Add(Circle(w - 280.0f, h - 96.0f, 52.0f), state.sniper ? "ДУРАН" : "ОНИЛОХ", Kind::Aim, 0, true, aimLatched);
+            Add(Circle(w - 82.0f, h - 326.0f, 50.0f), state.driving ? "ТООРМОС" : state.stance != 0 ? "БОСОХ" : "ҮСРЭХ",
                 Kind::Hold, KEY_SPACE);
-            Add(Circle(w - 232.0f, h - 214.0f, 38.0f), "ЦЭНЭГЛЭХ", Kind::Key, KEY_R);
+            Add(Circle(w - 262.0f, h - 240.0f, 45.0f), "ЦЭНЭГЛЭХ", Kind::Key, KEY_R);
             if (!state.driving)
             {
-                Add(Circle(w - 350.0f, h - 130.0f, 38.0f), "СУУХ", Kind::Key, KEY_C, true, state.stance == 1);
-                Add(Circle(w - 334.0f, h - 228.0f, 38.0f), "ХЭВТЭХ", Kind::Key, KEY_Z, true, state.stance == 2);
+                Add(Circle(w - 395.0f, h - 140.0f, 45.0f), "СУУХ", Kind::Key, KEY_C, true, state.stance == 1);
+                Add(Circle(w - 378.0f, h - 258.0f, 45.0f), "ХЭВТЭХ", Kind::Key, KEY_Z, true, state.stance == 2);
                 // Зүүн гарын эрхий хуруунд: хүрдийн дээр тогтсон байрлалтай хоёр дахь буудах товч
                 // (хүрдээс хамаарахгүй; товч хүрдийн бүсээс түрүүлж шалгагдана).
                 // Хүрдийн (төв нь доороос 190, радиус ~80) шууд дээр; намхан дэлгэцэд дээд талын товчнуудаас доош.
-                Add(Circle(110.0f, std::max(h - 340.0f, 215.0f), 52.0f), "БУУДАХ", Kind::Fire, 0);
+                Add(Circle(112.0f, std::max(h - 378.0f, 215.0f), 61.0f), "БУУДАХ", Kind::Fire, 0);
             }
 
             // --- Нөхцөлт үйлдлүүд: зөвхөн боломжтой үед гарна ---
-            float actionY = h - 392.0f;
+            float actionY = h - 446.0f;
             if (state.useLabel)
             {
-                Add({ w - 210.0f, actionY, 190.0f, 54.0f }, state.useLabel, Kind::Key, KEY_F, false, true);
-                actionY -= 64.0f;
+                Add({ w - 240.0f, actionY, 220.0f, 62.0f }, state.useLabel, Kind::Key, KEY_F, false, true);
+                actionY -= 72.0f;
             }
             if (state.actLabel)
             {
-                Add({ w - 210.0f, actionY, 190.0f, 54.0f }, state.actLabel, Kind::Key, KEY_E, false, true);
+                Add({ w - 240.0f, actionY, 220.0f, 62.0f }, state.actLabel, Kind::Key, KEY_E, false, true);
             }
 
             // --- Доод голд: зэвсгүүд ---
-            const float slotW = 92.0f, slotH = 56.0f, gap = 8.0f;
+            const float slotW = 104.0f, slotH = 62.0f, gap = 8.0f;
             const float total = (float)state.weaponCount * slotW + (float)(state.weaponCount - 1) * gap;
             for (int i = 0; i < state.weaponCount; ++i)
             {
@@ -408,7 +408,7 @@ void InBeginFrame(const TouchState& state)
         aimLatched = false;
     }
     // Хөдлөх хүрд нэг байрандаа (зүүн доод буланд) байна: хуруу хаана ч буусан тийш нүүхгүй.
-    stickCenter = { 160.0f, (float)ViewHeight() - 190.0f };
+    stickCenter = { 176.0f, (float)ViewHeight() - 202.0f };
 
     Vector2 positions[10] = {};
     int ids[10] = {};
@@ -748,8 +748,8 @@ void InDrawTouch(const TouchState& state)
             DrawTriangle(tip, { back.x - side.x, back.y - side.y }, { back.x + side.x, back.y + side.y }, { 255, 255, 255, 70 });
             DrawTriangle(tip, { back.x + side.x, back.y + side.y }, { back.x - side.x, back.y - side.y }, { 255, 255, 255, 70 });
         }
-        DrawCircleV(knob, 34.0f, { 255, 255, 255, stickActive ? (unsigned char)150 : (unsigned char)70 });
-        DrawRing(knob, 32.0f, 34.0f, 0.0f, 360.0f, 48, InSprint() ? accent : Color{ 255, 255, 255, 120 });
+        DrawCircleV(knob, 40.0f, { 255, 255, 255, stickActive ? (unsigned char)150 : (unsigned char)70 });
+        DrawRing(knob, 38.0f, 40.0f, 0.0f, 360.0f, 48, InSprint() ? accent : Color{ 255, 255, 255, 120 });
     }
     else if (state.screen == TouchScreen::Journal || state.screen == TouchScreen::Result)
     {
