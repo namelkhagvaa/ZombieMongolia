@@ -145,15 +145,17 @@ namespace
             }
 
             // --- Нөхцөлт үйлдлүүд (зөвхөн боломжтой үед): дэлгэцийн голоос баруун тийш, PUBG-ийн "авах" шиг ---
+            // Баруун талын товчнуудын (ЦЭНЭГЛЭХ-ийн зүүн ирмэг ~w-378) зүүн талд: 16:9 дэлгэцэд давхцдаг байсан
+            const float actionX = std::min(w * 0.5f + 90.0f, w - 620.0f);
             float actionY = h * 0.5f - 18.0f;
             if (state.useLabel)
             {
-                Add({ w * 0.5f + 90.0f, actionY, 220.0f, 58.0f }, state.useLabel, Kind::Key, KEY_F, false, true);
+                Add({ actionX, actionY, 220.0f, 58.0f }, state.useLabel, Kind::Key, KEY_F, false, true);
                 actionY += 68.0f;
             }
             if (state.actLabel)
             {
-                Add({ w * 0.5f + 90.0f, actionY, 220.0f, 58.0f }, state.actLabel, Kind::Key, KEY_E, false, true);
+                Add({ actionX, actionY, 220.0f, 58.0f }, state.actLabel, Kind::Key, KEY_E, false, true);
             }
 
             // --- Доод голд: зэвсгүүд ---
