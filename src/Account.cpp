@@ -87,6 +87,9 @@ namespace
     bool keyboardOpen = false;
     int layout = 0; // дэлгэцийн гар: 0 кирилл, 1 латин, 2 тоо
     bool shift = false;
+    int litKey = 0;           // сүүлд дарсан товч (товших мэдрэгдэл)
+    double litAt = -1.0;
+    double eraseHeld = -1.0, eraseNext = 0.0; // "←" дарж байхад давтан устгана
 
     bool smsReset = false;
     int verificationId = 0;
@@ -787,7 +790,22 @@ namespace
 
     const int kShift = -1, kErase = -2, kLayout = -3, kDone = -4;
 
-    float KeyboardHeight() { return 286.0f; }
+    // Дээд талд нь бичиж буй талбарын харагдац (самбар гарын ард нуугдсан ч юу бичсэнээ харна), доор нь товчнууд
+    const float kPreviewHeight = 60.0f;
+    float KeyboardHeight() { return std::clamp((float)ViewHeight() * 0.56f, 320.0f, 460.0f); }
+
+    const char* Placeholder(int index)
+    {
+        return index == kName ? "Нэр" : index == kPhone ? "Утасны дугаар" : "Нууц үг";
+    }
+
+    // Дараагийн талбар (сүүлийнх бол -1)
+    int NextField()
+    {
+        const std::vector<int> list = FieldsOf(screen);
+        auto it = std::find(list.begin(), list.end(), focus);
+        return it == list.end() || it + 1 == list.end() ? -1 : *(it + 1);
+    }
     bool KeyboardVisible() { return InTouchMode() && keyboardOpen && focus >= 0 && !FieldsOf(screen).empty(); }
 
     struct Key
@@ -816,7 +834,12 @@ namespace
             if (focus >= 0) EraseLast(fields[focus]);
         }
         else if (code == kLayout) layout = layout == 0 ? 1 : 0;
-        else if (code == kDone) keyboardOpen = false;
+        else if (code == kDone)
+        {
+            const int next = NextField();
+            if (next >= 0) Focus(next);
+            else keyboardOpen = false;
+        }
         else
         {
             Insert(shift ? Upper(code) : code);
@@ -847,38 +870,83 @@ namespace
         }
         if (drawPass)
         {
-            DrawRectangle(0, (int)top, (int)width, (int)height, { 8, 10, 14, 245 });
+            DrawRectangle(0, (int)top, (int)width, (int)height, { 8, 10, 14, 250 });
             DrawRectangle(0, (int)top, (int)width, 2, kFrame);
         }
-        const float rowHeight = (height - 16.0f) / (float)rows.size();
-        const float maxKey = layout == 2 ? 150.0f : 88.0f;
+        // Бичиж буй талбар
+        const float previewWidth = std::min(width - 24.0f, 720.0f);
+        FieldBox({ (width - previewWidth) * 0.5f, top + 8.0f, previewWidth, kPreviewHeight - 12.0f }, focus, Placeholder(focus));
+
+        const float rowsTop = top + kPreviewHeight;
+        const float rowHeight = (height - kPreviewHeight - 8.0f) / (float)rows.size();
+        const float maxKey = layout == 2 ? 220.0f : 132.0f;
+        const bool erasing = !drawPass && InMouseDown(MOUSE_BUTTON_LEFT);
+        bool overErase = false;
+        Rectangle popup = {};
+        std::string popupLabel;
         for (size_t r = 0; r < rows.size(); ++r)
         {
             float units = 0.0f;
             for (const Key& key : rows[r]) units += key.units;
-            const float keyWidth = std::min(maxKey, (width - 16.0f) / std::max(units, layout == 2 ? 3.0f : 13.0f));
+            const float keyWidth = std::min(maxKey, (width - 12.0f) / std::max(units, layout == 2 ? 3.0f : 12.5f));
             float x = (width - keyWidth * units) * 0.5f;
-            const float y = top + 8.0f + (float)r * rowHeight;
+            const float y = rowsTop + (float)r * rowHeight;
             for (const Key& key : rows[r])
             {
+                // Товших талбар нь товчны хоорондох зайг ч хамарна (хуруу бага зэрэг хазайсан ч дарагдана)
+                const Rectangle cell = { x, y, keyWidth * key.units, rowHeight };
                 const Rectangle area = { x + 3.0f, y + 3.0f, keyWidth * key.units - 6.0f, rowHeight - 6.0f };
                 x += keyWidth * key.units;
+                std::string label;
+                if (key.code == kShift) label = "↑";
+                else if (key.code == kErase) label = "←";
+                else if (key.code == kLayout) label = layout == 0 ? "ABC" : "АБВ";
+                else if (key.code == kDone) label = NextField() >= 0 ? "Дараах" : "Болсон";
+                else if (key.code == ' ') label = "зай";
+                else AppendUtf8(label, shift ? Upper(key.code) : key.code);
                 if (drawPass)
                 {
                     const bool special = key.code < 0;
+                    const bool flash = key.code == litKey && GetTime() - litAt < 0.15;
                     const bool lit = (key.code == kShift && shift) || key.code == kDone;
-                    DrawRectangleRounded(area, 0.2f, 6, lit ? Ui::kAccentDark : special ? Color{ 255, 255, 255, 30 } : Color{ 255, 255, 255, 18 });
-                    std::string label;
-                    if (key.code == kShift) label = "↑";
-                    else if (key.code == kErase) label = "←";
-                    else if (key.code == kLayout) label = layout == 0 ? "ABC" : "АБВ";
-                    else if (key.code == kDone) label = "Болсон";
-                    else if (key.code == ' ') label = "зай";
-                    else AppendUtf8(label, shift ? Upper(key.code) : key.code);
-                    Centered(label.c_str(), area, special || key.code == ' ' ? 18 : 24, key.code == ' ' ? Ui::kTextDim : Ui::kText, true);
+                    const Color fill = flash ? Color{ 255, 255, 255, 90 } : lit ? Ui::kAccentDark
+                                     : special ? Color{ 255, 255, 255, 34 } : Color{ 255, 255, 255, 22 };
+                    DrawRectangleRounded(area, 0.2f, 6, fill);
+                    Centered(label.c_str(), area, key.code == kShift || key.code == kErase ? 30 : special || key.code == ' ' ? 20 : 28, key.code == ' ' ? Ui::kTextDim : Ui::kText, true);
+                    // Үсэг дарахад хурууны дээр томоор харуулна
+                    if (flash && key.code > ' ')
+                    {
+                        popup = { area.x + area.width * 0.5f - 34.0f, area.y - 78.0f, 68.0f, 74.0f };
+                        popupLabel = label;
+                    }
                 }
-                if (Hit(area)) Press(key.code);
+                if (key.code == kErase && erasing && CheckCollisionPointRec(pointer, cell)) overErase = true;
+                if (Hit(cell))
+                {
+                    Press(key.code);
+                    litKey = key.code;
+                    litAt = GetTime();
+                    if (key.code == kErase) eraseHeld = eraseNext = GetTime() + 0.45;
+                }
             }
+        }
+        if (!drawPass)
+        {
+            // "←" дарсаар байвал тасралтгүй устгана
+            if (!overErase) eraseHeld = -1.0;
+            else if (eraseHeld > 0.0 && GetTime() >= eraseNext && focus >= 0)
+            {
+                EraseLast(fields[focus]);
+                eraseNext = GetTime() + 0.07;
+            }
+            // Гарын хоосон хэсэгт товшилт цааш (ард байгаа самбар руу) дамжихгүй
+            if (tapped && pointer.y >= top) tapped = false;
+        }
+        if (drawPass && popupLabel.size())
+        {
+            DrawRectangleRounded(popup, 0.25f, 8, { 60, 64, 74, 255 });
+            DrawRectangleRoundedLinesEx(popup, 0.25f, 8, 1.5f, kFrame);
+            Centered(popupLabel.c_str(), popup, 40, Ui::kText, true);
         }
     }
 
@@ -1169,6 +1237,7 @@ namespace
 
     void Frame()
     {
+        if (!drawPass) Keyboard();
         if (screen != Screen::None && drawPass) DrawRectangle(0, 0, ViewWidth(), ViewHeight(), { 0, 0, 0, 170 });
         switch (screen)
         {
@@ -1181,7 +1250,9 @@ namespace
         case Screen::Message: MessageScreen(); break;
         case Screen::None: break;
         }
-        Keyboard();
+        // Гар самбрын дээр зурагдана, харин товшилтыг түрүүлж авна: эс бөгөөс гарын ард нуугдсан товч/талбар
+        // (жишээ нь "НЭВТРЭХ") үсэг дарахад идэвхжинэ.
+        if (drawPass) Keyboard();
     }
 
     void ConfirmLogout()

@@ -44,6 +44,10 @@ namespace
     const float kLookScale = 1.7f;      // хуруугаар чирэх нь хулганаас удаан тул үржүүлнэ
     const float kStickRadius = 92.0f;   // хөдлөх хүрдний хүрээ, харагдацын пикселээр
     const float kStickGrab = 1.7f;      // хүрдний төвөөс ийм (радиусын) зайд буусан хуруу хүрдийг барина
+    // Гүйлтийн түгжээ (PUBG шиг): хүрдийг дээш нь ийм (радиусын) зайд, тэмдэг хүртэл чирч тавибал
+    // хуруугүй ч урагш гүйсээр байна. Хүрдэнд дахин хүрэхэд түгжээ тайлагдана.
+    const float kLockDistance = 1.75f;
+    bool lockArmed = false, autoRun = false, stickWasActive = false;
     // Хүрдийг хажуу тийш хазайлгахад камер тэр зүг рүү эргэнэ: нэг хуруугаар явж, зүглэж болно.
     const float kStickTurn = 720.0f;    // бүрэн хазайлтад секундэд эргэх хэмжээ, "хулганы пиксел"-ээр (~125 градус/сек)
     const float kStickStrafe = 0.35f;   // хүрдээр хажуу тийш алхах хурдны хувь
@@ -88,6 +92,7 @@ namespace
         Role role = Role::None;
         int button = -1;
         bool seen = false;
+        bool fresh = false; // энэ frame-д буусан
     };
     Finger fingers[10];
     Vector2 stickCenter = { 150.0f, 0.0f };
@@ -116,31 +121,37 @@ namespace
         case TouchScreen::Gameplay:
         {
             // --- Баруун доод: тулааны товчлуурууд ---
-            Add(Circle(w - 132.0f, h - 166.0f, 73.0f), state.driving ? "" : "БУУДАХ", Kind::Fire, 0);
-            Add(Circle(w - 280.0f, h - 96.0f, 52.0f), state.sniper ? "ДУРАН" : "ОНИЛОХ", Kind::Aim, 0, true, aimLatched);
-            Add(Circle(w - 82.0f, h - 326.0f, 50.0f), state.driving ? "ТООРМОС" : state.stance != 0 ? "БОСОХ" : "ҮСРЭХ",
-                Kind::Hold, KEY_SPACE);
-            Add(Circle(w - 262.0f, h - 240.0f, 45.0f), "ЦЭНЭГЛЭХ", Kind::Key, KEY_R);
             if (!state.driving)
             {
-                Add(Circle(w - 395.0f, h - 140.0f, 45.0f), "СУУХ", Kind::Key, KEY_C, true, state.stance == 1);
-                Add(Circle(w - 378.0f, h - 258.0f, 45.0f), "ХЭВТЭХ", Kind::Key, KEY_Z, true, state.stance == 2);
-                // Зүүн гарын эрхий хуруунд: хүрдийн дээр тогтсон байрлалтай хоёр дахь буудах товч
-                // (хүрдээс хамаарахгүй; товч хүрдийн бүсээс түрүүлж шалгагдана).
-                // Хүрдийн (төв нь доороос 190, радиус ~80) шууд дээр; намхан дэлгэцэд дээд талын товчнуудаас доош.
-                Add(Circle(112.0f, std::max(h - 378.0f, 215.0f), 61.0f), "БУУДАХ", Kind::Fire, 0);
+                // Явган (PUBG шиг): том БУУДАХ голд, эргэн тойронд нь ҮСРЭХ / СУУХ / ХЭВТЭХ / ЦЭНЭГЛЭХ / ОНИЛОХ
+                Add(Circle(w - 180.0f, h - 262.0f, 74.0f), "БУУДАХ", Kind::Fire, 0);
+                Add(Circle(w - 66.0f, h - 410.0f, 46.0f), state.sniper ? "ДУРАН" : "ОНИЛОХ", Kind::Aim, 0, true, aimLatched);
+                Add(Circle(w - 74.0f, h - 122.0f, 50.0f), state.stance != 0 ? "БОСОХ" : "ҮСРЭХ", Kind::Hold, KEY_SPACE);
+                Add(Circle(w - 192.0f, h - 80.0f, 44.0f), "СУУХ", Kind::Key, KEY_C, true, state.stance == 1);
+                Add(Circle(w - 300.0f, h - 62.0f, 40.0f), "ХЭВТЭХ", Kind::Key, KEY_Z, true, state.stance == 2);
+                Add(Circle(w - 336.0f, h - 312.0f, 42.0f), "ЦЭНЭГЛЭХ", Kind::Key, KEY_R);
+                // Зүүн гарын эрхий хуруунд: хүрдний дээд зүүн талд хоёр дахь буудах товч
+                Add(Circle(70.0f, std::max(h - 400.0f, 215.0f), 52.0f), "БУУДАХ", Kind::Fire, 0);
+            }
+            else
+            {
+                // Жолоодох үед: хий (БУУДАХ-ын байранд), тоормос, цэнэглэх
+                Add(Circle(w - 132.0f, h - 166.0f, 73.0f), "", Kind::Fire, 0);
+                Add(Circle(w - 280.0f, h - 96.0f, 52.0f), state.sniper ? "ДУРАН" : "ОНИЛОХ", Kind::Aim, 0, true, aimLatched);
+                Add(Circle(w - 82.0f, h - 326.0f, 50.0f), "ТООРМОС", Kind::Hold, KEY_SPACE);
+                Add(Circle(w - 262.0f, h - 240.0f, 45.0f), "ЦЭНЭГЛЭХ", Kind::Key, KEY_R);
             }
 
-            // --- Нөхцөлт үйлдлүүд: зөвхөн боломжтой үед гарна ---
-            float actionY = h - 446.0f;
+            // --- Нөхцөлт үйлдлүүд (зөвхөн боломжтой үед): дэлгэцийн голоос баруун тийш, PUBG-ийн "авах" шиг ---
+            float actionY = h * 0.5f - 18.0f;
             if (state.useLabel)
             {
-                Add({ w - 240.0f, actionY, 220.0f, 62.0f }, state.useLabel, Kind::Key, KEY_F, false, true);
-                actionY -= 72.0f;
+                Add({ w * 0.5f + 90.0f, actionY, 220.0f, 58.0f }, state.useLabel, Kind::Key, KEY_F, false, true);
+                actionY += 68.0f;
             }
             if (state.actLabel)
             {
-                Add({ w - 240.0f, actionY, 220.0f, 62.0f }, state.actLabel, Kind::Key, KEY_E, false, true);
+                Add({ w * 0.5f + 90.0f, actionY, 220.0f, 58.0f }, state.actLabel, Kind::Key, KEY_E, false, true);
             }
 
             // --- Доод голд: зэвсгүүд ---
@@ -441,6 +452,7 @@ void InBeginFrame(const TouchState& state)
             if (!finger) continue;
 
             *finger = Finger{};
+            finger->fresh = true;
             finger->id = ids[i];
             finger->start = finger->position = position;
 
@@ -461,6 +473,7 @@ void InBeginFrame(const TouchState& state)
             }
             else if (gameplay && Vector2Distance(position, stickCenter) < kStickRadius * kStickGrab)
             {
+                autoRun = false; // хүрдэнд дахин хүрвэл гүйлтийн түгжээ тайлагдана
                 finger->role = Role::Stick; // хүрд дээр (эсвэл ойролцоо) буусан хуруу хөдөлгөөнийг удирдана
             }
             else if (gameplay)
@@ -485,6 +498,8 @@ void InBeginFrame(const TouchState& state)
         case Role::Stick:
         {
             Vector2 offset = Vector2Subtract(position, stickCenter);
+            // Хуруу хүрдний дээд талын түгжээний тэмдэг хүртэл хүрсэн эсэх (тавибал түгжигдэнэ)
+            lockArmed = offset.y < -kStickRadius * kLockDistance + 26.0f && std::fabs(offset.x) < kStickRadius * 0.9f;
             const float length = Vector2Length(offset);
             if (length > kStickRadius)
             {
@@ -512,7 +527,9 @@ void InBeginFrame(const TouchState& state)
         }
         case Role::Pointer:
             pointerDown = true;
-            pointer = position;
+            // Хоёр эрхийгээр бичихэд: шинээр буусан хурууны байрлалыг хуучин (дарсаар буй) хуруу дарж болохгүй
+            if (finger->fresh || !pointerPressed) pointer = position;
+            finger->fresh = false;
             look = Vector2Add(look, delta); // газрын зургийг чирэхэд
             break;
         case Role::None:
@@ -524,6 +541,13 @@ void InBeginFrame(const TouchState& state)
     {
         if (!finger.seen) finger.id = -1; // хуруу өргөгдсөн
     }
+
+    // Гүйлтийн түгжээ: тэмдэг дээр хуруугаа өргөвөл түгжигдэнэ; явган биш бол тайлагдана
+    if (stickWasActive && !stickActive && lockArmed) autoRun = true;
+    if (!stickActive) lockArmed = false;
+    if (!gameplay || state.driving) autoRun = lockArmed = false;
+    stickWasActive = stickActive;
+    if (lockArmed || (autoRun && !stickActive)) move = { 0.0f, 1.0f };
 
     // Явган үед хүрдийн хажуу тийш хазайлт камерыг эргүүлнэ (бага хазайлтад зөөлөн, их хазайлтад хурдан).
     // Унаа жолоодоход хүрд нь жолоо тул камерыг эргүүлэхгүй.
@@ -621,7 +645,7 @@ bool InSprint()
 {
     if (muted) return false;
     // Хүрдийг захад нь хүртэл урагш түлхвэл гүйнэ.
-    return IsKeyDown(KEY_LEFT_SHIFT) || (move.y > 0.5f && Vector2Length(move) > 0.93f);
+    return IsKeyDown(KEY_LEFT_SHIFT) || autoRun || lockArmed || (move.y > 0.5f && Vector2Length(move) > 0.93f);
 }
 
 void InDrawTouch(const TouchState& state)
@@ -729,9 +753,29 @@ void InDrawTouch(const TouchState& state)
 
     if (state.screen == TouchScreen::Gameplay)
     {
+        // Гүйлтийн түгжээ: хүрдний дээд талд (хүрдэнд хүрэх эсвэл түгжигдсэн үед) тэмдэг
+        if (!state.driving && (stickActive || autoRun))
+        {
+            const Vector2 lockAt = { stickCenter.x, stickCenter.y - kStickRadius * kLockDistance };
+            const bool lit = lockArmed || autoRun;
+            DrawLineEx({ stickCenter.x, stickCenter.y - kStickRadius }, { lockAt.x, lockAt.y + 26.0f }, 2.0f, { 255, 255, 255, 50 });
+            DrawCircleV(lockAt, 26.0f, lit ? Color{ 60, 46, 14, 200 } : Color{ 10, 12, 16, 120 });
+            DrawRing(lockAt, 24.0f, 26.0f, 0.0f, 360.0f, 40, lit ? accent : edge);
+            // Дээш харсан давхар сум ("гүйх")
+            for (float dy : { -6.0f, 4.0f })
+            {
+                const Color c = lit ? accent : Color{ 255, 255, 255, 200 };
+                DrawLineEx({ lockAt.x - 9.0f, lockAt.y + dy + 5.0f }, { lockAt.x, lockAt.y + dy - 4.0f }, 3.0f, c);
+                DrawLineEx({ lockAt.x, lockAt.y + dy - 4.0f }, { lockAt.x + 9.0f, lockAt.y + dy + 5.0f }, 3.0f, c);
+            }
+            const char* label = autoRun ? "ГҮЙЖ БАЙНА" : "ГҮЙЛТ";
+            Ui::TextShadow(label, (int)(lockAt.x - (float)Ui::MeasureBold(label, 13) * 0.5f), (int)lockAt.y - 46, 13,
+                           lit ? accent : text, true);
+        }
+
         // Хөдлөх хүрд: хүрээ ба хуруун доорх бариул
         Vector2 knob = stickCenter;
-        if (stickActive)
+        if (stickActive || autoRun)
         {
             knob = { stickCenter.x + move.x * kStickRadius, stickCenter.y - move.y * kStickRadius };
         }
