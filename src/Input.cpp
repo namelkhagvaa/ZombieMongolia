@@ -49,12 +49,6 @@ namespace
     const float kStickTurn = 860.0f;    // бүрэн хазайлтад секундэд эргэх хэмжээ, "хулганы пиксел"-ээр (~150 градус/сек)
     const float kStickStrafe = 0.35f;   // хүрдээр хажуу тийш алхах хурдны хувь
     bool stickTurns = false;            // энэ frame-д хүрд камерыг эргүүлж байгаа эсэх
-    // Гүйлтийн түгжээ (PUBG шиг): хүрдийг дээд талын "ГҮЙЛТ" тэмдэг хүртэл чирээд хуруугаа авбал гүйсээр байна,
-    // хүрдэнд дахин хүрэхэд зогсоно.
-    const float kLockDistance = 1.75f;  // хүрдний төвөөс (радиусаар) энэ хүртэл дээш чирвэл түгжигдэнэ
-    bool lockArmed = false;             // хуруу түгжээний тэмдэг дээр байна
-    bool autoRun = false;               // түгжигдсэн: хуруугүйгээр урагш гүйнэ
-    bool stickWasActive = false;
 
     enum class Kind
     {
@@ -77,7 +71,6 @@ namespace
         int icon = -1;    // >= 0 бол бичвэрийн оронд зэвсгийн дүрс (WeaponType)
         int check = -1;   // >= 0 бол чагттай товч: 1 = чагтлагдсан, 0 = үгүй
         int uiIcon = -1;  // >= 0 бол бичвэрийн зүүн талд Ui::Icon (бичвэр хоосон бол зөвхөн икон)
-        int arrow = -1;   // >= 0 бол бичвэрийн дээр гурвалжин сум: 0 зүүн, 1 баруун, 2 дээш, 3 доош
     };
     std::vector<Button> buttons;
 
@@ -123,44 +116,32 @@ namespace
         {
         case TouchScreen::Gameplay:
         {
-            if (state.driving)
+            // --- Баруун доод: тулааны товчлуурууд ---
+            Add(Circle(w - 118.0f, h - 150.0f, 62.0f), state.driving ? "" : "БУУДАХ", Kind::Fire, 0);
+            Add(Circle(w - 250.0f, h - 88.0f, 44.0f), state.sniper ? "ДУРАН" : "ОНИЛОХ", Kind::Aim, 0, true, aimLatched);
+            Add(Circle(w - 74.0f, h - 292.0f, 42.0f), state.driving ? "ТООРМОС" : state.stance != 0 ? "БОСОХ" : "ҮСРЭХ",
+                Kind::Hold, KEY_SPACE);
+            Add(Circle(w - 232.0f, h - 214.0f, 38.0f), "ЦЭНЭГЛЭХ", Kind::Key, KEY_R);
+            if (!state.driving)
             {
-                // --- Унаа (PUBG шиг): зүүн гарт жолоо, баруун гарт хий, тоормос ---
-                Add(Circle(100.0f, h - 150.0f, 58.0f), "", Kind::Hold, KEY_A);
-                buttons.back().arrow = 0;
-                Add(Circle(262.0f, h - 150.0f, 58.0f), "", Kind::Hold, KEY_D);
-                buttons.back().arrow = 1;
-                Add(Circle(w - 150.0f, h - 260.0f, 64.0f), "ХИЙ", Kind::Hold, KEY_W);
-                buttons.back().arrow = 2;
-                Add(Circle(w - 150.0f, h - 100.0f, 46.0f), "УХРАХ", Kind::Hold, KEY_S);
-                buttons.back().arrow = 3;
-                Add(Circle(w - 300.0f, h - 200.0f, 42.0f), "ХУРДЛАХ", Kind::Hold, KEY_LEFT_SHIFT);
-                Add(Circle(w - 62.0f, h - 400.0f, 40.0f), "ТООРМОС", Kind::Hold, KEY_SPACE);
-            }
-            else
-            {
-                // --- Явган (PUBG шиг): баруун гарт том буудах товч, дээр нь онилох, доод буланд үсрэх, суух, хэвтэх ---
-                Add(Circle(w - 170.0f, h - 250.0f, 64.0f), "БУУДАХ", Kind::Fire, 0);
-                Add(Circle(w - 62.0f, h - 392.0f, 40.0f), state.sniper ? "ДУРАН" : "ОНИЛОХ", Kind::Aim, 0, true, aimLatched);
-                Add(Circle(w - 70.0f, h - 118.0f, 44.0f), state.stance != 0 ? "БОСОХ" : "ҮСРЭХ", Kind::Hold, KEY_SPACE);
-                Add(Circle(w - 182.0f, h - 76.0f, 38.0f), "СУУХ", Kind::Key, KEY_C, true, state.stance == 1);
-                Add(Circle(w - 286.0f, h - 58.0f, 34.0f), "ХЭВТЭХ", Kind::Key, KEY_Z, true, state.stance == 2);
-                Add(Circle(w - 318.0f, h - 300.0f, 36.0f), "ЦЭНЭГЛЭХ", Kind::Key, KEY_R);
-                // Зүүн гарын эрхий хуруунд: хүрдийн дээр хоёр дахь буудах товч (явж байхдаа буудна).
-                // Хүрдний түгжээний тэмдгээс (хүрдний дээд талд) зүүн тийш.
-                Add(Circle(72.0f, std::max(h - 380.0f, 215.0f), 46.0f), "БУУДАХ", Kind::Fire, 0);
+                Add(Circle(w - 350.0f, h - 130.0f, 38.0f), "СУУХ", Kind::Key, KEY_C, true, state.stance == 1);
+                Add(Circle(w - 334.0f, h - 228.0f, 38.0f), "ХЭВТЭХ", Kind::Key, KEY_Z, true, state.stance == 2);
+                // Зүүн гарын эрхий хуруунд: хүрдийн дээр тогтсон байрлалтай хоёр дахь буудах товч
+                // (хүрдээс хамаарахгүй; товч хүрдийн бүсээс түрүүлж шалгагдана).
+                // Хүрдийн (төв нь доороос 190, радиус ~80) шууд дээр; намхан дэлгэцэд дээд талын товчнуудаас доош.
+                Add(Circle(110.0f, std::max(h - 340.0f, 215.0f), 52.0f), "БУУДАХ", Kind::Fire, 0);
             }
 
-            // --- Нөхцөлт үйлдлүүд (суух, хаалга, объект): хараалын баруун талд том товч, зөвхөн боломжтой үед ---
-            float actionY = h * 0.5f - 18.0f;
+            // --- Нөхцөлт үйлдлүүд: зөвхөн боломжтой үед гарна ---
+            float actionY = h - 392.0f;
             if (state.useLabel)
             {
-                Add({ w * 0.5f + 90.0f, actionY, 220.0f, 58.0f }, state.useLabel, Kind::Key, KEY_F, false, true);
-                actionY += 68.0f;
+                Add({ w - 210.0f, actionY, 190.0f, 54.0f }, state.useLabel, Kind::Key, KEY_F, false, true);
+                actionY -= 64.0f;
             }
             if (state.actLabel)
             {
-                Add({ w * 0.5f + 90.0f, actionY, 220.0f, 58.0f }, state.actLabel, Kind::Key, KEY_E, false, true);
+                Add({ w - 210.0f, actionY, 190.0f, 54.0f }, state.actLabel, Kind::Key, KEY_E, false, true);
             }
 
             // --- Доод голд: зэвсгүүд ---
@@ -480,10 +461,9 @@ void InBeginFrame(const TouchState& state)
                 case Kind::Wheel: wheel += (float)button.key; break;
                 }
             }
-            else if (gameplay && !state.driving && Vector2Distance(position, stickCenter) < kStickRadius * kStickGrab)
+            else if (gameplay && Vector2Distance(position, stickCenter) < kStickRadius * kStickGrab)
             {
                 finger->role = Role::Stick; // хүрд дээр (эсвэл ойролцоо) буусан хуруу хөдөлгөөнийг удирдана
-                autoRun = false;            // гүйлтийн түгжээг тайлна
             }
             else if (gameplay)
             {
@@ -507,8 +487,6 @@ void InBeginFrame(const TouchState& state)
         case Role::Stick:
         {
             Vector2 offset = Vector2Subtract(position, stickCenter);
-            // Түгжээний тэмдэг (хүрдний дээд талд) хүртэл чирсэн эсэх
-            lockArmed = offset.y < -kStickRadius * kLockDistance && std::fabs(offset.x) < kStickRadius * 0.9f;
             const float length = Vector2Length(offset);
             if (length > kStickRadius)
             {
@@ -563,18 +541,6 @@ void InBeginFrame(const TouchState& state)
     {
         if (!finger.seen) finger.id = -1; // хуруу өргөгдсөн
     }
-
-    // Гүйлтийн түгжээ: тэмдэг дээр хуруугаа авбал түгжигдэнэ; унаа, цэс нээгдвэл тайлагдана
-    if (stickWasActive && !stickActive && lockArmed) autoRun = true;
-    if (!stickActive) lockArmed = false;
-    if (!gameplay || state.driving) autoRun = false;
-    stickWasActive = stickActive;
-    if (autoRun && !stickActive)
-    {
-        move = { 0.0f, 1.0f };
-        drive = { 0.0f, 1.0f };
-    }
-    if (lockArmed) drive = { 0.0f, 1.0f };
 
     // Явган үед хүрдийн хажуу тийш хазайлт камерыг эргүүлнэ (бага хазайлтад зөөлөн, их хазайлтад хурдан).
     // Унаа жолоодоход хүрд нь жолоо тул камерыг эргүүлэхгүй.
@@ -663,7 +629,7 @@ void InSetTestMove(Vector2 axis)
 Vector2 InMoveAxis()
 {
     if (muted) return { 0.0f, 0.0f };
-    Vector2 axis = { (float)InKeyDown(KEY_D) - (float)InKeyDown(KEY_A), (float)InKeyDown(KEY_W) - (float)InKeyDown(KEY_S) };
+    Vector2 axis = { (float)IsKeyDown(KEY_D) - (float)IsKeyDown(KEY_A), (float)IsKeyDown(KEY_W) - (float)IsKeyDown(KEY_S) };
     axis = Vector2Add(Vector2Add(axis, drive), testMove);
     const float length = Vector2Length(axis);
     return length > 1.0f ? Vector2Scale(axis, 1.0f / length) : axis;
@@ -673,7 +639,7 @@ bool InSprint()
 {
     if (muted) return false;
     // Хүрдийг захад нь хүртэл урагш түлхвэл гүйнэ.
-    return InKeyDown(KEY_LEFT_SHIFT) || autoRun || lockArmed || (move.y > 0.5f && Vector2Length(move) > 0.93f);
+    return IsKeyDown(KEY_LEFT_SHIFT) || (move.y > 0.5f && Vector2Length(move) > 0.93f);
 }
 
 void InDrawTouch(const TouchState& state)
@@ -683,9 +649,9 @@ void InDrawTouch(const TouchState& state)
         return;
     }
 
-    const Color fill = { 10, 12, 16, 105 };      // хагас тунгалаг бараан (тоглоомын дэлгэцийг бага хаана)
-    const Color fillActive = { 60, 46, 14, 170 };
-    const Color edge = { 255, 255, 255, 95 };    // нимгэн цагаан хүрээ
+    const Color fill = { 12, 16, 22, 140 };
+    const Color fillActive = { 60, 46, 14, 190 };
+    const Color edge = { 255, 255, 255, 60 };
     const Color accent = Ui::kAccent;
     const Color text = Ui::kText;
 
@@ -729,29 +695,7 @@ void InDrawTouch(const TouchState& state)
             DrawRectangleRoundedLinesEx(button.area, roundness, 8, button.highlighted ? 2.0f : 1.0f, outline);
         }
 
-        if (button.arrow >= 0)
-        {
-            // Жолооны товч: том гурвалжин сум, доор нь жижиг бичвэр
-            const float s = button.area.width * 0.22f;
-            const float lift = button.label[0] ? -s * 0.35f : 0.0f;
-            Vector2 a, b, c;
-            switch (button.arrow)
-            {
-            case 0: a = { center.x - s, center.y + lift }; b = { center.x + s * 0.7f, center.y - s + lift }; c = { center.x + s * 0.7f, center.y + s + lift }; break;
-            case 1: a = { center.x + s, center.y + lift }; b = { center.x - s * 0.7f, center.y + s + lift }; c = { center.x - s * 0.7f, center.y - s + lift }; break;
-            case 2: a = { center.x, center.y - s + lift }; b = { center.x - s, center.y + s * 0.7f + lift }; c = { center.x + s, center.y + s * 0.7f + lift }; break;
-            default: a = { center.x, center.y + s + lift }; b = { center.x + s, center.y - s * 0.7f + lift }; c = { center.x - s, center.y - s * 0.7f + lift }; break;
-            }
-            DrawTriangle(a, c, b, pressed ? accent : Color{ 255, 255, 255, 220 });
-            DrawTriangle(a, b, c, pressed ? accent : Color{ 255, 255, 255, 220 });
-            if (button.label[0])
-            {
-                const int size = 13;
-                Ui::TextShadow(button.label, (int)(center.x - (float)Ui::MeasureBold(button.label, size) * 0.5f),
-                               (int)(center.y + s * 0.75f), size, text, true);
-            }
-        }
-        else if (button.icon >= 0)
+        if (button.icon >= 0)
         {
             // Зэвсгийн товч: дүрс, доор нь жижиг нэр
             const Color tint = button.highlighted ? accent : text;
@@ -801,31 +745,11 @@ void InDrawTouch(const TouchState& state)
         }
     }
 
-    if (state.screen == TouchScreen::Gameplay && !state.driving)
+    if (state.screen == TouchScreen::Gameplay)
     {
-        // Гүйлтийн түгжээ: хүрдний дээд талд (хүрдэнд хүрэх эсвэл түгжигдсэн үед) тэмдэг
-        if (stickActive || autoRun)
-        {
-            const Vector2 lockAt = { stickCenter.x, stickCenter.y - kStickRadius * kLockDistance };
-            const bool lit = lockArmed || autoRun;
-            DrawLineEx({ stickCenter.x, stickCenter.y - kStickRadius }, { lockAt.x, lockAt.y + 26.0f }, 2.0f, { 255, 255, 255, 50 });
-            DrawCircleV(lockAt, 26.0f, lit ? Color{ 60, 46, 14, 200 } : Color{ 10, 12, 16, 120 });
-            DrawRing(lockAt, 24.0f, 26.0f, 0.0f, 360.0f, 40, lit ? accent : edge);
-            // Дээш харсан давхар сум ("гүйх")
-            for (float dy : { -6.0f, 4.0f })
-            {
-                const Color c = lit ? accent : Color{ 255, 255, 255, 200 };
-                DrawLineEx({ lockAt.x - 9.0f, lockAt.y + dy + 5.0f }, { lockAt.x, lockAt.y + dy - 4.0f }, 3.0f, c);
-                DrawLineEx({ lockAt.x, lockAt.y + dy - 4.0f }, { lockAt.x + 9.0f, lockAt.y + dy + 5.0f }, 3.0f, c);
-            }
-            const char* label = autoRun ? "ГҮЙЖ БАЙНА" : "ГҮЙЛТ";
-            Ui::TextShadow(label, (int)(lockAt.x - (float)Ui::MeasureBold(label, 13) * 0.5f), (int)lockAt.y - 46, 13,
-                           lit ? accent : text, true);
-        }
-
         // Хөдлөх хүрд: хүрээ ба хуруун доорх бариул
         Vector2 knob = stickCenter;
-        if (stickActive || autoRun)
+        if (stickActive)
         {
             knob = { stickCenter.x + move.x * kStickRadius, stickCenter.y - move.y * kStickRadius };
         }
