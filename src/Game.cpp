@@ -187,6 +187,10 @@ Game::Game(const LaunchOptions& launchOptions)
 
 Game::~Game()
 {
+    for (RenderTexture2D& portrait : portraits)
+    {
+        if (portrait.id) UnloadRenderTexture(portrait);
+    }
     UnloadCharacterModels();
     UnloadHorseModel();
     UnloadVehicleModels();
@@ -754,6 +758,37 @@ void Game::DrawCharacterSelect() const
         const char* hint = "← → сонгох     ENTER эхлэх     ESC буцах";
         Ui::Text(hint, (width - Ui::Measure(hint, 14)) / 2, height - 40, 14, Ui::kTextDim);
     }
+}
+
+void Game::RenderPortraits() const
+{
+    if (portraitSkin == progress.leaderSkin && portraits[0].id) return;
+    portraitSkin = progress.leaderSkin;
+    Camera3D view = {};
+    view.position = { 0.0f, 1.62f, 1.15f }; // толгой, мөр (дүр 1 м-ийн хуваарьтай, ~1.8 м өндөр)
+    view.target = { 0.0f, 1.56f, 0.0f };
+    view.up = { 0.0f, 1.0f, 0.0f };
+    view.fovy = 30.0f;
+    view.projection = CAMERA_PERSPECTIVE;
+    // Өдрийн гэрэлтэй, сүүдэргүй зурна (дараа нь тоглолтын цагийг буцаана; сүүдэр энэ кадрт дахин зурагдана)
+    environment.SetTimeOfDay(0.3f);
+    environment.ClearShadow();
+    for (int member = 0; member < 3; ++member)
+    {
+        if (!portraits[member].id) portraits[member] = LoadRenderTexture(112, 112);
+        BeginTextureMode(portraits[member]);
+        ClearBackground({ 0, 0, 0, 0 });
+        BeginMode3D(view);
+        rlEnableDepthTest();
+        environment.Begin(view);
+        const HumanoidLook look = TeamMemberLook(member, progress.leaderSkin);
+        const HumanoidPose pose = MakeSoldierPose(0.0f, 0.0f, true, 0.0f, 0.0f, look.held);
+        DrawHumanoid({ 0.0f, 0.0f, 0.0f }, 0.0f, 1.0f, pose, look, true);
+        environment.End();
+        EndMode3D();
+        EndTextureMode();
+    }
+    environment.SetTimeOfDay(dayClock / kDayLength);
 }
 
 void Game::ReturnToMap()
@@ -2543,6 +2578,7 @@ void Game::DrawMission() const
     info.showMagazine = arsenal.Current() != WeaponType::Grenade;
     info.showHelp = showHelp;
     info.touch = InTouchMode();
+    for (int i = 0; i < 3; ++i) info.portraits[i] = portraits[i].texture;
     info.stance = player.GetStance() == Stance::Crouch ? "СУУСАН" : player.GetStance() == Stance::Prone ? "ХЭВТСЭН" : nullptr;
 
     // Баг: гурван гишүүний амь; элсүүлсэн цэргүүдийг тусад нь тоолно.
@@ -2620,6 +2656,7 @@ void Game::DrawMission() const
         {
             if (!s.guest || info.teamCount >= 3 || s.member < 0) continue;
             info.team[info.teamCount] = { TeamMemberName(s.member), (int)std::ceil(s.health), s.alive != 0, false };
+            info.portraits[info.teamCount] = portraits[std::clamp((int)s.member, 0, 2)].texture;
             info.teamKeys[info.teamCount] = info.teamCount == 1 ? "2" : "3";
             ++info.teamCount;
         }
@@ -3041,6 +3078,7 @@ TouchState Game::MakeTouchState() const
     touch.holdMarked = holdMark[activeMember];
     touch.stance = player.GetStance() == Stance::Crouch ? 1 : player.GetStance() == Stance::Prone ? 2 : 0;
 
+    for (int i = 0; i < 3; ++i) touch.teamTiles[i] = HudTeamTile(i);
     for (int member = 0; member < kTeamSize; ++member)
     {
         TouchState::Member& entry = touch.team[member];
@@ -3125,6 +3163,7 @@ void Game::Draw() const
     bool post = false;
     if (mission)
     {
+        if (InTouchMode()) RenderPortraits(); // (сүүдрээс өмнө: сүүдрийг арилгадаг)
         // 3D-г HUD-аас тусад нь текстурт зурж, өнгө засан (bloom, vignette) дэлгэцэнд гаргана.
         RenderShadows();
         post = environment.BeginScene(ViewWidth(), ViewHeight());

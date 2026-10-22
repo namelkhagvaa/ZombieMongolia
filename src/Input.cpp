@@ -69,6 +69,7 @@ namespace
     {
         kGlyphNone,
         kGlyphBackpack, // үүргэвч (зурган икон байхгүй тул шугамаар)
+        kGlyphHidden,   // зурахгүй: доор нь HUD өөрөө зурсан (багийн хөрөг)
     };
 
     struct Button
@@ -110,7 +111,6 @@ namespace
     Finger fingers[10];
     Vector2 stickCenter = { 150.0f, 0.0f };
     bool stickActive = false;
-    char memberLabels[3][64];
 
     Rectangle Circle(float cx, float cy, float radius)
     {
@@ -138,8 +138,7 @@ namespace
             {
                 // Явган (PUBG шиг): том БУУДАХ голд, эргэн тойронд нь ҮСРЭХ / СУУХ / ХЭВТЭХ / ЦЭНЭГЛЭХ / ОНИЛОХ
                 Add(Circle(w - 180.0f, h - 262.0f, 74.0f), "БУУДАХ", Kind::Fire, 0);
-                // (газрын зургийн доорх багийн мөрөөс доош)
-                Add(Circle(w - 66.0f, h - 392.0f, 46.0f), state.sniper ? "ДУРАН" : "ОНИЛОХ", Kind::Aim, 0, true, aimLatched);
+                Add(Circle(w - 66.0f, h - 410.0f, 46.0f), state.sniper ? "ДУРАН" : "ОНИЛОХ", Kind::Aim, 0, true, aimLatched);
                 Add(Circle(w - 74.0f, h - 122.0f, 50.0f), state.stance != 0 ? "БОСОХ" : "ҮСРЭХ", Kind::Hold, KEY_SPACE);
                 Add(Circle(w - 192.0f, h - 80.0f, 44.0f), "СУУХ", Kind::Key, KEY_C, true, state.stance == 1);
                 Add(Circle(w - 300.0f, h - 62.0f, 40.0f), "ХЭВТЭХ", Kind::Key, KEY_Z, true, state.stance == 2);
@@ -196,14 +195,12 @@ namespace
             Add({ menuX, 16.0f, iconSide, iconSide }, "", Kind::Key, KEY_ESCAPE, false);
             buttons.back().uiIcon = (int)Ui::Icon::Menu;
 
-            // Баг: газрын зургийн доор байнга харагдана (гишүүнийг товшиж удирдана)
+            // Баг: зүүн дээд буланд HUD-ийн зурсан хөрөг бүрийг товшиж тэр гишүүнийг удирдана
             for (int i = 0; i < 3; ++i)
             {
-                const TouchState::Member& member = state.team[i];
-                if (member.alive) std::snprintf(memberLabels[i], sizeof(memberLabels[i]), "%s  %d", member.name, member.health);
-                else std::snprintf(memberLabels[i], sizeof(memberLabels[i]), "%s  —", member.name);
-                Add({ w - map - 16.0f, 16.0f + map + 20.0f + (float)i * 32.0f, map, 28.0f }, memberLabels[i], Kind::Key, KEY_F1 + i,
-                    false, member.active, !member.alive);
+                if (state.teamTiles[i].width <= 0.0f) continue;
+                Add(state.teamTiles[i], "", Kind::Key, KEY_F1 + i, false);
+                buttons.back().glyph = kGlyphHidden;
             }
 
             if (settingsOpen)
@@ -743,6 +740,7 @@ void InDrawTouch(const TouchState& state)
 
     for (const Button& button : buttons)
     {
+        if (button.glyph == kGlyphHidden) continue;
         if (state.screen == TouchScreen::Gameplay && button.key == KEY_M && button.kind == Kind::Key && !button.label[0])
         {
             // Жижиг газрын зураг өөрөө зурагдсан: баруун доод буланд нь "томруулах" тэмдэг л нэмнэ

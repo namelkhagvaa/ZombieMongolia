@@ -116,6 +116,65 @@ namespace
     }
 }
 
+namespace
+{
+    Rectangle teamTiles[3] = {};
+
+    // Мэдрэгчтэй дэлгэц: "3 ДАЙЧИН" ба гурван хөрөг (дугаартай; удирдаж буй нь алтан хүрээтэй)
+    void DrawTouchTeam(const HudInfo& info, int y)
+    {
+        const int count = std::min(info.teamCount, 3);
+        const float tile = 60.0f, gap = 8.0f, labelWidth = 64.0f, pad = 8.0f;
+        const Rectangle card = { 16.0f, (float)y, pad + labelWidth + (float)count * tile + (float)(count - 1) * gap + pad, tile + pad * 2.0f };
+        Ui::Panel(card, Ui::kPanel, 12.0f);
+        Ui::Outline(card, Fade(Ui::kAccent, 0.45f), 1.5f, 12.0f);
+        int alive = 0;
+        for (int i = 0; i < count; ++i) alive += info.team[i].alive ? 1 : 0;
+        const char* number = TextFormat("%d", alive);
+        const float labelCenter = card.x + pad + labelWidth * 0.5f;
+        Ui::TextBold(number, (int)(labelCenter - (float)Ui::MeasureBold(number, 28) * 0.5f), y + 12, 28, Ui::kText);
+        Ui::TextBold("ДАЙЧИН", (int)(labelCenter - (float)Ui::MeasureBold("ДАЙЧИН", 12) * 0.5f), y + 48, 12, Ui::kTextDim);
+
+        for (int i = 0; i < 3; ++i) teamTiles[i] = {};
+        for (int i = 0; i < count; ++i)
+        {
+            const HudInfo::TeamEntry& entry = info.team[i];
+            const Rectangle area = { card.x + pad + labelWidth + (float)i * (tile + gap), card.y + pad, tile, tile };
+            teamTiles[i] = area;
+            DrawRectangleRounded(area, 0.18f, 6, entry.active ? Color{ 60, 46, 14, 235 } : Color{ 26, 32, 42, 235 });
+            const Texture2D& portrait = info.portraits[i];
+            if (portrait.id)
+            {
+                // RenderTexture доошоо харсан тул эх зургийн өндөр сөрөг
+                const Color tint = entry.alive ? WHITE : Color{ 120, 70, 70, 255 };
+                DrawTexturePro(portrait, { 0.0f, 0.0f, (float)portrait.width, -(float)portrait.height },
+                               { area.x + 2.0f, area.y + 2.0f, area.width - 4.0f, area.height - 4.0f }, { 0.0f, 0.0f }, 0.0f, tint);
+            }
+            // Амь: дээд ирмэгт нимгэн зурвас
+            const float ratio = entry.alive ? std::clamp((float)entry.health / 200.0f, 0.0f, 1.0f) : 0.0f;
+            DrawRectangleRec({ area.x + 6.0f, area.y + 4.0f, area.width - 12.0f, 3.0f }, Fade(BLACK, 0.55f));
+            DrawRectangleRec({ area.x + 6.0f, area.y + 4.0f, (area.width - 12.0f) * ratio, 3.0f }, ratio > 0.35f ? Ui::kGood : Ui::kDanger);
+            if (!entry.alive)
+            {
+                DrawLineEx({ area.x + 16.0f, area.y + 16.0f }, { area.x + area.width - 16.0f, area.y + area.height - 16.0f }, 3.0f, Ui::kDanger);
+                DrawLineEx({ area.x + area.width - 16.0f, area.y + 16.0f }, { area.x + 16.0f, area.y + area.height - 16.0f }, 3.0f, Ui::kDanger);
+            }
+            DrawRectangleRoundedLinesEx(area, 0.18f, 6, entry.active ? 2.5f : 1.0f, entry.active ? Ui::kAccent : Color{ 255, 255, 255, 60 });
+            // Дугаар: доод голд
+            const char* index = info.teamKeys[i] && info.teamKeys[i][0] ? info.teamKeys[i] : TextFormat("%d", i + 1);
+            const float badgeW = (float)Ui::MeasureBold(index, 13) + 14.0f;
+            const Rectangle badge = { area.x + (area.width - badgeW) * 0.5f, area.y + area.height - 12.0f, badgeW, 18.0f };
+            DrawRectangleRounded(badge, 0.5f, 6, entry.active ? Ui::kAccent : Color{ 12, 16, 22, 240 });
+            Ui::TextBold(index, (int)(badge.x + 7.0f), (int)badge.y + 2, 13, entry.active ? Color{ 34, 24, 6, 255 } : Ui::kText);
+        }
+    }
+}
+
+Rectangle HudTeamTile(int index)
+{
+    return index >= 0 && index < 3 ? teamTiles[index] : Rectangle{};
+}
+
 void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info, bool showDebug)
 {
     const int width = ViewWidth();
@@ -188,6 +247,17 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         {
             Ui::IconChip(Ui::Icon::SpeedBoost, TextFormat("Хурд ×%d", (int)(info.zombieSpeed + 0.5f)), x, y, Ui::kDanger, Ui::kDanger);
         }
+    }
+
+    // Мэдрэгчтэй дэлгэц: баг зомбины чипүүдийн доор (компьютер дээр баруун талд картууд)
+    if (info.touch)
+    {
+        const int cardBottom = info.objective ? (info.objectiveDetail ? 96 : 78) : 58;
+        DrawTouchTeam(info, info.hordeSmall >= 0 ? cardBottom + 38 : cardBottom);
+    }
+    else
+    {
+        for (Rectangle& tile : teamTiles) tile = {};
     }
 
     // --- Баруун дээд: зоос, устгасан тоо, баг ---

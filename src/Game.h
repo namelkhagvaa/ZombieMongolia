@@ -312,6 +312,10 @@ private:
     // Өрөөний код оруулах цонх (тоон товчлуур; гарны тоо ч болно)
     void UpdateCharacterSelect();
     void DrawCharacterSelect() const;
+    // Мэдрэгчтэй дэлгэцийн багийн картын хөргүүд: гишүүн бүрийн толгой, цээж (удирдагчийн дүр солигдоход дахин)
+    void RenderPortraits() const;
+    mutable RenderTexture2D portraits[3] = {};
+    mutable int portraitSkin = -1;
     Rectangle CharacterCardRect(int skin) const;
     Rectangle CharacterStartRect() const;
     void OpenCodeEntry();
