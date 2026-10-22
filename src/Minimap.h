@@ -14,7 +14,9 @@ void SetMapNavigator(const Navigator* navigator);
 
 // Дэлгэцийн баруун доод буланд байрлах жижиг газрын зураг.
 constexpr int kMinimapSize = 190;  // пиксел
+constexpr int kMinimapTouchSize = 150; // мэдрэгчтэй дэлгэцэд (дээд мөр шахцалдахгүй)
 constexpr int kMinimapMargin = 16;
+int MinimapSize(); // одоогийн горимд (мэдрэгчтэй эсэх)
 
 // Тоглогч төвд байх ба зураг камертай хамт эргэнэ (дээд тал = камерын харж буй зүг).
 // Зам, барилга, саад, цэргүүд (ногоон), зомбинууд (улаан) харагдана.

@@ -3007,7 +3007,7 @@ TouchState Game::MakeTouchState() const
     static const char* const heavyWeapons[] = { "ХУТГА", "ГАР БУУ", "АВТОМАТ", "ПУУЖИН", "ГРАНАТ" };
 
     TouchState touch;
-    touch.minimapSize = kMinimapSize;
+    touch.minimapSize = MinimapSize();
     if (paused)
     {
         touch.screen = TouchScreen::Pause;

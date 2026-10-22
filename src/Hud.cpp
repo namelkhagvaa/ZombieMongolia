@@ -139,29 +139,32 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
     // --- Зүүн дээд: даалгаврын карт (аймаг, одоогийн зорилт, зай) ---
     {
         const int x = 16, y = 16;
-        const int titleSize = 15, objSize = 20, detailSize = 16;
+        // Утсан дээр жижиг (дээд мөр шахцалдахгүй)
+        const int titleSize = info.touch ? 13 : 15, objSize = info.touch ? 17 : 20, detailSize = info.touch ? 14 : 16;
         const char* objective = info.objective ? info.objective : "";
         const int iconSpace = Ui::HasIcon(Ui::Icon::Mission) ? 24 : 0; // гарчиг, зайн мөрийн өмнөх икон
         const int contentWidth = std::max({ Ui::MeasureBold(info.provinceName, titleSize) + 90 + iconSpace,
                                             Ui::MeasureBold(objective, objSize),
                                             info.objectiveDetail ? Ui::Measure(info.objectiveDetail, detailSize) + iconSpace : 0 });
-        const int cardHeight = info.objective ? (info.objectiveDetail ? 86 : 64) : 40;
+        const int cardHeight = info.touch ? (info.objective ? (info.objectiveDetail ? 72 : 54) : 34)
+                                          : (info.objective ? (info.objectiveDetail ? 86 : 64) : 40);
+        const int objY = info.touch ? 27 : 32, detailY = info.touch ? 50 : 60;
         const Rectangle card = { (float)x, (float)y, (float)contentWidth + 36.0f, (float)cardHeight };
         Ui::PanelAccent(card, Ui::kAccent);
-        Ui::DrawIcon(Ui::Icon::Mission, { (float)x + 17.0f, (float)y + 9.0f, 16.0f, 16.0f });
-        Ui::TextBold(info.provinceName, x + 18 + iconSpace, y + 10, titleSize, Ui::kTextDim);
+        Ui::DrawIcon(Ui::Icon::Mission, { (float)x + 17.0f, (float)y + (info.touch ? 7.0f : 9.0f), 16.0f, 16.0f });
+        Ui::TextBold(info.provinceName, x + 18 + iconSpace, y + (info.touch ? 8 : 10), titleSize, Ui::kTextDim);
         // FPS: картын баруун дээд буланд жижиг
         const int fps = GetFPS();
         const char* fpsText = TextFormat("%d FPS", fps);
-        Ui::Text(fpsText, (int)(card.x + card.width) - 12 - Ui::Measure(fpsText, 13), y + 11, 13,
+        Ui::Text(fpsText, (int)(card.x + card.width) - 12 - Ui::Measure(fpsText, 13), y + (info.touch ? 8 : 11), 13,
                  fps >= 50 ? Fade(Ui::kGood, 0.8f) : Ui::kDanger);
         if (info.objective)
         {
-            Ui::TextBold(objective, x + 18, y + 32, objSize, Ui::kText);
+            Ui::TextBold(objective, x + 18, y + objY, objSize, Ui::kText);
             if (info.objectiveDetail)
             {
-                Ui::DrawIcon(Ui::Icon::Location, { (float)x + 17.0f, (float)y + 61.0f, 16.0f, 16.0f });
-                Ui::Text(info.objectiveDetail, x + 18 + iconSpace, y + 60, detailSize, Ui::kAccent);
+                Ui::DrawIcon(Ui::Icon::Location, { (float)x + 17.0f, (float)y + (float)detailY + 1.0f, 16.0f, 16.0f });
+                Ui::Text(info.objectiveDetail, x + 18 + iconSpace, y + detailY, detailSize, Ui::kAccent);
             }
         }
     }
@@ -169,7 +172,9 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
     // Үеийн зомбины нөөц: хоёр чип (даалгаврын картын доор; мэдрэгчтэй дэлгэцэд товчлууруудын доор)
     if (info.hordeSmall >= 0)
     {
-        const int y = info.touch ? 164 : (info.objective ? (info.objectiveDetail ? 112 : 90) : 66);
+        // Даалгаврын картын шууд доор (утсан дээр картын өндөр жижиг)
+        const int y = info.touch ? (info.objective ? (info.objectiveDetail ? 96 : 78) : 58)
+                                 : (info.objective ? (info.objectiveDetail ? 112 : 90) : 66);
         int x = 16;
         x += Ui::IconChip(Ui::Icon::Zombie, TextFormat("Зомби  %d", info.hordeSmall), x, y, Ui::kText, Ui::kDanger) + 8;
         x += Ui::IconChip(Ui::Icon::ZombieElite, TextFormat("Том зомби  %d", info.hordeBig), x, y, Ui::kText, { 170, 60, 200, 255 }) + 8;

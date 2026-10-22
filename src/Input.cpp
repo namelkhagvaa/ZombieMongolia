@@ -61,7 +61,14 @@ namespace
         Hold,  // дарж байх хугацаанд "товч дарагдсан хэвээр"
         Fire,  // хулганы зүүн товч; хурууг чирэхэд камер мөн эргэнэ
         Aim,   // онилгоог асааж унтраана (хулганы баруун товч)
-        Wheel  // газрын зураг томруулах / жижигрүүлэх
+        Wheel, // газрын зураг томруулах / жижигрүүлэх
+        Menu   // ⚙ тохиргооны задрах цэсийг нээж хаана
+    };
+
+    enum Glyph
+    {
+        kGlyphNone,
+        kGlyphBackpack, // үүргэвч (зурган икон байхгүй тул шугамаар)
     };
 
     struct Button
@@ -76,7 +83,11 @@ namespace
         int icon = -1;    // >= 0 бол бичвэрийн оронд зэвсгийн дүрс (WeaponType)
         int check = -1;   // >= 0 бол чагттай товч: 1 = чагтлагдсан, 0 = үгүй
         int uiIcon = -1;  // >= 0 бол бичвэрийн зүүн талд Ui::Icon (бичвэр хоосон бол зөвхөн икон)
+        int glyph = kGlyphNone;
+        bool opaque = false; // задрах цэсний мөр: бусад товчны дээр тод харагдана
     };
+    bool settingsOpen = false; // ⚙ задрах цэс (авто онилгоо, камер, ухрах, баг)
+    bool settingsRows = false; // Add() одоо задрах цэсний мөр нэмж байна
     std::vector<Button> buttons;
 
     enum class Role
@@ -109,7 +120,7 @@ namespace
     void Add(Rectangle area, const char* label, Kind kind, int key, bool round = true, bool highlighted = false,
              bool dim = false)
     {
-        buttons.push_back({ area, label, kind, key, round, highlighted, dim, -1, -1, -1 });
+        buttons.push_back({ area, label, kind, key, round, highlighted, dim, -1, -1, -1, kGlyphNone, settingsRows });
     }
 
     // Нээлттэй дэлгэцэд тохирох товчлууруудын байрлалыг бүтээнэ (харагдацын координатаар).
@@ -168,43 +179,62 @@ namespace
                 buttons.back().icon = state.weaponTypes[i];
             }
 
-            // --- Баруун дээд: жижиг газрын зураг (товшиход бүтэн зураг), зүүн талд нь баг ---
+            // --- Баруун дээд: жижиг газрын зураг (товшиход бүтэн зураг), зүүн талд нь гурван дүрст товч ---
+            // ⚙ тохиргоо (задрах цэс), үүргэвч = даалгаврын журнал, ≡ тоглоомын цэс (ESC-тэй адил).
             const float map = (float)state.minimapSize;
             Add({ w - map - 16.0f, 16.0f, map, map }, "", Kind::Key, KEY_M, false);
-            for (int i = 0; i < 3; ++i)
+            const float iconSide = 46.0f, iconGap = 8.0f;
+            const float iconsRight = w - map - 16.0f - 6.0f - 12.0f; // газрын зургийн шилэн хүрээний зүүн талд
+            const float menuX = iconsRight - iconSide;
+            const float journalX = menuX - iconGap - iconSide;
+            const float gearX = journalX - iconGap - iconSide;
+            Add({ gearX, 16.0f, iconSide, iconSide }, "", Kind::Menu, 0, false, settingsOpen);
+            buttons.back().uiIcon = (int)Ui::Icon::Settings;
+            Add({ journalX, 16.0f, iconSide, iconSide }, "", Kind::Key, KEY_Q, false);
+            buttons.back().glyph = kGlyphBackpack;
+            Add({ menuX, 16.0f, iconSide, iconSide }, "", Kind::Key, KEY_ESCAPE, false);
+            buttons.back().uiIcon = (int)Ui::Icon::Menu;
+
+            if (settingsOpen)
             {
-                const TouchState::Member& member = state.team[i];
-                if (member.alive) std::snprintf(memberLabels[i], sizeof(memberLabels[i]), "%s  %d", member.name, member.health);
-                else std::snprintf(memberLabels[i], sizeof(memberLabels[i]), "%s  —", member.name);
-                Add({ w - map - 16.0f - 232.0f, 16.0f + (float)i * 52.0f, 220.0f, 44.0f }, memberLabels[i], Kind::Key,
-                    KEY_F1 + i, false, member.active, !member.alive);
-            }
-            if (state.showHold)
-            {
-                // Багийн товчнуудын доор: удирдаж буй гишүүнийг байранд нь үлдээнэ (дараа нь өөр гишүүн рүү шилжинэ).
-                Add({ w - map - 16.0f - 232.0f, 16.0f + 3.0f * 52.0f, 220.0f, 44.0f }, "ЭНД БАЙ", Kind::Key, KEY_H, false,
-                    state.holdMarked);
+                // Задрах цэс: дүрст товчнуудын доор, баруун ирмэгээ тэдэнтэй тэгшилсэн нэг багана
+                const float panelW = 230.0f, rowH = 38.0f, rowGap = 4.0f;
+                settingsRows = true;
+                const float x = iconsRight - panelW;
+                float y = 16.0f + iconSide + 10.0f;
+                // Автомат онилгоо: чагтлагдсан бол хараа ойрын зомби руу өөрөө татагдана, үгүй бол өөрөө онилно.
+                Add({ x, y, panelW, rowH }, "АВТО ОНИЛГОО", Kind::Key, KEY_T, false, state.aimAssist);
+                buttons.back().check = state.aimAssist ? 1 : 0;
+                y += rowH + rowGap;
+                // Камерын горим: 1-р этгээд (зөвхөн гар, буу) / 3-р этгээд (бүтэн бие)
+                Add({ x, y, panelW, rowH }, state.firstPerson ? "КАМЕР: 1-Р" : "КАМЕР: 3-Р", Kind::Key, KEY_V, false,
+                    state.firstPerson);
+                y += rowH + rowGap;
+                Add({ x, y, panelW, rowH }, "УХРАХ", Kind::Key, KEY_END, false); // Game: газрын зураг руу буцна
+                y += rowH + rowGap + 6.0f;
+                // Баг: гишүүнийг сонгож удирдана
+                for (int i = 0; i < 3; ++i)
+                {
+                    const TouchState::Member& member = state.team[i];
+                    if (member.alive) std::snprintf(memberLabels[i], sizeof(memberLabels[i]), "%s  %d", member.name, member.health);
+                    else std::snprintf(memberLabels[i], sizeof(memberLabels[i]), "%s  —", member.name);
+                    Add({ x, y, panelW, rowH }, memberLabels[i], Kind::Key, KEY_F1 + i, false, member.active, !member.alive);
+                    y += rowH + rowGap;
+                }
+                if (state.showHold)
+                {
+                    // Удирдаж буй гишүүнийг байранд нь үлдээнэ (дараа нь өөр гишүүн рүү шилжинэ).
+                    Add({ x, y, panelW, rowH }, "ЭНД БАЙ", Kind::Key, KEY_H, false, state.holdMarked);
+                }
+                settingsRows = false;
             }
 
-            // --- Зүүн дээд, даалгаврын мөрийн доор: журнал, буцах ---
-            Add({ 16.0f, 112.0f, 130.0f, 42.0f }, "ДААЛГАВАР", Kind::Key, KEY_Q, false);
-            buttons.back().uiIcon = (int)Ui::Icon::Mission;
-            Add({ 154.0f, 112.0f, 130.0f, 42.0f }, "УХРАХ", Kind::Key, KEY_END, false); // Game: газрын зураг руу буцна
-            // Автомат онилгоо: чагтлагдсан бол хараа ойрын зомби руу өөрөө татагдана, үгүй бол өөрөө онилно.
-            Add({ 292.0f, 112.0f, 200.0f, 42.0f }, "АВТО ОНИЛГОО", Kind::Key, KEY_T, false, state.aimAssist);
-            buttons.back().check = state.aimAssist ? 1 : 0;
             if (state.joinRequest)
             {
                 // Хамтарсан тоглолтын хүсэлт (дэлгэцийн дээд голын картын доор)
                 Add({ w * 0.5f - 230.0f, 150.0f, 220.0f, 50.0f }, "ЗӨВШӨӨРӨХ", Kind::Key, KEY_Y, false, true);
                 Add({ w * 0.5f + 10.0f, 150.0f, 220.0f, 50.0f }, "ТАТГАЛЗАХ", Kind::Key, KEY_N, false);
             }
-            // Камерын горим: 1-р этгээд (зөвхөн гар, буу) / 3-р этгээд (бүтэн бие)
-            Add({ 500.0f, 112.0f, 150.0f, 42.0f }, state.firstPerson ? "КАМЕР: 1-Р" : "КАМЕР: 3-Р", Kind::Key, KEY_V, false,
-                state.firstPerson);
-            // Тоглоомын цэс (ESC-тэй адил): үргэлжлүүлэх, газрын зураг руу буцах, гарах
-            Add({ 658.0f, 112.0f, 100.0f, 42.0f }, "ЦЭС", Kind::Key, KEY_ESCAPE, false);
-            buttons.back().uiIcon = (int)Ui::Icon::Menu;
             break;
         }
 
@@ -474,6 +504,7 @@ void InBeginFrame(const TouchState& state)
                 case Kind::Fire: firePressed = true; break;
                 case Kind::Aim: aimLatched = !aimLatched; break;
                 case Kind::Wheel: wheel += (float)button.key; break;
+                case Kind::Menu: settingsOpen = !settingsOpen; break;
                 }
             }
             else if (gameplay && Vector2Distance(position, stickCenter) < kStickRadius * kStickGrab)
@@ -483,6 +514,7 @@ void InBeginFrame(const TouchState& state)
             }
             else if (gameplay)
             {
+                settingsOpen = false; // задрах цэсний гадна хүрвэл хаагдана
                 finger->role = Role::Look;
             }
             else
@@ -713,7 +745,21 @@ void InDrawTouch(const TouchState& state)
     {
         if (state.screen == TouchScreen::Gameplay && button.key == KEY_M && button.kind == Kind::Key && !button.label[0])
         {
-            continue; // жижиг газрын зураг өөрөө зурагдсан: дээр нь зөвхөн товших талбар
+            // Жижиг газрын зураг өөрөө зурагдсан: баруун доод буланд нь "томруулах" тэмдэг л нэмнэ
+            const Vector2 corner = { button.area.x + button.area.width - 4.0f, button.area.y + button.area.height - 4.0f };
+            DrawCircleV(corner, 17.0f, { 12, 16, 22, 230 });
+            DrawRing(corner, 15.5f, 17.0f, 0.0f, 360.0f, 32, { 120, 190, 255, 200 });
+            if (!Ui::DrawIcon(Ui::Icon::Fullscreen, { corner.x - 10.0f, corner.y - 10.0f, 20.0f, 20.0f }))
+            {
+                for (int k = 0; k < 4; ++k)
+                {
+                    const float sx = (k & 1) ? 1.0f : -1.0f, sy = (k & 2) ? 1.0f : -1.0f;
+                    const Vector2 tip = { corner.x + sx * 8.0f, corner.y + sy * 8.0f };
+                    DrawLineEx(tip, { tip.x - sx * 5.0f, tip.y }, 2.0f, WHITE);
+                    DrawLineEx(tip, { tip.x, tip.y - sy * 5.0f }, 2.0f, WHITE);
+                }
+            }
+            continue;
         }
 
         // Дарагдаж буй товч бага зэрэг жижгэрч, тодорно.
@@ -745,11 +791,30 @@ void InDrawTouch(const TouchState& state)
         {
             const float radius = std::min(button.area.height * 0.5f, 14.0f);
             const float roundness = 2.0f * radius / std::min(button.area.width, button.area.height);
-            DrawRectangleRounded(button.area, roundness, 8, button.highlighted || pressed ? fillActive : fill);
+            const Color back = button.highlighted || pressed ? fillActive : fill;
+            DrawRectangleRounded(button.area, roundness, 8, button.opaque ? Color{ back.r, back.g, back.b, 238 } : back);
             DrawRectangleRoundedLinesEx(button.area, roundness, 8, button.highlighted ? 2.0f : 1.0f, outline);
         }
 
-        if (button.icon >= 0)
+        if (button.glyph == kGlyphBackpack)
+        {
+            // Үүргэвч: бие, дээд хавтас, бариул, урд халаас
+            const Color c = button.highlighted ? accent : text;
+            const float s = button.area.height;
+            const Rectangle body = { center.x - s * 0.22f, center.y - s * 0.16f, s * 0.44f, s * 0.40f };
+            DrawRectangleRoundedLinesEx(body, 0.35f, 6, 2.2f, c);
+            DrawRectangleRoundedLinesEx({ body.x + s * 0.04f, body.y - s * 0.02f, body.width - s * 0.08f, s * 0.14f }, 0.5f, 6, 2.0f, c);
+            DrawRing({ center.x, body.y - s * 0.02f }, s * 0.07f, s * 0.07f + 2.0f, 180.0f, 360.0f, 12, c);
+            DrawRectangleRoundedLinesEx({ center.x - s * 0.12f, body.y + body.height * 0.52f, s * 0.24f, body.height * 0.32f }, 0.3f, 4, 1.8f, c);
+        }
+        else if (button.uiIcon >= 0 && Ui::HasIcon((Ui::Icon)button.uiIcon) && button.label && !button.label[0])
+        {
+            // Зөвхөн дүрс (⚙, ≡)
+            const float side = std::min(button.area.width, button.area.height) * 0.56f;
+            Ui::DrawIcon((Ui::Icon)button.uiIcon, { center.x - side * 0.5f, center.y - side * 0.5f, side, side },
+                         button.highlighted ? accent : WHITE);
+        }
+        else if (button.icon >= 0)
         {
             // Зэвсгийн товч: дүрс, доор нь жижиг нэр
             const Color tint = button.highlighted ? accent : text;

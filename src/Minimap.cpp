@@ -468,15 +468,21 @@ namespace
 
 // ---------------------------------------------------------------- Жижиг зураг
 
+int MinimapSize()
+{
+    return InTouchMode() ? kMinimapTouchSize : kMinimapSize;
+}
+
 void DrawMinimap(const World& world, const Player& player, float cameraYaw, const ZombieHorde& horde,
                  const SoldierSquad& squad, const Garage& garage, const std::vector<Vector3>& markers,
                  const std::vector<Vector3>& medKits)
 {
-    const float size = (float)kMinimapSize;
+    const int side = MinimapSize();
+    const float size = (float)side;
     MapView view;
     // Мэдрэгчтэй дэлгэцэд баруун доод буланд тулааны товчлуурууд байдаг тул газрын зураг баруун дээд буланд.
-    view.area = { (float)(ViewWidth() - kMinimapSize - kMinimapMargin),
-                  InTouchMode() ? (float)kMinimapMargin : (float)(ViewHeight() - kMinimapSize - kMinimapMargin), size, size };
+    view.area = { (float)(ViewWidth() - side - kMinimapMargin),
+                  InTouchMode() ? (float)kMinimapMargin : (float)(ViewHeight() - side - kMinimapMargin), size, size };
     view.origin = { player.Position().x, player.Position().z };
     view.scale = size * 0.5f / kMinimapRadius;
     view.yaw = cameraYaw;
