@@ -49,86 +49,110 @@ namespace
         return count;
     });
 
-    // Утасны гар: хуудасны дээд талд нэг <input>. Товчны үйлдлийг raylib (window дээр сонсдог, Backspace-г
-    // хориглодог) руу дамжуулахгүй. Хөтөч гарыг зөвхөн хэрэглэгчийн үйлдлээр нээдэг тул шууд focus хийхээс
-    // гадна дараагийн touchend дээр дахин оролдоно.
-    EM_JS(void, EditBegin, (const char* text, int kind, const char* placeholder, int last), {
-        var input = Module.zmEdit;
+    // Утасны гар: тоглоомын талбар бүрийн дээр үл үзэгдэх <input> (src/Account.cpp FieldBox байрлуулна).
+    // Товчны үйлдлийг raylib руу дамжуулахгүй (stopPropagation).
+    EM_JS(void, FieldPlace, (int slot, float fx, float fy, float fw, float fh, int kind, int next, const char* value), {
+        var F = Module.zmFields || (Module.zmFields = { list: [], placed: [], enter: false });
+        var input = F.list[slot];
         if (!input) {
-            input = Module.zmEdit = document.createElement('input');
+            input = F.list[slot] = document.createElement('input');
             input.autocomplete = 'off';
             input.setAttribute('autocorrect', 'off');
             input.setAttribute('autocapitalize', 'off');
             input.spellcheck = false;
-            // Үл үзэгдэх: бичсэнийг тоглоомын талбар өөрөө харуулна (давхар талбар гарахгүй).
-            // 16px: iPhone талбарт focus хийхэд хуудсыг томруулдаггүй.
-            input.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;padding:0;border:0;opacity:0;' +
-                'font-size:16px;caret-color:transparent;pointer-events:none;z-index:20;display:none;';
-            Module.zmEditState = -1;
-            var stop = function(e) { e.stopPropagation(); };
+            // 16px: iPhone талбарт хүрэхэд хуудсыг томруулдаггүй
+            input.style.cssText = 'position:fixed;margin:0;padding:0;border:0;outline:none;background:transparent;' +
+                'color:transparent;caret-color:transparent;opacity:0.01;font-size:16px;z-index:4;display:none;' +
+                '-webkit-tap-highlight-color:transparent;-webkit-user-select:text;user-select:text;touch-action:manipulation;';
+            input.zmKind = -1;
             input.addEventListener('keydown', function(e) {
                 e.stopPropagation();
-                if (e.key === 'Enter') { e.preventDefault(); Module.zmEditState = 1; }
-                // raylib-ийн (GLFW) window дээрх capture сонсогч Backspace-ийн үндсэн үйлдлийг хориглодог тул
-                // (утасны гарын устгах товч ажилладаггүй байсан) тэмдэгтийг өөрсдөө устгана.
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    var target = input.zmNext >= 0 ? F.list[input.zmNext] : null;
+                    if (target && target.style.display !== 'none') target.focus();
+                    else { F.enter = true; input.blur(); }
+                }
+                // raylib-ийн (GLFW) window дээрх capture сонсогч Backspace-ийн үндсэн үйлдлийг хориглодог. Зарим
+                // хөтөч (Android) утасны гарын устгалыг ч гэсэн хийдэг, зарим нь (компьютер) хийдэггүй: утга
+                // өөрчлөгдөөгүй бол л өөрсдөө устгана (эс бөгөөс нэг дарахад хоёр тэмдэгт устдаг байсан).
                 if ((e.key === 'Backspace' || e.keyCode === 8) && e.defaultPrevented) {
-                    var v = input.value, from = input.selectionStart, to = input.selectionEnd;
-                    if (from === null || to === null) { from = to = v.length; }
-                    if (from === to && from > 0) {
-                        from--;
-                        var c = v.charCodeAt(from);
-                        if (from > 0 && c >= 0xDC00 && c <= 0xDFFF) from--; // emoji г.м. хоёр хэсэгтэй тэмдэгт
-                    }
-                    input.value = v.slice(0, from) + v.slice(to);
-                    try { input.setSelectionRange(from, from); } catch (err) {}
+                    var before = input.value, from = input.selectionStart, to = input.selectionEnd;
+                    setTimeout(function() {
+                        if (input.value !== before) return;
+                        var v = input.value;
+                        if (from === null || to === null) { from = to = v.length; }
+                        if (from === to && from > 0) {
+                            from--;
+                            var c = v.charCodeAt(from);
+                            if (from > 0 && c >= 0xDC00 && c <= 0xDFFF) from--;
+                        }
+                        input.value = v.slice(0, from) + v.slice(to);
+                        try { input.setSelectionRange(from, from); } catch (err) {}
+                    }, 40);
                 }
             });
+            var stop = function(e) { e.stopPropagation(); };
             input.addEventListener('keyup', stop);
             input.addEventListener('keypress', stop);
-            input.addEventListener('blur', function() {
-                if (Module.zmEditWant) Module.zmEditState = -1;
-                Module.zmEditWant = false;
-                input.style.display = 'none';
-            });
-            document.addEventListener('touchend', function() {
-                if (Module.zmEditWant && document.activeElement !== input) input.focus();
-            }, true);
             (document.getElementById('stage') || document.body).appendChild(input); // бүтэн дэлгэцэд stage л харагдана
         }
-        input.type = kind === 2 ? 'password' : kind === 1 ? 'tel' : 'text';
-        input.inputMode = kind === 1 ? 'numeric' : 'text';
-        input.maxLength = kind === 1 ? 8 : kind === 2 ? 32 : 30;
-        input.placeholder = UTF8ToString(placeholder);
-        input.enterKeyHint = last ? 'done' : 'next';
-        input.value = UTF8ToString(text);
+        if (input.zmKind !== kind) {
+            input.zmKind = kind;
+            input.type = kind === 2 ? 'password' : kind === 1 ? 'tel' : 'text';
+            input.inputMode = kind === 1 ? 'numeric' : 'text';
+            input.maxLength = kind === 1 ? 8 : kind === 2 ? 32 : 30;
+        }
+        input.zmNext = next;
+        input.enterKeyHint = next >= 0 ? 'next' : 'done';
+        var r = Module.canvas.getBoundingClientRect();
+        input.style.left = (r.left + fx * r.width) + 'px';
+        input.style.top = (r.top + fy * r.height) + 'px';
+        input.style.width = (fw * r.width) + 'px';
+        input.style.height = (fh * r.height) + 'px';
+        if (document.activeElement !== input) {
+            var text = UTF8ToString(value);
+            if (input.value !== text) input.value = text;
+        }
         input.style.display = 'block';
-        Module.zmEditState = 0;
-        Module.zmEditWant = true;
-        try { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } catch (e) {}
+        F.placed[slot] = true;
+    });
+
+    EM_JS(void, FieldsEnd, (), {
+        var F = Module.zmFields;
+        if (!F) return;
+        for (var i = 0; i < F.list.length; i++) {
+            var input = F.list[i];
+            if (!input || F.placed[i]) continue;
+            if (document.activeElement === input) input.blur();
+            input.style.display = 'none';
+        }
+        F.placed = [];
+    });
+
+    EM_JS(int, FieldPoll, (char* buffer, int capacity, int* enter), {
+        var F = Module.zmFields;
+        HEAP32[enter >> 2] = F && F.enter ? 1 : 0;
+        if (!F) return -1;
+        F.enter = false;
+        for (var i = 0; i < F.list.length; i++) {
+            if (F.list[i] && document.activeElement === F.list[i]) {
+                stringToUTF8(F.list[i].value, buffer, capacity);
+                return i;
+            }
+        }
+        return -1;
+    });
+
+    EM_JS(void, FieldBlur, (), {
+        var F = Module.zmFields;
+        if (F && F.list.indexOf(document.activeElement) >= 0) document.activeElement.blur();
     });
 
     EM_JS(float, VisibleFraction, (), {
         var v = window.visualViewport;
         if (!v || !window.innerHeight) return 1;
         return Math.max(0.2, Math.min(1, (v.height + v.offsetTop) / window.innerHeight));
-    });
-
-    EM_JS(int, EditRead, (char* buffer, int capacity), {
-        var input = Module.zmEdit;
-        if (!input) return -1;
-        stringToUTF8(input.value, buffer, capacity);
-        var state = Module.zmEditState;
-        if (state === 1) Module.zmEditState = 0;
-        return state;
-    });
-
-    EM_JS(void, EditEnd, (), {
-        var input = Module.zmEdit;
-        if (!input) return;
-        Module.zmEditWant = false;
-        Module.zmEditState = -1;
-        input.style.display = 'none';
-        input.blur();
     });
 
     EM_JS(int, PromptNumber, (const char* message), {
@@ -221,9 +245,19 @@ void FrameYield() { WaitAnimationFrame(); }
 bool WebIsTouchDevice() { return IsCoarsePointer() != 0; }
 int WebReadTouches(float* xy, int* ids, int capacity) { return ReadCanvasTouches(xy, ids, capacity); }
 int WebPromptNumber(const char* message) { return PromptNumber(message); }
-void WebEditBegin(const char* text, int kind, const char* placeholder, bool last) { EditBegin(text, kind, placeholder, last ? 1 : 0); }
-int WebEditRead(char* buffer, int capacity) { return EditRead(buffer, capacity); }
-void WebEditEnd() { EditEnd(); }
+void WebFieldPlace(int slot, float x, float y, float width, float height, int kind, int next, const char* value)
+{
+    FieldPlace(slot, x, y, width, height, kind, next, value);
+}
+void WebFieldsEnd() { FieldsEnd(); }
+int WebFieldPoll(char* buffer, int capacity, bool& enter)
+{
+    int pressed = 0;
+    const int slot = FieldPoll(buffer, capacity, &pressed);
+    enter = pressed != 0;
+    return slot;
+}
+void WebFieldBlur() { FieldBlur(); }
 float WebVisibleFraction() { return VisibleFraction(); }
 void WebHideLoader() { HideLoader(); }
 void WebLoadingFinished() { LoadingFinished(); }
@@ -240,13 +274,15 @@ void FrameYield() {}
 bool WebIsTouchDevice() { return false; }
 int WebReadTouches(float*, int*, int) { return 0; }
 int WebPromptNumber(const char*) { return 0; }
-void WebEditBegin(const char*, int, const char*, bool) {}
-int WebEditRead(char* buffer, int capacity)
+void WebFieldPlace(int, float, float, float, float, int, int, const char*) {}
+void WebFieldsEnd() {}
+int WebFieldPoll(char* buffer, int capacity, bool& enter)
 {
     if (capacity > 0) buffer[0] = 0;
+    enter = false;
     return -1;
 }
-void WebEditEnd() {}
+void WebFieldBlur() {}
 float WebVisibleFraction() { return 1.0f; }
 void WebHideLoader() {}
 void WebLoadingFinished() {}

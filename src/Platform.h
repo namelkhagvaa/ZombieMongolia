@@ -38,12 +38,15 @@ bool WebPointerLockLost();
 // Хөтөч: хэрэглэгчээс тоо асууна (prompt цонх). Цуцалсан эсвэл тоо биш бол 0. Бусад платформд 0.
 int WebPromptNumber(const char* message);
 
-// Хөтөч (утас): утасны өөрийн гараар бичих. Дэлгэцийн дээд талд хуудасны <input> гаргаж, гарыг дуудна.
-// kind: 0 текст, 1 утасны дугаар (тоон гар), 2 нууц үг. last = сүүлийн талбар (гарын Enter нь "Болсон").
-void WebEditBegin(const char* text, int kind, const char* placeholder, bool last);
-// Талбарын одоогийн утгыг buffer-т хуулна. Буцаах: 0 бичиж байна, 1 Enter дарсан, -1 хаагдсан (гарыг нуусан).
-int WebEditRead(char* buffer, int capacity);
-void WebEditEnd();
+// Хөтөч (утас): утасны өөрийн гараар бичих. Тоглоомын талбар бүрийн дээр үл үзэгдэх жинхэнэ <input> байрлана:
+// хуруу шууд түүн дээр буудаг тул гар бүх хөтөч (iPhone-ий Safari ч) дээр нээгдэнэ, бичсэнийг тоглоомын талбар
+// харуулна. Байрлал нь харагдацын координатаар. kind: 0 текст, 1 утасны дугаар, 2 нууц үг. next: гарын Enter-ээр
+// шилжих талбарын slot (-1 = илгээх). value-г зөвхөн тухайн <input> идэвхгүй үед хуулна.
+void WebFieldPlace(int slot, float x, float y, float width, float height, int kind, int next, const char* value);
+void WebFieldsEnd(); // энэ frame-д байрлуулаагүй талбаруудыг нууна (Draw-ийн төгсгөлд)
+// Идэвхтэй (гар нээлттэй) талбарын slot, -1 = алга. buffer-т утгыг нь хуулна; enter = сүүлийн талбарт Enter дарсан.
+int WebFieldPoll(char* buffer, int capacity, bool& enter);
+void WebFieldBlur(); // гарыг хаана
 // Хөтөч: утасны гар нээгдсэн үед дэлгэцийн харагдах хэсэг (0..1, дээрээс). Бусад платформд 1.
 float WebVisibleFraction();
 

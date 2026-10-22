@@ -88,7 +88,7 @@ namespace
     bool keyboardOpen = false;
     int layout = 0; // дэлгэцийн гар: 0 кирилл, 1 латин, 2 тоо
     bool shift = false;
-    bool nativeEdit = false, nativeBegun = false; // хөтөч (утас): утасны өөрийн гараар бичиж байна
+    bool nativeEdit = false;  // хөтөч (утас): утасны өөрийн гараар бичиж байна
     std::string nativeText;                       // хуудасны талбарын сүүлд уншсан утга
     float panelShift = 0.0f;  // утасны гар талбарыг дарахгүйн тулд цонхыг дээш нь шилжүүлэх (пиксел, <= 0)
     float focusBottom = 0.0f; // сүүлд зурсан идэвхтэй талбарын доод ирмэг
@@ -220,14 +220,16 @@ namespace
     }
 
     // Дараагийн талбар (сүүлийнх бол -1)
-    int NextField()
+    int NextAfter(int index)
     {
         const std::vector<int> list = FieldsOf(screen);
-        auto it = std::find(list.begin(), list.end(), focus);
+        auto it = std::find(list.begin(), list.end(), index);
         return it == list.end() || it + 1 == list.end() ? -1 : *(it + 1);
     }
 
-    // Хөтөч дээр мэдрэгчтэй горимд дэлгэцийн гарын оронд утасны өөрийн гарыг (Platform: WebEdit*) хэрэглэнэ.
+    int NextField() { return NextAfter(focus); }
+
+    // Хөтөч дээр мэдрэгчтэй горимд дэлгэцийн гарын оронд утасны өөрийн гарыг (Platform: WebField*) хэрэглэнэ.
     bool UseNativeKeyboard()
     {
 #if defined(__EMSCRIPTEN__)
@@ -237,18 +239,11 @@ namespace
 #endif
     }
 
-    void BeginNativeEdit(int index)
-    {
-        nativeEdit = nativeBegun = true;
-        nativeText = fields[index];
-        WebEditBegin(fields[index].c_str(), index == kPhone ? 1 : index == kPassword ? 2 : 0, Placeholder(index), NextField() < 0);
-    }
-
     void EndNativeEdit()
     {
         if (!nativeEdit) return;
         nativeEdit = false;
-        WebEditEnd();
+        WebFieldBlur();
     }
 
     void Open(Screen s)
@@ -732,9 +727,16 @@ namespace
 
     void FieldBox(Rectangle area, int index, const char* placeholder)
     {
+        if (drawPass && UseNativeKeyboard())
+        {
+            // Утасны гар: талбарын дээр үл үзэгдэх <input> (хуруу шууд түүнд хүрнэ)
+            const float w = (float)ViewWidth(), h = (float)ViewHeight();
+            WebFieldPlace(index, area.x / w, area.y / h, area.width / w, area.height / h,
+                          index == kPhone ? 1 : index == kPassword ? 2 : 0, NextAfter(index), fields[index].c_str());
+        }
         if (drawPass)
         {
-            const bool focused = focus == index;
+            const bool focused = focus == index && (nativeEdit || !UseNativeKeyboard());
             if (focused) focusBottom = area.y + area.height;
             DrawRectangleRounded(area, 0.25f, 8, { 0, 0, 0, 130 });
             DrawRectangleRoundedLinesEx(area, 0.25f, 8, focused ? 2.0f : 1.0f, focused ? Ui::kAccent : Color{ 255, 255, 255, 60 });
@@ -767,8 +769,7 @@ namespace
         if (Hit(area))
         {
             Focus(index);
-            if (UseNativeKeyboard()) BeginNativeEdit(index);
-            else keyboardOpen = InTouchMode();
+            if (!UseNativeKeyboard()) keyboardOpen = InTouchMode();
         }
     }
 
@@ -1391,41 +1392,32 @@ bool Account::Update()
     }
 
     // Утасны гар (хөтөч): хуудасны талбарт бичсэнийг тоглоомын талбарт хуулна (Insert-ийн шүүлтүүрээр)
-    nativeBegun = false;
-    if (nativeEdit && focus >= 0)
+    if (UseNativeKeyboard())
     {
         char buffer[256];
-        const int state = WebEditRead(buffer, (int)sizeof(buffer));
-        if (nativeText != buffer)
+        bool submit = false;
+        const int slot = WebFieldPoll(buffer, (int)sizeof(buffer), submit);
+        nativeEdit = slot >= 0 && slot < kFieldCount;
+        if (nativeEdit)
         {
-            nativeText = buffer;
-            fields[focus].clear();
-            for (const char* p = buffer; *p;)
+            if (focus != slot)
             {
-                int size = 0;
-                Insert(GetCodepointNext(p, &size));
-                p += size > 0 ? size : 1;
+                Focus(slot);
+                nativeText = fields[slot];
+            }
+            if (nativeText != buffer)
+            {
+                nativeText = buffer;
+                fields[focus].clear();
+                for (const char* p = buffer; *p;)
+                {
+                    int size = 0;
+                    Insert(GetCodepointNext(p, &size));
+                    p += size > 0 ? size : 1;
+                }
             }
         }
-        if (state < 0)
-        {
-            nativeEdit = false; // хэрэглэгч гарыг хаасан
-        }
-        else if (state == 1)
-        {
-            // Гарын Enter: дараагийн талбар руу, сүүлийнх бол илгээнэ (НЭВТРЭХ / БҮРТГҮҮЛЭХ)
-            const int next = NextField();
-            if (next >= 0)
-            {
-                Focus(next);
-                BeginNativeEdit(next);
-            }
-            else
-            {
-                EndNativeEdit();
-                enter = true;
-            }
-        }
+        if (submit) enter = true; // сүүлийн талбарт гарын Enter: НЭВТРЭХ / БҮРТГҮҮЛЭХ
     }
 
     // Утасны гар дэлгэцийн доод хэсгийг дардаг: идэвхтэй талбар харагдах хэсгээс доош орвол цонхыг дээш шилжүүлнэ
@@ -1461,7 +1453,7 @@ bool Account::Update()
     const bool tap = tapped;
     Frame();
     // Утасны гараар бичиж байхад талбараас өөр газар товшвол гарыг хаана
-    if (tap && nativeEdit && !nativeBegun) EndNativeEdit();
+    if (tap && nativeEdit) EndNativeEdit();
     // Цонхны гадна (гарын хэсэг биш) товшвол утасны гарыг нууна
     if (tapped && KeyboardVisible()) keyboardOpen = false;
     return Blocking();
@@ -1507,6 +1499,7 @@ void Account::Draw()
     drawPass = true;
     Frame();
     drawPass = false;
+    if (UseNativeKeyboard()) WebFieldsEnd();
     if (request.id >= 0)
     {
         // "Түр хүлээнэ үү": доорх цонхны дээгүүр жижиг самбар
