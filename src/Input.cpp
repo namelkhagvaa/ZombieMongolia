@@ -38,15 +38,14 @@ namespace
     bool pointerDown = false, pointerPressed = false;
     Vector2 pointer = { 0.0f, 0.0f };
     Vector2 look = { 0.0f, 0.0f };
-    Vector2 move = { 0.0f, 0.0f };  // хүрдний хазайлт (бариулын байрлал)
-    Vector2 drive = { 0.0f, 0.0f }; // хүрднээс гарах хөдөлгөөн: x = эргэлт, y = урагш (жолоо шиг)
+    Vector2 move = { 0.0f, 0.0f };
     float wheel = 0.0f;
 
     const float kLookScale = 1.7f;      // хуруугаар чирэх нь хулганаас удаан тул үржүүлнэ
     const float kStickRadius = 78.0f;   // хөдлөх хүрдний хүрээ, харагдацын пикселээр
     const float kStickGrab = 1.7f;      // хүрдний төвөөс ийм (радиусын) зайд буусан хуруу хүрдийг барина
     // Хүрдийг хажуу тийш хазайлгахад камер тэр зүг рүү эргэнэ: нэг хуруугаар явж, зүглэж болно.
-    const float kStickTurn = 860.0f;    // бүрэн хазайлтад секундэд эргэх хэмжээ, "хулганы пиксел"-ээр (~150 градус/сек)
+    const float kStickTurn = 720.0f;    // бүрэн хазайлтад секундэд эргэх хэмжээ, "хулганы пиксел"-ээр (~125 градус/сек)
     const float kStickStrafe = 0.35f;   // хүрдээр хажуу тийш алхах хурдны хувь
     bool stickTurns = false;            // энэ frame-д хүрд камерыг эргүүлж байгаа эсэх
 
@@ -390,7 +389,6 @@ void InBeginFrame(const TouchState& state)
     pointerDown = false;
     look = { 0.0f, 0.0f };
     move = { 0.0f, 0.0f };
-    drive = { 0.0f, 0.0f };
     wheel = 0.0f;
 
 #if defined(__EMSCRIPTEN__)
@@ -495,21 +493,6 @@ void InBeginFrame(const TouchState& state)
             move = { offset.x / kStickRadius, -offset.y / kStickRadius };
             if (Vector2Length(move) < 0.14f) move = { 0.0f, 0.0f }; // төвийн жижиг чөлөө
             stickActive = true;
-            {
-                // Жолоо шиг: хүрдний дээд хэсэгт (урагш, хажуу) хурууны зай нь урагшлах хурд, хажуугийн хазайлт нь
-                // эргэлт. Хажуу тийш түлхэхэд урагшлахаа болихгүй (өмнө нь эргэх гэхээр машин зогсдог байсан).
-                // Доод хэсэгт (доошоо ~125°-ээс их) ухарна.
-                const float length = Vector2Length(move);
-                if (length > 0.0f)
-                {
-                    const float side = move.x / length;
-                    const float up = move.y / length;
-                    const bool reverse = up < -0.55f;
-                    const float turn = side * std::min(1.0f, length / 0.6f);
-                    const float forward = reverse ? -length : length * (0.6f + 0.4f * std::max(0.0f, up));
-                    drive = { turn, forward };
-                }
-            }
             break;
         }
         case Role::Look:
@@ -547,8 +530,7 @@ void InBeginFrame(const TouchState& state)
     stickTurns = gameplay && stickActive && !state.driving;
     if (stickTurns)
     {
-        // Бага хазайлтад ч мэдрэгдэхүйц (|x|^1.5), бүрэн хазайлтад хурдан
-        look.x += drive.x * std::sqrt(std::fabs(drive.x)) * kStickTurn * GetFrameTime();
+        look.x += move.x * std::fabs(move.x) * kStickTurn * GetFrameTime();
     }
 }
 
@@ -630,7 +612,7 @@ Vector2 InMoveAxis()
 {
     if (muted) return { 0.0f, 0.0f };
     Vector2 axis = { (float)IsKeyDown(KEY_D) - (float)IsKeyDown(KEY_A), (float)IsKeyDown(KEY_W) - (float)IsKeyDown(KEY_S) };
-    axis = Vector2Add(Vector2Add(axis, drive), testMove);
+    axis = Vector2Add(Vector2Add(axis, move), testMove);
     const float length = Vector2Length(axis);
     return length > 1.0f ? Vector2Scale(axis, 1.0f / length) : axis;
 }
