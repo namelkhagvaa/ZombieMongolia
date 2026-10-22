@@ -69,6 +69,19 @@ namespace
             input.addEventListener('keydown', function(e) {
                 e.stopPropagation();
                 if (e.key === 'Enter') { e.preventDefault(); Module.zmEditState = 1; }
+                // raylib-ийн (GLFW) window дээрх capture сонсогч Backspace-ийн үндсэн үйлдлийг хориглодог тул
+                // (утасны гарын устгах товч ажилладаггүй байсан) тэмдэгтийг өөрсдөө устгана.
+                if ((e.key === 'Backspace' || e.keyCode === 8) && e.defaultPrevented) {
+                    var v = input.value, from = input.selectionStart, to = input.selectionEnd;
+                    if (from === null || to === null) { from = to = v.length; }
+                    if (from === to && from > 0) {
+                        from--;
+                        var c = v.charCodeAt(from);
+                        if (from > 0 && c >= 0xDC00 && c <= 0xDFFF) from--; // emoji г.м. хоёр хэсэгтэй тэмдэгт
+                    }
+                    input.value = v.slice(0, from) + v.slice(to);
+                    try { input.setSelectionRange(from, from); } catch (err) {}
+                }
             });
             input.addEventListener('keyup', stop);
             input.addEventListener('keypress', stop);
