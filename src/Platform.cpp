@@ -49,6 +49,69 @@ namespace
         return count;
     });
 
+    // Утасны гар: хуудасны дээд талд нэг <input>. Товчны үйлдлийг raylib (window дээр сонсдог, Backspace-г
+    // хориглодог) руу дамжуулахгүй. Хөтөч гарыг зөвхөн хэрэглэгчийн үйлдлээр нээдэг тул шууд focus хийхээс
+    // гадна дараагийн touchend дээр дахин оролдоно.
+    EM_JS(void, EditBegin, (const char* text, int kind, const char* placeholder, int last), {
+        var input = Module.zmEdit;
+        if (!input) {
+            input = Module.zmEdit = document.createElement('input');
+            input.autocomplete = 'off';
+            input.setAttribute('autocorrect', 'off');
+            input.setAttribute('autocapitalize', 'off');
+            input.spellcheck = false;
+            input.style.cssText = 'position:fixed;left:50%;top:10px;transform:translateX(-50%);width:min(92vw,560px);' +
+                'z-index:20;box-sizing:border-box;padding:12px 16px;font-size:20px;border-radius:12px;' +
+                'border:2px solid rgb(255,192,64);background:rgba(8,10,14,0.96);color:#fff;outline:none;display:none;' +
+                'font-family:ZmUi,Segoe UI,Arial,sans-serif;';
+            Module.zmEditState = -1;
+            var stop = function(e) { e.stopPropagation(); };
+            input.addEventListener('keydown', function(e) {
+                e.stopPropagation();
+                if (e.key === 'Enter') { e.preventDefault(); Module.zmEditState = 1; }
+            });
+            input.addEventListener('keyup', stop);
+            input.addEventListener('keypress', stop);
+            input.addEventListener('blur', function() {
+                if (Module.zmEditWant) Module.zmEditState = -1;
+                Module.zmEditWant = false;
+                input.style.display = 'none';
+            });
+            document.addEventListener('touchend', function() {
+                if (Module.zmEditWant && document.activeElement !== input) input.focus();
+            }, true);
+            (document.getElementById('stage') || document.body).appendChild(input); // бүтэн дэлгэцэд stage л харагдана
+        }
+        input.type = kind === 2 ? 'password' : kind === 1 ? 'tel' : 'text';
+        input.inputMode = kind === 1 ? 'numeric' : 'text';
+        input.maxLength = kind === 1 ? 8 : kind === 2 ? 32 : 30;
+        input.placeholder = UTF8ToString(placeholder);
+        input.enterKeyHint = last ? 'done' : 'next';
+        input.value = UTF8ToString(text);
+        input.style.display = 'block';
+        Module.zmEditState = 0;
+        Module.zmEditWant = true;
+        try { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } catch (e) {}
+    });
+
+    EM_JS(int, EditRead, (char* buffer, int capacity), {
+        var input = Module.zmEdit;
+        if (!input) return -1;
+        stringToUTF8(input.value, buffer, capacity);
+        var state = Module.zmEditState;
+        if (state === 1) Module.zmEditState = 0;
+        return state;
+    });
+
+    EM_JS(void, EditEnd, (), {
+        var input = Module.zmEdit;
+        if (!input) return;
+        Module.zmEditWant = false;
+        Module.zmEditState = -1;
+        input.style.display = 'none';
+        input.blur();
+    });
+
     EM_JS(int, PromptNumber, (const char* message), {
         var text = window.prompt(UTF8ToString(message), '');
         var value = parseInt((text || '').replace(/[^0-9]/g, ''), 10); // (EM_JS дотор "\" алга болдог)
@@ -139,6 +202,9 @@ void FrameYield() { WaitAnimationFrame(); }
 bool WebIsTouchDevice() { return IsCoarsePointer() != 0; }
 int WebReadTouches(float* xy, int* ids, int capacity) { return ReadCanvasTouches(xy, ids, capacity); }
 int WebPromptNumber(const char* message) { return PromptNumber(message); }
+void WebEditBegin(const char* text, int kind, const char* placeholder, bool last) { EditBegin(text, kind, placeholder, last ? 1 : 0); }
+int WebEditRead(char* buffer, int capacity) { return EditRead(buffer, capacity); }
+void WebEditEnd() { EditEnd(); }
 void WebHideLoader() { HideLoader(); }
 void WebLoadingFinished() { LoadingFinished(); }
 void WebReleaseLoadedAssets() { ReleaseLoadedAssets(); }
@@ -154,6 +220,13 @@ void FrameYield() {}
 bool WebIsTouchDevice() { return false; }
 int WebReadTouches(float*, int*, int) { return 0; }
 int WebPromptNumber(const char*) { return 0; }
+void WebEditBegin(const char*, int, const char*, bool) {}
+int WebEditRead(char* buffer, int capacity)
+{
+    if (capacity > 0) buffer[0] = 0;
+    return -1;
+}
+void WebEditEnd() {}
 void WebHideLoader() {}
 void WebLoadingFinished() {}
 void WebReleaseLoadedAssets() {}

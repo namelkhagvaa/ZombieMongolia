@@ -38,6 +38,13 @@ bool WebPointerLockLost();
 // Хөтөч: хэрэглэгчээс тоо асууна (prompt цонх). Цуцалсан эсвэл тоо биш бол 0. Бусад платформд 0.
 int WebPromptNumber(const char* message);
 
+// Хөтөч (утас): утасны өөрийн гараар бичих. Дэлгэцийн дээд талд хуудасны <input> гаргаж, гарыг дуудна.
+// kind: 0 текст, 1 утасны дугаар (тоон гар), 2 нууц үг. last = сүүлийн талбар (гарын Enter нь "Болсон").
+void WebEditBegin(const char* text, int kind, const char* placeholder, bool last);
+// Талбарын одоогийн утгыг buffer-т хуулна. Буцаах: 0 бичиж байна, 1 Enter дарсан, -1 хаагдсан (гарыг нуусан).
+int WebEditRead(char* buffer, int capacity);
+void WebEditEnd();
+
 // Хадгалалтын файлыг хөтчийн localStorage-тэй тааруулна (бусад платформд юу ч хийхгүй).
 void WebRestoreFile(const char* path); // localStorage -> файл (уншихаас өмнө)
 void WebPersistFile(const char* path); // файл -> localStorage (бичсэний дараа)
