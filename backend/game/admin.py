@@ -6,7 +6,7 @@ from .models import AuthToken, Device, Event, GameSettings, Invoice, Player, Unl
 
 @admin.register(GameSettings)
 class GameSettingsAdmin(admin.ModelAdmin):
-    list_display = ["__str__", "free_provinces", "pack_size", "pack_price", "device_change_price", "max_devices"]
+    list_display = ["__str__", "free_provinces", "pack_size", "pack_price", "device_change_price", "capital_price", "max_devices"]
 
     def has_add_permission(self, request):
         return not GameSettings.objects.exists()

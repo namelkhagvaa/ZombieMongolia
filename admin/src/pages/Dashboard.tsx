@@ -268,7 +268,7 @@ export default function DashboardPage() {
               </BarChart>
             </ResponsiveContainer>
             <Typography.Text type="secondary">
-              <Tag color="red">Улаанбаатар</Tag> үргэлж төлбөртэй
+              <Tag color="red">Улаанбаатар</Tag> тусдаа үнэтэй
             </Typography.Text>
           </Card>
         </>

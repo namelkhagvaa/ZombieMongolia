@@ -32,7 +32,8 @@ namespace
         Free,
         Credit,
         Pack,
-        Device
+        Device,
+        Capital // Улаанбаатар: тусдаа үнэтэй (эрхээр нээгдэхгүй)
     };
     enum Field
     {
@@ -67,7 +68,8 @@ namespace
     bool signedIn = false;
     std::string playerName;
     std::vector<int> owned;
-    int freeLeft = 0, credits = 0, capital = 15, packPrice = 3000, packSize = 3, devicePrice = 5000, maxDevices = 2;
+    int freeLeft = 0, credits = 0, capital = 15, packPrice = 3000, packSize = 3, devicePrice = 5000, maxDevices = 2,
+        capitalPrice = 5000;
     bool deviceOk = true;
 
     // --- Цонх ---
@@ -295,6 +297,7 @@ namespace
         packPrice = prices["pack"].Int(packPrice);
         packSize = prices["pack_size"].Int(packSize);
         devicePrice = prices["device_change"].Int(devicePrice);
+        capitalPrice = prices["capital"].Int(capitalPrice);
         maxDevices = account["max_devices"].Int(maxDevices);
     }
 
@@ -550,7 +553,8 @@ namespace
             StartProvince();
             return;
         }
-        else if (freeLeft > 0 && province != capital) offer = Offer::Free;
+        else if (province == capital) offer = Offer::Capital;
+        else if (freeLeft > 0) offer = Offer::Free;
         else if (credits > 0) offer = Offer::Credit;
         else offer = Offer::Pack;
         Open(Screen::Offer);
@@ -923,7 +927,7 @@ namespace
         y += 38.0f;
         if (drawPass)
         {
-            Ui::Text(reset ? "Утсаа мессежээр баталгаажуулж шинэ нууц үг тавина" : "Утсаа мессежээр баталгаажуулна (150₮)", (int)x,
+            Ui::Text(reset ? "Утсаа мессежээр баталгаажуулж шинэ нууц үг тавина" : "Утсаа мессежээр баталгаажуулна", (int)x,
                      (int)y, 15, Ui::kTextDim);
         }
         y += 30.0f;
@@ -975,7 +979,7 @@ namespace
         if (drawPass)
         {
             const int left = std::max(0, (int)(smsExpires - GetTime()));
-            Ui::Text(TextFormat("Мессежийн үнэ 150₮  ·  Үлдсэн хугацаа %d:%02d", left / 60, left % 60), (int)x, (int)y, 15, Ui::kTextDim);
+            Ui::Text(TextFormat("Үлдсэн хугацаа %d:%02d", left / 60, left % 60), (int)x, (int)y, 15, Ui::kTextDim);
         }
         y += 28.0f;
         Spinner({ x + 10.0f, y + 11.0f }, 10.0f);
@@ -1005,10 +1009,17 @@ namespace
             note = "Танд " + std::to_string(credits) + " эрх байна.";
             break;
         case Offer::Pack:
-            text = province == capital && freeLeft > 0 ? "Улаанбаатар зөвхөн төлбөртэй." : "Аймаг нээх эрх тань дууссан байна.";
+            text = "Аймаг нээх эрх тань дууссан байна.";
             item = std::to_string(packSize) + " аймгийн эрх";
-            note = "Улаанбаатарыг оролцуулан дурын аймгийг сонгон нээнэ.";
+            note = "Улаанбаатараас бусад дурын аймгийг сонгон нээнэ.";
             price = packPrice;
+            button = "QPAY-ЭЭР ТӨЛӨХ";
+            break;
+        case Offer::Capital:
+            text = "Улаанбаатар хотыг тусдаа худалдаж авна.";
+            item = "Улаанбаатар хот";
+            note = "Нэг удаа төлөөд үргэлж нээлттэй.";
+            price = capitalPrice;
             button = "QPAY-ЭЭР ТӨЛӨХ";
             break;
         case Offer::Device:
@@ -1048,7 +1059,7 @@ namespace
         if (Button({ x, y, inner, 50.0f }, button.c_str(), Style::Primary, true))
         {
             if (offer == Offer::Free || offer == Offer::Credit) Claim();
-            else Buy(offer == Offer::Pack ? "pack" : "device");
+            else Buy(offer == Offer::Pack ? "pack" : offer == Offer::Capital ? "capital" : "device");
         }
         y += 62.0f;
         if (Button({ x, y, inner, 30.0f }, "Болих", Style::Link))
@@ -1090,7 +1101,10 @@ namespace
             Ui::Text("Төлөх дүн", (int)rx, (int)ry, 15, Ui::kTextDim);
             const std::string money = Money(invoiceAmount);
             Ui::TextBold(money.c_str(), (int)rx, (int)ry + 20, 36, Ui::kAccent);
-            Ui::Text(invoiceKind == "pack" ? TextFormat("%d аймгийн эрх", packSize) : "Төхөөрөмж солих", (int)rx, (int)ry + 68, 16,
+            Ui::Text(invoiceKind == "pack"      ? TextFormat("%d аймгийн эрх", packSize)
+                     : invoiceKind == "capital" ? "Улаанбаатар хот"
+                                                : "Төхөөрөмж солих",
+                     (int)rx, (int)ry + 68, 16,
                      Ui::kText);
         }
         ry += 100.0f;

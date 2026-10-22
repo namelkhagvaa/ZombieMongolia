@@ -103,6 +103,7 @@ def account_state(player, device_id):
             "pack": settings.pack_price,
             "pack_size": settings.pack_size,
             "device_change": settings.device_change_price,
+            "capital": settings.capital_price,
         },
     }
 
@@ -229,7 +230,8 @@ def _validate_province(province):
 
 
 def claim_province(player, device_id, province, ip):
-    """Аймгийг нээнэ: үнэгүй эрх (Улаанбаатараас бусад) эсвэл худалдаж авсан эрхээр. Аль хэдийн нээсэн бол юу ч хийхгүй."""
+    """Аймгийг нээнэ: үнэгүй эрх эсвэл худалдаж авсан эрхээр. Улаанбаатар зөвхөн тусдаа төлбөрөөр (create_invoice
+    "capital"), эрхээр нээгдэхгүй. Аль хэдийн нээсэн бол юу ч хийхгүй."""
     settings = _validate_province(province)
     if not device_ok(player, device_id):
         raise GameError("device_change_required", "Энэ төхөөрөмж дээр тоглохын тулд төхөөрөмж солих төлбөр төлнө", 402)
@@ -237,7 +239,9 @@ def claim_province(player, device_id, province, ip):
         locked = Player.objects.select_for_update().get(pk=player.pk)
         if locked.provinces.filter(province=province).exists():
             return locked, None
-        if locked.free_used < settings.free_provinces and province != settings.capital_index:
+        if province == settings.capital_index:
+            raise GameError("capital_payment_required", "Улаанбаатар хотыг тусдаа худалдаж авна", 402)
+        if locked.free_used < settings.free_provinces:
             source = UnlockedProvince.FREE
             locked.free_used += 1
         elif locked.credits > 0:
@@ -278,6 +282,13 @@ def create_invoice(player, device_id, kind, platform, ip):
             raise GameError("device_taken", "Энэ төхөөрөмж өөр дансанд бүртгэлтэй байна", 409)
         amount, credits = settings.device_change_price, 0
         description = "Zombie Mongolia: төхөөрөмж солих"
+    elif kind == Invoice.CAPITAL:
+        if not device_ok(player, device_id):
+            raise GameError("device_change_required", "Эхлээд төхөөрөмж солих төлбөр төлнө үү", 402)
+        if player.provinces.filter(province=settings.capital_index).exists():
+            raise GameError("already_unlocked", "Улаанбаатар аль хэдийн нээгдсэн байна", 409)
+        amount, credits = settings.capital_price, 0
+        description = "Zombie Mongolia: Улаанбаатар хот"
     else:
         raise GameError("bad_kind", "Төлбөрийн төрөл буруу байна")
 
@@ -325,6 +336,11 @@ def apply_payment(invoice_id, payment_id, source):
         if invoice.kind == Invoice.PACK:
             player.credits += invoice.credits
             player.save(update_fields=["credits"])
+            invoice.applied = True
+        elif invoice.kind == Invoice.CAPITAL:
+            capital = GameSettings.load().capital_index
+            UnlockedProvince.objects.get_or_create(player=player, province=capital, defaults={"source": UnlockedProvince.PAID})
+            log_event(player, "province_unlocked", {"province": capital, "source": UnlockedProvince.PAID}, "")
             invoice.applied = True
         else:
             existing = Device.objects.filter(device_id=invoice.device_id).first()

@@ -153,6 +153,7 @@ def settings_json(settings):
         "province_count": settings.province_count,
         "capital_index": settings.capital_index,
         "max_devices": settings.max_devices,
+        "capital_price": settings.capital_price,
     }
 
 
@@ -442,7 +443,8 @@ def settings_view(request):
         if not request.staff.is_superuser:
             raise ManageError("Зөвхөн ерөнхий админ үнэ, тохиргоо өөрчилнө", 403)
         limits = {"free_provinces": (0, 22), "pack_size": (1, 22), "pack_price": (0, 1_000_000),
-                  "device_change_price": (0, 1_000_000), "max_devices": (1, 5)}
+                  "device_change_price": (0, 1_000_000), "max_devices": (1, 5),
+                  "capital_price": (0, 1_000_000)}
         before = settings_json(settings)
         for field, (low, high) in limits.items():
             if field in request.json:

@@ -490,6 +490,12 @@ void Game::Run()
             if (shopOpen)
             {
                 UpdateShopMenu(); // дэлгүүрийн цэс: тоглоом түр зогсоно
+                // Хамтарсан тоглолт: нөгөө тоглогч үргэлжлүүлж байгаа тул ертөнц хөдөлсөөр (энэ тоглогчийн оролтгүй)
+                if (shopOpen && net.Connected() && (coopGuest || remoteActive))
+                {
+                    InSetMuted(true);
+                    UpdateMission(dt);
+                }
                 break;
             }
             if (InKeyPressed(KEY_Q) && !fullMap.IsOpen())
@@ -520,7 +526,12 @@ void Game::Run()
 
             if (journalOpen)
             {
-                // түр зогссон
+                // түр зогссон (хамтарсан тоглолтод ертөнц хөдөлсөөр, оролтгүй)
+                if (net.Connected() && (coopGuest || remoteActive))
+                {
+                    InSetMuted(true);
+                    UpdateMission(dt);
+                }
             }
             else if (fullMap.IsOpen())
             {
@@ -531,6 +542,11 @@ void Game::Run()
                 {
                     if (clear) navigator.Clear();
                     else navigator.SetTarget(world, player.Position(), point); // хөтлөх замыг тооцно
+                }
+                if (net.Connected() && (coopGuest || remoteActive))
+                {
+                    InSetMuted(true);
+                    UpdateMission(dt);
                 }
             }
             else
@@ -2094,8 +2110,11 @@ void Game::UpdateMission(float dt)
 
     if (coopGuest)
     {
-        // Зочин: даалгавар, шагнал, ялалтыг хост тооцно (UpdateCoopMission, UpdateNetwork)
+        // Зочин: даалгавар, шагнал, ялалтыг хост тооцно (UpdateCoopMission, UpdateNetwork). Дэлгүүр өөрийн зоосоор.
         recruitNoticeTimer = std::max(0.0f, recruitNoticeTimer - dt);
+        inShop = player.IsAlive() && !garage.IsDriving() && !player.IsTraversing() &&
+                 world.InSafeRoom(player.Position().x, player.Position().z);
+        if (inShop && InKeyPressed(KEY_E)) OpenShop();
         return;
     }
 
@@ -3145,7 +3164,7 @@ void Game::Draw() const
 
 namespace
 {
-    const float kCoopSendInterval = 1.0f / 15.0f; // snapshot, дүрийн байдлын давтамж
+    const float kCoopSendInterval = 1.0f / 20.0f; // snapshot, дүрийн байдлын давтамж
     const float kCoopViewRadius = 150.0f;          // зочинд илгээх зомбины хүрээ
     const float kGuestRespawnTime = 5.0f;
 }
@@ -3166,6 +3185,20 @@ std::string Game::PlayerName() const
 
 void Game::UpdateRemoteFigure(RemoteFigure& figure, const Net::AvatarState& state, float dt, bool snap)
 {
+    // Хурд: өмнөх мэдээнээс хойш явсан зай (дараагийн мэдээ хүртэл урагш таамаглана)
+    if (!snap && figure.sinceUpdate > 0.01f && figure.sinceUpdate < 0.5f && (state.flags & Net::kAlive))
+    {
+        Vector3 velocity = Vector3Scale(Vector3Subtract(state.position, figure.target), 1.0f / figure.sinceUpdate);
+        velocity.y = 0.0f;
+        const float speed = Vector3Length(velocity);
+        if (speed > 40.0f) velocity = Vector3Scale(velocity, 40.0f / speed);
+        figure.velocity = Vector3Lerp(figure.velocity, velocity, 0.6f);
+    }
+    else
+    {
+        figure.velocity = { 0.0f, 0.0f, 0.0f };
+    }
+    figure.sinceUpdate = 0.0f;
     figure.target = state.position;
     figure.targetFacing = state.facing;
     figure.speed = state.speed;
@@ -3210,7 +3243,9 @@ void Game::ShowRemoteShots(RemoteFigure& figure, uint8_t shots, Vector3 shotEnd)
 
 void Game::AdvanceRemoteFigure(RemoteFigure& figure, float dt) const
 {
-    figure.position = Vector3Lerp(figure.position, figure.target, std::min(1.0f, 12.0f * dt));
+    figure.sinceUpdate += dt;
+    const Vector3 predicted = Vector3Add(figure.target, Vector3Scale(figure.velocity, std::min(figure.sinceUpdate, 0.25f)));
+    figure.position = Vector3Lerp(figure.position, predicted, std::min(1.0f, 15.0f * dt));
     figure.facing += std::remainder(figure.targetFacing - figure.facing, 2.0f * PI) * std::min(1.0f, 12.0f * dt);
     figure.walk += dt * HumanoidGaitRate(figure.speed);
     figure.recoil = std::max(0.0f, figure.recoil - dt * 9.0f);
@@ -3826,7 +3861,7 @@ void Game::DrawCoopOverlay() const
         Ui::TextBold(name.c_str(), (int)p.x - w / 2 + 10, (int)p.y - 10, 15, Ui::kInfo);
     };
     if (remoteActive && !coopGuest) nameTag(guestFigure, joinRequester);
-    if (coopGuest && guestPlaced) nameTag(hostFigure, "Хост");
+    if (coopGuest && guestPlaced) nameTag(hostFigure, hostName.empty() ? std::string("Хост") : hostName);
 
     if (coopGuest && !player.IsAlive())
     {

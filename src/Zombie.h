@@ -77,6 +77,8 @@ struct Zombie
     Vector3 netTarget = { 0.0f, 0.0f, 0.0f };
     float netFacing = 0.0f;
     float netSeen = 0.0f; // зочин: сүүлд snapshot-д орсноос хойш
+    Vector3 netVelocity = { 0.0f, 0.0f, 0.0f }; // зочин: хоёр snapshot-оос тооцсон хурд (хоцролтыг нөхөж урагш таамаглана)
+    bool netAttack = false;                     // зочин: өмнөх snapshot-д довтолж байсан (шинэ цохилтыг нэг л удаа эхлүүлнэ)
 
     bool IsAlive() const { return health > 0.0f; }
     float Radius() const { return 0.4f * scale; }

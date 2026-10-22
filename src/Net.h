@@ -83,6 +83,8 @@ namespace Net
     };
     constexpr uint8_t kZombieAlive = 1, kZombieBoss = 2, kZombieAttack = 4;
     constexpr uint8_t kZombieAirborne = 8; // унаанд мөргүүлж агаарт нисэж яваа (зочин эргэлдүүлж зурна)
+    // Дээд 4 бит: довтолгооны үлдсэн хугацаа (1..15 = цохилтын 1/15..15/15) — зочин цохилтыг хосттой зэрэг харуулна
+    constexpr int kZombieAttackShift = 4;
 
     struct SoldierState
     {

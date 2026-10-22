@@ -22,7 +22,8 @@ class GameSettings(models.Model):
     pack_price = models.PositiveIntegerField("Багцын үнэ (₮)", default=3000)
     device_change_price = models.PositiveIntegerField("Төхөөрөмж солих үнэ (₮)", default=5000)
     province_count = models.PositiveSmallIntegerField("Аймгийн тоо (тоглоомд)", default=22)
-    capital_index = models.SmallIntegerField("Улаанбаатарын дугаар (үнэгүй сонгож болохгүй)", default=15)
+    capital_index = models.SmallIntegerField("Улаанбаатарын дугаар (тусдаа үнэтэй)", default=15)
+    capital_price = models.PositiveIntegerField("Улаанбаатарын үнэ (₮)", default=5000)
     max_devices = models.PositiveSmallIntegerField("Нэг дансны төхөөрөмжийн тоо", default=2)
 
     class Meta:
@@ -149,8 +150,8 @@ def _callback_key():
 
 
 class Invoice(models.Model):
-    PACK, DEVICE = "pack", "device"
-    KINDS = [(PACK, "Аймгийн багц"), (DEVICE, "Төхөөрөмж солих")]
+    PACK, DEVICE, CAPITAL = "pack", "device", "capital"
+    KINDS = [(PACK, "Аймгийн багц"), (DEVICE, "Төхөөрөмж солих"), (CAPITAL, "Улаанбаатар")]
     PENDING, PAID, CANCELLED = "pending", "paid", "cancelled"
     STATUSES = [(PENDING, "Хүлээгдэж буй"), (PAID, "Төлсөн"), (CANCELLED, "Цуцалсан")]
 

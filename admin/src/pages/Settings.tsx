@@ -33,6 +33,7 @@ export default function SettingsPage() {
           pack_size: v.pack_size,
           pack_price: v.pack_price,
           device_change_price: v.device_change_price,
+          capital_price: v.capital_price,
           max_devices: v.max_devices,
         },
       });
@@ -83,6 +84,14 @@ export default function SettingsPage() {
                 >
                   <InputNumber min={0} max={1000000} step={500} style={{ width: 200 }} suffix="₮" />
                 </Form.Item>
+                <Form.Item
+                  name="capital_price"
+                  label="Улаанбаатарын үнэ"
+                  extra="Тусдаа худалдаж авна: үнэгүй болон багцын эрхээр нээгдэхгүй."
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} max={1000000} step={500} style={{ width: 200 }} suffix="₮" />
+                </Form.Item>
               </Card>
             </Col>
             <Col xs={24} lg={12}>
@@ -104,7 +113,7 @@ export default function SettingsPage() {
                   <InputNumber min={0} max={1000000} step={500} style={{ width: 200 }} suffix="₮" />
                 </Form.Item>
                 <Typography.Paragraph type="secondary">
-                  Аймгийн тоо: {settings.province_count} · Нийслэл: {provinceName(settings.capital_index)} (үргэлж төлбөртэй)
+                  Аймгийн тоо: {settings.province_count} · Нийслэл: {provinceName(settings.capital_index)} (тусдаа үнэтэй)
                 </Typography.Paragraph>
               </Card>
             </Col>

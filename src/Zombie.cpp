@@ -1034,6 +1034,11 @@ void ZombieHorde::CollectStates(Vector3 around, float radius, std::vector<Net::Z
         state.flags = (uint8_t)((zombie.IsAlive() ? Net::kZombieAlive : 0) | (zombie.boss ? Net::kZombieBoss : 0) |
                                 (zombie.attackAnim > 0.0f ? Net::kZombieAttack : 0) |
                                 (zombie.airborne ? Net::kZombieAirborne : 0));
+        if (zombie.attackAnim > 0.0f)
+        {
+            const int phase = std::clamp((int)std::lround(zombie.attackAnim / kAttackAnimTime * 15.0f), 1, 15);
+            state.flags = (uint8_t)(state.flags | (phase << Net::kZombieAttackShift));
+        }
         state.position = zombie.mover.position;
         state.facing = zombie.mover.facing;
         out.push_back(state);
@@ -1061,6 +1066,20 @@ void ZombieHorde::ApplySnapshot(const std::vector<Net::ZombieState>& states, con
             zombie->id = state.id;
             zombie->mover.facing = state.facing;
         }
+        // Хурд: өмнөх snapshot-оос хойш явсан зай (snapshot хоорондын хугацаанд урагш таамаглахад)
+        const float age = zombie->netSeen;
+        if (age > 0.01f && age < 0.5f && alive)
+        {
+            Vector3 velocity = Vector3Scale(Vector3Subtract(state.position, zombie->netTarget), 1.0f / age);
+            velocity.y = 0.0f;
+            const float speed = Vector3Length(velocity);
+            if (speed > 10.0f) velocity = Vector3Scale(velocity, 10.0f / speed);
+            zombie->netVelocity = Vector3Lerp(zombie->netVelocity, velocity, 0.6f);
+        }
+        else
+        {
+            zombie->netVelocity = { 0.0f, 0.0f, 0.0f };
+        }
         zombie->netTarget = state.position;
         zombie->netFacing = state.facing;
         zombie->netSeen = 0.0f;
@@ -1073,10 +1092,15 @@ void ZombieHorde::ApplySnapshot(const std::vector<Net::ZombieState>& states, con
         const bool airborne = !alive && (state.flags & Net::kZombieAirborne) != 0;
         if (zombie->airborne && !airborne) zombie->deathTimer = std::max(zombie->deathTimer, kFallTime);
         zombie->airborne = airborne;
-        if ((state.flags & Net::kZombieAttack) && zombie->attackAnim <= 0.0f)
+        // Шинэ цохилт: хостын үлдсэн хугацаагаар эхлүүлнэ (хоцролтгүй, давхар цохихгүй)
+        const bool attacking = (state.flags & Net::kZombieAttack) != 0;
+        if (attacking && !zombie->netAttack)
         {
-            zombie->attackAnim = kAttackAnimTime;
+            const int phase = (state.flags >> Net::kZombieAttackShift) & 15;
+            zombie->attackAnim = phase > 0 ? kAttackAnimTime * (float)phase / 15.0f : kAttackAnimTime;
+            zombie->netVelocity = { 0.0f, 0.0f, 0.0f };
         }
+        zombie->netAttack = attacking;
     }
 }
 
@@ -1103,16 +1127,17 @@ void ZombieHorde::UpdatePuppets(float dt)
             }
             continue;
         }
-        const Vector3 delta = Vector3Subtract(zombie.netTarget, pos);
+        // Сүүлийн snapshot-оос хойш явсан байх байрлал (хурдаар урагш таамаглана; 0.25 с-ээс илүүг таамаглахгүй)
+        const Vector3 predicted = Vector3Add(zombie.netTarget, Vector3Scale(zombie.netVelocity, std::min(zombie.netSeen, 0.25f)));
+        const Vector3 delta = Vector3Subtract(predicted, pos);
         const float distance = Vector3Length(delta);
-        if (distance > 8.0f)
+        if (distance > 6.0f)
         {
-            pos = zombie.netTarget; // хэт хол хоцорсон: шууд байрлуулна
+            pos = predicted; // хэт хол хоцорсон: шууд байрлуулна
         }
         else
         {
-            const Vector3 step = Vector3Scale(delta, std::min(1.0f, 10.0f * dt));
-            pos = Vector3Add(pos, step);
+            pos = Vector3Add(pos, Vector3Scale(delta, std::min(1.0f, 15.0f * dt)));
         }
         zombie.mover.facing += std::remainder(zombie.netFacing - zombie.mover.facing, 2.0f * PI) * std::min(1.0f, 10.0f * dt);
     }

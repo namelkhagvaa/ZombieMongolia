@@ -90,7 +90,7 @@ export interface PlayerRow {
 export interface InvoiceRow {
   id: number;
   player: { id: number; name: string; phone: string };
-  kind: 'pack' | 'device';
+  kind: 'pack' | 'device' | 'capital';
   amount: number;
   credits: number;
   status: 'pending' | 'paid' | 'cancelled';
@@ -137,6 +137,7 @@ export interface Settings {
   province_count: number;
   capital_index: number;
   max_devices: number;
+  capital_price: number;
 }
 
 export interface StaffUser {

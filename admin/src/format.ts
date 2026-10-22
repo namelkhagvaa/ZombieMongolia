@@ -42,7 +42,7 @@ export const STATUS_LABEL: Record<string, { text: string; color: string }> = {
   cancelled: { text: 'Цуцлагдсан', color: 'default' },
 };
 
-export const KIND_LABEL: Record<string, string> = { pack: 'Аймгийн багц', device: 'Төхөөрөмж солих' };
+export const KIND_LABEL: Record<string, string> = { pack: 'Аймгийн багц', device: 'Төхөөрөмж солих', capital: 'Улаанбаатар' };
 
 // Лог: үйлдлийн нэр ба өнгө
 export const EVENT_LABEL: Record<string, { text: string; color: string }> = {

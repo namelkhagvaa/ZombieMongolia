@@ -73,7 +73,7 @@ class FlowTests(TestCase):
     # ---- аймаг
     def test_free_provinces_exclude_capital_then_payment(self):
         token = self.register()["token"]
-        self.assertEqual(self.post("provinces/claim/", {"province": UB}, token, status=402)["error"], "payment_required")
+        self.assertEqual(self.post("provinces/claim/", {"province": UB}, token, status=402)["error"], "capital_payment_required")
         self.assertEqual(self.post("provinces/claim/", {"province": 9}, token)["source"], "free")
         self.assertEqual(self.post("provinces/claim/", {"province": 9}, token)["source"], None)  # дахин: үнэгүй эрх зарцуулахгүй
         self.assertEqual(self.post("provinces/claim/", {"province": 3}, token)["account"]["free_left"], 0)
@@ -92,8 +92,25 @@ class FlowTests(TestCase):
         self.client.get(f"/api/qpay/callback/{invoice['id']}/{key}/")
         status = self.get(f"invoices/{invoice['id']}/", token)
         self.assertEqual(status["account"]["credits"], 3)
-        self.assertEqual(self.post("provinces/claim/", {"province": UB}, token)["source"], "paid")  # Улаанбаатар: худалдаж авсан эрхээр
-        self.assertEqual(Player.objects.get().credits, 2)
+        # Улаанбаатар багцын эрхээр нээгдэхгүй (тусдаа үнэтэй)
+        self.assertEqual(self.post("provinces/claim/", {"province": UB}, token, status=402)["error"], "capital_payment_required")
+        self.assertEqual(self.post("provinces/claim/", {"province": 0}, token)["source"], "free")
+        self.assertEqual(Player.objects.get().credits, 3)
+
+    def test_capital_has_its_own_price(self):
+        settings = GameSettings.load()
+        settings.capital_price = 7000
+        settings.save()
+        token = self.register()["token"]
+        self.assertEqual(self.get("account/", token)["account"]["prices"]["capital"], 7000)
+        invoice = self.post("invoices/", {"kind": "capital"}, token)["invoice"]
+        self.assertEqual((invoice["amount"], invoice["credits"]), (7000, 0))
+        self.pay(invoice["id"])
+        account = self.get(f"invoices/{invoice['id']}/", token)["account"]
+        self.assertIn(UB, account["provinces"])
+        self.assertEqual((account["free_left"], account["credits"]), (2, 0))  # бусад эрх хөндөгдөөгүй
+        self.post("provinces/start/", {"province": UB}, token)
+        self.assertEqual(self.post("invoices/", {"kind": "capital"}, token, status=409)["error"], "already_unlocked")
 
     def test_prices_come_from_database(self):
         settings = GameSettings.load()
