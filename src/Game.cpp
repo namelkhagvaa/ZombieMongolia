@@ -258,7 +258,7 @@ void Game::Run()
         }
         if (options.fullMapZoom > 0.0f)
         {
-            fullMap.Open(world);
+            fullMap.Open(world, player);
             fullMap.SetZoom(options.fullMapZoom);
         }
         journalOpen = options.journal;
@@ -519,7 +519,7 @@ void Game::Run()
                 }
                 else
                 {
-                    fullMap.Open(world);
+                    fullMap.Open(world, player);
                     EnableCursor();
                 }
             }

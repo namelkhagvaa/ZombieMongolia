@@ -25,15 +25,16 @@ void DrawMinimap(const World& world, const Player& player, float cameraYaw, cons
                  const std::vector<Vector3>& medKits);
 
 // M товчоор нээгдэх бүтэн дэлгэцийн газрын зураг. Хойд зүг үргэлж дээшээ.
-// Хулганы дугуйгаар 100%..1000% томруулж, зүүн товчоор чирж зөөнө.
+// Хулганы дугуй / хоёр хуруугаар чимхэж (pinch) томруулж, зүүн товч / нэг хуруугаар чирж зөөнө.
 class FullMap
 {
 public:
     static constexpr float kMinZoom = 1.0f;  // 100%: аймгийн нутаг бүтнээрээ багтана
-    static constexpr float kMaxZoom = 10.0f; // 1000%
+    static constexpr float kMaxZoom = 40.0f; // 4000%: гудамж, барилга тод
+    static constexpr float kOpenSpan = 1600.0f; // нээх үед тоглогчийн эргэн тойронд ийм өргөн (метр) харагдана
 
-    // Нээх үед 100%: тухайн аймгийн хилийн хэлбэр бүтнээрээ харагдана.
-    void Open(const World& world);
+    // Тоглогч дээр төвлөрч, ойроос (~1.6 км) нээгдэнэ; холдуулбал (100%) аймгийн нутаг бүтнээрээ.
+    void Open(const World& world, const Player& player);
     void Close() { open = false; }
     bool IsOpen() const { return open; }
 

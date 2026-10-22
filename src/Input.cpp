@@ -51,7 +51,9 @@ namespace
     // Хүрдийг хажуу тийш хазайлгахад камер тэр зүг рүү эргэнэ: нэг хуруугаар явж, зүглэж болно.
     const float kStickTurn = 720.0f;    // бүрэн хазайлтад секундэд эргэх хэмжээ, "хулганы пиксел"-ээр (~125 градус/сек)
     const float kStickStrafe = 0.35f;   // хүрдээр хажуу тийш алхах хурдны хувь
-    bool stickTurns = false;            // энэ frame-д хүрд камерыг эргүүлж байгаа эсэх
+    bool stickTurns = false;
+    float pinch = 1.0f, pinchDistance = 0.0f; // хоёр хурууны чимхэлт: харьцаа, өмнөх frame-ийн зай
+    Vector2 pinchCenter = { 0.0f, 0.0f };            // энэ frame-д хүрд камерыг эргүүлж байгаа эсэх
 
     enum class Kind
     {
@@ -401,6 +403,7 @@ void InBeginFrame(const TouchState& state)
     look = { 0.0f, 0.0f };
     move = { 0.0f, 0.0f };
     wheel = 0.0f;
+    pinch = 1.0f;
 
 #if defined(__EMSCRIPTEN__)
     // Хөтөч: дэлгэцэд хүрмэгц мэдрэгчтэй горимд шилжинэ (утас гэж танигдаагүй таблет г.м.)
@@ -542,6 +545,34 @@ void InBeginFrame(const TouchState& state)
         if (!finger.seen) finger.id = -1; // хуруу өргөгдсөн
     }
 
+    // Хоёр хуруугаар чимхэх: зайн харьцаагаар томруулж, голын цэгийн шилжилтээр зөөнө
+    const Finger* pair[2] = { nullptr, nullptr };
+    int pointers = 0;
+    for (const Finger& finger : fingers)
+    {
+        if (finger.id >= 0 && finger.role == Role::Pointer && pointers < 2) pair[pointers++] = &finger;
+    }
+    if (pointers == 2)
+    {
+        const float distance = Vector2Distance(pair[0]->position, pair[1]->position);
+        const Vector2 middle = Vector2Scale(Vector2Add(pair[0]->position, pair[1]->position), 0.5f);
+        if (pinchDistance > 0.0f && distance > 1.0f)
+        {
+            pinch = distance / pinchDistance;
+            look = Vector2Subtract(middle, pinchCenter);
+        }
+        else
+        {
+            look = { 0.0f, 0.0f };
+        }
+        pinchDistance = distance;
+        pinchCenter = middle;
+    }
+    else
+    {
+        pinchDistance = 0.0f;
+    }
+
     // Гүйлтийн түгжээ: тэмдэг дээр хуруугаа өргөвөл түгжигдэнэ; явган биш бол тайлагдана
     if (stickWasActive && !stickActive && lockArmed) autoRun = true;
     if (!stickActive) lockArmed = false;
@@ -620,6 +651,21 @@ float InWheel()
 Vector2 InPointer()
 {
     return pointer;
+}
+
+float InPinch()
+{
+    return muted ? 1.0f : pinch;
+}
+
+Vector2 InPinchCenter()
+{
+    return pinchCenter;
+}
+
+bool InPinching()
+{
+    return pinchDistance > 0.0f;
 }
 
 namespace

@@ -91,6 +91,10 @@ bool InMouseDown(int button);
 bool InMousePressed(int button);
 Vector2 InLookDelta(); // камер эргүүлэх шилжилт (хулганы хөдөлгөөн эсвэл хуруугаар чирэх), пикселээр
 float InWheel();
+// Хоёр хуруугаар чимхэх (газрын зураг): энэ frame-ийн томруулах харьцаа (1 = өөрчлөлтгүй), голын цэг
+float InPinch();
+Vector2 InPinchCenter();
+bool InPinching();
 Vector2 InPointer();   // заагчийн байрлал харагдацын координатаар (хулгана эсвэл эхний хуруу)
 
 // Хөдөлгөөний чиглэл: x = баруун (+) / зүүн (-), y = урагш (+) / хойш (-); урт нь 1-ээс ихгүй.

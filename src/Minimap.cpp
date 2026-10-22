@@ -529,13 +529,12 @@ float FullMap::BaseScale(const World& world) const
     return 0.94f * std::min(area.width / std::max(1.0f, bounds.width), area.height / std::max(1.0f, bounds.height));
 }
 
-void FullMap::Open(const World& world)
+void FullMap::Open(const World& world, const Player& player)
 {
-    // Аймгийн хилийн хэлбэр бүтнээрээ харагдахаар төвлөрүүлж, 100%-иас эхэлнэ.
-    const Rectangle bounds = world.Boundary().Bounds();
+    // Тоглогчийн эргэн тойрон ойроос: дэлгэцийн өргөнд ~kOpenSpan метр багтана
     open = true;
-    zoom = kMinZoom;
-    focus = { bounds.x + bounds.width * 0.5f, bounds.y + bounds.height * 0.5f };
+    SetZoom(FullMapArea().width / (kOpenSpan * BaseScale(world)));
+    focus = { player.Position().x, player.Position().z };
 }
 
 bool FullMap::TakeWaypoint(Vector2& point, bool& clear)
@@ -561,15 +560,18 @@ void FullMap::Update(const World& world, const Player& player)
     // Хойд зүг дээшээ харах үед дэлгэцийн баруун тал нь ертөнцийн -X, доод тал нь -Z тул
     // дэлгэцийн шилжилтийг ертөнцийн шилжилт болгоход тэмдэг нь урвуу.
     const float wheel = InWheel();
-    if (wheel != 0.0f)
+    const float pinch = InPinch();
+    if (wheel != 0.0f || pinch != 1.0f)
     {
-        // Хулганы доорх цэг байрандаа үлдэхээр томруулна.
+        // Хулганы (чимхэлтийн голын) доорх цэг байрандаа үлдэхээр томруулна.
+        const Vector2 at = pinch != 1.0f ? InPinchCenter() : mouse;
         const float before = BaseScale(world) * zoom;
-        const Vector2 anchor = { focus.x - (mouse.x - center.x) / before, focus.y - (mouse.y - center.y) / before };
-        SetZoom(zoom * std::pow(1.2f, wheel));
+        const Vector2 anchor = { focus.x - (at.x - center.x) / before, focus.y - (at.y - center.y) / before };
+        SetZoom(zoom * std::pow(1.2f, wheel) * pinch);
         const float after = BaseScale(world) * zoom;
-        focus = { anchor.x + (mouse.x - center.x) / after, anchor.y + (mouse.y - center.y) / after };
+        focus = { anchor.x + (at.x - center.x) / after, anchor.y + (at.y - center.y) / after };
     }
+    if (InPinching()) dragged += 100.0f; // чимхэлт дууссаны дараа очих газар тэмдэглэгдэхгүй
 
     if (InMouseDown(MOUSE_BUTTON_LEFT))
     {
@@ -723,7 +725,7 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     DrawLegendEntry(x + 240, legendY, kVehicle, "унаа");
     DrawLegendEntry(x + 320, legendY, kObjective, "даалгавар");
     DrawLegendEntry(x + 450, legendY, kMedKit, "эмнэлэг");
-    const char* help = InTouchMode() ? "Товш — очих газар (дахин товшвол арилна)   Чир — зөөх"
+    const char* help = InTouchMode() ? "Товш — очих газар (дахин товшвол арилна)   Чир — зөөх   Чимх — томруулах"
                                      : "Товш — очих газар   X — арилгах   Дугуй — томруулах   Чир — зөөх   C — өөр дээрээ   M — хаах";
     UiText(help, width - (int)view.area.x - UiMeasure(help, 16), legendY + 1, 16, kFrame);
 }
