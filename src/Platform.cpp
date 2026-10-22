@@ -63,7 +63,7 @@ namespace
             // 16px: iPhone талбарт хүрэхэд хуудсыг томруулдаггүй
             input.style.cssText = 'position:fixed;margin:0;padding:0;border:0;outline:none;background:transparent;' +
                 'color:transparent;caret-color:transparent;opacity:0.01;font-size:16px;z-index:4;display:none;' +
-                '-webkit-tap-highlight-color:transparent;-webkit-user-select:text;user-select:text;touch-action:manipulation;';
+                '-webkit-tap-highlight-color:transparent;-webkit-user-select:text;user-select:text;touch-action:none;';
             input.zmKind = -1;
             input.addEventListener('keydown', function(e) {
                 e.stopPropagation();

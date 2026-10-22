@@ -2,7 +2,7 @@
 <html lang="mn">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no">
 <title>Zombie Mongolia</title>
 <!-- Холбоос хуваалцахад (Facebook, Messenger, Telegram, X) гарах урьдчилсан харагдац: зураг, гарчиг, тайлбар.
      Зургийн хаяг бүтэн байх ёстой: {{{ SITE_URL }}}-ийг tools\build_web.ps1 (-SiteUrl) орлуулна. -->
@@ -166,7 +166,8 @@
       debugStatus = 'time ' + Math.round((Date.now() - debugStart) / 1000) + ' s, frames/s ' +
                     Math.round((f.raf + f.timeout - lastFrames.raf - lastFrames.timeout) / 2) +
                     ' (timeout ' + (f.timeout - lastFrames.timeout) + '), memory ' + mem + ' MB, ' +
-                    (innerWidth > innerHeight ? 'landscape' : 'portrait') + (document.hidden ? ', hidden' : '');
+                    (innerWidth > innerHeight ? 'landscape' : 'portrait') + (document.hidden ? ', hidden' : '') +
+                    (window.visualViewport ? ', zoom ' + visualViewport.scale.toFixed(2) : '') + ', canvas ' + canvas.style.width + 'x' + canvas.style.height;
       lastFrames = { raf: f.raf, timeout: f.timeout };
       debugLog('', false);
     }, 2000);
@@ -199,7 +200,18 @@
   }
   // Canvas-ийг #stage-ийн бодит (харагдаж буй) хэмжээнд 16:9-өөр багтаана. Утас эргэх, бүтэн дэлгэц болох,
   // хаягийн мөр гарах/алга болох бүрд дахин тооцно; талбарт бичихэд хуудас гүйлгэгдсэн бол буцаана.
+  // Chrome (Android) утас эргэхэд босоо үеийн томруулалтаа хадгалж, эсвэл бичих талбар руу томруулж, тоглоом
+  // ~2 дахин томорч дэлгэцээс хэтэрдэг байсан: томруулалт 1 биш бол viewport-ийг дахин тавьж 1 болгоно.
+  var viewportMeta = document.querySelector('meta[name="viewport"]');
+  var viewportContent = 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no';
+  function resetZoom() {
+    var v = window.visualViewport;
+    if (!v || Math.abs(v.scale - 1) < 0.01) return;
+    viewportMeta.setAttribute('content', viewportContent + ', shrink-to-fit=no');
+    setTimeout(function () { viewportMeta.setAttribute('content', viewportContent); }, 30);
+  }
   function fitCanvas() {
+    resetZoom();
     var stage = document.getElementById('stage');
     var w = stage.clientWidth, h = stage.clientHeight;
     if (w > 0 && h > 0) {
@@ -219,6 +231,7 @@
   window.addEventListener('orientationchange', fitSoon);
   document.addEventListener('fullscreenchange', fitSoon);
   document.addEventListener('focusout', function () { setTimeout(fitCanvas, 50); }); // гар хаагдсаны дараа
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', function () { setTimeout(resetZoom, 50); });
   fitCanvas();
   // iPhone-ий зөвлөмж: хаавал энэ төхөөрөмж дээр дахин харуулахгүй; хаагаагүй ч 15 секундын дараа алга болно.
   var iosHint = document.getElementById('iosHint');
