@@ -99,8 +99,11 @@ namespace
         }
         if (input.zmKind !== kind) {
             input.zmKind = kind;
-            input.type = kind === 2 ? 'password' : kind === 1 ? 'tel' : 'text';
+            // Бүгд энгийн текст талбар: password / tel төрөл Chrome-ийн автоматаар бөглөх (нууц үг, карт, хаяг)
+            // цагаан мөрийг гарын дээр гаргадаг. Талбар үл үзэгдэх тул нууц үгийг тоглоом өөрөө "•"-ээр харуулна.
+            input.type = 'text';
             input.inputMode = kind === 1 ? 'numeric' : 'text';
+            input.name = 'zm-field-' + slot;
             input.maxLength = kind === 1 ? 8 : kind === 2 ? 32 : 30;
         }
         input.zmNext = next;
