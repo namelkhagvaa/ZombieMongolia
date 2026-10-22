@@ -55,6 +55,12 @@
   #status { color: rgb(242,240,234); }
   #percent { color: rgb(255,192,64); font-weight: 700; }
   #fs { position: fixed; right: 12px; bottom: 12px; z-index: 3; padding: 8px 12px; border: 0; border-radius: 6px; background: rgba(20,24,32,.75); color: #e8e4da; font: inherit; font-size: 13px; cursor: pointer; }
+  /* Ачаалал дуусахад: "БҮТЭН ДЭЛГЭЦ" товч — дарахад бүтэн дэлгэц (хөтөч зөвхөн хэрэглэгчийн үйлдлээр зөвшөөрдөг) */
+  #start { position: fixed; inset: 0; z-index: 3; display: none; align-items: center; justify-content: center;
+           background: rgba(0,0,0,.45); }
+  #start button { padding: 18px 56px; border: 0; border-radius: 14px; background: rgb(255,192,64); color: #14100a;
+                  font-family: "ZmUi", "Segoe UI", Arial, sans-serif; font-size: 28px; font-weight: 700; letter-spacing: 2px;
+                  box-shadow: 0 8px 30px rgba(0,0,0,.6); cursor: pointer; }
   /* Утас: хуудас гүйлгэх, томруулахыг хааж бүх хүрэлтийг тоглоомд өгнө */
   html, body, canvas#canvas { touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   /* iPhone: бүтэн дэлгэц болох цорын ганц арга — нүүр дэлгэцэд нэмэх зөвлөмж */
@@ -92,6 +98,7 @@
   <div id="bar"><div id="fill"></div></div>
 </div></div>
 <button id="fs" title="Бүтэн дэлгэц">⛶ Бүтэн дэлгэц</button>
+<div id="start"><button id="startButton">⛶ БҮТЭН ДЭЛГЭЦ</button></div>
 <div id="iosHint">
   <span>Бүтэн дэлгэцээр тоглох бол:
     <svg viewBox="0 0 18 22" fill="none" stroke="rgb(255,192,64)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -182,6 +189,15 @@
     iosHint.style.display = 'none';
     try { localStorage.setItem('ZombieMongolia:iosHintClosed', '1'); } catch (e) {}
   });
+  document.getElementById('startButton').addEventListener('click', function () {
+    document.getElementById('start').style.display = 'none';
+    enterFullscreen();
+    canvas.focus();
+  });
+  // Бүтэн дэлгэц болмогц товчийг нууна (хүрэлтээр автоматаар болсон ч)
+  document.addEventListener('fullscreenchange', function () {
+    if (document.fullscreenElement) document.getElementById('start').style.display = 'none';
+  });
   document.getElementById('fs').addEventListener('click', function () {
     if (document.fullscreenElement) document.exitFullscreen(); else enterFullscreen();
     canvas.focus();
@@ -222,14 +238,14 @@
     },
     // Тоглоом эхлэлийн дэлгэцийнхээ анхны кадрыг зурмагц дуудна (src/Platform.cpp)
     zmHideLoader: function () { loader.style.display = 'none'; canvas.focus(); },
-    // Эхлэлийн дэлгэц дууссан (src/Splash.cpp): iPhone (бүтэн дэлгэцгүй) дээр нүүр дэлгэцэд нэмэх зөвлөмж.
-    // Бусад төхөөрөмж анх хүрэхэд бүтэн дэлгэц болно (дээрх autoFullscreen).
+    // Эхлэлийн дэлгэц дууссан (src/Splash.cpp): бүтэн дэлгэц болоогүй бол "БҮТЭН ДЭЛГЭЦ" товч харуулна;
+    // iPhone (бүтэн дэлгэцгүй) дээр нүүр дэлгэцэд нэмэх зөвлөмж.
     zmLoadingFinished: function () {
       var standalone = navigator.standalone === true ||
                        (window.matchMedia && window.matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches);
       if (standalone || document.fullscreenElement) return;
       if (document.getElementById('stage').requestFullscreen) {
-        enterFullscreen();
+        document.getElementById('start').style.display = 'flex';
       } else if (/iPhone|iPod/.test(navigator.userAgent)) {
         showIosHint();
       }
