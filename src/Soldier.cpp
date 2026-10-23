@@ -155,7 +155,7 @@ int SoldierSquad::FindMember(int member) const
     return -1;
 }
 
-void SoldierSquad::AddGuestTeam(int controlledMember, Vector3 around, const World& world)
+void SoldierSquad::AddGuestTeam(int controlledMember, Vector3 around, const World& world, float health)
 {
     RemoveGuestTeam();
     for (int member = 0; member < kTeamSize; ++member)
@@ -168,7 +168,7 @@ void SoldierSquad::AddGuestTeam(int controlledMember, Vector3 around, const Worl
         Soldier& soldier = soldiers.back();
         soldier.member = member;
         soldier.guestTeam = true;
-        soldier.health = soldier.maxHealth = 100.0f;
+        soldier.health = soldier.maxHealth = health;
     }
 }
 

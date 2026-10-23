@@ -530,6 +530,47 @@ void Mission::Start(int provinceIndex, const MissionParams& missionParams, const
     }
 }
 
+void Mission::SyncFrom(const StageSave& host)
+{
+    if (!save || !stage) return;
+    *save = host;
+    const int count = ObjectiveCount();
+    for (int i = 0; i < count; ++i)
+    {
+        ObjectiveState& state = states[(size_t)i];
+        const bool done = (host.done >> i) & 1u;
+        if (i < StageSave::kEntitySlots)
+        {
+            for (size_t k = 0; k < state.entities.size() && k < 32; ++k)
+            {
+                if ((host.entities[i] >> k) & 1u) state.entities[k].used = true;
+            }
+        }
+        if (done && state.status != ObjectiveStatus::Done)
+        {
+            state.status = ObjectiveStatus::Done;
+            for (MissionEntity& entity : state.entities) entity.used = true;
+            state.progress = std::max(state.progress, state.target);
+            state.reserve = 0;
+        }
+        else if (!done && !state.entities.empty() && state.target > 0)
+        {
+            int used = 0;
+            for (const MissionEntity& entity : state.entities) used += entity.used ? 1 : 0;
+            state.progress = used;
+        }
+    }
+    for (int i = 0; i < count; ++i)
+    {
+        const int after = stage->objectives[(size_t)i].after;
+        if (states[(size_t)i].status == ObjectiveStatus::Locked &&
+            (after < 0 || (after < count && states[(size_t)after].status == ObjectiveStatus::Done)))
+        {
+            Activate(i);
+        }
+    }
+}
+
 void Mission::Activate(int index)
 {
     states[(size_t)index].status = ObjectiveStatus::Active;

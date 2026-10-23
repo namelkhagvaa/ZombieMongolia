@@ -1131,6 +1131,23 @@ namespace Net
         case Msg::GuestTakeover:
             e.position = r.V3();
             e.amount = r.F();
+            e.id = r.U8();
+            break;
+        case Msg::StageSync:
+            e.text = r.Str();
+            break;
+        case Msg::GuestSwitch:
+            e.id = r.U8();
+            e.accepted = r.U8() != 0;
+            break;
+        case Msg::GuestRecruit:
+            e.id = r.U8();
+            break;
+        case Msg::GuestHeal:
+            break;
+        case Msg::GuestSetup:
+            e.amount = r.F();
+            e.id = r.U8();
             break;
         case Msg::BattleOver:
             e.id = r.U8();
@@ -1260,12 +1277,54 @@ namespace Net
         Send(w.data, true);
     }
 
-    void Session::SendTakeover(Vector3 position, float health)
+    void Session::SendTakeover(Vector3 position, float health, int member)
     {
         Writer w;
         w.U8((uint8_t)Msg::GuestTakeover);
         w.V3(position);
         w.F(health);
+        w.U8((uint8_t)member);
+        Send(w.data, true);
+    }
+
+    void Session::SendStageSync(const std::string& stage)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::StageSync);
+        w.Str(stage);
+        Send(w.data, true);
+    }
+
+    void Session::SendGuestSwitch(int member, bool hold)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::GuestSwitch);
+        w.U8((uint8_t)member);
+        w.U8(hold ? 1 : 0);
+        Send(w.data, true);
+    }
+
+    void Session::SendGuestRecruit(int count)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::GuestRecruit);
+        w.U8((uint8_t)count);
+        Send(w.data, true);
+    }
+
+    void Session::SendGuestHeal()
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::GuestHeal);
+        Send(w.data, true);
+    }
+
+    void Session::SendGuestSetup(float memberHealth, int recruits)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::GuestSetup);
+        w.F(memberHealth);
+        w.U8((uint8_t)recruits);
         Send(w.data, true);
     }
 

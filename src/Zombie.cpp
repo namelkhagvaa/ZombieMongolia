@@ -789,8 +789,25 @@ int ZombieHorde::Nearest(Vector3 position, float maxDistance) const
 void ZombieHorde::Damage(int index, float amount)
 {
     Zombie& zombie = zombies[index];
-    if (!zombie.IsAlive() || puppet) // зочин: хохирлыг хост тооцно
+    if (!zombie.IsAlive())
     {
+        return;
+    }
+    if (puppet)
+    {
+        // Зочин: хохирол, шагналыг хост тооцно; хоцролтгүй харагдуулахын тулд үхлийг урьдчилан үзүүлнэ
+        // (хост 1.5 секундын дотор батлахгүй бол буцаж амилна). Аварга зомби хостынхоор л.
+        if (zombie.boss) return;
+        zombie.health -= amount;
+        zombie.stagger = kStaggerTime;
+        if (zombie.health <= 0.0f)
+        {
+            zombie.health = 0.0f;
+            zombie.deathTimer = 0.0f;
+            zombie.predicted = 1.5f;
+            Audio::Play(Sfx::ZombieDie, Vector3Add(zombie.mover.position, { 0.0f, 1.4f * zombie.scale, 0.0f }), 0.9f,
+                        zombie.type == ZombieType::Brute ? 0.8f : 1.0f);
+        }
         return;
     }
 
@@ -1088,6 +1105,13 @@ void ZombieHorde::ApplySnapshot(const std::vector<Net::ZombieState>& states, con
             zombie->health = 0.0f;
             zombie->deathTimer = 0.0f;
         }
+        else if (alive && !zombie->IsAlive() && zombie->predicted <= 0.0f)
+        {
+            // Урьдчилан үхүүлсэн ч хост амьд гэж үзэв (бусад хохирол тооцогдоогүй г.м.): буцааж амилуулна
+            zombie->health = std::max(1.0f, zombie->maxHealth * 0.25f);
+            zombie->deathTimer = 0.0f;
+        }
+        if (!alive) zombie->predicted = 0.0f;
         // Унаанд мөргүүлж нисэж буй: зочин хостын байрлалыг дагаж эргэлдүүлж зурна, газардмагц хэвтэнэ.
         const bool airborne = !alive && (state.flags & Net::kZombieAirborne) != 0;
         if (zombie->airborne && !airborne) zombie->deathTimer = std::max(zombie->deathTimer, kFallTime);
@@ -1106,6 +1130,7 @@ void ZombieHorde::ApplySnapshot(const std::vector<Net::ZombieState>& states, con
 
 void ZombieHorde::UpdatePuppets(float dt)
 {
+    for (Zombie& zombie : zombies) zombie.predicted = std::max(0.0f, zombie.predicted - dt);
     zombies.erase(std::remove_if(zombies.begin(), zombies.end(),
                                  [](const Zombie& z) {
                                      return (!z.IsAlive() && z.deathTimer > kCorpseTime) || (z.IsAlive() && z.netSeen > 1.5f);

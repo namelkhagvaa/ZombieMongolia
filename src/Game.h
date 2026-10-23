@@ -148,7 +148,8 @@ private:
     // Мэдрэгчтэй дэлгэц: буудаж / онилж байх үед харааг загалмайд ойр, харагдаж буй зомби руу зөөлөн татна.
     void AimAssist(float dt);
 
-    void StartMission(int provinceIndex);
+    // stageOverride: зочин даалгаврын явцыг өөрийн хадгалалт биш, хостын (өрөөний) ахицаар харуулна.
+    void StartMission(int provinceIndex, StageSave* stageOverride = nullptr);
     void ReturnToMap();
     void CloseJournal();
     void OpenPause();
@@ -198,6 +199,14 @@ private:
     bool autopilot = false, autoFire = false;
     float stageUploadTimer = 0.0f;  // хост: өрөөний ахицыг серверт илгээх
     std::vector<int8_t> hostSoldierSide; // зочин: snapshot-ын цэрэг бүр: 1 хостын дайчин, 2 өөрийн баг, 0 элсүүлсэн
+    // ---- Зочин хосттой адил: өөрийн AI гишүүд рүү шилжих, дэлгүүр, журнал (хост баталгаажуулна) ----
+    StageSave guestStage;           // зочин: хостын өрөөний ахиц (StageSync), өөрийн хадгалалтыг хөндөхгүй
+    float guestSwitchTimer = 0.0f;  // зочин: шилжих хүсэлт илгээсний дараа давхар илгээхгүй
+    float stageSyncTimer = 0.0f;    // хост: өрөөний ахицыг зочинд илгээх
+    float guestMemberHealth = 100.0f; // хост: зочны гишүүдийн амийн дээд хэмжээ (GuestSetup)
+    bool guestSetupSent = false;    // зочин: нэгдсэний дараа тохиргоогоо илгээсэн
+    void GuestTakeOver(int index, bool leaveDead, bool hold); // хост: зочныг index дахь AI гишүүний байранд
+    void GuestTeamInput();          // зочин: Tab / F1-F3 / "энд бай"
     void UpdateBattle(float dt);
     void AutoFight(float dt);
     void MigrateToHost();

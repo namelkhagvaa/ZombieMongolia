@@ -93,7 +93,7 @@ public:
     // Багийн гишүүний индекс; -1 = байхгүй (тоглогч өөрөө удирдаж байгаа). Зочны багийнхныг тооцохгүй.
     int FindMember(int member) const;
     // Хамтарсан тоглолт: зочны удирдаагүй хоёр дайчин (зочныг дагаж байлдана)
-    void AddGuestTeam(int controlledMember, Vector3 around, const World& world);
+    void AddGuestTeam(int controlledMember, Vector3 around, const World& world, float health = 100.0f);
     void RemoveGuestTeam();
     bool HasGuestTeam() const;
     // Зочны багийнхны дагах байрлал (зочин холбогдсон үед)

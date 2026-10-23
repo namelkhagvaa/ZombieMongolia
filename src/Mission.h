@@ -48,6 +48,9 @@ class Mission
 public:
     // save: энэ аймгийн хадгалагдсан явц; Mission үүнийг шууд шинэчилнэ (Game файл руу бичнэ).
     void Start(int provinceIndex, const MissionParams& params, const World& world, StageSave& save);
+    // Зочин: хостын (өрөөний) ахицыг авна: биелсэн даалгавар, аврагдсан хүн, дараагийн идэвхтэй даалгавар
+    // (журнал, газрын зургийн тэмдэглэгээ хосттой ижил).
+    void SyncFrom(const StageSave& host);
 
     // interactPressed: E товч дарагдсан эсэх. onFoot: тоглогч явган (унаанаас харилцаж болохгүй).
     void Update(float dt, World& world, Player& player, ZombieHorde& horde, SoldierSquad& squad, bool interactPressed,
