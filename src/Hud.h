@@ -23,6 +23,7 @@ struct HudInfo
     int missionKills = 0;
     int ammo = 0;
     int magazine = 0;
+    int reserve = -1;          // багийн нөөц сум (-1 = хязгааргүй: хайрцгийн хэмжээг харуулна)
     bool reloading = false;
     int weaponSlot = 2;        // сонгогдсон зэвсгийн нүд (0-ээс)
     const char* const* slotNames = nullptr; // зэвсгийн нүднүүдийн бичвэр (гишүүний бүрдлээс хамаарна)

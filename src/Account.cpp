@@ -72,6 +72,12 @@ namespace
     int freeLeft = 0, credits = 0, capital = 15, packPrice = 3000, packSize = 3, devicePrice = 5000, maxDevices = 2,
         capitalPrice = 5000;
     bool deviceOk = true;
+    // Gold ба сайжруулалт (серверийн "upgrades", "shop"): ShopItem-ийн дараалал
+    constexpr int kUpgradeCount = 5;
+    const char* const kUpgradeNames[kUpgradeCount] = { "damage", "fire_rate", "magazine", "health", "soldier" };
+    int gold = 0;
+    int upgradeLevels[kUpgradeCount] = {};
+    int upgradePrices[kUpgradeCount] = { 60, 60, 40, 50, 120 };
 
     // --- Цонх ---
     Screen screen = Screen::None;
@@ -340,6 +346,12 @@ namespace
         devicePrice = prices["device_change"].Int(devicePrice);
         capitalPrice = prices["capital"].Int(capitalPrice);
         maxDevices = account["max_devices"].Int(maxDevices);
+        gold = account["gold"].Int(gold);
+        for (int i = 0; i < kUpgradeCount; ++i)
+        {
+            upgradeLevels[i] = account["upgrades"][kUpgradeNames[i]].Int(upgradeLevels[i]);
+            upgradePrices[i] = account["shop"][kUpgradeNames[i]]["price"].Int(upgradePrices[i]);
+        }
     }
 
     void SignOut()
@@ -1558,7 +1570,7 @@ int Account::DrawBadge(int x, int y)
         badge = {};
         return 0;
     }
-    const std::string text = playerName + "  ·  үнэгүй " + std::to_string(freeLeft) + "  ·  эрх " + std::to_string(credits);
+    const std::string text = playerName + "  ·  " + std::to_string(gold) + " Gold";
     const int width = Ui::Chip(text.c_str(), x, y, Ui::kText, Ui::kAccent);
     const char* label = "Гарах";
     badge = { (float)(x + width + 6), (float)y, (float)(Ui::Measure(label, 15) + 24), 32.0f };
@@ -1566,4 +1578,32 @@ int Account::DrawBadge(int x, int y)
     Ui::Panel(badge, hover ? Color{ 40, 46, 58, 220 } : Ui::kPanel, 16.0f);
     Ui::Text(label, (int)badge.x + 12, y + 7, 15, hover ? Ui::kText : Ui::kTextDim);
     return width + 6 + (int)badge.width;
+}
+
+bool Account::ServerShop() { return enabled && signedIn; }
+int Account::Gold() { return gold; }
+int Account::UpgradeLevel(int item) { return item >= 0 && item < kUpgradeCount ? upgradeLevels[item] : 0; }
+
+int Account::UpgradePrice(int item)
+{
+    return item >= 0 && item < kUpgradeCount ? upgradePrices[item] * (upgradeLevels[item] + 1) : 0;
+}
+
+void Account::BuyUpgrade(int item)
+{
+    if (!ServerShop() || item < 0 || item >= kUpgradeCount || request.id >= 0) return;
+    // Тоглоомын харж буй түвшинг илгээнэ: сервер таарахгүй бол (давхар дарсан) дахин авахгүй
+    Call("POST", "shop/buy/",
+         Obj({ { "item", JsonQuote(kUpgradeNames[item]) }, { "level", std::to_string(upgradeLevels[item]) } }),
+         [](int status, const Json& reply) {
+             if (status == 200)
+             {
+                 ReadAccount(reply["account"]);
+                 return;
+             }
+             if (status == 409) Background("GET", "account/", "", [](int code, const Json& fresh) {
+                 if (code == 200) ReadAccount(fresh["account"]);
+             });
+             Fail(status, reply);
+         }, "Худалдаж авч байна...");
 }

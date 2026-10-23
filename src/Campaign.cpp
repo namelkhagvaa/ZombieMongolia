@@ -629,7 +629,6 @@ void MapScreen::Draw(const Progress& progress) const
     }
 
     // --- Сонгосон аймгийн карт ---
-    const MissionParams mission = MissionFor(selected);
     const bool unlocked = IsProvinceUnlocked(progress, selected);
     const bool owned = Account::Unlocked(selected); // данстай үед: эрх нээгдсэн эсэх
     const bool free = progress.liberated[selected];
@@ -655,8 +654,8 @@ void MapScreen::Draw(const Progress& progress) const
         Ui::Text(TextFormat("Даалгавар  %d / %d", objectivesDone, objectives), panelX + 18, y + 88, 15, Ui::kTextDim);
         Ui::Bar({ (float)panelX + 18.0f, (float)y + 110.0f, (float)panelWidth - 36.0f, 6.0f },
                 objectives > 0 ? (float)objectivesDone / (float)objectives : 0.0f, kLiberated);
-        Ui::Coin({ (float)panelX + 26.0f, (float)y + 134.0f }, 7.0f);
-        Ui::Text(TextFormat("Шагнал  %d зоос", free ? 0 : mission.reward), panelX + 40, y + 125, 15, kGold);
+        // Аймаг чөлөөлөхөд зоос өгөхгүй: Gold зөвхөн нээлттэй өрөөний дүрмээр (сервер)
+        Ui::Text("Ганцаарчилсан · Gold-гүй", panelX + 18, y + 125, 15, Ui::kTextDim);
         // Хүндрэл: аймгийн дугаараас (зомбины тоо, амь, хурд нэмэгддэг) 1-5 гавлын яс
         const int skulls = 1 + selected * 5 / count;
         const char* label = "Хүндрэл";
@@ -719,7 +718,7 @@ void MapScreen::Draw(const Progress& progress) const
     }
     Ui::TextBold("САЙЖРУУЛАЛТ", panelX + 14, y + 12, 15, Ui::kText);
     {
-        const char* coinText = TextFormat("%d", progress.coins);
+        const char* coinText = TextFormat("%d Gold", ShopWallet(progress));
         const int coinWidth = Ui::MeasureBold(coinText, 17);
         Ui::Coin({ (float)(panelX + panelWidth - 24 - coinWidth), (float)y + 21.0f }, 8.0f);
         Ui::TextBold(coinText, panelX + panelWidth - 12 - coinWidth, y + 12, 17, kGold);
@@ -732,7 +731,7 @@ void MapScreen::Draw(const Progress& progress) const
         const int maxLevel = ShopMaxLevel(item);
         const int cost = ShopCost(progress, item);
         const bool maxed = level >= maxLevel;
-        const bool affordable = !maxed && progress.coins >= cost;
+        const bool affordable = !maxed && ShopWallet(progress) >= cost;
 
         const Rectangle card = { (float)panelX + 8.0f, (float)y, (float)panelWidth - 16.0f, 40.0f };
         DrawRectangleRounded(card, 0.25f, 6, { 255, 255, 255, 12 });

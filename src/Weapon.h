@@ -98,10 +98,14 @@ public:
 
     void AddGrenades(int count);
 
+    // Цэнэглэхэд хасагдах нөөц сум (багийн гишүүд нэгийг хуваалцана). nullptr = хязгааргүй.
+    void SetReserve(int* pool) { reserve = pool; }
+
 private:
     int MagazineSizeOf(WeaponType type) const;
 
     WeaponLevels levels;
+    int* reserve = nullptr;
     Loadout loadout = Loadout::Fighter;
     WeaponType current = WeaponType::Rifle;
     int ammo[(int)WeaponType::Count] = {};

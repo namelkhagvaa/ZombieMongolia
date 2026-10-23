@@ -124,7 +124,12 @@ void Arsenal::Update(float dt)
         reloadTimer -= dt;
         if (reloadTimer <= 0.0f)
         {
-            ammo[(int)current] = MagazineSize();
+            // Нөөцөөс дутуу сумыг нөхнө (нөөц дууссан бол байгаагаараа)
+            int& loaded = ammo[(int)current];
+            const int need = std::max(0, MagazineSize() - loaded);
+            const int take = reserve ? std::min(need, *reserve) : need;
+            loaded += take;
+            if (reserve) *reserve -= take;
         }
     }
 }
@@ -158,7 +163,7 @@ void Arsenal::Reload()
     {
         return;
     }
-    if (!IsReloading() && Ammo() < MagazineSize())
+    if (!IsReloading() && Ammo() < MagazineSize() && (!reserve || *reserve > 0))
     {
         reloadTimer = Spec().reloadTime;
     }

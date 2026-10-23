@@ -64,6 +64,7 @@ struct LaunchOptions
     bool journal = false;     // даалгаврын журналыг нээлттэй эхлүүлнэ (--journal)
     bool shop = false;        // дэлгүүрийн цэсийг нээлттэй эхлүүлнэ (--shop)
     bool characterSelect = false; // газрын зураг дээр дүр сонгох цонхыг нээнэ (--campaign --select)
+    bool stayOnMap = false;       // --campaign --api: нэвтэрсний дараа аймаг эхлүүлэхгүй (дэлгүүр, Gold шалгах)
     bool airstrike = false;   // бөмбөгдөлтийн киног шууд эхлүүлнэ (--airstrike)
     float dayTime = -1.0f;    // туршилт: өдрийн цагийг 0..1 тогтооно (--daytime t)
     bool pause = false;       // тоглоомын цэсийг нээлттэй эхлүүлнэ (--pause)
@@ -183,6 +184,7 @@ private:
     ThirdPersonCamera camera;
     Arsenal arsenal;                // удирдаж буй гишүүний зэвсэг
     Arsenal arsenals[kTeamSize];    // гишүүн бүрийн зэвсэг, сум (шилжихэд хадгалагдана)
+    int ammoReserve = 0;            // багийн нөөц сум (тоглолт бүр 5000-аар эхэлнэ, дэлгүүрээс тоглолтын зоосоор)
     int activeMember = 0;
     int missionFrame = 0;        // даалгаврын шинэчлэлтийн тоолуур (туршилтын командуудад)
     int teamVehicle = -1;        // багийн гишүүдийн сонгосон хэрэгсэл (-1 = байхгүй)

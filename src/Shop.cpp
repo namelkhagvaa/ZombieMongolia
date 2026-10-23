@@ -1,5 +1,7 @@
 #include "Shop.h"
 
+#include "Account.h"
+
 namespace
 {
     int* LevelRef(Progress& progress, ShopItem item)
@@ -44,6 +46,7 @@ const char* ShopItemName(ShopItem item)
 
 int ShopLevel(const Progress& progress, ShopItem item)
 {
+    if (Account::ServerShop()) return Account::UpgradeLevel((int)item);
     const int* level = LevelRef(const_cast<Progress&>(progress), item);
     return level ? *level : 0;
 }
@@ -60,11 +63,42 @@ int ShopMaxLevel(ShopItem item)
 
 int ShopCost(const Progress& progress, ShopItem item)
 {
+    if (Account::ServerShop()) return Account::UpgradePrice((int)item);
     return BaseCost(item) * (ShopLevel(progress, item) + 1);
+}
+
+int ShopWallet(const Progress& progress)
+{
+    return Account::ServerShop() ? Account::Gold() : progress.coins;
+}
+
+bool ShopSync(Progress& progress)
+{
+    if (!Account::ServerShop()) return false;
+    bool changed = false;
+    for (int i = 0; i < (int)ShopItem::Count; ++i)
+    {
+        int* level = LevelRef(progress, (ShopItem)i);
+        const int server = Account::UpgradeLevel(i);
+        if (level && *level != server)
+        {
+            *level = server;
+            changed = true;
+        }
+    }
+    return changed;
 }
 
 bool ShopBuy(Progress& progress, ShopItem item)
 {
+    if (Account::ServerShop())
+    {
+        if (ShopLevel(progress, item) < ShopMaxLevel(item) && Account::Gold() >= ShopCost(progress, item))
+        {
+            Account::BuyUpgrade((int)item);
+        }
+        return false;
+    }
     int* level = LevelRef(progress, item);
     if (!level || *level >= ShopMaxLevel(item))
     {

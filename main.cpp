@@ -160,6 +160,10 @@ int main(int argc, char** argv)
         {
             options.characterSelect = true;
         }
+        else if (std::strcmp(argv[i], "--stay-map") == 0)
+        {
+            options.stayOnMap = true;
+        }
         else if (std::strcmp(argv[i], "--airstrike") == 0)
         {
             options.airstrike = true;

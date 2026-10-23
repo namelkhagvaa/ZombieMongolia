@@ -1243,8 +1243,8 @@ void Mission::DrawJournal() const
             // Нэг мөр: тайлбар, баруун талд нь явц эсвэл шагнал
             char right[96];
             if (locked && def.after >= 0) std::snprintf(right, sizeof(right), "%d-р даалгаврын дараа", def.after + 1);
-            else if (!progress.empty()) std::snprintf(right, sizeof(right), "Явц: %s  ·  %d зоос", progress.c_str(), def.reward);
-            else std::snprintf(right, sizeof(right), "%d зоос", def.reward);
+            else if (!progress.empty()) std::snprintf(right, sizeof(right), "Явц: %s", progress.c_str());
+            else right[0] = '\0';
             const int rightWidth = UiMeasure(right, 16);
             UiText(right, left + width - 34 - rightWidth, y + 28, 16, done ? kDoneGreen : dim);
             UiText(fit(def.description, 16, width - 74 - 60 - rightWidth).c_str(), left + 74, y + 28, 16, locked ? dim : text);
@@ -1261,11 +1261,11 @@ void Mission::DrawJournal() const
         }
         else if (!progress.empty())
         {
-            std::snprintf(detail, sizeof(detail), "Явц: %s        Шагнал: %d зоос", progress.c_str(), def.reward);
+            std::snprintf(detail, sizeof(detail), "Явц: %s", progress.c_str());
         }
         else
         {
-            std::snprintf(detail, sizeof(detail), "Шагнал: %d зоос", def.reward);
+            detail[0] = '\0';
         }
         UiText(detail, left + 74, y + 34 + lines * 24, 18, done ? kDoneGreen : dim);
 

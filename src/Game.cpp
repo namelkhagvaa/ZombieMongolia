@@ -42,12 +42,17 @@ namespace
     const float kDayLength = 480.0f; // бүтэн өдөр шөнө, секунд (≈5 мин өдөр, 2 мин шөнө)
     const float kZombieSpeedupStep = 1.5f;
     const float kMaxZombieSpeedMultiplier = 3.0f;
-    const int kRecruitCost = 300;         // нэг цэрэг элсүүлэх үнэ, зоос
-    const int kGrenadeCost = 80;          // дэлгүүр: 4 гранат
-    const int kHealCost = 100;            // дэлгүүр: багийн гурван гишүүний амийг 100% болгох
+    // Даалгаврын доторх дэлгүүр: тоглолтын зоосоор (зомби алж олно), тоглолт дуусахад зоос, авсан юм алга болно.
+    const int kRecruitCost = 300;         // нэг цэрэг элсүүлэх үнэ (энэ тоглолтод л)
+    const int kGrenadeCost = 80;          // 4 гранат
+    const int kHealCost = 100;            // багийн гурван гишүүний амийг 100% болгох
+    const int kAmmoCost = 60;             // нөөц сум +kAmmoPack
+    const int kAmmoPack = 500;
+    const int kStartAmmo = 5000;          // тоглолт бүрийн эхний нөөц сум (багт нийтдээ)
 
     // Даалгаврын үеийн дэлгүүрийн бараа (цэсний дараалал = 1..7 товч).
-    enum class ShopOffer { Recruit, Damage, FireRate, Magazine, Grenades, Heal, MaxHealth, Count };
+    // (Байнгын сайжруулалт зөвхөн газрын зургийн дэлгүүрт Gold-оор.)
+    enum class ShopOffer { Ammo, Grenades, Heal, Recruit, Count };
 
     // Цэсний мөрүүдийн байрлал: зурах ба товшилт шалгах хоёр үүнийг ашиглана.
     const float kShopPanelWidth = 620.0f, kShopRowHeight = 52.0f, kShopTop = 150.0f;
@@ -609,7 +614,8 @@ void Game::UpdateMap()
         Account::TestEnter();
     }
     if (Account::Update()) return; // нэвтрэх, аймаг нээх, төлөх цонх нээлттэй
-    if (options.screenshotPath && options.apiBase && !accountTestSent && Account::SignedIn() && !options.characterSelect)
+    if (options.screenshotPath && options.apiBase && !accountTestSent && Account::SignedIn() && !options.characterSelect &&
+        !options.stayOnMap)
     {
         accountTestSent = true;
         accountTestEnter = GetTime() + 1.0;
@@ -628,7 +634,7 @@ void Game::UpdateMap()
     }
     UpdateCoopMap();
     if (state != GameState::Map) return; // хамтарсан тоглолт эхэлсэн
-    bool changed = false;
+    bool changed = ShopSync(progress); // серверээс авсан сайжруулалт
     const MapScreen::Result result = mapScreen.Update(progress, changed);
     if (changed)
     {
@@ -793,6 +799,7 @@ void Game::RenderPortraits() const
 
 void Game::ReturnToMap()
 {
+    progress.coins = 0; // тоглолтын зоос тоглолт дуусахад алга болно
     if (coopGuest) LeaveCoop();
     else if (net.GetRole() == Net::Role::Host) { net.Stop(); remoteActive = false; joinRequestPending = false; }
     Save();
@@ -856,6 +863,9 @@ void Game::StartMission(int index)
     const double startTime = GetTime();
     provinceIndex = index;
     params = MissionFor(index);
+    ShopSync(progress);       // байнгын сайжруулалт: серверийнх
+    progress.coins = 0;       // тоглолтын зоос шинээр
+    ammoReserve = kStartAmmo;
 
     // Талбарын хязгаар: энэ аймгийн хилийн хэлбэр. Тоглогч хилээс хамгийн хол дотоод цэгт (0, 0) эхэлнэ.
     // Улаанбаатарын нутаг томсгосон (жинхэнэ хэмжээтэй нисэх буудал багтана).
@@ -890,7 +900,9 @@ void Game::StartMission(int index)
         // 2-р дайчин (F2) үрлэн бууны оронд пуужин харвагчтай.
         arsenals[member].Configure(progress.weapon, IsSniperMember(member) ? Loadout::Sniper
                                                     : member == 1 ? Loadout::Heavy : Loadout::Fighter);
+        arsenals[member].SetReserve(&ammoReserve);
     }
+    arsenal.SetReserve(&ammoReserve);
     activeMember = 0;
     dayClock = 0.08f * kDayLength; // аймаг бүр өглөөгөөр эхэлнэ
     wasNight = false;
@@ -2195,7 +2207,7 @@ void Game::UpdateMission(float dt)
         mission.Update(dt, world, player, horde, squad, interact, !garage.IsDriving());
     }
 
-    progress.coins += mission.TakeReward();
+    mission.TakeReward(); // даалгаврын зоосны шагнал байхгүй (Gold зөвхөн серверийн дүрмээр)
     if (mission.TakeDirty())
     {
         Save(); // даалгаврын явц шууд хадгалагдана
@@ -2207,13 +2219,8 @@ void Game::UpdateMission(float dt)
     const bool quotaRequired = !(options.screenshotPath && options.autoPlay) || options.quotaSmall >= 0;
     if (mission.IsComplete() && (mission.QuotaMet() || !quotaRequired))
     {
-        lastReward = 0;
-        if (!progress.liberated[provinceIndex])
-        {
-            progress.liberated[provinceIndex] = true;
-            lastReward = params.reward;
-            progress.coins += lastReward;
-        }
+        lastReward = 0; // аймаг чөлөөлөхөд зоос өгөхгүй
+        progress.liberated[provinceIndex] = true;
         progress.stages[(size_t)provinceIndex] = StageSave{}; // дараагийн удаа шинээр эхэлнэ
         Save();
         journalOpen = false;
@@ -2565,6 +2572,7 @@ void Game::DrawMission() const
     info.missionKills = missionKills;
     info.ammo = arsenal.Ammo();
     info.magazine = arsenal.MagazineSize();
+    info.reserve = ammoReserve;
     info.reloading = arsenal.IsReloading();
     static const char* const fighterSlots[] = { "1 ХУТГА", "2 ГАР БУУ", "3 АВТОМАТ", "4 ҮРЛЭН БУУ", "5 ГРАНАТ" };
     static const char* const sniperSlots[] = { "1 ХУТГА", "2 ГАР БУУ", "3 ДУРАНТ БУУ" };
@@ -2674,7 +2682,7 @@ void Game::DrawMission() const
     static char recruitPrompt[96];
     if (inShop && !shopOpen && state == GameState::Playing)
     {
-        std::snprintf(recruitPrompt, sizeof(recruitPrompt), "%sДэлгүүр — цэрэг, зэвсэг, амь (%d зоос)",
+        std::snprintf(recruitPrompt, sizeof(recruitPrompt), "%sДэлгүүр — сум, гранат, амь, цэрэг (%d зоос)",
                       InTouchMode() ? "" : "E — ", progress.coins);
         info.prompt = recruitPrompt;
     }
@@ -2771,27 +2779,23 @@ namespace
     {
         switch (offer)
         {
-        case ShopOffer::Recruit: return "Цэрэг элсүүлэх";
-        case ShopOffer::Damage: return "Зэвсгийн хүч";
-        case ShopOffer::FireRate: return "Буудах хурд";
-        case ShopOffer::Magazine: return "Сумны багтаамж";
+        case ShopOffer::Ammo: return "Сум +500";
         case ShopOffer::Grenades: return "Гранат +4";
         case ShopOffer::Heal: return "Амь 100% (бүх баг)";
-        case ShopOffer::MaxHealth: return "Амийн дээд хэмжээ";
+        case ShopOffer::Recruit: return "Цэрэг элсүүлэх (энэ тоглолтод)";
         default: return "";
         }
     }
 
-    // Зэвсэг, амийн сайжруулалт газрын зургийн дэлгүүртэй нэг түвшинг хуваалцана (Shop.h).
-    bool OfferUpgrade(ShopOffer offer, ShopItem& item)
+    int ShopOfferCost(ShopOffer offer)
     {
         switch (offer)
         {
-        case ShopOffer::Damage: item = ShopItem::Damage; return true;
-        case ShopOffer::FireRate: item = ShopItem::FireRate; return true;
-        case ShopOffer::Magazine: item = ShopItem::Magazine; return true;
-        case ShopOffer::MaxHealth: item = ShopItem::Health; return true;
-        default: return false;
+        case ShopOffer::Ammo: return kAmmoCost;
+        case ShopOffer::Grenades: return kGrenadeCost;
+        case ShopOffer::Heal: return kHealCost;
+        case ShopOffer::Recruit: return kRecruitCost;
+        default: return 0;
         }
     }
 }
@@ -2829,50 +2833,12 @@ void Game::UpdateShopMenu()
 void Game::BuyShopOffer(int index)
 {
     const ShopOffer offer = (ShopOffer)index;
-    ShopItem item = ShopItem::Count;
-    if (OfferUpgrade(offer, item))
-    {
-        if (ShopLevel(progress, item) >= ShopMaxLevel(item))
-        {
-            shopMessage = "Хамгийн дээд түвшинд хүрсэн";
-            return;
-        }
-        if (!ShopBuy(progress, item))
-        {
-            shopMessage = "ЗООС ХҮРЭЛЦЭХГҮЙ";
-            return;
-        }
-        if (item == ShopItem::Health)
-        {
-            // Удирдаж буй ба дагаж буй гишүүдийн амийн дээд хэмжээ нэмэгдэнэ.
-            const float newMax = config.playerBaseHealth + kHealthPerLevel * (float)progress.healthLevel;
-            const float gain = newMax - player.MaxHealth();
-            player.SetMaxHealth(newMax);
-            for (Soldier& soldier : squad.All())
-            {
-                if (soldier.member < 0) continue;
-                soldier.maxHealth = newMax;
-                if (soldier.alive) soldier.health += gain;
-            }
-            shopMessage = "АМИЙН ДЭЭД ХЭМЖЭЭ НЭМЭГДЛЭЭ";
-        }
-        else
-        {
-            // Багийн гурван гишүүний зэвсэгт шууд үйлчилнэ (сум хөндөхгүй).
-            for (Arsenal& memberArsenal : arsenals) memberArsenal.SetLevels(progress.weapon);
-            arsenal.SetLevels(progress.weapon);
-            shopMessage = "ЗЭВСЭГ САЙЖИРЛАА";
-        }
-        Save();
-        return;
-    }
-
     if (offer == ShopOffer::Recruit && coopGuest)
     {
         shopMessage = "Зочин цэрэг элсүүлэх боломжгүй";
         return;
     }
-    const int cost = offer == ShopOffer::Recruit ? kRecruitCost : offer == ShopOffer::Grenades ? kGrenadeCost : kHealCost;
+    const int cost = ShopOfferCost(offer);
     if (progress.coins < cost)
     {
         shopMessage = "ЗООС ХҮРЭЛЦЭХГҮЙ";
@@ -2891,6 +2857,10 @@ void Game::BuyShopOffer(int index)
         shopMessage = "ШИНЭ ЦЭРЭГ БАГТ НЭГДЛЭЭ";
         break;
     }
+    case ShopOffer::Ammo:
+        ammoReserve += kAmmoPack;
+        shopMessage = "СУМ НЭМЭГДЛЭЭ";
+        break;
     case ShopOffer::Grenades:
         for (Arsenal& memberArsenal : arsenals) memberArsenal.AddGrenades(4);
         arsenal.AddGrenades(4);
@@ -2933,7 +2903,8 @@ void Game::DrawShopMenu() const
     const Rectangle panel = { first.x - 20.0f, kShopTop - 96.0f, kShopPanelWidth, last.y + last.height - kShopTop + 172.0f };
     Ui::PanelAccent(panel, Ui::kAccent);
     Ui::TextBold("ДЭЛГҮҮР", (int)panel.x + 20, (int)panel.y + 18, 30, Ui::kText);
-    Ui::Text("Цуглуулсан зоосоороо худалдаж ав", (int)panel.x + 20, (int)panel.y + 56, 16, Ui::kTextDim);
+    Ui::Text("Зомби алж олсон зоосоор: тоглолт дуусахад зоос, авсан юм алга болно", (int)panel.x + 20, (int)panel.y + 56, 16,
+             Ui::kTextDim);
     Ui::Chip(TextFormat("%d", progress.coins), (int)(panel.x + panel.width) - 20, (int)panel.y + 22, Ui::kAccent, Ui::kAccent, true);
 
     const Vector2 pointer = InPointer();
@@ -2942,28 +2913,15 @@ void Game::DrawShopMenu() const
         const ShopOffer offer = (ShopOffer)i;
         const Rectangle row = ShopRow(i);
 
-        // Үнэ, түвшин, боломжтой эсэх
-        ShopItem item = ShopItem::Count;
-        const bool upgrade = OfferUpgrade(offer, item);
-        const int level = upgrade ? ShopLevel(progress, item) : 0;
-        const int maxLevel = upgrade ? ShopMaxLevel(item) : 0;
-        const bool maxed = upgrade && level >= maxLevel;
-        const int cost = upgrade ? ShopCost(progress, item)
-                       : offer == ShopOffer::Recruit ? kRecruitCost : offer == ShopOffer::Grenades ? kGrenadeCost : kHealCost;
-        const bool affordable = !maxed && progress.coins >= cost;
+        // Үнэ, боломжтой эсэх
+        const bool maxed = false;
+        const int cost = ShopOfferCost(offer);
+        const bool affordable = progress.coins >= cost;
 
         const bool hover = !InTouchMode() && CheckCollisionPointRec(pointer, row);
         Ui::Panel(row, hover && affordable ? Fade(Ui::kAccent, 0.22f) : Ui::kPanelSoft, 10.0f);
         Ui::KeyBadge(TextFormat("%d", i + 1), (int)row.x + 12, (int)row.y + 13, 16, affordable ? Ui::kAccent : Ui::kTextDim);
-        Ui::TextBold(ShopOfferName(offer), (int)row.x + 54, (int)row.y + (upgrade ? 6 : 14), 20, maxed ? Ui::kTextDim : Ui::kText);
-        if (upgrade)
-        {
-            for (int k = 0; k < maxLevel; ++k)
-            {
-                DrawRectangleRounded({ row.x + 54.0f + (float)k * 16.0f, row.y + 34.0f, 12.0f, 7.0f }, 1.0f, 4,
-                                     k < level ? Ui::kAccent : Color{ 255, 255, 255, 40 });
-            }
-        }
+        Ui::TextBold(ShopOfferName(offer), (int)row.x + 54, (int)row.y + 14, 20, Ui::kText);
         const char* price = maxed ? "MAX" : TextFormat("%d", cost);
         const int priceWidth = Ui::MeasureBold(price, 22);
         Ui::TextBold(price, (int)(row.x + row.width) - 18 - priceWidth, (int)row.y + 13, 22,
@@ -2976,7 +2934,7 @@ void Game::DrawShopMenu() const
     {
         Ui::TextBold(shopMessage, (int)panel.x + 20, footerY, 20, Ui::kAccent);
     }
-    const char* help = InTouchMode() ? "Мөрийг товшиж авна" : "1–7 эсвэл товшиж авна    E / ESC — хаах";
+    const char* help = InTouchMode() ? "Мөрийг товшиж авна" : "1–4 эсвэл товшиж авна    E / ESC — хаах";
     Ui::Text(help, (int)panel.x + 20, footerY + 30, 16, Ui::kTextDim);
 }
 
@@ -3006,16 +2964,18 @@ void Game::DrawMissionCompleted() const
     {
         std::snprintf(line, sizeof(line), "Та %s-д тусалж аймгийг чөлөөллөө", hostName.empty() ? "хост" : hostName.c_str());
     }
-    else if (lastReward > 0) std::snprintf(line, sizeof(line), "Аймаг чөлөөлсний шагнал: %d зоос", lastReward);
-    else std::snprintf(line, sizeof(line), "Энэ аймаг өмнө нь чөлөөлөгдсөн тул нэмэлт шагнал олгохгүй");
+    else std::snprintf(line, sizeof(line), "Ганцаарчилсан тоглолт: Gold өөрчлөгдөхгүй");
     centered(line, 318, 26, gold);
     if (lastReward > 0)
     {
         Ui::DrawIcon(Ui::Icon::Reward, { (float)(width - UiMeasure(line, 26)) * 0.5f - 38.0f, 316.0f, 30.0f, 30.0f });
     }
 
-    std::snprintf(line, sizeof(line), "Нийт зоос: %d", progress.coins);
-    centered(line, 356, 26, text);
+    if (Account::ServerShop())
+    {
+        std::snprintf(line, sizeof(line), "Gold: %d", Account::Gold());
+        centered(line, 356, 26, text);
+    }
 
     // Дараагийн нээгдэх үе (зочинд: өөрийн аймаг нээгдээгүй тул)
     const int next = provinceIndex + 1;

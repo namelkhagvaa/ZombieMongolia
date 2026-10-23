@@ -407,7 +407,7 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         else if (info.usesAmmo)
         {
             std::snprintf(big, sizeof(big), "%d", info.ammo);
-            if (info.showMagazine) std::snprintf(small, sizeof(small), "/ %d", info.magazine);
+            if (info.showMagazine) std::snprintf(small, sizeof(small), "/ %d", info.reserve >= 0 ? info.reserve : info.magazine);
             bigColor = info.ammo == 0 ? Ui::kDanger : Ui::kText;
         }
         const int bigSize = info.reloading ? 20 : 34;
