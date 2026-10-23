@@ -3101,11 +3101,16 @@ TouchState Game::MakeTouchState() const
     if (garage.IsDriving())
     {
         touch.useLabel = "УНААНААС БУУХ";
+        touch.useVehicle = 2;
     }
     else
     {
         const Interaction interaction = FindInteraction();
-        if (interaction.vehicle >= 0) touch.useLabel = "УНААНД СУУХ";
+        if (interaction.vehicle >= 0)
+        {
+            touch.useLabel = "УНААНД СУУХ";
+            touch.useVehicle = 1;
+        }
         else if (interaction.door >= 0) touch.useLabel = world.IsDoorOpen(interaction.door) ? "ХААЛГА ХААХ" : "ХААЛГА НЭЭХ";
         else if (interaction.passage >= 0) touch.useLabel = PassageLabel(world.GetPassage(interaction.passage).kind, true);
     }

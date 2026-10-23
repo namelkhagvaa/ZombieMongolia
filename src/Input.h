@@ -61,6 +61,7 @@ struct TouchState
     Member team[3];
 
     const char* useLabel = nullptr; // F-ийн үйлдэл: "Суух", "Буух", "Хаалга"; nullptr = товчлуур гарахгүй
+    int useVehicle = 0;             // F нь унаанд суух (1) / буух (2): бичвэрийн оронд жижиг дугуй дүрст товч
     const char* actLabel = nullptr; // E-ийн үйлдэл (даалгаврын объект); nullptr = гарахгүй
     bool driving = false;           // унаа жолоодож буй: үсрэх товч тоормос болно
     bool sniper = false;            // онилох товч дуран хараа нээнэ

@@ -70,6 +70,8 @@ namespace
         kGlyphNone,
         kGlyphBackpack, // үүргэвч (зурган икон байхгүй тул шугамаар)
         kGlyphHidden,   // зурахгүй: доор нь HUD өөрөө зурсан (багийн хөрөг)
+        kGlyphRideIn,   // унаанд суух: машин, дээрээс нь доош сум
+        kGlyphRideOut,  // унаанаас буух: машин, дээш сум
     };
 
     struct Button
@@ -159,7 +161,13 @@ namespace
             // Баруун талын товчнуудын (ЦЭНЭГЛЭХ-ийн зүүн ирмэг ~w-378) зүүн талд: 16:9 дэлгэцэд давхцдаг байсан
             const float actionX = std::min(w * 0.5f + 90.0f, w - 620.0f);
             float actionY = h * 0.5f - 18.0f;
-            if (state.useLabel)
+            if (state.useVehicle != 0)
+            {
+                // Унаанд суух / буух: баруун талын товчнуудын дээр жижиг дүрст товч (буудах, онилох товчтой давхцахгүй)
+                Add(Circle(w - 200.0f, h - 424.0f, 36.0f), "", Kind::Key, KEY_F, true, true);
+                buttons.back().glyph = state.useVehicle == 2 ? kGlyphRideOut : kGlyphRideIn;
+            }
+            else if (state.useLabel)
             {
                 Add({ actionX, actionY, 220.0f, 58.0f }, state.useLabel, Kind::Key, KEY_F, false, true);
                 actionY += 68.0f;
@@ -794,7 +802,31 @@ void InDrawTouch(const TouchState& state)
             DrawRectangleRoundedLinesEx(button.area, roundness, 8, button.highlighted ? 2.0f : 1.0f, outline);
         }
 
-        if (button.glyph == kGlyphBackpack)
+        if (button.glyph == kGlyphRideIn || button.glyph == kGlyphRideOut)
+        {
+            // Машины хажуу дүр (их бие, бүхээг, дугуй), дээр нь сум: доош = суух, дээш = буух; доор нь жижиг нэр
+            const Color c = accent;
+            const float s = button.area.height;
+            const float carY = center.y + s * 0.02f;
+            const Rectangle body = { center.x - s * 0.27f, carY, s * 0.54f, s * 0.13f };
+            DrawRectangleRounded(body, 0.5f, 6, c);
+            DrawRectangleRounded({ center.x - s * 0.15f, carY - s * 0.09f, s * 0.28f, s * 0.11f }, 0.45f, 6, c);
+            for (const float wx : { -0.15f, 0.15f })
+            {
+                DrawCircleV({ center.x + s * wx, body.y + body.height }, s * 0.065f, { 20, 16, 8, 255 });
+                DrawCircleV({ center.x + s * wx, body.y + body.height }, s * 0.04f, c);
+            }
+            const bool in = button.glyph == kGlyphRideIn;
+            const float top = center.y - s * 0.34f, bottom = carY - s * 0.13f;
+            const Vector2 from = { center.x, in ? top : bottom }, to = { center.x, in ? bottom : top };
+            DrawLineEx(from, to, 3.0f, text);
+            const float dir = in ? 1.0f : -1.0f;
+            DrawTriangle(to, { to.x + s * 0.08f, to.y - dir * s * 0.09f }, { to.x - s * 0.08f, to.y - dir * s * 0.09f }, text);
+            DrawTriangle(to, { to.x - s * 0.08f, to.y - dir * s * 0.09f }, { to.x + s * 0.08f, to.y - dir * s * 0.09f }, text);
+            const char* caption = in ? "УНАХ" : "БУУХ"; // ("СУУХ" нь тонгойх товчтой андуурагдана)
+            Ui::TextBold(caption, (int)(center.x - (float)Ui::MeasureBold(caption, 11) * 0.5f), (int)(center.y + s * 0.2f), 11, text);
+        }
+        else if (button.glyph == kGlyphBackpack)
         {
             // Үүргэвч: бие, дээд хавтас, бариул, урд халаас
             const Color c = button.highlighted ? accent : text;
