@@ -654,8 +654,15 @@ void MapScreen::Draw(const Progress& progress) const
         Ui::Text(TextFormat("Даалгавар  %d / %d", objectivesDone, objectives), panelX + 18, y + 88, 15, Ui::kTextDim);
         Ui::Bar({ (float)panelX + 18.0f, (float)y + 110.0f, (float)panelWidth - 36.0f, 6.0f },
                 objectives > 0 ? (float)objectivesDone / (float)objectives : 0.0f, kLiberated);
-        // Аймаг чөлөөлөхөд зоос өгөхгүй: Gold зөвхөн нээлттэй өрөөний дүрмээр (сервер)
-        Ui::Text("Ганцаарчилсан · Gold-гүй", panelX + 18, y + 125, 15, Ui::kTextDim);
+        // Gold хүрэлцвэл (сервер шийднэ) заавал нээлттэй өрөө: өөр тоглогч урилгагүй орж ирнэ
+        if (Account::ServerShop() && Account::GoldAvailable() >= Account::RoomEntry())
+        {
+            Ui::Text("Нээлттэй өрөө", panelX + 18, y + 125, 15, kGold);
+        }
+        else
+        {
+            Ui::Text("Ганцаарчилсан", panelX + 18, y + 125, 15, Ui::kTextDim);
+        }
         // Хүндрэл: аймгийн дугаараас (зомбины тоо, амь, хурд нэмэгддэг) 1-5 гавлын яс
         const int skulls = 1 + selected * 5 / count;
         const char* label = "Хүндрэл";

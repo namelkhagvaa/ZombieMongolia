@@ -6,6 +6,10 @@
     дансны идэвхтэй төхөөрөмж нэг. Төхөөрөмж солих нь төлбөртэй (GameSettings.device_change_price).
   * Аймаг: бүгд үнэгүй. (Өмнө нь free_provinces үнэгүй, дараа нь багцаар (pack_*), Улаанбаатар тусдаа (capital_*)
     байсан: талбарууд хуучин нэхэмжлэх, тоглоомын хуучин хувилбарт зориулж үлдсэн.)
+  * Нээлттэй өрөө (Room): room_fee + room_stake (20 + 50) Gold-той тоглогч аймаг эхлүүлэхэд заавал өрөө нээгдэж,
+    өөр тоглогч урилгагүй орж ирнэ. Орохдоо хоёулаа room_fee төлж, room_stake-ийг барьцаална (Player.locked_gold).
+    Хост даалгавар дуусаагүй байхад гарвал барьцаа нь шатна; сүүлийн даалгавар биелвэл +stage_bonus. Дохио
+    (beat) тасарвал холболт тасарсан гэж үзэж барьцааг шийтгэлгүй суллана.
   * Gold: тоглогчийн байнгын мөнгө, зөвхөн сервер өөрчилнө. Өөрчлөлт бүр GoldTransaction-д (ref нь давтагдашгүй тул нэг
     үйл явдлыг хоёр удаа тооцохгүй). Gold-оор газрын зургийн дэлгүүрийн сайжруулалт (Player.damage ... soldiers) авна.
   * Event: тоглогчийн бүх үйлдлийн түүх (засахгүй, нэмэгдэнэ).
@@ -28,6 +32,10 @@ class GameSettings(models.Model):
     capital_price = models.PositiveIntegerField("Улаанбаатарын үнэ (₮)", default=5000)
     max_devices = models.PositiveSmallIntegerField("Нэг дансны төхөөрөмжийн тоо", default=2)
     start_gold = models.PositiveIntegerField("Шинэ тоглогчийн Gold", default=500)
+    room_fee = models.PositiveIntegerField("Өрөөнд орох төлбөр (Gold)", default=20)
+    room_stake = models.PositiveIntegerField("Өрөөний барьцаа (Gold)", default=50)
+    stage_bonus = models.PositiveIntegerField("Үе шат дуусгасны шагнал (Gold)", default=40)
+    stage_min_minutes = models.PositiveSmallIntegerField("Шагнал авах хамгийн бага хугацаа (минут)", default=5)
     # Сайжруулалтын үнэ: дараагийн түвшин = үнэ x (одоогийн түвшин + 1) Gold
     price_damage = models.PositiveIntegerField("Хохирол (Gold)", default=60)
     price_fire_rate = models.PositiveIntegerField("Буудах хурд (Gold)", default=60)
@@ -60,6 +68,7 @@ class Player(models.Model):
     credits = models.PositiveIntegerField("Үлдсэн худалдаж авсан эрх", default=0)
     blocked = models.BooleanField("Хаагдсан", default=False)
     gold = models.PositiveIntegerField("Gold", default=500)
+    locked_gold = models.PositiveIntegerField("Барьцаалсан Gold", default=0)  # нээлттэй өрөөнд (gold-ийн нэг хэсэг)
     # Газрын зургийн дэлгүүрийн сайжруулалт (Gold-оор; тоглоомын src/Shop.h-тай ижил дээд түвшин)
     damage = models.PositiveSmallIntegerField("Хохирлын түвшин", default=0)
     fire_rate = models.PositiveSmallIntegerField("Буудах хурдны түвшин", default=0)
@@ -198,7 +207,9 @@ class GoldTransaction(models.Model):
     хоёр дахь удаа тооцохыг өгөгдлийн сан өөрөө хориглоно."""
 
     SIGNUP, SHOP, ADMIN = "signup", "shop", "admin"
-    REASONS = [(SIGNUP, "Эхлэл"), (SHOP, "Дэлгүүр"), (ADMIN, "Админ")]
+    ROOM_FEE, ROOM_LEAVE, STAGE_COMPLETE = "room_fee", "room_leave", "stage_complete"
+    REASONS = [(SIGNUP, "Эхлэл"), (SHOP, "Дэлгүүр"), (ADMIN, "Админ"), (ROOM_FEE, "Өрөөнд орсон"),
+               (ROOM_LEAVE, "Өрөөнөөс гарсан (барьцаа шатсан)"), (STAGE_COMPLETE, "Үе шат дуусгасан")]
 
     player = models.ForeignKey(Player, verbose_name="Тоглогч", related_name="gold_transactions", on_delete=models.CASCADE)
     amount = models.IntegerField("Дүн")
@@ -215,6 +226,35 @@ class GoldTransaction(models.Model):
 
     def __str__(self):
         return f"{self.created:%Y-%m-%d %H:%M} {self.amount:+d} ({self.reason})"
+
+
+class Room(models.Model):
+    """Нээлттэй өрөө: нэг хост (аймгийг тоглож буй), хамгийн ихдээ нэг зочин. Тоглоомын тооцооллыг хостын төхөөрөмж
+    хийнэ; сервер нь хэн орсон, барьцаа, шагналыг л хариуцна."""
+
+    OPEN, CLOSED = "open", "closed"
+    STATUSES = [(OPEN, "Нээлттэй"), (CLOSED, "Хаагдсан")]
+
+    province = models.PositiveSmallIntegerField("Аймаг")
+    status = models.CharField("Төлөв", max_length=8, choices=STATUSES, default=OPEN, db_index=True)
+    host = models.ForeignKey(Player, verbose_name="Хост", related_name="hosted_rooms", on_delete=models.CASCADE)
+    guest = models.ForeignKey(Player, verbose_name="Зочин", related_name="guest_rooms", null=True, blank=True,
+                              on_delete=models.SET_NULL)
+    host_stake = models.PositiveIntegerField("Хостын барьцаа", default=0)
+    guest_stake = models.PositiveIntegerField("Зочны барьцаа", default=0)
+    host_seen = models.DateTimeField("Хостын сүүлийн дохио")
+    guest_seen = models.DateTimeField("Зочны сүүлийн дохио", null=True, blank=True)
+    closed_reason = models.CharField("Хаагдсан шалтгаан", max_length=16, blank=True)
+    created = models.DateTimeField("Нээсэн", auto_now_add=True)
+    closed = models.DateTimeField("Хаагдсан", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Өрөө"
+        verbose_name_plural = "Өрөөнүүд"
+        ordering = ["-created"]
+
+    def __str__(self):
+        return f"#{self.pk} аймаг {self.province} ({self.get_status_display()})"
 
 
 class Event(models.Model):

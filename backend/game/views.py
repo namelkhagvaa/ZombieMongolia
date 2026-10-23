@@ -141,8 +141,37 @@ def province_claim(request):
 
 @api(["POST"])
 def province_start(request):
-    logic.start_province(request.token.player, request.token.device_id, request.json.get("province"), client_ip(request))
+    """Ганцаарчилсан бол {"room": null}; эс бөгөөс нээлттэй өрөө ба relay-ийн тасалбар."""
+    player = request.token.player
+    room = logic.start_province(player, request.token.device_id, request.json.get("province"), client_ip(request))
+    return ok(room=logic.room_json(room, player) if room else None, account=account(request.token))
+
+
+# ---------------------------------------------------------------- Нээлттэй өрөө
+
+@api(["POST"])
+def room_join(request):
+    player = request.token.player
+    room = logic.join_room(player, request.token.device_id, client_ip(request))
+    return ok(room=logic.room_json(room, player), account=account(request.token))
+
+
+@api(["POST"])
+def room_beat(request, room_id):
+    logic.room_beat(request.token.player, room_id)
     return ok()
+
+
+@api(["POST"])
+def room_leave(request, room_id):
+    logic.leave_room(request.token.player, request.token.device_id, room_id, client_ip(request))
+    return ok(account=account(request.token))
+
+
+@api(["POST"])
+def room_complete(request, room_id):
+    logic.complete_room(request.token.player, request.token.device_id, room_id, client_ip(request))
+    return ok(account=account(request.token))
 
 
 # ---------------------------------------------------------------- Дэлгүүр (Gold)

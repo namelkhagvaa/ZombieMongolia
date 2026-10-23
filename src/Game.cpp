@@ -799,6 +799,7 @@ void Game::RenderPortraits() const
 
 void Game::ReturnToMap()
 {
+    if (Account::CurrentRoomRole() != Account::RoomRole::None) Account::LeaveRoom();
     progress.coins = 0; // тоглолтын зоос тоглолт дуусахад алга болно
     if (coopGuest) LeaveCoop();
     else if (net.GetRole() == Net::Role::Host) { net.Stop(); remoteActive = false; joinRequestPending = false; }
@@ -2272,6 +2273,7 @@ void Game::UpdateAirstrike(float dt)
         airstrike.Stop();
         Save();
         if (net.Connected() && remoteActive) net.SendMissionWon(params.reward);
+        if (Account::CurrentRoomRole() == Account::RoomRole::Host) Account::CompleteRoom(); // +40 Gold, өрөө хаагдана
         state = GameState::Won;
     }
 }
@@ -3366,6 +3368,7 @@ void Game::StartCoopGuest(int province)
 
 void Game::LeaveCoop()
 {
+    if (Account::CurrentRoomRole() == Account::RoomRole::Guest) Account::LeaveRoom(); // барьцаа суллагдана
     net.Stop();
     coopGuest = false;
     remoteActive = false;
@@ -3400,7 +3403,20 @@ void Game::UpdateNetwork(float dt)
     {
         // Frame бүрд: дотоод сүлжээ, relay өрөө хоёуланг нээлттэй байлгана (сервер хүрэхгүй бол дахин оролдоно).
         if (net.GetRole() != Net::Role::Host) net.StopDiscovery();
-        net.StartHosting(provinceIndex);
+        if (!Account::Enabled())
+        {
+            net.SetTicket(""); // туршилтын горим: дотоод сүлжээ, кодоор
+            net.StartHosting(provinceIndex);
+        }
+        else if (Account::CurrentRoomRole() == Account::RoomRole::Host)
+        {
+            net.SetTicket(Account::RoomTicket()); // нээлттэй өрөө: зочин урилгагүй орно
+            net.StartHosting(provinceIndex);
+        }
+        else if (net.GetRole() == Net::Role::Host)
+        {
+            net.Stop(); // ганцаарчилсан: хэн ч орж ирэхгүй
+        }
     }
 
     netEvents.clear();
@@ -3568,7 +3584,9 @@ void Game::UpdateCoopMission(float dt)
     {
         if (joinRequestPending)
         {
-            const bool autoAccept = options.screenshotPath && options.coopTest; // туршилт: автоматаар зөвшөөрнө
+            // Нээлттэй өрөө: зочин урилгагүй орно (сервер Gold-ийг шалгаж тасалбар өгсөн). Туршилт: автоматаар.
+            const bool autoAccept = (options.screenshotPath && options.coopTest) ||
+                                    Account::CurrentRoomRole() == Account::RoomRole::Host;
             if (InKeyPressed(KEY_Y) || autoAccept)
             {
                 net.AnswerJoin(true, provinceIndex);
@@ -3824,7 +3842,16 @@ void Game::DrawCoopOverlay() const
 
     // Хост найздаа хэлэх өрөөний код (зочин нэгдтэл). Хөтөч дээр сервертэй холбогдоогүй бол шалтгааныг харуулна
     // (компьютер, утсанд дотоод сүлжээгээр тоглож болох тул сервер хүрэхгүйг харуулахгүй).
-    const bool webHosting = net.UsesRoomCodes() && !coopGuest && state == GameState::Playing;
+    const bool openRoom = Account::CurrentRoomRole() == Account::RoomRole::Host;
+    const bool webHosting = net.UsesRoomCodes() && !coopGuest && state == GameState::Playing && !openRoom;
+    if (openRoom && !coopGuest && state == GameState::Playing && !net.Connected())
+    {
+        const char* text = "НЭЭЛТТЭЙ ӨРӨӨ · өөр тоглогч орж ирж магадгүй";
+        const int textWidth = Ui::Measure(text, 13);
+        const Rectangle chip = { (float)(width - textWidth - 28) / 2.0f, 54.0f, (float)textWidth + 28.0f, 26.0f };
+        DrawRectangleRounded(chip, 0.5f, 8, Fade({ 12, 18, 28, 255 }, 0.78f));
+        Ui::Text(text, (int)chip.x + 14, (int)chip.y + 6, 13, Ui::kAccent);
+    }
     if (webHosting && net.RoomCode() == 0 && !net.HasLan())
     {
         const char* text = net.GetRole() == Net::Role::Host ? "ХАМТ ТОГЛОХ: сервертэй холбогдож байна..."
@@ -3879,6 +3906,26 @@ void Game::UpdateCoopMap()
     const std::vector<Net::FoundGame>& found = net.Found();
     const bool click = InMousePressed(MOUSE_BUTTON_LEFT);
     const Vector2 pointer = InPointer();
+    if (Account::TakeJoinedRoom())
+    {
+        // Сервер өрөөг сонгож тасалбар өглөө: хостод шууд нэгдэнэ (хост асуулгүй хүлээн авна)
+        net.SetName(PlayerName());
+        net.RequestJoinTicket(Account::RoomTicket());
+        waitingForReply = true;
+        waitTimer = 30.0f;
+        coopStatus.clear();
+        return;
+    }
+    if (Account::ServerShop() && !waitingForReply)
+    {
+        // Данстай: зөвхөн нээлттэй өрөө (кодоор, дотоод сүлжээгээр биш: Gold-ийн дүрмийг сервер шалгана)
+        if ((click && CheckCollisionPointRec(pointer, CodeButtonRect())) || InKeyPressed(KEY_J))
+        {
+            if (Account::GoldAvailable() >= Account::RoomEntry()) Account::JoinRoom();
+            else coopStatus = TextFormat("Өрөөнд орохын тулд %d Gold хэрэгтэй", Account::RoomEntry());
+        }
+        return;
+    }
     if (waitingForReply)
     {
         if ((click && CheckCollisionPointRec(pointer, CoopButtonRect(0))) || InKeyPressed(KEY_J))
@@ -3929,8 +3976,8 @@ Rectangle Game::CoopButtonRect(int row) const
 
 Rectangle Game::CodeButtonRect() const
 {
-    // Дотоод сүлжээтэй бол доод мөрөнд, хөтөч дээр дээд мөрөнд
-    return { 750.0f, net.HasLan() ? 664.0f : 634.0f, 160.0f, 26.0f };
+    // Дотоод сүлжээтэй бол доод мөрөнд, хөтөч дээр (ба данстай: "ӨРӨӨНД ОРОХ") дээд мөрөнд
+    return { 750.0f, net.HasLan() && !Account::ServerShop() ? 664.0f : 634.0f, 160.0f, 26.0f };
 }
 
 void Game::OpenCodeEntry()
@@ -4049,7 +4096,8 @@ void Game::DrawCoopMap() const
     const Rectangle panel = { 430.0f, 598.0f, 500.0f, 114.0f };
     Ui::PanelAccent(panel, Ui::kInfo, { 10, 13, 19, 205 });
     Ui::Outline(panel, { 96, 196, 236, 70 }, 1.0f, 10.0f);
-    const char* title = net.HasLan() && net.UsesRoomCodes() ? "ХАМТ ТОГЛОХ  (сүлжээ, интернэт)"
+    const char* title = Account::ServerShop()                ? "НЭЭЛТТЭЙ ӨРӨӨ  (интернэт)"
+                        : net.HasLan() && net.UsesRoomCodes() ? "ХАМТ ТОГЛОХ  (сүлжээ, интернэт)"
                         : net.UsesRoomCodes()                ? "ХАМТ ТОГЛОХ  (интернэт)"
                                                              : "ХАМТ ТОГЛОХ  (дотоод сүлжээ)";
     Ui::TextBold(title, (int)panel.x + 18, (int)panel.y + 8, 15, Ui::kInfo);
@@ -4058,6 +4106,20 @@ void Game::DrawCoopMap() const
              Ui::kTextDim);
 
     const std::vector<Net::FoundGame>& found = net.Found();
+    if (Account::ServerShop() && !waitingForReply)
+    {
+        // Нээлттэй өрөө: өөр тоглогчийн тоглож буй аймагт урилгагүй орно
+        const bool enough = Account::GoldAvailable() >= Account::RoomEntry();
+        Ui::Text("Өөр тоглогчийн өрөөнд урилгагүй орно", (int)panel.x + 18, 636, 15, Ui::kText);
+        Ui::Text(enough ? "Орох: 20 Gold · ялагдвал 50 Gold" : TextFormat("%d Gold хэрэгтэй", Account::RoomEntry()),
+                 (int)panel.x + 18, 660, 13, enough ? Ui::kTextDim : Ui::kDanger);
+        const Rectangle button = CodeButtonRect();
+        DrawRectangleRounded(button, 0.5f, 6, Fade(enough ? Ui::kInfo : Ui::kTextDim, 0.85f));
+        Ui::TextBold("ӨРӨӨНД ОРОХ", (int)(button.x + (button.width - (float)Ui::MeasureBold("ӨРӨӨНД ОРОХ", 13)) / 2.0f),
+                     (int)button.y + 5, 13, { 10, 20, 30, 255 });
+        if (!coopStatus.empty()) Ui::Text(coopStatus.c_str(), (int)panel.x + 18, (int)(panel.y + panel.height) - 22, 13, Ui::kAccent);
+        return;
+    }
     if (waitingForReply)
     {
         Ui::Text("Хүсэлт илгээлээ, хариу хүлээж байна...", (int)panel.x + 18, 638, 15, Ui::kText);

@@ -532,8 +532,8 @@ namespace Net
         }
 
 #if !defined(__EMSCRIPTEN__)
-        // Дотоод сүлжээ: ENet-ийн порт ба хайлтад хариулах сокет
-        if (lan && !host && GetTime() >= lanRetryAt)
+        // Дотоод сүлжээ: ENet-ийн порт ба хайлтад хариулах сокет (нээлттэй өрөөнд үгүй)
+        if (lan && ticket.empty() && !host && GetTime() >= lanRetryAt)
         {
             ENetAddress address;
             address.host = ENET_HOST_ANY;
@@ -568,7 +568,7 @@ namespace Net
         // Интернэт: relay сервер дээр өрөө нээнэ (код нь Poll-оор ирнэ)
         if (relay && !relayOpen && GetTime() >= retryAt)
         {
-            RelayOpen("?host");
+            RelayOpen((ticket.empty() ? std::string("?host") : "?host&ticket=" + ticket).c_str());
             relayOpen = true;
             roomCode = 0;
         }
@@ -665,6 +665,18 @@ namespace Net
             return;
 #endif
         }
+        role = Role::Guest;
+        joinPending = true;
+        connected = false;
+    }
+
+    void Session::RequestJoinTicket(const std::string& value)
+    {
+        if (!relay) return;
+        Stop();
+        RelayOpen(("?ticket=" + value).c_str());
+        relayOpen = true;
+        link = Link::Relay;
         role = Role::Guest;
         joinPending = true;
         connected = false;
@@ -931,7 +943,7 @@ namespace Net
                 if (kind == kRelayClosed && role == Role::Host) retryAt = GetTime() + kRelayRetry;
                 Event e;
                 e.type = Msg::Leave;
-                if (kind == kRelayError) e.text = value == 1 ? "Ийм кодтой тоглолт олдсонгүй" : value == 2 ? "Тоглолт дүүрсэн байна" : "";
+                if (kind == kRelayError) e.text = value == 1 ? "Тоглолт олдсонгүй" : value == 2 ? "Тоглолт дүүрсэн байна" : "";
                 else if (role == Role::Guest && joinPending) e.text = "Сервертэй холбогдож чадсангүй";
                 RelayClose();
                 relayOpen = false;

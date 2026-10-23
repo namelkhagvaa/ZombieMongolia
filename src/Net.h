@@ -191,6 +191,11 @@ namespace Net
         void AnswerJoin(bool accept, int province);
         // Зочин: олдсон хост руу нэгдэх хүсэлт илгээнэ.
         void RequestJoin(const FoundGame& game);
+        // Нээлттэй өрөө (Gold-той тоглолт): backend-ийн тасалбар. Хост: SetTicket-ийн дараа StartHosting нь зөвхөн
+        // relay дээр тасалбартай өрөө нээнэ (дотоод сүлжээгүй: Gold-ийн дүрмийг сервер л шалгана). Хоосон = ердийн.
+        void SetTicket(const std::string& value) { ticket = value; }
+        // Зочин: backend-ийн сонгосон өрөө рүү тасалбараар нэгдэнэ (код хэрэггүй).
+        void RequestJoinTicket(const std::string& value);
         // Бүгдийг хааж, холболтыг таслана.
         void Stop();
 
@@ -233,6 +238,7 @@ namespace Net
         bool relay = false;  // relay серверийн хаяг тохируулсан
         Link link = Link::None;
         bool relayOpen = false;    // relay сервертэй холболт нээлттэй (эсвэл нээгдэж байна)
+        std::string ticket;        // нээлттэй өрөөний тасалбар (хост)
         double lanRetryAt = 0.0;   // ENet-ийн порт эзлэгдсэн бол дахин оролдох цаг
         Role role = Role::None;
         std::string name;

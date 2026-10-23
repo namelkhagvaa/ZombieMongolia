@@ -15,7 +15,13 @@
 //   Удирдлагын мессежүүд хоёуланд ижил: room, paired, left ({"type":"left"} — нөгөө тал гарсан),
 //   error ({"type":"error","reason":"notfound"|"full"|"bad"}, дараа нь холболт хаагдана).
 //
-// Ажиллуулах:  cd server && npm install && npm start
+//   Нээлттэй өрөө (Gold-той тоглолт): backend (backend/game/logic.py room_ticket) гарын үсэгтэй тасалбар өгнө.
+//     Хост:  ?host&ticket=<тасалбар>   Зочин: ?ticket=<тасалбар>
+//   Тасалбар = base64url(JSON {r: өрөө, p: тоглогч, role: "host"|"guest", exp}) + "." + hex(HMAC-SHA256(RELAY_SECRET)).
+//   Өрөөг backend сонгосон тул зочин код оруулахгүй; тасалбаргүй хүн тэр өрөөнд орж чадахгүй.
+//
+// Ажиллуулах:  cd server && npm install && RELAY_SECRET=<backend-ийнхтэй ижил> npm start
+const crypto = require('crypto');
 const http = require('http');
 const net = require('net');
 const { WebSocketServer } = require('ws');
@@ -25,7 +31,26 @@ const TCP_PORT = Number(process.env.TCP_PORT) || 8091;
 const MAX_ROOMS = 2000;
 const MAX_MESSAGE = 1 << 20; // 1 MB: snapshot хэдэн арван KB байдаг
 
-const rooms = new Map(); // code -> { host: Peer, guest: Peer|null }
+const RELAY_SECRET = process.env.RELAY_SECRET || '';
+
+const rooms = new Map(); // code (кодоор) эсвэл "room:<id>" (тасалбараар) -> { host: Peer, guest: Peer|null }
+
+// Тасалбарыг шалгаж агуулгыг буцаана; буруу, хугацаа нь дууссан бол null.
+function readTicket(ticket) {
+  if (!RELAY_SECRET || typeof ticket !== 'string') return null;
+  const dot = ticket.indexOf('.');
+  if (dot <= 0) return null;
+  const body = ticket.slice(0, dot), signature = ticket.slice(dot + 1);
+  const expected = crypto.createHmac('sha256', RELAY_SECRET).update(body).digest('hex');
+  if (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  try {
+    const data = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if (!Number.isInteger(data.r) || (data.role !== 'host' && data.role !== 'guest') || !(data.exp * 1000 > Date.now())) return null;
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
 
 function newCode() {
   for (let i = 0; i < 100; i++) {
@@ -39,23 +64,36 @@ function newCode() {
 //   peer.control(obj), peer.send(buffer), peer.close(), peer.onData = (buffer) => {}, peer.onClose = () => {}
 function attach(peer, hello) {
   const params = new URLSearchParams(hello);
+  const ticket = params.has('ticket') ? readTicket(params.get('ticket')) : null;
+  if (params.has('ticket') && !ticket) { peer.control({ type: 'error', reason: 'bad' }); peer.close(); return; }
+  if (ticket && ticket.role === 'guest') {
+    joinRoom(peer, `room:${ticket.r}`);
+    return;
+  }
   if (params.has('host')) {
-    const code = rooms.size < MAX_ROOMS ? newCode() : 0;
+    // Тасалбартай хост: өрөөний дугаар нь backend-ийнх; дахин холбогдвол хуучин холболтыг орлоно
+    const code = ticket ? `room:${ticket.r}` : rooms.size < MAX_ROOMS ? newCode() : 0;
     if (!code) { peer.control({ type: 'error', reason: 'full' }); peer.close(); return; }
+    const previous = rooms.get(code);
+    if (previous && ticket) { rooms.delete(code); previous.host.close(); }
     const room = { host: peer, guest: null };
     rooms.set(code, room);
-    peer.control({ type: 'room', code });
+    peer.control({ type: 'room', code: ticket ? ticket.r : code });
     peer.onData = (data) => { if (room.guest) room.guest.send(data); };
     peer.onClose = () => {
-      rooms.delete(code);
+      if (rooms.get(code) === room) rooms.delete(code);
       if (room.guest) { room.guest.control({ type: 'left' }); room.guest.close(); }
     };
     return;
   }
 
   const code = Number(params.get('join'));
-  const room = rooms.get(code);
   if (!code) { peer.control({ type: 'error', reason: 'bad' }); peer.close(); return; }
+  joinRoom(peer, code);
+}
+
+function joinRoom(peer, code) {
+  const room = rooms.get(code);
   if (!room) { peer.control({ type: 'error', reason: 'notfound' }); peer.close(); return; }
   if (room.guest) { peer.control({ type: 'error', reason: 'full' }); peer.close(); return; }
   room.guest = peer;

@@ -75,7 +75,13 @@ namespace
     // Gold ба сайжруулалт (серверийн "upgrades", "shop"): ShopItem-ийн дараалал
     constexpr int kUpgradeCount = 5;
     const char* const kUpgradeNames[kUpgradeCount] = { "damage", "fire_rate", "magazine", "health", "soldier" };
-    int gold = 0;
+    int gold = 0, goldLocked = 0, roomEntry = 70;
+    // Нээлттэй өрөө (сервер нээсэн / орсон)
+    int roomId = -1, roomProvince = -1;
+    Account::RoomRole roomRole = Account::RoomRole::None;
+    std::string roomTicket;
+    bool roomJoined = false;
+    double nextRoomBeat = 0.0;
     int upgradeLevels[kUpgradeCount] = {};
     int upgradePrices[kUpgradeCount] = { 60, 60, 40, 50, 120 };
 
@@ -347,6 +353,8 @@ namespace
         capitalPrice = prices["capital"].Int(capitalPrice);
         maxDevices = account["max_devices"].Int(maxDevices);
         gold = account["gold"].Int(gold);
+        goldLocked = account["gold_locked"].Int(goldLocked);
+        roomEntry = account["room_entry"].Int(roomEntry);
         for (int i = 0; i < kUpgradeCount; ++i)
         {
             upgradeLevels[i] = account["upgrades"][kUpgradeNames[i]].Int(upgradeLevels[i]);
@@ -362,7 +370,40 @@ namespace
         signedIn = false;
         owned.clear();
         province = -1;
+        roomId = -1;
+        roomRole = Account::RoomRole::None;
         Open(Screen::Login);
+    }
+
+    void SetRoom(const Json& room)
+    {
+        if (room.type != Json::Type::Object)
+        {
+            roomId = -1;
+            roomRole = Account::RoomRole::None;
+            roomTicket.clear();
+            return;
+        }
+        roomId = room["id"].Int(-1);
+        roomProvince = room["province"].Int(-1);
+        roomRole = room["role"].Str() == "host" ? Account::RoomRole::Host : Account::RoomRole::Guest;
+        roomTicket = room["ticket"].Str();
+        nextRoomBeat = GetTime() + 60.0;
+    }
+
+    // Өрөөний хүсэлт (гарах, дуусгах, дохио): цонхыг хаахгүй, даалгаврын үеэр ч (Tick) хариуг авна.
+    Pending roomRequest, roomBeat;
+
+    void RoomCall(const char* action)
+    {
+        if (roomId < 0) return;
+        roomRequest.id = Online::Send("POST", apiBase + "rooms/" + std::to_string(roomId) + "/" + action + "/", "{}", token);
+        roomRequest.handler = [](int status, const Json& reply) {
+            if (status == 200) ReadAccount(reply["account"]);
+        };
+        roomId = -1; // орон нутагт шууд гарсан (хариу ирэхэд Gold шинэчлэгдэнэ)
+        roomRole = Account::RoomRole::None;
+        roomTicket.clear();
     }
 
     void Fail(int status, const Json& reply)
@@ -555,6 +596,8 @@ namespace
         Call("POST", "provinces/start/", Obj({ { "province", std::to_string(province) } }), [](int status, const Json& reply) {
             if (status == 200)
             {
+                ReadAccount(reply["account"]);
+                SetRoom(reply["room"]); // Gold хүрэлцвэл нээлттэй өрөө, эс бөгөөс ганцаарчилсан
                 approved = province;
                 province = -1;
                 Open(Screen::None);
@@ -1353,6 +1396,17 @@ void Account::Tick()
 {
     if (!enabled) return;
     Finish(beat);
+    Finish(roomRequest);
+    Finish(roomBeat);
+    if (roomId >= 0 && roomBeat.id < 0 && GetTime() >= nextRoomBeat)
+    {
+        // Өрөөнд байгаагаа минут тутам мэдэгдэнэ (тасарвал сервер шийтгэлгүй гаргана)
+        nextRoomBeat = GetTime() + 60.0;
+        roomBeat.id = Online::Send("POST", apiBase + "rooms/" + std::to_string(roomId) + "/beat/", "{}", token);
+        roomBeat.handler = [](int status, const Json&) {
+            if (status == 410) SetRoom(Json()); // сервер өрөөг хаасан
+        };
+    }
     if (!signedIn || token.empty() || beat.id >= 0 || request.id >= 0 || GetTime() < nextBeat) return;
     nextBeat = GetTime() + 60.0;
     beat.id = Online::Send("GET", apiBase + "account/", "", token);
@@ -1607,3 +1661,28 @@ void Account::BuyUpgrade(int item)
              Fail(status, reply);
          }, "Худалдаж авч байна...");
 }
+
+Account::RoomRole Account::CurrentRoomRole() { return enabled ? roomRole : RoomRole::None; }
+const std::string& Account::RoomTicket() { return roomTicket; }
+int Account::RoomProvince() { return roomProvince; }
+int Account::GoldAvailable() { return std::max(0, gold - goldLocked); }
+int Account::RoomEntry() { return roomEntry; }
+
+void Account::JoinRoom()
+{
+    if (!ServerShop() || request.id >= 0) return;
+    Call("POST", "rooms/join/", "{}", [](int status, const Json& reply) {
+        if (status == 200)
+        {
+            ReadAccount(reply["account"]);
+            SetRoom(reply["room"]);
+            roomJoined = roomRole == RoomRole::Guest;
+            return;
+        }
+        Fail(status, reply);
+    }, "Өрөө хайж байна...");
+}
+
+bool Account::TakeJoinedRoom() { return std::exchange(roomJoined, false); }
+void Account::LeaveRoom() { RoomCall("leave"); }
+void Account::CompleteRoom() { RoomCall("complete"); }

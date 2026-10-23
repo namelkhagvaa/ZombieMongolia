@@ -1,7 +1,14 @@
+import base64
+import hashlib
+import hmac
+import json
+from datetime import timedelta
+
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
 from . import logic, qpay
-from .models import AuthToken, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Verification
+from .models import AuthToken, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, Verification
 
 UB = 15  # Улаанбаатар
 
@@ -138,6 +145,105 @@ class FlowTests(TestCase):
         qpay.MockQPay.paid.add(f"mock-{invoice['id']}")
         self.client.get(f"/api/qpay/callback/{invoice['id']}/wrong-key/")
         self.assertFalse(Invoice.objects.get(pk=invoice["id"]).applied)
+
+    # ---- нээлттэй өрөө
+    def two_players(self):
+        host = self.register()["token"]
+        guest = self.register(phone="88112233", device="device-bbbb-2222", name="Дорж")["token"]
+        return host, guest
+
+    def test_enough_gold_opens_a_room_otherwise_solo(self):
+        host = self.register()["token"]
+        result = self.post("provinces/start/", {"province": 3}, host)
+        room = result["room"]
+        self.assertEqual((room["province"], room["role"]), (3, "host"))
+        self.assertEqual((result["account"]["gold"], result["account"]["gold_locked"]), (480, 50))
+        # Тасалбар: relay ижил нууц үгээр шалгана
+        body, signature = room["ticket"].split(".")
+        self.assertEqual(signature, hmac.new(b"dev-only-relay-secret", body.encode(), hashlib.sha256).hexdigest())
+        payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+        self.assertEqual((payload["r"], payload["role"]), (room["id"], "host"))
+        # Дахин эхэлбэл өмнөх өрөө (апп унасан г.м.) шийтгэлгүй хаагдаж, шинэ өрөө нээгдэнэ
+        result = self.post("provinces/start/", {"province": 4}, host)
+        self.assertEqual((result["account"]["gold"], result["account"]["gold_locked"]), (460, 50))
+        self.assertEqual(Room.objects.get(pk=room["id"]).closed_reason, "replaced")
+        # 70-аас бага Gold: ганцаарчилсан, Gold өөрчлөгдөхгүй
+        poor = self.register(phone="88112233", device="device-bbbb-2222", name="Дорж")["token"]
+        Player.objects.filter(phone="+97688112233").update(gold=69)
+        result = self.post("provinces/start/", {"province": 4}, poor)
+        self.assertIsNone(result["room"])
+        self.assertEqual((result["account"]["gold"], result["account"]["gold_locked"]), (69, 0))
+
+    def test_locked_gold_cannot_be_spent(self):
+        host = self.register()["token"]
+        player = Player.objects.get()
+        player.gold = 120
+        player.save()
+        self.post("provinces/start/", {"province": 0}, host)  # 100 үлдэж, 50 нь барьцаанд
+        # Цэрэг 120 > 50 (боломжтой)
+        self.assertEqual(self.post("shop/buy/", {"item": "soldier", "level": 0}, host, status=402)["error"], "not_enough_gold")
+        self.post("shop/buy/", {"item": "magazine", "level": 0}, host)  # 40 <= 50
+        player.refresh_from_db()
+        self.assertEqual((player.gold, player.locked_gold), (60, 50))
+
+    def test_guest_joins_without_invitation(self):
+        host, guest = self.two_players()
+        self.assertEqual(self.post("rooms/join/", {}, guest, status=404)["error"], "no_rooms")
+        room_id = self.post("provinces/start/", {"province": 7}, host)["room"]["id"]
+        self.assertEqual(self.post("rooms/join/", {}, host, status=404)["error"], "no_rooms")  # өөрийн өрөө биш
+        joined = self.post("rooms/join/", {}, guest)
+        self.assertEqual((joined["room"]["id"], joined["room"]["role"], joined["room"]["host"]), (room_id, "guest", "Бат"))
+        self.assertEqual((joined["account"]["gold"], joined["account"]["gold_locked"]), (480, 50))
+        # Өрөө дүүрсэн
+        third = self.register(phone="95112233", device="device-cccc-3333", name="Сүх")["token"]
+        self.assertEqual(self.post("rooms/join/", {}, third, status=404)["error"], "no_rooms")
+        # Gold хүрэлцэхгүй
+        player = Player.objects.get(phone="+97695112233")
+        player.gold = 60
+        player.save()
+        self.assertEqual(self.post("rooms/join/", {}, third, status=402)["error"], "not_enough_gold")
+
+    def test_host_leaving_burns_the_stake(self):
+        host, guest = self.two_players()
+        room_id = self.post("provinces/start/", {"province": 7}, host)["room"]["id"]
+        self.post("rooms/join/", {}, guest)
+        account = self.post(f"rooms/{room_id}/leave/", {}, host)["account"]
+        self.assertEqual((account["gold"], account["gold_locked"]), (430, 0))  # 500 - 20 - 50, хэнд ч очоогүй
+        guest_player = Player.objects.get(phone="+97688112233")
+        self.assertEqual((guest_player.gold, guest_player.locked_gold), (480, 0))  # зочны барьцаа суллагдсан
+        self.assertEqual(self.post(f"rooms/{room_id}/leave/", {}, host, status=410)["error"], "room_closed")
+        self.assertEqual(Room.objects.get().closed_reason, "host_left")
+
+    def test_guest_leaving_frees_the_seat(self):
+        host, guest = self.two_players()
+        room_id = self.post("provinces/start/", {"province": 7}, host)["room"]["id"]
+        self.post("rooms/join/", {}, guest)
+        self.assertEqual(self.post(f"rooms/{room_id}/leave/", {}, guest)["account"]["gold_locked"], 0)
+        self.assertEqual(self.post("rooms/join/", {}, guest)["room"]["id"], room_id)  # сул байранд дахин орно
+
+    def test_completing_the_stage_pays_once(self):
+        host, guest = self.two_players()
+        room_id = self.post("provinces/start/", {"province": 7}, host)["room"]["id"]
+        self.assertEqual(self.post(f"rooms/{room_id}/complete/", {}, host, status=409)["error"], "too_fast")
+        Room.objects.filter(pk=room_id).update(created=timezone.now() - timedelta(minutes=30))
+        self.post("rooms/join/", {}, guest)
+        self.assertEqual(self.post(f"rooms/{room_id}/complete/", {}, guest, status=403)["error"], "not_host")
+        account = self.post(f"rooms/{room_id}/complete/", {}, host)["account"]
+        self.assertEqual((account["gold"], account["gold_locked"]), (520, 0))  # 500 - 20 + 40
+        self.assertEqual(self.post(f"rooms/{room_id}/complete/", {}, host, status=410)["error"], "room_closed")
+        self.assertEqual(Player.objects.get(phone="+97688112233").locked_gold, 0)
+
+    def test_lost_connection_is_not_a_penalty(self):
+        host, guest = self.two_players()
+        room_id = self.post("provinces/start/", {"province": 7}, host)["room"]["id"]
+        self.post(f"rooms/{room_id}/beat/", {}, host)
+        Room.objects.filter(pk=room_id).update(host_seen=timezone.now() - timedelta(minutes=11))
+        # Хостын дохио тасарсан: зочин тэр өрөөнд орохгүй, хостын барьцаа шийтгэлгүй буцна
+        self.assertEqual(self.post("rooms/join/", {}, guest, status=404)["error"], "no_rooms")
+        host_player = Player.objects.get(phone="+97699112233")
+        self.assertEqual((host_player.gold, host_player.locked_gold), (480, 0))
+        self.assertEqual(Room.objects.get().closed_reason, "timeout")
+        self.assertEqual(sum(t.amount for t in host_player.gold_transactions.all()), host_player.gold)
 
     # ---- төхөөрөмж
     def test_second_device_is_free_third_needs_payment(self):

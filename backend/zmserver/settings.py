@@ -133,6 +133,9 @@ PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", "http://localhost:8010")
 # --- Утас баталгаажуулалт (game/sms.py) ---
 # SMS_MODE: console (хөгжүүлэлт: кодыг логт бичнэ), verifymn
 SMS_MODE = env("SMS_MODE", "console")
+
+# Нээлттэй өрөөний тасалбар: relay сервер (server/relay.js) ижил нууц үгээр гарын үсгийг шалгана
+RELAY_SECRET = env("RELAY_SECRET") or ("dev-only-relay-secret" if DEBUG else "")
 VERIFYMN_API_URL = env("VERIFYMN_API_URL")
 VERIFYMN_API_KEY = env("VERIFYMN_API_KEY")
 

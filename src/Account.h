@@ -51,6 +51,22 @@ namespace Account
     // Дараагийн түвшинг серверээр авна (хариу ирэхэд түвшин, Gold шинэчлэгдэнэ; алдааг цонхоор харуулна).
     void BuyUpgrade(int item);
 
+    // Нээлттэй өрөө. Аймаг эхлэхэд (RequestStart) Gold хүрэлцвэл (RoomEntry: 20 + 50) сервер заавал өрөө нээж
+    // Host болгоно; эс бөгөөс ганцаарчилсан (None): хэн ч орж ирэхгүй, Gold өөрчлөгдөхгүй. Зочин JoinRoom-оор
+    // урилгагүй орно: сервер өрөөг сонгож, тасалбар (relay, Net::Session::RequestJoinTicket) өгнө.
+    enum class RoomRole { None, Host, Guest };
+    RoomRole CurrentRoomRole();
+    const std::string& RoomTicket();
+    int RoomProvince();
+    int GoldAvailable(); // барьцаалаагүй Gold
+    int RoomEntry();
+    void JoinRoom();
+    bool TakeJoinedRoom(); // нэг удаа: JoinRoom амжилттай (RoomTicket, RoomProvince бэлэн)
+    // Санаатай гарах: хост даалгавар дуусаагүй байхад гарвал ялагдал (барьцаа шатна). Зочин: барьцаа суллагдана.
+    void LeaveRoom();
+    // Хост: сүүлийн даалгавар биелэв (+40 Gold, өрөө хаагдана).
+    void CompleteRoom();
+
     // Туршилт: дараагийн Update-д цонхны үндсэн товчийг (Enter) дарсан мэт.
     void TestEnter();
 }

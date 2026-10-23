@@ -2,21 +2,31 @@
 
 Бүх алдаа GameError (код + монгол мессеж + HTTP төлөв): тоглоом кодоор нь ялгаж, мессежийг харуулна.
 """
+import base64
+import hashlib
+import hmac
+import json
 import re
+import time
 from datetime import timedelta
 
+from django.conf import settings as django_settings
 from django.contrib.auth.hashers import make_password
 from django.db import transaction
 from django.utils import timezone
 
 from . import qpay, sms
-from .models import (AuthToken, Device, Event, GameSettings, GoldTransaction, Invoice, Player, UnlockedProvince,
+from .models import (AuthToken, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, UnlockedProvince,
                      Verification)
 
 VERIFICATION_TTL = timedelta(minutes=5)  # verify.mn-ийн сесс 5 минут
 SMS_PER_HOUR = 5             # нэг дугаарт цагт эхлүүлэх баталгаажуулалтын дээд тоо
 LOGIN_FAILURES_LIMIT = 10    # 15 минутад буруу нэвтрэх оролдлогын дээд тоо
 MIN_PASSWORD = 6
+
+ROOM_TIMEOUT = timedelta(minutes=10)  # дохио (beat) ийм хугацаанд ирээгүй бол холболт тасарсан (шийтгэлгүй)
+ROOM_JOINABLE = timedelta(minutes=3)  # зочныг зөвхөн сүүлд дохио өгсөн хостын өрөөнд оруулна
+TICKET_TTL = 6 * 3600               # тасалбар: relay руу (дахин) холбогдох хугацаа, секунд
 
 # Газрын зургийн дэлгүүр: нэр -> (Player-ийн талбар, GameSettings-ийн үнийн талбар, дээд түвшин).
 # Дээд түвшин тоглоомын src/Shop.h, src/Weapon.h-тай ижил.
@@ -109,6 +119,8 @@ def account_state(player, device_id):
         "free_left": 0,
         "credits": 0,
         "gold": player.gold,
+        "gold_locked": player.locked_gold,
+        "room_entry": settings.room_fee + settings.room_stake,
         "upgrades": {name: getattr(player, field) for name, (field, _, _) in UPGRADES.items()},
         "shop": {name: {"price": getattr(settings, price), "max": top} for name, (_, price, top) in UPGRADES.items()},
         "device_ok": device_ok(player, device_id),
@@ -256,10 +268,173 @@ def claim_province(player, device_id, province, ip):
 
 
 def start_province(player, device_id, province, ip):
-    _validate_province(province)
+    """Аймаг эхлэхэд: room_fee + room_stake-ээс их Gold-той бол заавал нээлттэй өрөө нээгдэнэ (буцаана), эс бөгөөс
+    ганцаарчилсан тоглолт (None): зочин орж ирэхгүй, Gold өөрчлөгдөхгүй."""
+    settings = _validate_province(province)
     if not device_ok(player, device_id):
         raise GameError("device_change_required", "Энэ төхөөрөмж дээр тоглохын тулд төхөөрөмж солих төлбөр төлнө", 402)
-    log_event(player, "province_start", {"province": province}, device_id, ip)
+    with transaction.atomic():
+        locked = Player.objects.select_for_update().get(pk=player.pk)
+        _drop_rooms(locked, device_id, ip)  # өмнөх өрөө (апп унасан г.м.): холболт тасарсан гэж үзнэ
+        locked.refresh_from_db()            # (барьцаа суллагдсан)
+        room = None
+        if locked.gold - locked.locked_gold >= settings.room_fee + settings.room_stake:
+            room = Room.objects.create(province=province, host=locked, host_seen=timezone.now())
+            _enter_room(locked, room, settings)
+            room.host_stake = settings.room_stake
+            room.save(update_fields=["host_stake"])
+        log_event(locked, "province_start", {"province": province, "room": room.pk if room else None}, device_id, ip)
+    return room
+
+
+# ---------------------------------------------------------------- Нээлттэй өрөө
+
+def room_ticket(room, player, role):
+    """Relay серверт өрөөнд холбогдох тасалбар: base64url(JSON).hex(HMAC-SHA256). server/relay.js шалгана."""
+    payload = json.dumps({"r": room.pk, "p": player.pk, "role": role, "exp": int(time.time()) + TICKET_TTL},
+                         separators=(",", ":"))
+    body = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+    signature = hmac.new(django_settings.RELAY_SECRET.encode(), body.encode(), hashlib.sha256).hexdigest()
+    return f"{body}.{signature}"
+
+
+def room_json(room, player):
+    role = "host" if room.host_id == player.pk else "guest"
+    return {"id": room.pk, "province": room.province, "role": role, "host": room.host.name,
+            "ticket": room_ticket(room, player, role)}
+
+
+def _enter_room(locked, room, settings):
+    """Орох төлбөр (ledger) ба барьцаа. locked: түгжсэн тоглогч."""
+    change_gold(locked, -settings.room_fee, GoldTransaction.ROOM_FEE, f"fee:{room.pk}:{locked.pk}", {"room": room.pk})
+    locked.locked_gold += settings.room_stake
+    locked.save(update_fields=["locked_gold"])
+
+
+def _release(player_id, amount):
+    if amount:
+        locked = Player.objects.select_for_update().get(pk=player_id)
+        locked.locked_gold = max(0, locked.locked_gold - amount)
+        locked.save(update_fields=["locked_gold"])
+
+
+def _close(room, reason):
+    """Өрөөг хааж, үлдсэн барьцааг (шатаагаагүй) эздэд нь буцаана."""
+    _release(room.host_id, room.host_stake)
+    if room.guest_id:
+        _release(room.guest_id, room.guest_stake)
+    room.host_stake = room.guest_stake = 0
+    room.status = Room.CLOSED
+    room.closed_reason = reason
+    room.closed = timezone.now()
+    room.save()
+
+
+def _drop_guest(room):
+    _release(room.guest_id, room.guest_stake)
+    room.guest = None
+    room.guest_stake = 0
+    room.guest_seen = None
+    room.save(update_fields=["guest", "guest_stake", "guest_seen"])
+
+
+def expire_rooms():
+    """Дохио тасарсан өрөө, зочдыг шийтгэлгүй гаргана (холболт тасрахыг санаатай гарсанд тооцохгүй)."""
+    stale = timezone.now() - ROOM_TIMEOUT
+    for room in Room.objects.select_for_update().filter(status=Room.OPEN, host_seen__lt=stale):
+        _close(room, "timeout")
+    for room in Room.objects.select_for_update().filter(status=Room.OPEN, guest__isnull=False, guest_seen__lt=stale):
+        _drop_guest(room)
+
+
+def _drop_rooms(locked, device_id, ip):
+    for room in Room.objects.select_for_update().filter(status=Room.OPEN, host=locked):
+        _close(room, "replaced")
+        log_event(locked, "room_closed", {"room": room.pk, "reason": "replaced"}, device_id, ip)
+    for room in Room.objects.select_for_update().filter(status=Room.OPEN, guest=locked):
+        _drop_guest(room)
+
+
+def _own_room(player, room_id):
+    room = Room.objects.select_for_update().filter(pk=room_id, status=Room.OPEN).first() if isinstance(room_id, int) else None
+    if room is None or player.pk not in (room.host_id, room.guest_id):
+        raise GameError("room_closed", "Өрөө хаагдсан байна", 410)
+    return room
+
+
+def join_room(player, device_id, ip):
+    """Урилгагүй орох: сүүлд дохио өгсөн, зочингүй нээлттэй өрөөг (өөрийнхөөс бусад) сонгоно."""
+    settings = GameSettings.load()
+    if not device_ok(player, device_id):
+        raise GameError("device_change_required", "Энэ төхөөрөмж дээр тоглохын тулд төхөөрөмж солих төлбөр төлнө", 402)
+    entry = settings.room_fee + settings.room_stake
+    with transaction.atomic():
+        expire_rooms()  # (тусдаа: доорх алдаа гарсан ч хуучирсан өрөөнүүд хаагдсан хэвээр)
+    with transaction.atomic():
+        locked = Player.objects.select_for_update().get(pk=player.pk)
+        _drop_rooms(locked, device_id, ip)
+        locked.refresh_from_db()
+        if locked.gold - locked.locked_gold < entry:
+            raise GameError("not_enough_gold", f"Өрөөнд орохын тулд {entry} Gold хэрэгтэй", 402)
+        room = (Room.objects.select_for_update()
+                .filter(status=Room.OPEN, guest__isnull=True, host_seen__gte=timezone.now() - ROOM_JOINABLE)
+                .exclude(host=locked).order_by("created").first())
+        if room is None:
+            raise GameError("no_rooms", "Одоогоор нээлттэй өрөө алга. Дараа дахин оролдоно уу", 404)
+        _enter_room(locked, room, settings)
+        room.guest = locked
+        room.guest_stake = settings.room_stake
+        room.guest_seen = timezone.now()
+        room.save(update_fields=["guest", "guest_stake", "guest_seen"])
+        log_event(locked, "room_joined", {"room": room.pk, "province": room.province}, device_id, ip)
+    return room
+
+
+def room_beat(player, room_id):
+    with transaction.atomic():
+        room = _own_room(player, room_id)
+        if room.host_id == player.pk:
+            room.host_seen = timezone.now()
+            room.save(update_fields=["host_seen"])
+        else:
+            room.guest_seen = timezone.now()
+            room.save(update_fields=["guest_seen"])
+    return room
+
+
+def leave_room(player, device_id, room_id, ip):
+    """Санаатай гарах. Хост даалгавар дуусаагүй байхад гарвал ялагдал: барьцаа нь хэнд ч очихгүй шатна, өрөө хаагдана.
+    Зочин гарвал (тулааны үр дүн дараагийн шатанд) барьцаа нь суллагдана."""
+    with transaction.atomic():
+        room = _own_room(player, room_id)
+        locked = Player.objects.select_for_update().get(pk=player.pk)
+        if room.host_id == locked.pk:
+            stake = room.host_stake
+            if stake:
+                locked.locked_gold = max(0, locked.locked_gold - stake)
+                locked.save(update_fields=["locked_gold"])
+                change_gold(locked, -min(stake, locked.gold), GoldTransaction.ROOM_LEAVE, f"leave:{room.pk}:{locked.pk}",
+                            {"room": room.pk})
+                room.host_stake = 0
+            _close(room, "host_left")
+        else:
+            _drop_guest(room)
+        log_event(locked, "room_left", {"room": room.pk}, device_id, ip)
+
+
+def complete_room(player, device_id, room_id, ip):
+    """Хост сүүлийн даалгаврыг биелүүлэв: +stage_bonus, барьцаа суллагдана, өрөө хаагдана."""
+    settings = GameSettings.load()
+    with transaction.atomic():
+        room = _own_room(player, room_id)
+        if room.host_id != player.pk:
+            raise GameError("not_host", "Зөвхөн хост үе шатыг дуусгана", 403)
+        if timezone.now() - room.created < timedelta(minutes=settings.stage_min_minutes):
+            raise GameError("too_fast", "Үе шат хэт хурдан дууслаа", 409)
+        locked = Player.objects.select_for_update().get(pk=player.pk)
+        change_gold(locked, settings.stage_bonus, GoldTransaction.STAGE_COMPLETE, f"complete:{room.pk}", {"room": room.pk})
+        _close(room, "completed")
+        log_event(locked, "room_completed", {"room": room.pk, "province": room.province}, device_id, ip)
 
 
 # ---------------------------------------------------------------- Gold, дэлгүүр
@@ -298,6 +473,8 @@ def shop_buy(player, device_id, item, level, ip):
         if current >= top:
             raise GameError("max_level", "Хамгийн дээд түвшинд хүрсэн", 409)
         cost = getattr(GameSettings.load(), price_field) * (current + 1)
+        if locked.gold - locked.locked_gold < cost:
+            raise GameError("not_enough_gold", "Gold хүрэлцэхгүй байна (нэг хэсэг нь өрөөнд барьцаалагдсан)", 402)
         change_gold(locked, -cost, GoldTransaction.SHOP, ref, {"item": item, "level": current + 1})
         setattr(locked, field, current + 1)
         locked.save(update_fields=[field])

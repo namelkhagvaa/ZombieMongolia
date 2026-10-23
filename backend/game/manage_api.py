@@ -109,6 +109,7 @@ def player_row(player):
         "free_used": player.free_used,
         "credits": player.credits,
         "gold": player.gold,
+        "gold_locked": player.locked_gold,
         "blocked": player.blocked,
         "created": iso(player.created),
         "provinces": getattr(player, "province_total", None),
@@ -162,6 +163,10 @@ def settings_json(settings):
         "price_magazine": settings.price_magazine,
         "price_health": settings.price_health,
         "price_soldier": settings.price_soldier,
+        "room_fee": settings.room_fee,
+        "room_stake": settings.room_stake,
+        "stage_bonus": settings.stage_bonus,
+        "stage_min_minutes": settings.stage_min_minutes,
     }
 
 
@@ -468,7 +473,8 @@ def settings_view(request):
                   "device_change_price": (0, 1_000_000), "max_devices": (1, 5),
                   "capital_price": (0, 1_000_000), "start_gold": (0, 100_000),
                   "price_damage": (0, 100_000), "price_fire_rate": (0, 100_000), "price_magazine": (0, 100_000),
-                  "price_health": (0, 100_000), "price_soldier": (0, 100_000)}
+                  "price_health": (0, 100_000), "price_soldier": (0, 100_000), "room_fee": (0, 10_000),
+                  "room_stake": (0, 10_000), "stage_bonus": (0, 10_000), "stage_min_minutes": (0, 240)}
         before = settings_json(settings)
         for field, (low, high) in limits.items():
             if field in request.json:
