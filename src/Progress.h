@@ -2,6 +2,7 @@
 
 #include "Weapon.h"
 
+#include <string>
 #include <vector>
 
 // Даалгаврын өгөгдлийн (CampaignData.cpp) хувилбар: өөрчлөгдөхөд хадгалсан дуусаагүй явц шинээр эхэлнэ.
@@ -52,6 +53,10 @@ struct Progress
 
     int LiberatedCount() const;
 };
+
+// Нээлттэй өрөөний даалгаврын ахиц (серверт хадгалагдаж, шинэ хост үргэлжлүүлнэ): зөвхөн тоо, хоосон зай.
+std::string StageText(const StageSave& stage);
+bool ParseStageText(const std::string& text, StageSave& stage);
 
 // Файл нь exe-ийн хажууд savegame.txt нэрээр хадгалагдана.
 // Файл байхгүй эсвэл уншигдахгүй бол progress-ийг шинэ тоглоомын утгаар үлдээж false буцаана.

@@ -6,6 +6,7 @@
 #include "World.h"
 #include "raylib.h"
 
+#include <utility>
 #include <vector>
 
 class ZombieHorde;
@@ -58,7 +59,23 @@ struct Soldier
     // Хамтарсан тоглолт: буудсан сумны тоолуур ба сүүлийн сумны туссан цэг (зочинд сумны мөр зурахад)
     uint8_t shots = 0;
     Vector3 shotEnd = { 0.0f, 0.0f, 0.0f };
+    // Тулаан: тасарсан / хөдлөхгүй тоглогчийн дүр AI болоход эхний хугацаанд хөдлөхгүй (секунд)
+    float frozen = 0.0f;
 };
+
+// Тулаан (нээлттэй өрөө): AI дайчин буудаж болох хүн (байрлал = цээж). id: squad-ийн индекс, эсвэл kHostTarget /
+// kGuestTarget (хостын тоглогч, зочны дүр).
+struct HumanTarget
+{
+    Vector3 chest;
+    int id;
+};
+struct HumanHit
+{
+    int id;
+    float damage;
+};
+constexpr int kHostTarget = -1, kGuestTarget = -2;
 
 // Элсүүлсэн цэргүүд: удирдагчийн эргэн тойронд харуул хамгаалалтын байр эзэлж, зомбитой бие даан байлдана.
 // Багийн гишүүд: удирдагчийг зайтай дагаж, түүнд ойртсон зомбийг түрүүлж буудна.
@@ -85,6 +102,17 @@ public:
     void Update(float dt, World& world, Vector3 playerPosition, ZombieHorde& horde, Tracers& tracers,
                 Particles& particles);
     void Damage(int index, float amount);
+    // Тулаан: багийн гишүүд (элсүүлсэн цэрэг биш) эсрэг багийн хүмүүс рүү ч буудна. hostSide: хостын багийн бай
+    // (зочны дайчид буудна), guestSide: зочны багийн бай (хостын дайчид буудна). Оносон хохирлыг TakeHumanHits.
+    void SetBattle(bool active, std::vector<HumanTarget> hostSide, std::vector<HumanTarget> guestSide)
+    {
+        battle = active;
+        hostTargets = std::move(hostSide);
+        guestTargets = std::move(guestSide);
+    }
+    std::vector<HumanHit> TakeHumanHits() { return std::exchange(humanHits, {}); }
+    // Тулаанд: тасарсан зочны дүрийг зочны багийн AI дайчин болгоно (frozen секунд хөдлөхгүй).
+    void AddGuestFighter(int member, Vector3 position, float facing, float health, float frozen);
     // viewPosition: камерын байрлал (холын цэргийг хялбар хувилбараар зурна).
     void Draw(Vector3 viewPosition, bool showColliders) const;
     // 1-р дайчны дүр: өөрийн баг ба (хамтарсан тоглолтод) зочны баг
@@ -106,6 +134,9 @@ private:
     void ChooseGuardPost(int index, Vector3 playerPosition, const World& world);
 
     std::vector<Soldier> soldiers;
+    bool battle = false;
+    std::vector<HumanTarget> hostTargets, guestTargets;
+    std::vector<HumanHit> humanHits;
     bool guestLeaderActive = false;
     Vector3 guestLeader = { 0.0f, 0.0f, 0.0f };
 };

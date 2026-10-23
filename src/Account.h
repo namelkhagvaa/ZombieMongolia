@@ -66,6 +66,20 @@ namespace Account
     void LeaveRoom();
     // Хост: сүүлийн даалгавар биелэв (+40 Gold, өрөө хаагдана).
     void CompleteRoom();
+    // Хост: өрөөний одоогийн тулааны дугаар, зочны нэрийг серверээс шууд асууна (зочин орж ирэхэд).
+    void RefreshRoom();
+    int RoomBattle();
+    // Хост: даалгаврын ахиц, амьд элсүүлсэн цэргийн тоог серверт хадгална (зочин ялбал тэр үргэлжлүүлнэ).
+    void UploadStage(const std::string& stage, int recruits);
+    // Шинэ хост болсон үед (зочин ялсан): өрөөний ахиц ба өмнөх хостын цэргүүд.
+    const std::string& RoomStage();
+    int RoomRecruits();
+    // Тулааны үр дүнг мэдэгдэнэ (guestWon: зочин ялсан). Шийдэгдтэл давтан асууна (Tick).
+    void ReportBattle(bool guestWon);
+    enum class BattleResult { None, Pending, Won, Lost, Void };
+    // Нэг удаа: шийдэгдсэн үр дүн (Won/Lost: энэ тоглогч; Void: зөрсөн эсвэл өрөө хаагдсан). Ялсан зочин бол
+    // CurrentRoomRole() нь Host болсон байна (RoomTicket, RoomStage, RoomRecruits).
+    BattleResult TakeBattleResult();
 
     // Туршилт: дараагийн Update-д цонхны үндсэн товчийг (Enter) дарсан мэт.
     void TestEnter();

@@ -81,6 +81,7 @@ struct LaunchOptions
     int stance = 0;           // 1 = суусан, 2 = хэвтсэн байдлаар эхэлнэ (--stance N)
     int hold = 0;             // 1..5 бол тэр товчны зэвсгийг буудалгүйгээр барина (--hold N)
     bool coopTest = false;    // туршилтын горимд ч сүлжээг ажиллуулна (--coop)
+    bool battleTest = false;  // --coop-той: данс, сервергүйгээр тулаан (хоёр баг бие бие рүүгээ буудна) (--battle)
     bool scope = false;       // тасралтгүй онилно: мэргэн буудагчийн дуран харааг шалгахад (--scope)
     bool autoPlay = false;    // даалгавруудыг автоматаар гүйцэтгэнэ (--autoplay)
     int stopAfter = 0;        // автомат тоглолт энэ тооны даалгаврын дараа зогсоно (--stop-after N)
@@ -185,6 +186,26 @@ private:
     Arsenal arsenal;                // удирдаж буй гишүүний зэвсэг
     Arsenal arsenals[kTeamSize];    // гишүүн бүрийн зэвсэг, сум (шилжихэд хадгалагдана)
     int ammoReserve = 0;            // багийн нөөц сум (тоглолт бүр 5000-аар эхэлнэ, дэлгүүрээс тоглолтын зоосоор)
+
+    // ---- Тулаан (нээлттэй өрөө): эсрэг багийн үндсэн 3 дайчныг алсан баг ялна, зомби хоёуланд нь дайрна ----
+    bool battleActive = false;      // хост: зочин орж ирсэн; зочин: тасалбараар өрөөнд орсон
+    bool hostGone = false;          // зочин: хост тасарсан (сервер 60 секунд хүлээгээд зочныг ялсанд тооцно)
+    bool guestTeamSpawned = false;  // хост: энэ тулаанд зочны AI дайчдыг нэг л удаа үүсгэнэ
+    float takeoverCooldown = 0.0f;  // хост: зочин AI дайчныхаа байранд орсны дараа ялалтыг шалгахгүй хугацаа
+    float battleWaitTimer = 0.0f;   // хост: зочин нэгдээд ирэхийг хүлээсэн хугацаа
+    float guestHealth = 0.0f;       // хост: зочны сүүлд мэдэгдсэн амь (тасарвал AI дайчин болно)
+    float idleTimer = 0.0f;         // тулаанд оролтгүй өнгөрсөн хугацаа: 60 секундээс AI удирдана
+    bool autopilot = false, autoFire = false;
+    float stageUploadTimer = 0.0f;  // хост: өрөөний ахицыг серверт илгээх
+    std::vector<int8_t> hostSoldierSide; // зочин: snapshot-ын цэрэг бүр: 1 хостын дайчин, 2 өөрийн баг, 0 элсүүлсэн
+    void UpdateBattle(float dt);
+    void AutoFight(float dt);
+    void MigrateToHost();
+    void WinBattleAsHost();
+    int TeamAlive(bool hostTeam) const;
+    // Сум тулаанд оролцогч хүнд тусав уу: хост буудвал kGuestTarget эсвэл squad-ийн индекс (зочны баг),
+    // зочин буудвал Net::kHostPlayer эсвэл hostSoldiers-ийн индекс; тусаагүй бол -1.
+    int RaycastHumans(Ray ray, float minDistance, float maxDistance, float& distance, bool& head) const;
     int activeMember = 0;
     int missionFrame = 0;        // даалгаврын шинэчлэлтийн тоолуур (туршилтын командуудад)
     int teamVehicle = -1;        // багийн гишүүдийн сонгосон хэрэгсэл (-1 = байхгүй)

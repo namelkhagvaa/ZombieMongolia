@@ -799,6 +799,8 @@ void Game::RenderPortraits() const
 
 void Game::ReturnToMap()
 {
+    battleActive = hostGone = autopilot = autoFire = false;
+    idleTimer = 0.0f;
     if (Account::CurrentRoomRole() != Account::RoomRole::None) Account::LeaveRoom();
     progress.coins = 0; // тоглолтын зоос тоглолт дуусахад алга болно
     if (coopGuest) LeaveCoop();
@@ -1078,8 +1080,8 @@ void Game::UpdateShooting()
 
     // Автомат зэвсэг товчийг дарж байхад, бусад нь товшилт бүрд нэг удаа
     const bool autoUse = options.screenshotPath && options.weapon > 0; // туршилтын горим
-    const bool trigger = autoUse || (arsenal.Spec().automatic ? InMouseDown(MOUSE_BUTTON_LEFT)
-                                                              : InMousePressed(MOUSE_BUTTON_LEFT));
+    const bool trigger = autoUse || autoFire || (arsenal.Spec().automatic ? InMouseDown(MOUSE_BUTTON_LEFT)
+                                                                          : InMousePressed(MOUSE_BUTTON_LEFT));
     if (!trigger)
     {
         return;
@@ -1215,6 +1217,28 @@ void Game::FireGun(Ray aim, float cameraDistance)
             tracers.Add(muzzle, at, YELLOW);
             particles.Flash(at, Vector3Negate(ray.direction)); // оч
             continue;
+        }
+
+        // Тулаан: эсрэг багийн хүн зомби, хананаас өмнө байвал сум түүнд тусна
+        if (battleActive)
+        {
+            float humanDistance = 0.0f;
+            bool humanHead = false;
+            const int human = RaycastHumans(ray, cameraDistance * 0.9f, hit.index >= 0 ? hit.distance : wallDistance,
+                                            humanDistance, humanHead);
+            if (human != -1)
+            {
+                const float damage = arsenal.Damage() * (humanHead ? 2.0f : 1.0f);
+                if (coopGuest) net.SendHitHuman((uint32_t)human, damage);
+                else if (human == kGuestTarget) net.SendGuestDamage(damage);
+                else squad.Damage(human, damage);
+                const Vector3 at = Vector3Add(ray.position, Vector3Scale(ray.direction, humanDistance));
+                tracers.Add(muzzle, at, humanHead ? RED : YELLOW);
+                if (pellet == 0) localShotEnd = at;
+                particles.Blood(at, Vector3Negate(ray.direction), humanHead ? 12 : 6);
+                if (pellet == 0) Audio::Play(Sfx::Hit, at, humanHead ? 0.6f : 0.4f);
+                continue;
+            }
         }
 
         const float distance = hit.index >= 0 ? hit.distance : wallDistance;
@@ -1969,6 +1993,8 @@ void Game::UpdateMission(float dt)
     }
 
     UpdateCoopMission(dt);
+    UpdateBattle(dt);
+    if (state != GameState::Playing) return; // тулаан дуусч газрын зураг руу буцсан (эсвэл шинэ хост болсон)
     UpdateVehicles(dt);
     UpdateTeamRiding(dt);
     world.UpdateDoors(dt);
@@ -2078,6 +2104,14 @@ void Game::UpdateMission(float dt)
     }
 
     squad.Update(dt, world, player.Position(), horde, tracers, particles);
+    // Тулаан: AI дайчдын эсрэг баг руу оносон сум
+    for (const HumanHit& hit : squad.TakeHumanHits())
+    {
+        TraceLog(LOG_INFO, "BATTLE: AI hit %d for %.0f", hit.id, hit.damage);
+        if (hit.id == kHostTarget) player.TakeDamage(hit.damage);
+        else if (hit.id == kGuestTarget) net.SendGuestDamage(hit.damage);
+        else if (hit.id >= 0 && hit.id < squad.Total()) squad.Damage(hit.id, hit.damage);
+    }
     grenades.Update(dt, world, horde, player, particles);
     // Бензинтэй торх: гранат, пуужингийн дэлбэрэлт, хурдтай унаа дэлбэлнэ; тоглогч дундуур нь гарахгүй.
     for (const Grenades::BlastEvent& blast : grenades.TakeBlasts())
@@ -2177,6 +2211,14 @@ void Game::UpdateMission(float dt)
         if (!switched)
         {
             Save();
+            if (battleActive)
+            {
+                // Тулаан: хостын үндсэн 3 дайчин унав, зочин ялна (шинэ хост болно)
+                TraceLog(LOG_INFO, "BATTLE: host team down, guest won");
+                net.SendBattleOver(true);
+                Account::ReportBattle(true);
+                battleActive = false;
+            }
             state = GameState::Lost;
             return;
         }
@@ -3362,8 +3404,12 @@ void Game::StartCoopGuest(int province)
     horde.SetPuppet(true);
     hostFigure = RemoteFigure{};
     hostSoldiers.clear();
+    hostSoldierSide.clear();
     guestView = Net::Snapshot{};
-    SetNotice("ХАМТАРСАН ТОГЛОЛТ ЭХЭЛЛЭЭ", 2.5f);
+    battleActive = Account::CurrentRoomRole() == Account::RoomRole::Guest || options.battleTest;
+    hostGone = false;
+    if (battleActive) TraceLog(LOG_INFO, "BATTLE: joined as guest");
+    SetNotice(battleActive ? "ТУЛААН! Хостын үндсэн 3 дайчныг ал" : "ХАМТАРСАН ТОГЛОЛТ ЭХЭЛЛЭЭ", 3.5f);
 }
 
 void Game::LeaveCoop()
@@ -3444,6 +3490,7 @@ void Game::UpdateNetwork(float dt)
             }
             break;
         case Net::Msg::GuestState:
+            guestHealth = event.avatar.health;
             if (!remoteActive) UpdateRemoteFigure(guestFigure, event.avatar, dt, true);
             else UpdateRemoteFigure(guestFigure, event.avatar, dt, false);
             remoteActive = true; // буудлагыг UpdateRemoteFigure тоолуураар харуулна
@@ -3524,6 +3571,40 @@ void Game::UpdateNetwork(float dt)
         case Net::Msg::GuestDamage:
             if (coopGuest) player.TakeDamage(event.amount);
             break;
+        case Net::Msg::GuestHitHuman:
+            // Хост: зочин манай тоглогч эсвэл багийн дайчинд оносон (элсүүлсэн цэрэгт тусахгүй)
+            if (!coopGuest && battleActive)
+            {
+                if (event.id == Net::kHostPlayer) player.TakeDamage(event.amount);
+                else if ((int)event.id < squad.Total())
+                {
+                    const Soldier& target = squad.All()[(size_t)event.id];
+                    if (target.alive && target.member >= 0 && !target.guestTeam) squad.Damage((int)event.id, event.amount);
+                }
+            }
+            break;
+        case Net::Msg::GuestTakeover:
+            // Зочин: унасан тул амьд AI дайчныхаа байранд үргэлжлүүлнэ
+            if (coopGuest && battleActive)
+            {
+                player.Reset(player.MaxHealth());
+                player.TakeDamage(std::max(0.0f, player.MaxHealth() - event.amount));
+                player.Teleport(event.position);
+                camera.Snap(event.position);
+                SetNotice("Та дараагийн дайчныхаа байранд орлоо", 2.5f);
+            }
+            break;
+        case Net::Msg::BattleOver:
+            // Зочин: хост тулааны үр дүнг тооцлоо; серверт өөрөө мэдэгдэж баталгаажуулна
+            if (coopGuest && battleActive)
+            {
+                const bool won = event.id == 1;
+                TraceLog(LOG_INFO, "BATTLE: over, guest %s", won ? "won" : "lost");
+                Account::ReportBattle(won);
+                battleActive = false;
+                SetNotice(won ? "ТУЛААНД ЯЛЛАА! Хост болж байна..." : "ТУЛААНД ЯЛАГДЛАА", 4.0f);
+            }
+            break;
         case Net::Msg::KillReward:
             if (coopGuest)
             {
@@ -3551,7 +3632,17 @@ void Game::UpdateNetwork(float dt)
             break;
 
         case Net::Msg::Leave:
-            if (coopGuest)
+            if (coopGuest && battleActive)
+            {
+                // Тулааны үеэр хост гарсан (тасарсан): зочин ялна. Сервер (хост санаатай гараагүй бол 60 секундын дараа)
+                // баталгаажуулж, энэ тоглогчийг шинэ хост болгоно.
+                net.Stop();
+                hostGone = true;
+                battleActive = false;
+                Account::ReportBattle(true);
+                SetNotice("Хост гарлаа — ялалт баталгаажиж байна (1 минут хүртэл)", 6.0f);
+            }
+            else if (coopGuest)
             {
                 LeaveCoop();
                 coopStatus = "Хост тоглолтоос гарлаа";
@@ -3559,7 +3650,17 @@ void Game::UpdateNetwork(float dt)
             }
             else if (remoteActive || joinRequestPending)
             {
-                SetNotice(joinRequester + " тоглолтоос гарлаа", 2.5f);
+                if (battleActive && guestFigure.alive)
+                {
+                    // Тулааны үеэр зочин гарсан (тасарсан): түүний дүр 1 минут хөдлөхгүй, дараа нь AI тулалдана
+                    squad.AddGuestFighter(guestFigure.member, guestFigure.position, guestFigure.facing,
+                                          std::max(1.0f, guestHealth), 60.0f);
+                    SetNotice(joinRequester + " тасарлаа — 1 минутын дараа түүний багийг AI удирдана", 4.0f);
+                }
+                else
+                {
+                    SetNotice(joinRequester + " тоглолтоос гарлаа", 2.5f);
+                }
                 remoteActive = false;
                 joinRequestPending = false;
                 guestFigure = RemoteFigure{};
@@ -3577,6 +3678,273 @@ void Game::UpdateNetwork(float dt)
     }
 }
 
+// ---------------------------------------------------------------- Тулаан (нээлттэй өрөө)
+
+int Game::TeamAlive(bool hostTeam) const
+{
+    // Үндсэн 3 дайчин: удирдаж буй тоглогч + багийн гишүүд (элсүүлсэн цэрэг тооцогдохгүй)
+    int alive = 0;
+    if (hostTeam) alive += player.IsAlive() ? 1 : 0;
+    else alive += remoteActive && guestFigure.alive ? 1 : 0;
+    for (const Soldier& soldier : squad.All())
+    {
+        if (soldier.alive && soldier.member >= 0 && soldier.guestTeam != hostTeam) ++alive;
+    }
+    return alive;
+}
+
+int Game::RaycastHumans(Ray ray, float minDistance, float maxDistance, float& distance, bool& head) const
+{
+    // Бие (цээж) ба толгойг бөмбөлгөөр ойролцоолно
+    int best = -1;
+    distance = maxDistance;
+    auto test = [&](Vector3 feet, int code) {
+        const struct { Vector3 center; float radius; bool head; } parts[] = {
+            { Vector3Add(feet, { 0.0f, 1.62f, 0.0f }), 0.2f, true },
+            { Vector3Add(feet, { 0.0f, 1.05f, 0.0f }), 0.42f, false },
+        };
+        for (const auto& part : parts)
+        {
+            const RayCollision hit = GetRayCollisionSphere(ray, part.center, part.radius);
+            if (hit.hit && hit.distance > minDistance && hit.distance < distance)
+            {
+                distance = hit.distance;
+                head = part.head;
+                best = code;
+            }
+        }
+    };
+    if (!coopGuest)
+    {
+        if (remoteActive && guestFigure.alive) test(guestFigure.position, kGuestTarget);
+        for (int i = 0; i < squad.Total(); ++i)
+        {
+            const Soldier& soldier = squad.All()[(size_t)i];
+            if (soldier.alive && soldier.guestTeam && soldier.member >= 0) test(soldier.mover.position, i);
+        }
+    }
+    else
+    {
+        if (hostFigure.alive) test(hostFigure.position, (int)Net::kHostPlayer);
+        for (size_t i = 0; i < hostSoldiers.size() && i < hostSoldierSide.size(); ++i)
+        {
+            if (hostSoldierSide[i] == 1 && hostSoldiers[i].alive) test(hostSoldiers[i].position, (int)i);
+        }
+    }
+    return best;
+}
+
+void Game::AutoFight(float dt)
+{
+    // Хамгийн ойрын харагдах дайсан (эсрэг багийн хүн эсвэл зомби) руу онилж буудна
+    const Vector3 eye = Vector3Add(player.Position(), { 0.0f, 1.5f, 0.0f });
+    Vector3 best = {};
+    float bestDistance = 70.0f;
+    auto consider = [&](Vector3 chest) {
+        const float d = Vector3Distance(eye, chest);
+        if (d < bestDistance && d > 1.0f)
+        {
+            const Vector3 direction = Vector3Scale(Vector3Subtract(chest, eye), 1.0f / d);
+            if (world.RayDistance({ eye, direction }, d) >= d - 0.5f)
+            {
+                bestDistance = d;
+                best = chest;
+            }
+        }
+    };
+    if (!coopGuest)
+    {
+        if (remoteActive && guestFigure.alive) consider(Vector3Add(guestFigure.position, { 0.0f, 1.2f, 0.0f }));
+        for (const Soldier& soldier : squad.All())
+        {
+            if (soldier.alive && soldier.guestTeam) consider(Vector3Add(soldier.mover.position, { 0.0f, 1.2f, 0.0f }));
+        }
+    }
+    else
+    {
+        if (hostFigure.alive) consider(Vector3Add(hostFigure.position, { 0.0f, 1.2f, 0.0f }));
+        for (size_t i = 0; i < hostSoldiers.size() && i < hostSoldierSide.size(); ++i)
+        {
+            if (hostSoldierSide[i] == 1 && hostSoldiers[i].alive) consider(Vector3Add(hostSoldiers[i].position, { 0.0f, 1.2f, 0.0f }));
+        }
+    }
+    const int zombie = horde.Nearest(player.Position(), bestDistance);
+    if (zombie >= 0) consider(horde.At(zombie).Chest());
+    if (bestDistance >= 70.0f) return;
+
+    const Camera3D& view = camera.Get();
+    const Vector3 direction = Vector3Normalize(Vector3Subtract(best, view.position));
+    const float wantedYaw = std::atan2(direction.x, direction.z);
+    const float wantedPitch = -std::asin(std::clamp(direction.y, -1.0f, 1.0f));
+    const float pull = 1.0f - std::exp(-9.0f * dt);
+    camera.AddView(std::remainder(wantedYaw - camera.Yaw(), 2.0f * PI) * pull, (wantedPitch - camera.Pitch()) * pull);
+    const bool aligned = std::fabs(std::remainder(wantedYaw - camera.Yaw(), 2.0f * PI)) < 0.08f;
+    autoFire = aligned && arsenal.UsesAmmo();
+    if (arsenal.Current() == WeaponType::Knife || arsenal.Current() == WeaponType::Grenade)
+    {
+        arsenal.Select(arsenal.SlotWeapon(std::min(2, arsenal.SlotCount() - 1))); // галт зэвсэг
+    }
+}
+
+void Game::WinBattleAsHost()
+{
+    // Ялагчийн үхсэн дайчид сэргэнэ; зочны баг арилна, өрөө дараагийн зочныг хүлээнэ
+    battleActive = false;
+    for (Soldier& soldier : squad.All())
+    {
+        if (soldier.member >= 0 && !soldier.guestTeam && !soldier.alive)
+        {
+            soldier.alive = true;
+            soldier.health = soldier.maxHealth;
+            soldier.deathTimer = 0.0f;
+        }
+    }
+    squad.RemoveGuestTeam();
+    guestTeamSpawned = true; // ялагдсан зочин гартал (UpdateCoopMission) дахин үүсгэхгүй
+    SetNotice("ТУЛААНД ЯЛЛАА! Дайсны баг бүгд унав — дайчид тань сэргэлээ", 4.0f);
+}
+
+void Game::MigrateToHost()
+{
+    // Зочин ялав: өрөөний ахиц, өмнөх хостын цэргүүдийг аваад энэ төхөөрөмж хост болж үргэлжлүүлнэ
+    // (өөрийн баг, тоглолтын зоос, нөөц сум хэвээр; үхсэн дайчид сэргэнэ).
+    const int province = Account::RoomProvince();
+    if (province < 0 || province >= (int)progress.stages.size())
+    {
+        ReturnToMap();
+        return;
+    }
+    StageSave stage;
+    const bool hasStage = ParseStageText(Account::RoomStage(), stage);
+    const int coins = progress.coins, ammo = ammoReserve, recruits = Account::RoomRecruits();
+    LeaveCoop(); // (CurrentRoomRole нь Host болсон тул өрөөнөөс гарахгүй)
+    if (hasStage) progress.stages[(size_t)province] = stage;
+    StartMission(province);
+    progress.coins = coins;
+    ammoReserve = ammo;
+    for (int i = 0; i < recruits; ++i)
+    {
+        const float angle = (float)i * 1.1f;
+        Vector3 spot = { player.Position().x + std::sin(angle) * 3.0f, 0.0f, player.Position().z + std::cos(angle) * 3.0f };
+        world.ResolveHorizontal(spot, 0.4f, 1.8f, 0.0f);
+        spot.y = world.GroundHeight(spot.x, spot.z);
+        squad.Add(spot, angle);
+    }
+    Save();
+    SetNotice("ТУЛААНД ЯЛЛАА! Та одоо энэ өрөөний хост — даалгаврыг үргэлжлүүлнэ", 5.0f);
+}
+
+void Game::UpdateBattle(float dt)
+{
+    // Хост: өрөөний ахиц, амьд элсүүлсэн цэргийн тоог серверт (зочин ялбал тэр үргэлжлүүлнэ)
+    if (!coopGuest && Account::CurrentRoomRole() == Account::RoomRole::Host)
+    {
+        stageUploadTimer -= dt;
+        if (stageUploadTimer <= 0.0f)
+        {
+            stageUploadTimer = 20.0f;
+            int recruits = 0;
+            for (const Soldier& soldier : squad.All()) recruits += soldier.alive && soldier.member < 0 ? 1 : 0;
+            Account::UploadStage(StageText(progress.stages[(size_t)provinceIndex]), recruits);
+        }
+    }
+
+    // Серверийн шийдвэр
+    const Account::BattleResult result = Account::TakeBattleResult();
+    if (result == Account::BattleResult::Won && coopGuest && Account::CurrentRoomRole() == Account::RoomRole::Host)
+    {
+        MigrateToHost();
+        return;
+    }
+    if (result == Account::BattleResult::Won)
+    {
+        SetNotice(TextFormat("ТУЛААНЫ ЯЛАЛТ БАТАЛГААЖЛАА · %d Gold", Account::Gold()), 4.0f);
+    }
+    else if ((result == Account::BattleResult::Lost || result == Account::BattleResult::Void) && coopGuest)
+    {
+        const bool lost = result == Account::BattleResult::Lost;
+        LeaveCoop();
+        ReturnToMap();
+        coopStatus = lost ? "Тулаанд ялагдлаа" : "Тулааны үр дүн зөрсөн: хүчингүй боллоо";
+        return;
+    }
+    else if (result == Account::BattleResult::Void)
+    {
+        SetNotice("Тулааны үр дүн зөрсөн тул хүчингүй боллоо", 4.0f);
+    }
+
+    if (!battleActive)
+    {
+        squad.SetBattle(false, {}, {});
+        autopilot = autoFire = false;
+        idleTimer = 0.0f;
+        return;
+    }
+
+    // 1 минут оролтгүй (санаатай зогссон, тасарсан төхөөрөмж): AI тулалдана
+    idleTimer = InActivity() ? 0.0f : idleTimer + dt;
+    const bool wasAuto = autopilot;
+    autopilot = idleTimer >= 60.0f && player.IsAlive();
+    if (autopilot && !wasAuto) SetNotice("Та 1 минут хөдлөөгүй: AI таны оронд тулалдаж байна", 4.0f);
+    autoFire = false;
+    if (autopilot) AutoFight(dt);
+
+    if (coopGuest) return; // доорх нь хостын тооцоо
+
+    // AI дайчдын бай: хоёр багийн үндсэн дайчид (элсүүлсэн цэрэг биш)
+    std::vector<HumanTarget> hostSide, guestSide;
+    if (player.IsAlive()) hostSide.push_back({ Vector3Add(player.Position(), { 0.0f, 1.3f, 0.0f }), kHostTarget });
+    for (int i = 0; i < squad.Total(); ++i)
+    {
+        const Soldier& soldier = squad.All()[(size_t)i];
+        if (!soldier.alive || soldier.member < 0) continue;
+        (soldier.guestTeam ? guestSide : hostSide).push_back({ Vector3Add(soldier.mover.position, { 0.0f, 1.3f, 0.0f }), i });
+    }
+    if (remoteActive && guestFigure.alive)
+    {
+        guestSide.push_back({ Vector3Add(guestFigure.position, { 0.0f, 1.3f, 0.0f }), kGuestTarget });
+    }
+    squad.SetBattle(true, std::move(hostSide), std::move(guestSide));
+
+    // Зочин унасан: амьд AI дайчныхаа байранд үргэлжлүүлнэ
+    takeoverCooldown = std::max(0.0f, takeoverCooldown - dt);
+    if (remoteActive && !guestFigure.alive && takeoverCooldown <= 0.0f)
+    {
+        std::vector<Soldier>& soldiers = squad.All();
+        for (size_t i = 0; i < soldiers.size(); ++i)
+        {
+            if (!soldiers[i].guestTeam || !soldiers[i].alive || soldiers[i].member < 0) continue;
+            net.SendTakeover(soldiers[i].mover.position, soldiers[i].health);
+            TraceLog(LOG_INFO, "BATTLE: guest took over a fighter (%.0f hp)", soldiers[i].health);
+            soldiers.erase(soldiers.begin() + (long)i);
+            takeoverCooldown = 3.0f;
+            break;
+        }
+    }
+
+    // Зочин ирж (газрын зургаа ачаалж) багаа үүсгэтэл ялалтыг шалгахгүй; 60 секундэд ирэхгүй бол хүчингүй
+    if (!guestTeamSpawned)
+    {
+        battleWaitTimer += dt;
+        if (battleWaitTimer > 60.0f)
+        {
+            TraceLog(LOG_INFO, "BATTLE: guest never arrived");
+            battleActive = false;
+        }
+        return;
+    }
+    battleWaitTimer = 0.0f;
+
+    // Зочны үндсэн 3 дайчин бүгд унав: хост ялна
+    if (takeoverCooldown <= 0.0f && TeamAlive(false) == 0)
+    {
+        if (remoteActive) net.SendBattleOver(false);
+        Account::ReportBattle(false);
+        TraceLog(LOG_INFO, "BATTLE: host won");
+        WinBattleAsHost();
+    }
+}
+
 void Game::UpdateCoopMission(float dt)
 {
     // ---- Хост: хүсэлтэд хариулах, зочныг бай болгох, snapshot илгээх ----
@@ -3591,7 +3959,20 @@ void Game::UpdateCoopMission(float dt)
             {
                 net.AnswerJoin(true, provinceIndex);
                 joinRequestPending = false;
-                SetNotice(joinRequester + " нэгдлээ", 2.5f);
+                if (Account::CurrentRoomRole() == Account::RoomRole::Host || options.battleTest)
+                {
+                    TraceLog(LOG_INFO, "BATTLE: guest %s joined, battle started", joinRequester.c_str());
+                    battleActive = true;
+                    guestTeamSpawned = false;
+                    battleWaitTimer = 0.0f;
+                    takeoverCooldown = 3.0f;
+                    Account::RefreshRoom(); // тулааны дугаар
+                    SetNotice(joinRequester + " өрөөнд орж ирлээ — ТУЛААН! Эсрэг багийн 3 дайчныг ал", 4.0f);
+                }
+                else
+                {
+                    SetNotice(joinRequester + " нэгдлээ", 2.5f);
+                }
             }
             else if (InKeyPressed(KEY_N))
             {
@@ -3614,14 +3995,16 @@ void Game::UpdateCoopMission(float dt)
         }
         horde.SetRemoteTarget(remoteActive && guestFigure.alive && !(guestFigure.flags & Net::kRiding), guestFigure.position);
         // Зочны үлдсэн хоёр дайчин: зочныг дагаж байлдана (хост тооцоолж, snapshot-оор зочинд харагдана)
-        if (remoteActive && !squad.HasGuestTeam())
+        if (remoteActive && !squad.HasGuestTeam() && !guestTeamSpawned)
         {
             squad.AddGuestTeam(guestFigure.member, guestFigure.position, world);
+            guestTeamSpawned = battleActive; // тулаанд: унасан дайчид дахин үүсэхгүй
         }
-        else if (!remoteActive && squad.HasGuestTeam())
+        else if (!remoteActive && squad.HasGuestTeam() && !battleActive)
         {
-            squad.RemoveGuestTeam();
+            squad.RemoveGuestTeam(); // (тулаанд: тасарсан зочны багийг AI тулалдуулна)
         }
+        if (!remoteActive && !battleActive) guestTeamSpawned = false; // (тулааны дараа зочин гартал дахин үүсгэхгүй)
         squad.SetGuestLeader(remoteActive, guestFigure.position);
         return;
     }
@@ -3641,6 +4024,12 @@ void Game::UpdateCoopMission(float dt)
         horde.ApplySnapshot(snapshot.zombies, params);
         UpdateRemoteFigure(hostFigure, snapshot.host, dt, !guestPlaced);
         hostSoldiers.resize(snapshot.soldiers.size());
+        hostSoldierSide.resize(snapshot.soldiers.size());
+        for (size_t i = 0; i < snapshot.soldiers.size(); ++i)
+        {
+            const Net::SoldierState& s = snapshot.soldiers[i];
+            hostSoldierSide[i] = (int8_t)(s.member < 0 ? 0 : s.guest ? 2 : 1);
+        }
         for (size_t i = 0; i < snapshot.soldiers.size(); ++i)
         {
             const Net::SoldierState& s = snapshot.soldiers[i];
@@ -3691,8 +4080,8 @@ void Game::UpdateCoopMission(float dt)
     AdvanceRemoteFigure(hostFigure, dt);
     for (RemoteFigure& figure : hostSoldiers) AdvanceRemoteFigure(figure, dt);
 
-    // Унасан зочин: хэдэн секундын дараа хостын дэргэд амилна
-    if (!player.IsAlive())
+    // Унасан зочин: хэдэн секундын дараа хостын дэргэд амилна (тулаанд: AI дайчныхаа байранд л)
+    if (!player.IsAlive() && !battleActive)
     {
         guestRespawnTimer += dt;
         if (guestRespawnTimer > kGuestRespawnTime)
@@ -3819,6 +4208,34 @@ void Game::ObjectiveTexts(std::string& objective, std::string& detail) const
 void Game::DrawCoopOverlay() const
 {
     const int width = ViewWidth();
+    if (battleActive || hostGone)
+    {
+        // Тулаан: хоёр багийн амьд үндсэн дайчид
+        int own = 0, enemy = 0;
+        if (!coopGuest)
+        {
+            own = TeamAlive(true);
+            enemy = TeamAlive(false);
+        }
+        else
+        {
+            own = player.IsAlive() ? 1 : 0;
+            enemy = hostFigure.alive && !hostGone ? 1 : 0;
+            for (size_t i = 0; i < hostSoldiers.size() && i < hostSoldierSide.size(); ++i)
+            {
+                if (!hostSoldiers[i].alive) continue;
+                if (hostSoldierSide[i] == 2) ++own;
+                if (hostSoldierSide[i] == 1) ++enemy;
+            }
+        }
+        const char* text = hostGone ? "ТУЛААН · хост гарлаа, ялалт баталгаажиж байна"
+                                    : TextFormat("ТУЛААН  ·  Танай баг %d  ·  Дайсан %d%s", own, enemy, autopilot ? "  ·  AI" : "");
+        const int textWidth = Ui::MeasureBold(text, 15);
+        const Rectangle chip = { (float)(width - textWidth - 32) / 2.0f, 54.0f, (float)textWidth + 32.0f, 30.0f };
+        DrawRectangleRounded(chip, 0.5f, 8, Fade({ 60, 14, 12, 255 }, 0.85f));
+        DrawRectangleRoundedLinesEx(chip, 0.5f, 8, 1.5f, Fade(Ui::kDanger, 0.8f));
+        Ui::TextBold(text, (int)chip.x + 16, (int)chip.y + 6, 15, Ui::kText);
+    }
     // Хост: нэгдэх хүсэлт
     if (joinRequestPending && !coopGuest)
     {

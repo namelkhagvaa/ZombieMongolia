@@ -284,7 +284,8 @@ class FlowTests(TestCase):
         self.assertEqual((result["settled"], result["winner"]), (True, "guest"))
         # Түрүүлж мэдэгдсэн зочин дахин асуухад шинэ хостын тасалбар, ахиц, ялагдагчийн цэргүүд
         polled = self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "guest"}, guest)
-        self.assertTrue(polled["settled"])
+        self.assertEqual((polled["settled"], polled["result"]), (True, "won"))
+        self.assertEqual(result["result"], "lost")
         self.assertEqual((polled["room"]["role"], polled["room"]["stage"], polled["room"]["recruits"]), ("host", "4 15 0 0 0", 3))
         self.assertEqual(self.gold_of("+97688112233"), (530, 50))  # шинэ хост, барьцаа хэвээр
         self.assertEqual(self.gold_of("+97699112233"), (430, 0))
@@ -294,7 +295,8 @@ class FlowTests(TestCase):
     def test_disputed_result_pays_nobody(self):
         host, guest, room_id = self.battle()
         self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, host)
-        self.assertTrue(self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "guest"}, guest)["settled"])
+        disputed = self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "guest"}, guest)
+        self.assertEqual((disputed["settled"], disputed["result"]), (True, "void"))
         self.assertEqual(self.gold_of("+97699112233"), (480, 50))
         self.assertEqual(self.gold_of("+97688112233"), (480, 0))
         self.assertTrue(Event.objects.filter(kind="battle_disputed").exists())

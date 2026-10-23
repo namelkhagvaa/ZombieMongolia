@@ -913,3 +913,24 @@ void InDrawTouch(const TouchState& state)
         UiTextShadow(hint, (ViewWidth() - textWidth) / 2, ViewHeight() - 44, 24, accent);
     }
 }
+
+bool InActivity()
+{
+    if (touchMode)
+    {
+        for (const Finger& finger : fingers)
+        {
+            if (finger.id >= 0) return true;
+        }
+        return false;
+    }
+    const Vector2 delta = GetMouseDelta();
+    if (std::fabs(delta.x) + std::fabs(delta.y) > 0.5f) return true;
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) return true;
+    for (int key : { KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_SPACE, KEY_LEFT_SHIFT, KEY_E,
+                     KEY_R, KEY_C, KEY_Z, KEY_F })
+    {
+        if (IsKeyDown(key)) return true;
+    }
+    return false;
+}

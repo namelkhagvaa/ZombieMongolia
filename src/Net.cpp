@@ -1124,6 +1124,17 @@ namespace Net
         case Msg::MissionWon:
             e.amount = (float)r.I32();
             break;
+        case Msg::GuestHitHuman:
+            e.id = r.U16();
+            e.amount = r.F();
+            break;
+        case Msg::GuestTakeover:
+            e.position = r.V3();
+            e.amount = r.F();
+            break;
+        case Msg::BattleOver:
+            e.id = r.U8();
+            break;
         case Msg::Leave:
             break;
         default:
@@ -1237,6 +1248,32 @@ namespace Net
         Writer w;
         w.U8((uint8_t)Msg::BarrelExploded);
         w.U32((uint32_t)index);
+        Send(w.data, true);
+    }
+
+    void Session::SendHitHuman(uint32_t target, float damage)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::GuestHitHuman);
+        w.U16((uint16_t)target);
+        w.F(damage);
+        Send(w.data, true);
+    }
+
+    void Session::SendTakeover(Vector3 position, float health)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::GuestTakeover);
+        w.V3(position);
+        w.F(health);
+        Send(w.data, true);
+    }
+
+    void Session::SendBattleOver(bool guestWon)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::BattleOver);
+        w.U8(guestWon ? 1 : 0);
         Send(w.data, true);
     }
 

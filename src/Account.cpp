@@ -77,7 +77,13 @@ namespace
     const char* const kUpgradeNames[kUpgradeCount] = { "damage", "fire_rate", "magazine", "health", "soldier" };
     int gold = 0, goldLocked = 0, roomEntry = 70;
     // Нээлттэй өрөө (сервер нээсэн / орсон)
-    int roomId = -1, roomProvince = -1;
+    int roomId = -1, roomProvince = -1, roomBattle = 0, roomRecruits = 0;
+    std::string roomStage;
+    // Тулааны мэдэгдэл: ялагч (host/guest), шийдэгдтэл давтана
+    std::string battleReport;
+    int battleReportFor = 0;
+    double nextBattlePoll = 0.0, battleReportDeadline = 0.0;
+    Account::BattleResult battleResult = Account::BattleResult::None;
     Account::RoomRole roomRole = Account::RoomRole::None;
     std::string roomTicket;
     bool roomJoined = false;
@@ -388,11 +394,52 @@ namespace
         roomProvince = room["province"].Int(-1);
         roomRole = room["role"].Str() == "host" ? Account::RoomRole::Host : Account::RoomRole::Guest;
         roomTicket = room["ticket"].Str();
+        roomBattle = room["battle"].Int(roomBattle);
+        roomStage = room["stage"].Str();
+        roomRecruits = room["recruits"].Int(0);
         nextRoomBeat = GetTime() + 60.0;
     }
 
     // Өрөөний хүсэлт (гарах, дуусгах, дохио): цонхыг хаахгүй, даалгаврын үеэр ч (Tick) хариуг авна.
-    Pending roomRequest, roomBeat;
+    Pending roomRequest, roomBeat, roomStageCall, battleCall;
+
+    void BeatHandler(int status, const Json& reply)
+    {
+        if (status == 410) SetRoom(Json()); // сервер өрөөг хаасан
+        else if (status == 200) roomBattle = reply["battle"].Int(roomBattle);
+    }
+
+    void SendBattleReport()
+    {
+        battleCall.id = Online::Send("POST", apiBase + "rooms/" + std::to_string(roomId) + "/result/",
+                                     Obj({ { "battle", std::to_string(battleReportFor) }, { "winner", JsonQuote(battleReport) } }),
+                                     token);
+        battleCall.handler = [](int status, const Json& reply) {
+            if (status == 200 && reply["settled"].Bool())
+            {
+                ReadAccount(reply["account"]);
+                const std::string result = reply["result"].Str();
+                // Ялагч өрөөтэй (зочин ялсан бол шинэ хостын тасалбар), ялагдагч өрөөгүй
+                if (result == "won") SetRoom(reply["room"]);
+                else if (result == "lost") SetRoom(Json());
+                battleResult = result == "won" ? Account::BattleResult::Won
+                             : result == "lost" ? Account::BattleResult::Lost : Account::BattleResult::Void;
+                battleReport.clear();
+                return;
+            }
+            if (status == 410 || status == 403 || status == 404)
+            {
+                // Нөгөө тал шийдүүлсэн, энэ тоглогч өрөөнд байхгүй: ялагдсан (эсвэл хүчингүй)
+                Background("GET", "account/", "", [](int code, const Json& fresh) {
+                    if (code == 200) ReadAccount(fresh["account"]);
+                });
+                SetRoom(Json());
+                battleResult = Account::BattleResult::Lost;
+                battleReport.clear();
+            }
+            // бусад (сүлжээ, шийдэгдээгүй): Tick дахин илгээнэ
+        };
+    }
 
     void RoomCall(const char* action)
     {
@@ -1398,14 +1445,28 @@ void Account::Tick()
     Finish(beat);
     Finish(roomRequest);
     Finish(roomBeat);
+    Finish(roomStageCall);
+    Finish(battleCall);
     if (roomId >= 0 && roomBeat.id < 0 && GetTime() >= nextRoomBeat)
     {
         // Өрөөнд байгаагаа минут тутам мэдэгдэнэ (тасарвал сервер шийтгэлгүй гаргана)
         nextRoomBeat = GetTime() + 60.0;
         roomBeat.id = Online::Send("POST", apiBase + "rooms/" + std::to_string(roomId) + "/beat/", "{}", token);
-        roomBeat.handler = [](int status, const Json&) {
-            if (status == 410) SetRoom(Json()); // сервер өрөөг хаасан
-        };
+        roomBeat.handler = BeatHandler;
+    }
+    if (!battleReport.empty() && roomId >= 0 && battleCall.id < 0 && GetTime() >= nextBattlePoll)
+    {
+        // Нөгөө тал мэдэгдтэл (эсвэл сервер 60 секунд хүлээж шийдтэл) давтана
+        nextBattlePoll = GetTime() + 5.0;
+        if (GetTime() > battleReportDeadline)
+        {
+            battleReport.clear();
+            battleResult = Account::BattleResult::Void;
+        }
+        else
+        {
+            SendBattleReport();
+        }
     }
     if (!signedIn || token.empty() || beat.id >= 0 || request.id >= 0 || GetTime() < nextBeat) return;
     nextBeat = GetTime() + 60.0;
@@ -1686,3 +1747,39 @@ void Account::JoinRoom()
 bool Account::TakeJoinedRoom() { return std::exchange(roomJoined, false); }
 void Account::LeaveRoom() { RoomCall("leave"); }
 void Account::CompleteRoom() { RoomCall("complete"); }
+
+void Account::RefreshRoom()
+{
+    if (roomId < 0 || roomBeat.id >= 0) return;
+    nextRoomBeat = GetTime() + 60.0;
+    roomBeat.id = Online::Send("POST", apiBase + "rooms/" + std::to_string(roomId) + "/beat/", "{}", token);
+    roomBeat.handler = BeatHandler;
+}
+
+int Account::RoomBattle() { return roomBattle; }
+const std::string& Account::RoomStage() { return roomStage; }
+int Account::RoomRecruits() { return roomRecruits; }
+
+void Account::UploadStage(const std::string& stage, int recruits)
+{
+    if (roomId < 0 || roomRole != RoomRole::Host || roomStageCall.id >= 0) return;
+    roomStageCall.id = Online::Send("POST", apiBase + "rooms/" + std::to_string(roomId) + "/stage/",
+                                    Obj({ { "stage", JsonQuote(stage) }, { "recruits", std::to_string(recruits) } }), token);
+    roomStageCall.handler = [](int, const Json&) {};
+}
+
+void Account::ReportBattle(bool guestWon)
+{
+    if (roomId < 0 || !battleReport.empty()) return;
+    battleReport = guestWon ? "guest" : "host";
+    battleReportFor = roomBattle;
+    battleReportDeadline = GetTime() + 180.0; // сервер 60 секунд хүлээгээд нэг талын мэдэгдлээр шийднэ
+    nextBattlePoll = 0.0;
+    battleResult = BattleResult::Pending;
+}
+
+Account::BattleResult Account::TakeBattleResult()
+{
+    if (battleResult == BattleResult::Pending || battleResult == BattleResult::None) return battleResult;
+    return std::exchange(battleResult, BattleResult::None);
+}

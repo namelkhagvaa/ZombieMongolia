@@ -6,6 +6,8 @@ extern "C" struct android_app* GetAndroidApp(void); // raylib-ийн Android д�
 
 #include "Progress.h"
 
+#include <sstream>
+
 #include "Platform.h"
 #include "Shop.h"
 #include "Team.h"
@@ -255,4 +257,27 @@ bool SaveProgress(const Progress& progress)
     file.close();
     WebPersistFile(SavePath().c_str()); // хөтөч: localStorage-д хадгална
     return !file.fail();
+}
+
+std::string StageText(const StageSave& stage)
+{
+    // "1 <done> <cleared> <жижиг> <том> <entities x12> <guards x24>"
+    std::string text = "1 " + std::to_string(stage.done) + " " + std::to_string(stage.clearedZones) + " " +
+                       std::to_string(std::max(0, stage.killedSmall)) + " " + std::to_string(std::max(0, stage.killedBig));
+    for (unsigned mask : stage.entities) text += " " + std::to_string(mask);
+    for (const auto& kills : stage.guardKills) text += " " + std::to_string(std::max(0, kills[0])) + " " + std::to_string(std::max(0, kills[1]));
+    return text;
+}
+
+bool ParseStageText(const std::string& text, StageSave& stage)
+{
+    std::istringstream in(text);
+    int version = 0;
+    StageSave parsed;
+    in >> version >> parsed.done >> parsed.clearedZones >> parsed.killedSmall >> parsed.killedBig;
+    for (unsigned& mask : parsed.entities) in >> mask;
+    for (auto& kills : parsed.guardKills) in >> kills[0] >> kills[1];
+    if (version != 1 || in.fail()) return false;
+    stage = parsed;
+    return true;
 }

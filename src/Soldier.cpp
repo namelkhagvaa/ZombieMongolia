@@ -203,6 +203,12 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
             continue;
         }
 
+        if (soldier.frozen > 0.0f)
+        {
+            soldier.frozen -= dt; // тасарсан тоглогч: AI нэг минутын дараа удирдана
+            soldier.moving = false;
+            continue;
+        }
         if (!soldier.moving) soldier.speed = 0.0f; // зогссон: дараа нь тайван хурдалж эхэлнэ
         soldier.recoil = std::max(0.0f, soldier.recoil - dt * 9.0f);
         soldier.aimHold -= dt;
@@ -503,14 +509,30 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
         {
             targetIndex = horde.Nearest(pos, fireRange);
         }
-        if (targetIndex < 0)
+        // Тулаан: багийн гишүүн эсрэг багийн хамгийн ойрын хүнийг (буудах зайд) зомбиос түрүүлнэ.
+        // Элсүүлсэн цэргүүд зөвхөн зомбитой.
+        const HumanTarget* human = nullptr;
+        if (battle && teammate)
+        {
+            float best = fireRange;
+            for (const HumanTarget& candidate : soldier.guestTeam ? hostTargets : guestTargets)
+            {
+                const float distance = Vector3Distance(pos, candidate.chest);
+                if (distance < best)
+                {
+                    best = distance;
+                    human = &candidate;
+                }
+            }
+        }
+        if (targetIndex < 0 && !human)
         {
             continue;
         }
 
         const Vector3 muzzle = HumanoidLocalToWorld(pos, soldier.mover.facing,
                                                     HumanoidMuzzleFor(sniper ? HeldItem::Sniper : HeldItem::Rifle));
-        const Vector3 chest = horde.At(targetIndex).Chest();
+        const Vector3 chest = human ? human->chest : horde.At(targetIndex).Chest();
         const Vector3 toTarget = Vector3Subtract(chest, muzzle);
         const float distance = Vector3Length(toTarget);
         if (distance < 0.01f)
@@ -540,7 +562,10 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
                 soldier.fireCooldown = fireInterval;
                 soldier.recoil = 1.0f;
                 soldier.aimHold = 1.4f;
-                horde.Damage(targetIndex, damage);
+                // Хүнд бүх сум тусахгүй (тоглогч зайлж, халхлах боломжтой)
+                // (мэргэн буудагчийн зомбид зориулсан хохирол хүнийг нэг сумаар унагаахгүй)
+                if (human && GetRandomValue(0, 99) < 45) humanHits.push_back({ human->id, std::min(damage, 40.0f) });
+                else if (!human) horde.Damage(targetIndex, damage);
                 horde.AlertAround(pos, 70.0f); // буун дуунд зомби сэрнэ
                 tracers.Add(muzzle, chest, sniper ? RAYWHITE : ORANGE);
                 Audio::Play(sniper ? Sfx::Sniper : Sfx::Rifle, muzzle, 0.5f);
@@ -563,6 +588,19 @@ void SoldierSquad::Damage(int index, float amount)
         soldier.health = 0.0f;
         soldier.alive = false;
     }
+}
+
+void SoldierSquad::AddGuestFighter(int member, Vector3 position, float facing, float health, float frozen)
+{
+    Soldier soldier;
+    soldier.mover.position = position;
+    soldier.mover.facing = facing;
+    soldier.member = member;
+    soldier.guestTeam = true;
+    soldier.maxHealth = std::max(health, kMaxHealth);
+    soldier.health = health;
+    soldier.frozen = frozen;
+    soldiers.push_back(soldier);
 }
 
 int SoldierSquad::AliveCount() const

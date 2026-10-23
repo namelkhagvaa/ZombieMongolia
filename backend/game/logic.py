@@ -531,7 +531,7 @@ def report_battle(player, device_id, room_id, battle, winner, ip):
                 log_event(player, "battle_disputed", {"room": room.pk, "battle": room.battle,
                                                       "host": room.host_report, "guest": room.guest_report}, device_id, ip)
                 _drop_guest(room)
-                return True, None, room
+                return True, "void", room
             _settle(room, room.host_report, device_id, ip)
             return True, winner, room
         if timezone.now() - room.report_at >= BATTLE_WAIT:

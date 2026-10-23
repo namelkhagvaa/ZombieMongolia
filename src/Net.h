@@ -26,7 +26,8 @@ namespace Net
     constexpr uint16_t kDiscoveryPort = 47811;
     // Сүлжээний мессежийн хувилбар: мессежийн бүтэц өөрчлөгдөх бүрд нэмэгдүүлнэ. Хост ба зочин ижил хувилбартай
     // байж л нэгдэнэ (эс бөгөөс өгөгдөл буруу уншигдаж, жишээ нь цэргүүд "үхсэн" мэт харагдана).
-    constexpr uint16_t kProtocolVersion = 6; // 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris; 6: 1-р дайчны дүр
+    constexpr uint16_t kProtocolVersion = 7; // 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris; 6: 1-р дайчны дүр;
+                                             // 7: тулаан (тоглогч хооронд)
 
     // Мессежийн төрөл (пакетийн эхний байт)
     enum class Msg : uint8_t
@@ -46,8 +47,13 @@ namespace Net
         GuestDoor,       // зочин -> хост: хаалга нээсэн / хаасан (индекс, төлөв)
         GuestPickup,     // зочин -> хост: эмнэлгийн хайрцаг авсан (байрлал)
         Projectile,      // аль аль нь: гранат шидсэн / пуужин харвасан (нөгөө талд зөвхөн харагдана)
-        AirstrikeStart   // хост -> зочин: үе давлаа, бөмбөгдөлтийн кино эхэллээ (төв, зүг)
+        AirstrikeStart,  // хост -> зочин: үе давлаа, бөмбөгдөлтийн кино эхэллээ (төв, зүг)
+        // Тулаан (нээлттэй өрөө): хоёр баг бие бие рүүгээ буудна
+        GuestHitHuman,   // зочин -> хост: хостын тоглогч (kHostPlayer) эсвэл цэрэгт (snapshot-ын индекс) оносон
+        GuestTakeover,   // хост -> зочин: зочин үхсэн: амьд AI дайчныхаа байранд (байрлал, амь) үргэлжлүүлнэ
+        BattleOver       // хост -> зочин: тулаан дууслаа (ялагч: 0 хост, 1 зочин)
     };
+    constexpr uint32_t kHostPlayer = 0xFFFF; // GuestHitHuman: хостын удирдаж буй тоглогч
 
     // Хоёр талын дүрийн байдал (буудлага, хөдөлгөөн)
     struct AvatarState
@@ -221,6 +227,9 @@ namespace Net
         void SendPickup(Vector3 position);
         void SendProjectile(int kind, Vector3 from, Vector3 velocity); // kind: 0 гранат, 1 пуужин
         void SendAirstrike(Vector3 center, float heading);
+        void SendHitHuman(uint32_t target, float damage);
+        void SendTakeover(Vector3 position, float health);
+        void SendBattleOver(bool guestWon);
 
         // Хүлээн авсан сүүлийн snapshot (зочин)
         bool TakeSnapshot(Snapshot& out);

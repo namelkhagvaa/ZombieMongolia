@@ -175,8 +175,12 @@ def room_result(request, room_id):
     settled, winner, room = logic.report_battle(player, request.token.device_id, room_id, request.json.get("battle"),
                                                 request.json.get("winner"), client_ip(request))
     data = {"settled": settled, "winner": winner, "account": account(request.token)}
-    if settled and room.status == room.OPEN and room.host_id == player.pk:
-        data["room"] = logic.room_json(room, player)  # (зочин ялсан бол: шинэ хостын тасалбар, ахиц, цэргүүд)
+    if settled:
+        # Энэ тоглогчийн хувьд: хүчингүй (зөрсөн), ялсан (өрөөний хост: хэвээр эсвэл зочноос шинэ), ялагдсан
+        own = room.status == room.OPEN and room.host_id == player.pk
+        data["result"] = "void" if winner == "void" else "won" if own else "lost"
+        if own:
+            data["room"] = logic.room_json(room, player)  # (зочин ялсан бол: шинэ хостын тасалбар, ахиц, цэргүүд)
     return ok(**data)
 
 

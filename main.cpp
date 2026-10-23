@@ -140,6 +140,10 @@ int main(int argc, char** argv)
         {
             options.hold = std::atoi(argv[++i]);
         }
+        else if (std::strcmp(argv[i], "--battle") == 0)
+        {
+            options.battleTest = true;
+        }
         else if (std::strcmp(argv[i], "--coop") == 0)
         {
             options.coopTest = true;
