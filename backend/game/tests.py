@@ -1,7 +1,7 @@
 from django.test import TestCase, override_settings
 
 from . import logic, qpay
-from .models import AuthToken, Device, Event, GameSettings, Invoice, Player, Verification
+from .models import AuthToken, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Verification
 
 UB = 15  # Улаанбаатар
 
@@ -42,11 +42,11 @@ class FlowTests(TestCase):
         logic.refresh_invoice(Invoice.objects.get(pk=invoice_id), "test")
 
     # ---- бүртгэл
-    def test_register_gives_two_free_provinces(self):
+    def test_register_gives_start_gold(self):
         result = self.register()
         account = result["account"]
-        self.assertEqual(account["free_left"], 2)
-        self.assertEqual(account["credits"], 0)
+        self.assertEqual(account["gold"], 500)
+        self.assertEqual(account["upgrades"], {"damage": 0, "fire_rate": 0, "magazine": 0, "health": 0, "soldier": 0})
         self.assertTrue(account["device_ok"])
         self.assertEqual(account["phone"], "+976****2233")
         self.assertTrue(Event.objects.filter(kind="registered").exists())
@@ -70,59 +70,71 @@ class FlowTests(TestCase):
         self.assertEqual(self.post("register/confirm/", {"verification_id": start["verification_id"]}, status=410)["error"],
                          "code_expired")
 
-    # ---- аймаг
-    def test_free_provinces_exclude_capital_then_payment(self):
+    # ---- аймаг: бүгд үнэгүй
+    def test_all_provinces_are_free(self):
         token = self.register()["token"]
-        self.assertEqual(self.post("provinces/claim/", {"province": UB}, token, status=402)["error"], "capital_payment_required")
-        self.assertEqual(self.post("provinces/claim/", {"province": 9}, token)["source"], "free")
-        self.assertEqual(self.post("provinces/claim/", {"province": 9}, token)["source"], None)  # дахин: үнэгүй эрх зарцуулахгүй
-        self.assertEqual(self.post("provinces/claim/", {"province": 3}, token)["account"]["free_left"], 0)
-        self.assertEqual(self.post("provinces/claim/", {"province": 0}, token, status=402)["error"], "payment_required")
-        self.post("provinces/start/", {"province": 9}, token)
-        self.assertEqual(self.post("provinces/start/", {"province": 0}, token, status=403)["error"], "locked")
-
-    def test_pack_purchase_gives_credits_once(self):
-        token = self.register()["token"]
-        invoice = self.post("invoices/", {"kind": "pack"}, token)["invoice"]
-        self.assertEqual((invoice["amount"], invoice["credits"]), (3000, 3))
-        self.assertEqual(self.get(f"invoices/{invoice['id']}/", token)["invoice"]["status"], "pending")
-        self.pay(invoice["id"])
-        # QPay-ийн мэдэгдэл давхар ирсэн ч эрх нэг л удаа
-        key = Invoice.objects.get(pk=invoice["id"]).callback_key
-        self.client.get(f"/api/qpay/callback/{invoice['id']}/{key}/")
-        status = self.get(f"invoices/{invoice['id']}/", token)
-        self.assertEqual(status["account"]["credits"], 3)
-        # Улаанбаатар багцын эрхээр нээгдэхгүй (тусдаа үнэтэй)
-        self.assertEqual(self.post("provinces/claim/", {"province": UB}, token, status=402)["error"], "capital_payment_required")
-        self.assertEqual(self.post("provinces/claim/", {"province": 0}, token)["source"], "free")
-        self.assertEqual(Player.objects.get().credits, 3)
-
-    def test_capital_has_its_own_price(self):
-        settings = GameSettings.load()
-        settings.capital_price = 7000
-        settings.save()
-        token = self.register()["token"]
-        self.assertEqual(self.get("account/", token)["account"]["prices"]["capital"], 7000)
-        invoice = self.post("invoices/", {"kind": "capital"}, token)["invoice"]
-        self.assertEqual((invoice["amount"], invoice["credits"]), (7000, 0))
-        self.pay(invoice["id"])
-        account = self.get(f"invoices/{invoice['id']}/", token)["account"]
-        self.assertIn(UB, account["provinces"])
-        self.assertEqual((account["free_left"], account["credits"]), (2, 0))  # бусад эрх хөндөгдөөгүй
+        account = self.get("account/", token)["account"]
+        self.assertEqual(account["provinces"], list(range(22)))
+        self.assertIsNone(self.post("provinces/claim/", {"province": UB}, token)["source"])
+        self.post("provinces/start/", {"province": 0}, token)
         self.post("provinces/start/", {"province": UB}, token)
-        self.assertEqual(self.post("invoices/", {"kind": "capital"}, token, status=409)["error"], "already_unlocked")
+        self.assertEqual(self.post("provinces/start/", {"province": 22}, token, status=400)["error"], "bad_province")
+        # Аймгийн багц, Улаанбаатарыг худалдахгүй
+        self.assertEqual(self.post("invoices/", {"kind": "pack"}, token, status=410)["error"], "not_for_sale")
+        self.assertEqual(self.post("invoices/", {"kind": "capital"}, token, status=410)["error"], "not_for_sale")
 
-    def test_prices_come_from_database(self):
+    # ---- Gold, дэлгүүр
+    def test_signup_gold_comes_from_settings(self):
         settings = GameSettings.load()
-        settings.pack_price, settings.pack_size = 4500, 4
+        settings.start_gold = 700
+        settings.save()
+        account = self.register()["account"]
+        self.assertEqual(account["gold"], 700)
+        self.assertEqual(GoldTransaction.objects.get().reason, "signup")
+
+    def test_shop_buy_charges_gold_once(self):
+        token = self.register()["token"]
+        account = self.post("shop/buy/", {"item": "damage", "level": 0}, token)["account"]
+        self.assertEqual((account["gold"], account["upgrades"]["damage"]), (440, 1))
+        # Ижил хүсэлт давтагдсан (хариу ирээгүй мэт): дахин хасахгүй
+        account = self.post("shop/buy/", {"item": "damage", "level": 0}, token)["account"]
+        self.assertEqual((account["gold"], account["upgrades"]["damage"]), (440, 1))
+        # Дараагийн түвшин 2 дахин үнэтэй
+        account = self.post("shop/buy/", {"item": "damage", "level": 1}, token)["account"]
+        self.assertEqual((account["gold"], account["upgrades"]["damage"]), (320, 2))
+        # Хуучин түвшинтэй хүсэлт (өөр төхөөрөмж дээр авсан г.м.) татгалзана
+        self.assertEqual(self.post("shop/buy/", {"item": "damage", "level": 0}, token, status=409)["error"], "shop_changed")
+        player = Player.objects.get()
+        self.assertEqual(player.gold, 320)
+        self.assertEqual(sum(t.amount for t in player.gold_transactions.all()), player.gold)
+
+    def test_shop_limits(self):
+        token = self.register()["token"]
+        player = Player.objects.get()
+        player.soldiers = 4
+        player.gold = 30
+        player.save()
+        self.assertEqual(self.post("shop/buy/", {"item": "soldier", "level": 4}, token, status=409)["error"], "max_level")
+        # Амь 50 x 1 = 50 Gold > 30
+        self.assertEqual(self.post("shop/buy/", {"item": "health", "level": 0}, token, status=402)["error"], "not_enough_gold")
+        self.assertEqual(self.post("shop/buy/", {"item": "armor", "level": 0}, token, status=400)["error"], "bad_item")
+        self.assertEqual(self.post("shop/buy/", {"item": "damage", "level": "0"}, token, status=400)["error"], "bad_item")
+        player.refresh_from_db()
+        self.assertEqual((player.gold, player.health_level), (30, 0))
+
+    def test_shop_prices_come_from_database(self):
+        settings = GameSettings.load()
+        settings.price_magazine = 25
         settings.save()
         token = self.register()["token"]
-        invoice = self.post("invoices/", {"kind": "pack"}, token)["invoice"]
-        self.assertEqual((invoice["amount"], invoice["credits"]), (4500, 4))
+        self.assertEqual(self.get("account/", token)["account"]["shop"]["magazine"], {"price": 25, "max": 5})
+        self.assertEqual(self.post("shop/buy/", {"item": "magazine", "level": 0}, token)["account"]["gold"], 475)
 
     def test_callback_with_wrong_key_is_ignored(self):
-        token = self.register()["token"]
-        invoice = self.post("invoices/", {"kind": "pack"}, token)["invoice"]
+        self.register()
+        token = self.post("login/", {"phone": "99112233", "password": "secret1", "device_id": "device-two-2222"})["token"]
+        token = self.post("login/", {"phone": "99112233", "password": "secret1", "device_id": "device-new-3333"})["token"]
+        invoice = self.post("invoices/", {"kind": "device"}, token)["invoice"]
         qpay.MockQPay.paid.add(f"mock-{invoice['id']}")
         self.client.get(f"/api/qpay/callback/{invoice['id']}/wrong-key/")
         self.assertFalse(Invoice.objects.get(pk=invoice["id"]).applied)
@@ -137,7 +149,8 @@ class FlowTests(TestCase):
         token = login["token"]
         self.assertFalse(login["account"]["device_ok"])
         self.assertEqual(self.post("provinces/claim/", {"province": 1}, token, status=402)["error"], "device_change_required")
-        self.assertEqual(self.post("invoices/", {"kind": "pack"}, token, status=402)["error"], "device_change_required")
+        self.assertEqual(self.post("shop/buy/", {"item": "damage", "level": 0}, token, status=402)["error"],
+                         "device_change_required")
         invoice = self.post("invoices/", {"kind": "device"}, token)["invoice"]
         self.assertEqual(invoice["amount"], 5000)
         self.pay(invoice["id"])
@@ -231,6 +244,15 @@ class ManageApiTests(FlowTests.__base__):
         self.assertTrue(Event.objects.filter(kind="admin_player_updated", data__admin="boss").exists())
         listing = self.call("get", "players/?q=99112", token=token)
         self.assertEqual(listing["total"], 1)
+
+    def test_admin_sets_gold_through_ledger(self):
+        token = self.login()
+        result = self.call("patch", f"players/{self.player.pk}/", {"gold": 750}, token=token)
+        self.assertEqual(result["player"]["gold"], 750)
+        entry = GoldTransaction.objects.get(player=self.player)
+        self.assertEqual((entry.amount, entry.balance, entry.reason, entry.data["staff"]), (250, 750, "admin", "boss"))
+        self.call("patch", f"players/{self.player.pk}/", {"gold": -5}, token=token, status=400)
+        self.assertEqual(self.call("put", "settings/", {"price_soldier": 150}, token=token)["settings"]["price_soldier"], 150)
 
     def test_settings_and_mark_paid(self):
         token = self.login()

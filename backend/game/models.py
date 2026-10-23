@@ -4,8 +4,10 @@
   * Бүртгэл: нэр, утас, нууц үг; утсыг SMS кодоор баталгаажуулна. Нэг утасны дугаар = нэг данс.
   * Нэг төхөөрөмж = нэг данс (Device.device_id давтагдашгүй, данснаас салгагдсан ч хадгалагдана),
     дансны идэвхтэй төхөөрөмж нэг. Төхөөрөмж солих нь төлбөртэй (GameSettings.device_change_price).
-  * Аймаг: анх сонгосон GameSettings.free_provinces аймаг үнэгүй (Улаанбаатар орохгүй); дараа нь багц
-    худалдаж авна (pack_price-аар pack_size эрх), аймаг нээх бүрд нэг эрх зарцуулна.
+  * Аймаг: бүгд үнэгүй. (Өмнө нь free_provinces үнэгүй, дараа нь багцаар (pack_*), Улаанбаатар тусдаа (capital_*)
+    байсан: талбарууд хуучин нэхэмжлэх, тоглоомын хуучин хувилбарт зориулж үлдсэн.)
+  * Gold: тоглогчийн байнгын мөнгө, зөвхөн сервер өөрчилнө. Өөрчлөлт бүр GoldTransaction-д (ref нь давтагдашгүй тул нэг
+    үйл явдлыг хоёр удаа тооцохгүй). Gold-оор газрын зургийн дэлгүүрийн сайжруулалт (Player.damage ... soldiers) авна.
   * Event: тоглогчийн бүх үйлдлийн түүх (засахгүй, нэмэгдэнэ).
 """
 import secrets
@@ -25,6 +27,13 @@ class GameSettings(models.Model):
     capital_index = models.SmallIntegerField("Улаанбаатарын дугаар (тусдаа үнэтэй)", default=15)
     capital_price = models.PositiveIntegerField("Улаанбаатарын үнэ (₮)", default=5000)
     max_devices = models.PositiveSmallIntegerField("Нэг дансны төхөөрөмжийн тоо", default=2)
+    start_gold = models.PositiveIntegerField("Шинэ тоглогчийн Gold", default=500)
+    # Сайжруулалтын үнэ: дараагийн түвшин = үнэ x (одоогийн түвшин + 1) Gold
+    price_damage = models.PositiveIntegerField("Хохирол (Gold)", default=60)
+    price_fire_rate = models.PositiveIntegerField("Буудах хурд (Gold)", default=60)
+    price_magazine = models.PositiveIntegerField("Сумны хайрцаг (Gold)", default=40)
+    price_health = models.PositiveIntegerField("Амь (Gold)", default=50)
+    price_soldier = models.PositiveIntegerField("Цэрэг (Gold)", default=120)
 
     class Meta:
         verbose_name = "Тохиргоо (үнэ)"
@@ -50,6 +59,13 @@ class Player(models.Model):
     free_used = models.PositiveSmallIntegerField("Ашигласан үнэгүй эрх", default=0)
     credits = models.PositiveIntegerField("Үлдсэн худалдаж авсан эрх", default=0)
     blocked = models.BooleanField("Хаагдсан", default=False)
+    gold = models.PositiveIntegerField("Gold", default=500)
+    # Газрын зургийн дэлгүүрийн сайжруулалт (Gold-оор; тоглоомын src/Shop.h-тай ижил дээд түвшин)
+    damage = models.PositiveSmallIntegerField("Хохирлын түвшин", default=0)
+    fire_rate = models.PositiveSmallIntegerField("Буудах хурдны түвшин", default=0)
+    magazine = models.PositiveSmallIntegerField("Сумны хайрцгийн түвшин", default=0)
+    health_level = models.PositiveSmallIntegerField("Амийн түвшин", default=0)
+    soldiers = models.PositiveSmallIntegerField("Цэргийн тоо", default=0)
     progress = models.TextField("Тоглоомын хадгалалт", blank=True)
     progress_updated = models.DateTimeField("Хадгалалт шинэчлэгдсэн", null=True, blank=True)
     created = models.DateTimeField("Бүртгүүлсэн", auto_now_add=True)
@@ -175,6 +191,30 @@ class Invoice(models.Model):
 
     def __str__(self):
         return f"#{self.pk} {self.get_kind_display()} {self.amount}₮ ({self.get_status_display()})"
+
+
+class GoldTransaction(models.Model):
+    """Gold-ийн өөрчлөлт бүр (засахгүй, нэмэгдэнэ). ref давтагдашгүй: нэг үйл явдлыг (худалдан авалт, тулаан, төлбөр)
+    хоёр дахь удаа тооцохыг өгөгдлийн сан өөрөө хориглоно."""
+
+    SIGNUP, SHOP, ADMIN = "signup", "shop", "admin"
+    REASONS = [(SIGNUP, "Эхлэл"), (SHOP, "Дэлгүүр"), (ADMIN, "Админ")]
+
+    player = models.ForeignKey(Player, verbose_name="Тоглогч", related_name="gold_transactions", on_delete=models.CASCADE)
+    amount = models.IntegerField("Дүн")
+    balance = models.PositiveIntegerField("Үлдэгдэл")
+    reason = models.CharField("Шалтгаан", max_length=16, choices=REASONS)
+    ref = models.CharField("Үйл явдал", max_length=80, unique=True)
+    data = models.JSONField("Мэдээлэл", default=dict, blank=True)
+    created = models.DateTimeField("Цаг", auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = "Gold-ийн гүйлгээ"
+        verbose_name_plural = "Gold-ийн гүйлгээ"
+        ordering = ["-created", "-id"]
+
+    def __str__(self):
+        return f"{self.created:%Y-%m-%d %H:%M} {self.amount:+d} ({self.reason})"
 
 
 class Event(models.Model):

@@ -1,4 +1,4 @@
-"""Бизнесийн дүрэм: бүртгэл, нэвтрэлт, аймгийн эрх, нэхэмжлэх, төлбөрийн эрх олголт, лог.
+"""Бизнесийн дүрэм: бүртгэл, нэвтрэлт, аймаг, Gold, дэлгүүр, нэхэмжлэх, төлбөрийн эрх олголт, лог.
 
 Бүх алдаа GameError (код + монгол мессеж + HTTP төлөв): тоглоом кодоор нь ялгаж, мессежийг харуулна.
 """
@@ -10,12 +10,23 @@ from django.db import transaction
 from django.utils import timezone
 
 from . import qpay, sms
-from .models import AuthToken, Device, Event, GameSettings, Invoice, Player, UnlockedProvince, Verification
+from .models import (AuthToken, Device, Event, GameSettings, GoldTransaction, Invoice, Player, UnlockedProvince,
+                     Verification)
 
 VERIFICATION_TTL = timedelta(minutes=5)  # verify.mn-ийн сесс 5 минут
 SMS_PER_HOUR = 5             # нэг дугаарт цагт эхлүүлэх баталгаажуулалтын дээд тоо
 LOGIN_FAILURES_LIMIT = 10    # 15 минутад буруу нэвтрэх оролдлогын дээд тоо
 MIN_PASSWORD = 6
+
+# Газрын зургийн дэлгүүр: нэр -> (Player-ийн талбар, GameSettings-ийн үнийн талбар, дээд түвшин).
+# Дээд түвшин тоглоомын src/Shop.h, src/Weapon.h-тай ижил.
+UPGRADES = {
+    "damage": ("damage", "price_damage", 5),
+    "fire_rate": ("fire_rate", "price_fire_rate", 5),
+    "magazine": ("magazine", "price_magazine", 5),
+    "health": ("health_level", "price_health", 5),
+    "soldier": ("soldiers", "price_soldier", 4),
+}
 
 
 class GameError(Exception):
@@ -93,9 +104,13 @@ def account_state(player, device_id):
     return {
         "name": player.name,
         "phone": mask_phone(player.phone),
-        "provinces": sorted(player.provinces.values_list("province", flat=True)),
-        "free_left": max(0, settings.free_provinces - player.free_used),
-        "credits": player.credits,
+        # Бүх аймаг үнэгүй (тоглоомын хуучин хувилбар ч бүгдийг нээлттэй гэж харна)
+        "provinces": list(range(settings.province_count)),
+        "free_left": 0,
+        "credits": 0,
+        "gold": player.gold,
+        "upgrades": {name: getattr(player, field) for name, (field, _, _) in UPGRADES.items()},
+        "shop": {name: {"price": getattr(settings, price), "max": top} for name, (_, price, top) in UPGRADES.items()},
         "device_ok": device_ok(player, device_id),
         "capital": settings.capital_index,
         "max_devices": settings.max_devices,
@@ -166,7 +181,10 @@ def confirm_registration(verification_id, ip):
             raise GameError("phone_taken", "Энэ дугаар бүртгэлтэй байна. Нэвтэрнэ үү", 409)
         if Device.objects.filter(device_id=data["device_id"]).exists():
             raise GameError("device_taken", "Энэ төхөөрөмж өөр дансанд бүртгэлтэй байна", 409)
-        player = Player.objects.create(name=data["name"], phone=verification.phone, password=data["password"])
+        start = GameSettings.load().start_gold
+        player = Player.objects.create(name=data["name"], phone=verification.phone, password=data["password"], gold=start)
+        GoldTransaction.objects.create(player=player, amount=start, balance=start, reason=GoldTransaction.SIGNUP,
+                                       ref=f"signup:{player.pk}")
         Device.objects.create(device_id=data["device_id"], player=player, platform=data.get("platform", ""))
         verification.used = True
         verification.save(update_fields=["used"])
@@ -230,50 +248,71 @@ def _validate_province(province):
 
 
 def claim_province(player, device_id, province, ip):
-    """Аймгийг нээнэ: үнэгүй эрх эсвэл худалдаж авсан эрхээр. Улаанбаатар зөвхөн тусдаа төлбөрөөр (create_invoice
-    "capital"), эрхээр нээгдэхгүй. Аль хэдийн нээсэн бол юу ч хийхгүй."""
-    settings = _validate_province(province)
+    """Бүх аймаг үнэгүй: тоглоомын хуучин хувилбарт зориулж (аймаг нээх цонх) амжилттай хариулна."""
+    _validate_province(province)
     if not device_ok(player, device_id):
         raise GameError("device_change_required", "Энэ төхөөрөмж дээр тоглохын тулд төхөөрөмж солих төлбөр төлнө", 402)
-    with transaction.atomic():
-        locked = Player.objects.select_for_update().get(pk=player.pk)
-        if locked.provinces.filter(province=province).exists():
-            return locked, None
-        if province == settings.capital_index:
-            raise GameError("capital_payment_required", "Улаанбаатар хотыг тусдаа худалдаж авна", 402)
-        if locked.free_used < settings.free_provinces:
-            source = UnlockedProvince.FREE
-            locked.free_used += 1
-        elif locked.credits > 0:
-            source = UnlockedProvince.PAID
-            locked.credits -= 1
-        else:
-            raise GameError("payment_required", "Аймаг нээх эрх дууссан. Багц худалдаж авна уу", 402)
-        locked.save(update_fields=["free_used", "credits"])
-        UnlockedProvince.objects.create(player=locked, province=province, source=source)
-        log_event(locked, "province_unlocked", {"province": province, "source": source}, device_id, ip)
-    return locked, source
+    return player, None
 
 
 def start_province(player, device_id, province, ip):
     _validate_province(province)
     if not device_ok(player, device_id):
         raise GameError("device_change_required", "Энэ төхөөрөмж дээр тоглохын тулд төхөөрөмж солих төлбөр төлнө", 402)
-    if not player.provinces.filter(province=province).exists():
-        raise GameError("locked", "Энэ аймаг нээгдээгүй байна", 403)
     log_event(player, "province_start", {"province": province}, device_id, ip)
+
+
+# ---------------------------------------------------------------- Gold, дэлгүүр
+
+def change_gold(locked, amount, reason, ref, data=None):
+    """Gold-ийг өөрчилж бүртгэлд бичнэ. locked: transaction.atomic() дотор select_for_update()-ээр түгжсэн тоглогч.
+    Ижил ref өмнө нь бичигдсэн бол юу ч хийхгүй (False). Үлдэгдэл хүрэлцэхгүй бол GameError."""
+    if GoldTransaction.objects.filter(ref=ref).exists():
+        return False
+    if locked.gold + amount < 0:
+        raise GameError("not_enough_gold", "Gold хүрэлцэхгүй байна", 402)
+    locked.gold += amount
+    locked.save(update_fields=["gold"])
+    GoldTransaction.objects.create(player=locked, amount=amount, balance=locked.gold, reason=reason, ref=ref,
+                                   data=data or {})
+    return True
+
+
+def shop_buy(player, device_id, item, level, ip):
+    """Газрын зургийн дэлгүүр: item-ийн дараагийн түвшинг Gold-оор авна. level нь тоглоомын харж буй одоогийн түвшин:
+    таарахгүй бол (давхар дарсан, өөр төхөөрөмж дээр авсан) дахин авахгүй. Давтагдсан хүсэлт (түвшин аль хэдийн
+    level + 1) нь Gold хасахгүйгээр амжилттай."""
+    if item not in UPGRADES or not isinstance(level, int) or isinstance(level, bool):
+        raise GameError("bad_item", "Буруу хүсэлт")
+    if not device_ok(player, device_id):
+        raise GameError("device_change_required", "Энэ төхөөрөмж дээр тоглохын тулд төхөөрөмж солих төлбөр төлнө", 402)
+    field, price_field, top = UPGRADES[item]
+    with transaction.atomic():
+        locked = Player.objects.select_for_update().get(pk=player.pk)
+        current = getattr(locked, field)
+        ref = f"shop:{locked.pk}:{item}:{level + 1}"
+        if current == level + 1 and GoldTransaction.objects.filter(ref=ref).exists():
+            return locked
+        if current != level:
+            raise GameError("shop_changed", "Дэлгүүрийн мэдээлэл шинэчлэгдлээ. Дахин оролдоно уу", 409)
+        if current >= top:
+            raise GameError("max_level", "Хамгийн дээд түвшинд хүрсэн", 409)
+        cost = getattr(GameSettings.load(), price_field) * (current + 1)
+        change_gold(locked, -cost, GoldTransaction.SHOP, ref, {"item": item, "level": current + 1})
+        setattr(locked, field, current + 1)
+        locked.save(update_fields=[field])
+        log_event(locked, "shop_buy", {"item": item, "level": current + 1, "gold": cost}, device_id, ip)
+    return locked
 
 
 # ---------------------------------------------------------------- Төлбөр
 
 def create_invoice(player, device_id, kind, platform, ip):
     settings = GameSettings.load()
-    if kind == Invoice.PACK:
-        if not device_ok(player, device_id):
-            raise GameError("device_change_required", "Эхлээд төхөөрөмж солих төлбөр төлнө үү", 402)
-        amount, credits = settings.pack_price, settings.pack_size
-        description = f"Zombie Mongolia: {credits} аймгийн эрх"
-    elif kind == Invoice.DEVICE:
+    if kind in (Invoice.PACK, Invoice.CAPITAL):
+        # Бүх аймаг үнэгүй болсон: аймгийн багц, Улаанбаатарыг худалдахгүй (хуучин төлсөн нэхэмжлэх хэвээр)
+        raise GameError("not_for_sale", "Бүх аймаг үнэгүй болсон", 410)
+    if kind == Invoice.DEVICE:
         if device_ok(player, device_id):
             raise GameError("device_already_active", "Энэ төхөөрөмж аль хэдийн идэвхтэй байна", 409)
         validate_device(device_id)
@@ -282,13 +321,6 @@ def create_invoice(player, device_id, kind, platform, ip):
             raise GameError("device_taken", "Энэ төхөөрөмж өөр дансанд бүртгэлтэй байна", 409)
         amount, credits = settings.device_change_price, 0
         description = "Zombie Mongolia: төхөөрөмж солих"
-    elif kind == Invoice.CAPITAL:
-        if not device_ok(player, device_id):
-            raise GameError("device_change_required", "Эхлээд төхөөрөмж солих төлбөр төлнө үү", 402)
-        if player.provinces.filter(province=settings.capital_index).exists():
-            raise GameError("already_unlocked", "Улаанбаатар аль хэдийн нээгдсэн байна", 409)
-        amount, credits = settings.capital_price, 0
-        description = "Zombie Mongolia: Улаанбаатар хот"
     else:
         raise GameError("bad_kind", "Төлбөрийн төрөл буруу байна")
 

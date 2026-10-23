@@ -80,6 +80,7 @@ export interface PlayerRow {
   phone: string;
   free_used: number;
   credits: number;
+  gold: number;
   blocked: boolean;
   created: string;
   provinces: number | null;
@@ -120,6 +121,8 @@ export interface PlayerDetail extends PlayerRow {
   devices: { id: number; device_id: string; platform: string; active: boolean; bound_at: string }[];
   sessions: number;
   invoices: InvoiceRow[];
+  upgrades: Record<'damage' | 'fire_rate' | 'magazine' | 'health' | 'soldier', number>;
+  gold_history: { amount: number; balance: number; reason: string; data: Record<string, unknown>; created: string }[];
 }
 
 export interface Page<T> {
@@ -138,6 +141,12 @@ export interface Settings {
   capital_index: number;
   max_devices: number;
   capital_price: number;
+  start_gold: number;
+  price_damage: number;
+  price_fire_rate: number;
+  price_magazine: number;
+  price_health: number;
+  price_soldier: number;
 }
 
 export interface StaffUser {

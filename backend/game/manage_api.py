@@ -4,6 +4,7 @@
 Хүсэлтүүд: толгойд "Authorization: Bearer <token>". Админы бүх өөрчлөлт Event логт "admin_..." гэж бичигдэнэ.
 """
 import json
+import secrets
 from datetime import timedelta
 from functools import wraps
 
@@ -18,7 +19,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
 from . import logic
-from .models import AuthToken, Device, Event, GameSettings, Invoice, Player, UnlockedProvince
+from .models import AuthToken, Device, Event, GameSettings, GoldTransaction, Invoice, Player, UnlockedProvince
 
 TOKEN_SALT = "zm-manage"
 TOKEN_AGE = 12 * 3600
@@ -107,6 +108,7 @@ def player_row(player):
         "phone": player.phone,
         "free_used": player.free_used,
         "credits": player.credits,
+        "gold": player.gold,
         "blocked": player.blocked,
         "created": iso(player.created),
         "provinces": getattr(player, "province_total", None),
@@ -154,6 +156,12 @@ def settings_json(settings):
         "capital_index": settings.capital_index,
         "max_devices": settings.max_devices,
         "capital_price": settings.capital_price,
+        "start_gold": settings.start_gold,
+        "price_damage": settings.price_damage,
+        "price_fire_rate": settings.price_fire_rate,
+        "price_magazine": settings.price_magazine,
+        "price_health": settings.price_health,
+        "price_soldier": settings.price_soldier,
     }
 
 
@@ -257,6 +265,7 @@ def players(request):
     elif status == "paying":
         qs = qs.filter(invoices__status=Invoice.PAID).distinct()
     ordering = {"created": "created", "-created": "-created", "credits": "credits", "-credits": "-credits",
+                "gold": "gold", "-gold": "-gold",
                 "paid": "paid_total", "-paid": "-paid_total", "name": "name", "-name": "-name"}
     qs = qs.order_by(ordering.get(request.GET.get("sort", "-created"), "-created"), "-id")
     return ok(**page_of(request, qs, player_row))
@@ -277,6 +286,9 @@ def player_detail_json(player):
                  for d in player.devices.order_by("-active", "-bound_at")],
         sessions=player.tokens.count(),
         invoices=[invoice_row(i) for i in player.invoices.select_related("player").order_by("-created")[:50]],
+        upgrades={name: getattr(player, field) for name, (field, _, _) in logic.UPGRADES.items()},
+        gold_history=[{"amount": t.amount, "balance": t.balance, "reason": t.reason, "data": t.data, "created": iso(t.created)}
+                      for t in player.gold_transactions.all()[:50]],
     )
     return data
 
@@ -309,6 +321,16 @@ def player_detail(request, player_id):
                         raise ManageError("Тоо буруу байна")
                     changes[field] = [getattr(player, field), value]
                     setattr(player, field, value)
+            if "gold" in j:
+                # Gold-ийг шууд бичихгүй: зөрүүг бүртгэлд "admin" гүйлгээгээр
+                value = j["gold"]
+                if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 10_000_000:
+                    raise ManageError("Gold буруу байна")
+                if value != player.gold:
+                    changes["gold"] = [player.gold, value]
+                    logic.change_gold(player, value - player.gold, GoldTransaction.ADMIN,
+                                      f"admin:{player.pk}:{secrets.token_hex(8)}",
+                                      {"staff": request.staff.username})
             if "blocked" in j:
                 changes["blocked"] = [player.blocked, bool(j["blocked"])]
                 player.blocked = bool(j["blocked"])
@@ -444,7 +466,9 @@ def settings_view(request):
             raise ManageError("Зөвхөн ерөнхий админ үнэ, тохиргоо өөрчилнө", 403)
         limits = {"free_provinces": (0, 22), "pack_size": (1, 22), "pack_price": (0, 1_000_000),
                   "device_change_price": (0, 1_000_000), "max_devices": (1, 5),
-                  "capital_price": (0, 1_000_000)}
+                  "capital_price": (0, 1_000_000), "start_gold": (0, 100_000),
+                  "price_damage": (0, 100_000), "price_fire_rate": (0, 100_000), "price_magazine": (0, 100_000),
+                  "price_health": (0, 100_000), "price_soldier": (0, 100_000)}
         before = settings_json(settings)
         for field, (low, high) in limits.items():
             if field in request.json:

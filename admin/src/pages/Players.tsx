@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Badge, Button, Card, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { Button, Card, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { TableProps } from 'antd';
 import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { api, Page, PlayerRow } from '../api';
@@ -41,21 +41,13 @@ export default function PlayersPage() {
       ),
     },
     {
-      title: 'Аймаг',
-      dataIndex: 'provinces',
-      align: 'center',
-      width: 90,
-      render: (value) => <Badge count={value ?? 0} showZero color={value ? '#f0b030' : '#555'} />,
+      title: 'Gold',
+      dataIndex: 'gold',
+      align: 'right',
+      width: 100,
+      sorter: true,
+      render: (value) => <b style={{ color: '#f0b030' }}>{value.toLocaleString()}</b>,
     },
-    {
-      title: 'Үнэгүй',
-      dataIndex: 'free_used',
-      align: 'center',
-      width: 90,
-      responsive: ['md'],
-      render: (value) => `${value} ашигласан`,
-    },
-    { title: 'Эрх', dataIndex: 'credits', align: 'center', width: 80, sorter: true },
     {
       title: 'Төлсөн',
       dataIndex: 'paid_total',
@@ -78,7 +70,7 @@ export default function PlayersPage() {
     },
   ];
 
-  const sortKey: Record<string, string> = { name: 'name', credits: 'credits', paid_total: 'paid', created: 'created' };
+  const sortKey: Record<string, string> = { name: 'name', gold: 'gold', paid_total: 'paid', created: 'created' };
 
   return (
     <>

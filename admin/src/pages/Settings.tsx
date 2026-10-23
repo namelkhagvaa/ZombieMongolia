@@ -3,7 +3,6 @@ import { Alert, App, Button, Card, Col, Form, InputNumber, Row, Skeleton, Typogr
 import { SaveOutlined } from '@ant-design/icons';
 import { api, Settings } from '../api';
 import { useAuth } from '../auth';
-import { money, provinceName } from '../format';
 
 export default function SettingsPage() {
   const { message } = App.useApp();
@@ -29,12 +28,14 @@ export default function SettingsPage() {
       const r = await api<{ settings: Settings }>('settings/', {
         method: 'PUT',
         body: {
-          free_provinces: v.free_provinces,
-          pack_size: v.pack_size,
-          pack_price: v.pack_price,
           device_change_price: v.device_change_price,
-          capital_price: v.capital_price,
           max_devices: v.max_devices,
+          start_gold: v.start_gold,
+          price_damage: v.price_damage,
+          price_fire_rate: v.price_fire_rate,
+          price_magazine: v.price_magazine,
+          price_health: v.price_health,
+          price_soldier: v.price_soldier,
         },
       });
       setSettings(r.settings);
@@ -47,14 +48,20 @@ export default function SettingsPage() {
     }
   };
 
-  const perProvince = values?.pack_price && values?.pack_size ? Math.round(values.pack_price / values.pack_size) : 0;
+  const upgradePrices: { name: keyof Settings; label: string; max: number }[] = [
+    { name: 'price_damage', label: 'Хохирол', max: 5 },
+    { name: 'price_fire_rate', label: 'Буудах хурд', max: 5 },
+    { name: 'price_magazine', label: 'Сумны хайрцаг', max: 5 },
+    { name: 'price_health', label: 'Амь', max: 5 },
+    { name: 'price_soldier', label: 'Цэрэг', max: 4 },
+  ];
 
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Тохиргоо</h1>
-          <p>Үнэ, үнэгүй эрх — тоглоом серверээс шууд уншина</p>
+          <p>Gold, дэлгүүрийн үнэ, төхөөрөмж — тоглоом серверээс шууд уншина. Бүх аймаг үнэгүй.</p>
         </div>
       </div>
       {!editable && <Alert type="info" showIcon message="Зөвхөн ерөнхий админ (superuser) өөрчилнө." style={{ marginBottom: 16 }} />}
@@ -64,34 +71,28 @@ export default function SettingsPage() {
         <Form form={form} layout="vertical" onFinish={save} disabled={!editable} requiredMark={false}>
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
-              <Card title="Аймгийн эрх" variant="borderless" style={{ height: '100%' }}>
+              <Card title="Gold ба дэлгүүр" variant="borderless" style={{ height: '100%' }}>
                 <Form.Item
-                  name="free_provinces"
-                  label="Үнэгүй аймгийн тоо"
-                  extra={`Бүртгүүлсэн тоглогч эхний ${values?.free_provinces ?? '…'} аймгаа үнэгүй сонгоно (${provinceName(settings.capital_index)} орохгүй).`}
+                  name="start_gold"
+                  label="Шинэ тоглогчийн Gold"
+                  extra="Бүртгүүлэхэд нэг удаа олгоно."
                   rules={[{ required: true }]}
                 >
-                  <InputNumber min={0} max={22} style={{ width: 200 }} suffix="аймаг" />
+                  <InputNumber min={0} max={100000} style={{ width: 200 }} suffix="Gold" />
                 </Form.Item>
-                <Form.Item name="pack_size" label="Багц дахь эрх" rules={[{ required: true }]}>
-                  <InputNumber min={1} max={22} style={{ width: 200 }} suffix="аймаг" />
-                </Form.Item>
-                <Form.Item
-                  name="pack_price"
-                  label="Багцын үнэ"
-                  extra={perProvince ? `Нэг аймаг ≈ ${money(perProvince)}` : undefined}
-                  rules={[{ required: true }]}
-                >
-                  <InputNumber min={0} max={1000000} step={500} style={{ width: 200 }} suffix="₮" />
-                </Form.Item>
-                <Form.Item
-                  name="capital_price"
-                  label="Улаанбаатарын үнэ"
-                  extra="Тусдаа худалдаж авна: үнэгүй болон багцын эрхээр нээгдэхгүй."
-                  rules={[{ required: true }]}
-                >
-                  <InputNumber min={0} max={1000000} step={500} style={{ width: 200 }} suffix="₮" />
-                </Form.Item>
+                {upgradePrices.map((item) => (
+                  <Form.Item
+                    key={item.name}
+                    name={item.name}
+                    label={`${item.label} (1–${item.max} түвшин)`}
+                    extra={values?.[item.name] ? `Дараагийн түвшин = ${values[item.name]} × түвшин (бүгд: ${
+                      (values[item.name] as number) * ((item.max * (item.max + 1)) / 2)
+                    } Gold)` : undefined}
+                    rules={[{ required: true }]}
+                  >
+                    <InputNumber min={0} max={100000} style={{ width: 200 }} suffix="Gold" />
+                  </Form.Item>
+                ))}
               </Card>
             </Col>
             <Col xs={24} lg={12}>
@@ -112,9 +113,7 @@ export default function SettingsPage() {
                 >
                   <InputNumber min={0} max={1000000} step={500} style={{ width: 200 }} suffix="₮" />
                 </Form.Item>
-                <Typography.Paragraph type="secondary">
-                  Аймгийн тоо: {settings.province_count} · Нийслэл: {provinceName(settings.capital_index)} (тусдаа үнэтэй)
-                </Typography.Paragraph>
+                <Typography.Paragraph type="secondary">Аймгийн тоо: {settings.province_count} (бүгд үнэгүй)</Typography.Paragraph>
               </Card>
             </Col>
           </Row>

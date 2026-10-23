@@ -13,6 +13,7 @@ urlpatterns = [
     path("account/", views.account_view),
     path("provinces/claim/", views.province_claim),
     path("provinces/start/", views.province_start),
+    path("shop/buy/", views.shop_buy),
     path("invoices/", views.invoice_create),
     path("invoices/<int:invoice_id>/", views.invoice_status),
     path("qpay/callback/<int:invoice_id>/<str:key>/", views.qpay_callback),

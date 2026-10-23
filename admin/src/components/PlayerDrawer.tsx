@@ -34,9 +34,11 @@ import {
   GlobalOutlined,
 } from '@ant-design/icons';
 import { api, PlayerDetail } from '../api';
-import { ago, dateTime, PLATFORM_LABEL, PROVINCES, SOURCE_LABEL, money } from '../format';
+import { ago, dateTime, PLATFORM_LABEL, money } from '../format';
 import InvoiceTable from './InvoiceTable';
 import EventTable from './EventTable';
+
+const GOLD_REASON: Record<string, string> = { signup: 'Эхлэл', shop: 'Дэлгүүр', admin: 'Админ' };
 
 const PLATFORM_ICON: Record<string, React.ReactNode> = {
   windows: <DesktopOutlined />,
@@ -49,8 +51,7 @@ export default function PlayerDrawer({ playerId, onClose, onChanged }: { playerI
   const screens = Grid.useBreakpoint();
   const [player, setPlayer] = useState<PlayerDetail | null>(null);
   const [busy, setBusy] = useState(false);
-  const [credits, setCredits] = useState<number | null>(null);
-  const [freeUsed, setFreeUsed] = useState<number | null>(null);
+  const [gold, setGold] = useState<number | null>(null);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [form] = Form.useForm();
 
@@ -70,8 +71,7 @@ export default function PlayerDrawer({ playerId, onClose, onChanged }: { playerI
   }, [load]);
 
   useEffect(() => {
-    setCredits(player?.credits ?? null);
-    setFreeUsed(player?.free_used ?? null);
+    setGold(player?.gold ?? null);
   }, [player]);
 
   const act = async (path: string, method: string, body: unknown, done: string) => {
@@ -90,7 +90,6 @@ export default function PlayerDrawer({ playerId, onClose, onChanged }: { playerI
     }
   };
 
-  const owned = new Map(player?.unlocked.map((u) => [u.province, u]) ?? []);
 
   return (
     <Drawer
@@ -131,17 +130,15 @@ export default function PlayerDrawer({ playerId, onClose, onChanged }: { playerI
           <Row gutter={[12, 12]}>
             <Col xs={12} sm={6}>
               <Card size="small">
-                <Statistic title="Нээсэн аймаг" value={player.unlocked.length} suffix={`/ ${PROVINCES.length}`} />
+                <Statistic title="Gold" value={player.gold} valueStyle={{ color: '#f0b030' }} />
               </Card>
             </Col>
-            <Col xs={12} sm={6}>
+            <Col xs={24} sm={12}>
               <Card size="small">
-                <Statistic title="Үнэгүй үлдсэн" value={player.free_left} />
-              </Card>
-            </Col>
-            <Col xs={12} sm={6}>
-              <Card size="small">
-                <Statistic title="Эрх" value={player.credits} />
+                <Statistic
+                  title="Сайжруулалт (хохирол · хурд · хайрцаг · амь · цэрэг)"
+                  value={`${player.upgrades.damage} · ${player.upgrades.fire_rate} · ${player.upgrades.magazine} · ${player.upgrades.health} · ${player.upgrades.soldier}`}
+                />
               </Card>
             </Col>
             <Col xs={12} sm={6}>
@@ -171,20 +168,19 @@ export default function PlayerDrawer({ playerId, onClose, onChanged }: { playerI
             </Descriptions.Item>
           </Descriptions>
 
-          <Card size="small" title="Эрх засах" style={{ marginTop: 16 }}>
+          <Card size="small" title="Gold засах" style={{ marginTop: 16 }}>
             <Space wrap>
-              <span>Худалдаж авсан эрх</span>
-              <InputNumber min={0} max={1000} value={credits} onChange={setCredits} />
-              <span>Ашигласан үнэгүй</span>
-              <InputNumber min={0} max={22} value={freeUsed} onChange={setFreeUsed} />
+              <span>Gold</span>
+              <InputNumber min={0} max={10000000} value={gold} onChange={setGold} />
               <Button
                 type="primary"
                 loading={busy}
-                disabled={credits === player.credits && freeUsed === player.free_used}
-                onClick={() => act('', 'PATCH', { credits: credits ?? 0, free_used: freeUsed ?? 0 }, 'Хадгаллаа')}
+                disabled={gold === player.gold}
+                onClick={() => act('', 'PATCH', { gold: gold ?? 0 }, 'Хадгаллаа')}
               >
                 Хадгалах
               </Button>
+              <Typography.Text type="secondary">Зөрүү нь «Админ» гүйлгээгээр бүртгэгдэнэ.</Typography.Text>
             </Space>
           </Card>
 
@@ -192,42 +188,34 @@ export default function PlayerDrawer({ playerId, onClose, onChanged }: { playerI
             style={{ marginTop: 16 }}
             items={[
               {
-                key: 'provinces',
-                label: `Аймгууд (${player.unlocked.length})`,
-                children: (
-                  <>
-                    <Typography.Paragraph type="secondary">Аймгийг товшиж нээх / хаах (админ нээсэн нь эрх зарцуулахгүй).</Typography.Paragraph>
-                    <div className="province-grid">
-                      {PROVINCES.map((name, index) => {
-                        const unlocked = owned.get(index);
-                        const source = unlocked ? SOURCE_LABEL[unlocked.source] : null;
-                        return (
-                          <Popconfirm
-                            key={index}
-                            title={unlocked ? `${name}-г хаах уу?` : `${name}-г нээж өгөх үү?`}
-                            onConfirm={() =>
-                              act('province/', 'POST', { province: index, action: unlocked ? 'remove' : 'add' }, unlocked ? 'Хаалаа' : 'Нээлээ')
+                key: 'gold',
+                label: `Gold (${player.gold_history.length})`,
+                children:
+                  player.gold_history.length === 0 ? (
+                    <Empty description="Гүйлгээ алга" />
+                  ) : (
+                    <List
+                      size="small"
+                      dataSource={player.gold_history}
+                      renderItem={(t) => (
+                        <List.Item extra={<span className="mono">{t.balance.toLocaleString()}</span>}>
+                          <List.Item.Meta
+                            title={
+                              <Space>
+                                <b style={{ color: t.amount >= 0 ? '#52c41a' : '#ff4d4f' }}>
+                                  {t.amount >= 0 ? '+' : ''}
+                                  {t.amount.toLocaleString()}
+                                </b>
+                                <Tag>{GOLD_REASON[t.reason] ?? t.reason}</Tag>
+                                {typeof t.data.item === 'string' && <span>{`${t.data.item} → ${t.data.level}`}</span>}
+                              </Space>
                             }
-                          >
-                            <Card
-                              size="small"
-                              hoverable
-                              style={{
-                                borderColor: unlocked ? '#f0b03080' : undefined,
-                                background: unlocked ? 'rgba(240,176,48,.08)' : undefined,
-                              }}
-                            >
-                              <div style={{ fontWeight: 600 }}>
-                                {index + 1}. {name}
-                              </div>
-                              {source ? <Tag color={source.color}>{source.text}</Tag> : <Tag>Түгжээтэй</Tag>}
-                            </Card>
-                          </Popconfirm>
-                        );
-                      })}
-                    </div>
-                  </>
-                ),
+                            description={dateTime(t.created)}
+                          />
+                        </List.Item>
+                      )}
+                    />
+                  ),
               },
               {
                 key: 'devices',

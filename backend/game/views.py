@@ -145,6 +145,16 @@ def province_start(request):
     return ok()
 
 
+# ---------------------------------------------------------------- Дэлгүүр (Gold)
+
+@api(["POST"])
+def shop_buy(request):
+    """{"item": "damage"|"fire_rate"|"magazine"|"health"|"soldier", "level": <тоглоомын харж буй одоогийн түвшин>}"""
+    player = logic.shop_buy(request.token.player, request.token.device_id, request.json.get("item"),
+                            request.json.get("level"), client_ip(request))
+    return ok(account=logic.account_state(player, request.token.device_id))
+
+
 # ---------------------------------------------------------------- Төлбөр
 
 def invoice_json(invoice, info=None):
