@@ -19,7 +19,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
 from . import logic
-from .models import AuthToken, Device, Event, GameSettings, GoldTransaction, Invoice, Player, UnlockedProvince
+from .models import AuthToken, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, UnlockedProvince
 
 TOKEN_SALT = "zm-manage"
 TOKEN_AGE = 12 * 3600
@@ -118,6 +118,24 @@ def player_row(player):
     }
 
 
+def room_row(room):
+    return {
+        "id": room.pk,
+        "province": room.province,
+        "status": room.status,
+        "host": {"id": room.host_id, "name": room.host.name, "phone": room.host.phone},
+        "guest": {"id": room.guest_id, "name": room.guest.name, "phone": room.guest.phone} if room.guest_id else None,
+        "battle": room.battle,
+        "host_stake": room.host_stake,
+        "guest_stake": room.guest_stake,
+        "recruits": room.recruits,
+        "closed_reason": room.closed_reason,
+        "created": iso(room.created),
+        "closed": iso(room.closed),
+        "host_seen": iso(room.host_seen),
+    }
+
+
 def invoice_row(invoice):
     return {
         "id": invoice.pk,
@@ -125,6 +143,7 @@ def invoice_row(invoice):
         "kind": invoice.kind,
         "amount": invoice.amount,
         "credits": invoice.credits,
+        "gold": invoice.gold,
         "status": invoice.status,
         "applied": invoice.applied,
         "platform": invoice.platform,
@@ -167,6 +186,8 @@ def settings_json(settings):
         "room_stake": settings.room_stake,
         "stage_bonus": settings.stage_bonus,
         "stage_min_minutes": settings.stage_min_minutes,
+        "battle_pair_limit": settings.battle_pair_limit,
+        "gold_packs": [{"gold": p["gold"], "price": p["price"]} for p in logic.gold_packs()],
     }
 
 
@@ -442,6 +463,14 @@ def invoice_mark_paid(request, invoice_id):
 # ---------------------------------------------------------------- Лог
 
 @staff_api(["GET"])
+def rooms(request):
+    qs = Room.objects.select_related("host", "guest")
+    if request.GET.get("status") in (Room.OPEN, Room.CLOSED):
+        qs = qs.filter(status=request.GET["status"])
+    return ok(**page_of(request, qs.order_by("-created"), room_row))
+
+
+@staff_api(["GET"])
 def events(request):
     qs = Event.objects.select_related("player")
     kind = request.GET.get("kind", "").strip()
@@ -474,7 +503,8 @@ def settings_view(request):
                   "capital_price": (0, 1_000_000), "start_gold": (0, 100_000),
                   "price_damage": (0, 100_000), "price_fire_rate": (0, 100_000), "price_magazine": (0, 100_000),
                   "price_health": (0, 100_000), "price_soldier": (0, 100_000), "room_fee": (0, 10_000),
-                  "room_stake": (0, 10_000), "stage_bonus": (0, 10_000), "stage_min_minutes": (0, 240)}
+                  "room_stake": (0, 10_000), "stage_bonus": (0, 10_000), "stage_min_minutes": (0, 240),
+                  "battle_pair_limit": (0, 100)}
         before = settings_json(settings)
         for field, (low, high) in limits.items():
             if field in request.json:
@@ -482,6 +512,18 @@ def settings_view(request):
                 if not isinstance(value, int) or not low <= value <= high:
                     raise ManageError("Утга буруу байна")
                 setattr(settings, field, value)
+        if "gold_packs" in request.json:
+            packs = request.json["gold_packs"]
+            if not isinstance(packs, list) or not 1 <= len(packs) <= 8:
+                raise ManageError("Gold-ийн багц 1-8 байна")
+            clean = []
+            for pack in packs:
+                gold, price = (pack.get("gold"), pack.get("price")) if isinstance(pack, dict) else (None, None)
+                if not all(isinstance(v, int) and not isinstance(v, bool) for v in (gold, price)) or \
+                        not 1 <= gold <= 1_000_000 or not 100 <= price <= 10_000_000:
+                    raise ManageError("Багцын Gold, үнэ буруу байна")
+                clean.append([gold, price])
+            settings.gold_packs = clean
         settings.save()
         audit(request, None, "settings_updated", {"before": before, "after": settings_json(settings)})
     return ok(settings=settings_json(settings))

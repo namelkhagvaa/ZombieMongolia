@@ -10,6 +10,11 @@
     өөр тоглогч урилгагүй орж ирнэ. Орохдоо хоёулаа room_fee төлж, room_stake-ийг барьцаална (Player.locked_gold).
     Хост даалгавар дуусаагүй байхад гарвал барьцаа нь шатна; сүүлийн даалгавар биелвэл +stage_bonus. Дохио
     (beat) тасарвал холболт тасарсан гэж үзэж барьцааг шийтгэлгүй суллана.
+  * Тулаан: зочин орж ирмэгц хоёр баг тулална (Room.battle). Хоёр тал үр дүнг мэдэгдэнэ: таарвал ялагдагчийн
+    барьцаа ялагчид шилжинэ; зөрвөл хүчингүй. Нэг тал л мэдэгдвэл (нөгөө нь тасарсан) battle_wait-ийн дараа
+    тэр үр дүнгээр. Зочин ялбал шинэ хост болж, өрөөний даалгаврын ахиц (stage_state), ялагдагчийн элсүүлсэн
+    цэргүүд (recruits) түүнд шилжинэ. Ижил хоёр тоглогчийн хооронд хоногт battle_pair_limit-ээс олон тулаанд
+    Gold шилжихгүй (зориуд ээлжлэн ялагдах).
   * Gold: тоглогчийн байнгын мөнгө, зөвхөн сервер өөрчилнө. Өөрчлөлт бүр GoldTransaction-д (ref нь давтагдашгүй тул нэг
     үйл явдлыг хоёр удаа тооцохгүй). Gold-оор газрын зургийн дэлгүүрийн сайжруулалт (Player.damage ... soldiers) авна.
   * Event: тоглогчийн бүх үйлдлийн түүх (засахгүй, нэмэгдэнэ).
@@ -36,6 +41,9 @@ class GameSettings(models.Model):
     room_stake = models.PositiveIntegerField("Өрөөний барьцаа (Gold)", default=50)
     stage_bonus = models.PositiveIntegerField("Үе шат дуусгасны шагнал (Gold)", default=40)
     stage_min_minutes = models.PositiveSmallIntegerField("Шагнал авах хамгийн бага хугацаа (минут)", default=5)
+    battle_pair_limit = models.PositiveSmallIntegerField("Нэг хосын хоногийн төлбөртэй тулаан", default=3)
+    # Вэбээр Gold худалдах багцууд: [[Gold, үнэ ₮], ...]
+    gold_packs = models.JSONField("Gold-ийн багцууд", default=list, blank=True)
     # Сайжруулалтын үнэ: дараагийн түвшин = үнэ x (одоогийн түвшин + 1) Gold
     price_damage = models.PositiveIntegerField("Хохирол (Gold)", default=60)
     price_fire_rate = models.PositiveIntegerField("Буудах хурд (Gold)", default=60)
@@ -175,8 +183,8 @@ def _callback_key():
 
 
 class Invoice(models.Model):
-    PACK, DEVICE, CAPITAL = "pack", "device", "capital"
-    KINDS = [(PACK, "Аймгийн багц"), (DEVICE, "Төхөөрөмж солих"), (CAPITAL, "Улаанбаатар")]
+    PACK, DEVICE, CAPITAL, GOLD = "pack", "device", "capital", "gold"
+    KINDS = [(PACK, "Аймгийн багц"), (DEVICE, "Төхөөрөмж солих"), (CAPITAL, "Улаанбаатар"), (GOLD, "Gold")]
     PENDING, PAID, CANCELLED = "pending", "paid", "cancelled"
     STATUSES = [(PENDING, "Хүлээгдэж буй"), (PAID, "Төлсөн"), (CANCELLED, "Цуцалсан")]
 
@@ -184,6 +192,7 @@ class Invoice(models.Model):
     kind = models.CharField("Төрөл", max_length=8, choices=KINDS)
     amount = models.PositiveIntegerField("Дүн (₮)")
     credits = models.PositiveSmallIntegerField("Олгох эрх", default=0)  # багц: үнэ өөрчлөгдсөн ч худалдсан үеийнхээр
+    gold = models.PositiveIntegerField("Олгох Gold", default=0)  # Gold-ийн нэхэмжлэх (үнэ өөрчлөгдсөн ч худалдсан үеийнхээр)
     device_id = models.CharField("Шилжих төхөөрөмж", max_length=64, blank=True)
     platform = models.CharField(max_length=16, blank=True)
     status = models.CharField("Төлөв", max_length=10, choices=STATUSES, default=PENDING)
@@ -208,8 +217,10 @@ class GoldTransaction(models.Model):
 
     SIGNUP, SHOP, ADMIN = "signup", "shop", "admin"
     ROOM_FEE, ROOM_LEAVE, STAGE_COMPLETE = "room_fee", "room_leave", "stage_complete"
+    BATTLE_WIN, BATTLE_LOSS, PURCHASE = "battle_win", "battle_loss", "purchase"
     REASONS = [(SIGNUP, "Эхлэл"), (SHOP, "Дэлгүүр"), (ADMIN, "Админ"), (ROOM_FEE, "Өрөөнд орсон"),
-               (ROOM_LEAVE, "Өрөөнөөс гарсан (барьцаа шатсан)"), (STAGE_COMPLETE, "Үе шат дуусгасан")]
+               (ROOM_LEAVE, "Өрөөнөөс гарсан (барьцаа шатсан)"), (STAGE_COMPLETE, "Үе шат дуусгасан"),
+               (BATTLE_WIN, "Тулаанд ялсан"), (BATTLE_LOSS, "Тулаанд ялагдсан"), (PURCHASE, "Худалдаж авсан")]
 
     player = models.ForeignKey(Player, verbose_name="Тоглогч", related_name="gold_transactions", on_delete=models.CASCADE)
     amount = models.IntegerField("Дүн")
@@ -244,6 +255,14 @@ class Room(models.Model):
     guest_stake = models.PositiveIntegerField("Зочны барьцаа", default=0)
     host_seen = models.DateTimeField("Хостын сүүлийн дохио")
     guest_seen = models.DateTimeField("Зочны сүүлийн дохио", null=True, blank=True)
+    battle = models.PositiveIntegerField("Тулааны дугаар", default=0)  # зочин орох бүрд нэмэгдэнэ
+    host_report = models.CharField("Хостын мэдэгдсэн ялагч", max_length=8, blank=True)
+    guest_report = models.CharField("Зочны мэдэгдсэн ялагч", max_length=8, blank=True)
+    report_at = models.DateTimeField("Анхны мэдэгдэл", null=True, blank=True)
+    guest_left = models.BooleanField("Зочин тулааны үеэр гарсан (AI тулалдана)", default=False)
+    # Өрөөний даалгаврын ахиц: хост илгээнэ (тоглоомын StageSave-ийн мөр), шинэ хост үргэлжлүүлнэ
+    stage_state = models.TextField("Даалгаврын ахиц", blank=True)
+    recruits = models.PositiveSmallIntegerField("Хостын элсүүлсэн цэрэг", default=0)
     closed_reason = models.CharField("Хаагдсан шалтгаан", max_length=16, blank=True)
     created = models.DateTimeField("Нээсэн", auto_now_add=True)
     closed = models.DateTimeField("Хаагдсан", null=True, blank=True)

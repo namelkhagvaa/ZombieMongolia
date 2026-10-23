@@ -158,8 +158,26 @@ def room_join(request):
 
 @api(["POST"])
 def room_beat(request, room_id):
-    logic.room_beat(request.token.player, room_id)
+    room = logic.room_beat(request.token.player, room_id)
+    return ok(**logic.room_state(room))
+
+
+@api(["POST"])
+def room_stage(request, room_id):
+    logic.save_stage(request.token.player, room_id, request.json.get("stage"), request.json.get("recruits"))
     return ok()
+
+
+@api(["POST"])
+def room_result(request, room_id):
+    """{"battle": n, "winner": "host"|"guest"}. Шийдэгдээгүй бол {"settled": false}: хэдэн секунд тутам давтана."""
+    player = request.token.player
+    settled, winner, room = logic.report_battle(player, request.token.device_id, room_id, request.json.get("battle"),
+                                                request.json.get("winner"), client_ip(request))
+    data = {"settled": settled, "winner": winner, "account": account(request.token)}
+    if settled and room.status == room.OPEN and room.host_id == player.pk:
+        data["room"] = logic.room_json(room, player)  # (зочин ялсан бол: шинэ хостын тасалбар, ахиц, цэргүүд)
+    return ok(**data)
 
 
 @api(["POST"])
@@ -188,7 +206,7 @@ def shop_buy(request):
 
 def invoice_json(invoice, info=None):
     data = {"id": invoice.pk, "kind": invoice.kind, "amount": invoice.amount, "credits": invoice.credits,
-            "status": invoice.status, "applied": invoice.applied}
+            "gold": invoice.gold, "status": invoice.status, "applied": invoice.applied}
     if info:
         data.update(qr_text=info["qr_text"], qr_image=info["qr_image"], short_url=info["short_url"], urls=info["urls"])
     return data
@@ -197,8 +215,28 @@ def invoice_json(invoice, info=None):
 @api(["POST"])
 def invoice_create(request):
     invoice, info = logic.create_invoice(request.token.player, request.token.device_id, request.json.get("kind"),
-                                         request.json.get("platform"), client_ip(request))
+                                         request.json.get("platform"), client_ip(request), request.json.get("pack"))
     return ok(invoice=invoice_json(invoice, info))
+
+
+# ---------------------------------------------------------------- Вэбээр Gold цэнэглэх
+
+@api(["POST"], auth=False)
+def web_login(request):
+    player, token = logic.web_login(request.json.get("phone"), request.json.get("password"), client_ip(request))
+    return ok(token=token.key, name=player.name, gold=player.gold, packs=logic.gold_packs())
+
+
+@api(["GET"], auth=False)
+def gold_packs(request):
+    return ok(packs=logic.gold_packs())
+
+
+def topup_page(request):
+    """Gold цэнэглэх хуудас (game/templates/topup.html): нэвтрээд багц сонгож QPay-ээр төлнө."""
+    from django.shortcuts import render
+
+    return render(request, "topup.html")
 
 
 @api(["GET"])

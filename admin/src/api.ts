@@ -81,6 +81,7 @@ export interface PlayerRow {
   free_used: number;
   credits: number;
   gold: number;
+  gold_locked: number;
   blocked: boolean;
   created: string;
   provinces: number | null;
@@ -91,9 +92,10 @@ export interface PlayerRow {
 export interface InvoiceRow {
   id: number;
   player: { id: number; name: string; phone: string };
-  kind: 'pack' | 'device' | 'capital';
+  kind: 'pack' | 'device' | 'capital' | 'gold';
   amount: number;
   credits: number;
+  gold: number;
   status: 'pending' | 'paid' | 'cancelled';
   applied: boolean;
   platform: string;
@@ -147,6 +149,28 @@ export interface Settings {
   price_magazine: number;
   price_health: number;
   price_soldier: number;
+  room_fee: number;
+  room_stake: number;
+  stage_bonus: number;
+  stage_min_minutes: number;
+  battle_pair_limit: number;
+  gold_packs: { gold: number; price: number }[];
+}
+
+export interface RoomRow {
+  id: number;
+  province: number;
+  status: 'open' | 'closed';
+  host: { id: number; name: string; phone: string };
+  guest: { id: number; name: string; phone: string } | null;
+  battle: number;
+  host_stake: number;
+  guest_stake: number;
+  recruits: number;
+  closed_reason: string;
+  created: string;
+  closed: string | null;
+  host_seen: string;
 }
 
 export interface StaffUser {

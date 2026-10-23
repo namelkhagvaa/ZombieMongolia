@@ -5,6 +5,7 @@ import mnMN from 'antd/locale/mn_MN';
 import {
   DashboardOutlined,
   FileTextOutlined,
+  FireOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -22,6 +23,7 @@ import PlayersPage from './pages/Players';
 import InvoicesPage from './pages/Invoices';
 import EventsPage from './pages/Events';
 import SettingsPage from './pages/Settings';
+import RoomsPage from './pages/Rooms';
 
 const { Sider, Header, Content } = Layout;
 const GOLD = '#f0b030';
@@ -40,6 +42,7 @@ const MENU = [
   { key: '/', icon: <DashboardOutlined />, label: 'Хянах самбар' },
   { key: '/players', icon: <TeamOutlined />, label: 'Тоглогчид' },
   { key: '/invoices', icon: <WalletOutlined />, label: 'Төлбөр' },
+  { key: '/rooms', icon: <FireOutlined />, label: 'Өрөө, тулаан' },
   { key: '/events', icon: <FileTextOutlined />, label: 'Үйлдлийн лог' },
   { key: '/settings', icon: <SettingOutlined />, label: 'Тохиргоо' },
 ];
@@ -132,6 +135,7 @@ function Shell({ user, onLogout, dark, setDark }: { user: StaffUser; onLogout: (
             <Route path="/players/:id" element={<PlayersPage />} />
             <Route path="/invoices" element={<InvoicesPage />} />
             <Route path="/events" element={<EventsPage />} />
+            <Route path="/rooms" element={<RoomsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, App, Button, Card, Col, Form, InputNumber, Row, Skeleton, Typography } from 'antd';
-import { SaveOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Card, Col, Form, InputNumber, Row, Skeleton, Space, Typography } from 'antd';
+import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
 import { api, Settings } from '../api';
 import { useAuth } from '../auth';
 
@@ -36,6 +36,12 @@ export default function SettingsPage() {
           price_magazine: v.price_magazine,
           price_health: v.price_health,
           price_soldier: v.price_soldier,
+          room_fee: v.room_fee,
+          room_stake: v.room_stake,
+          stage_bonus: v.stage_bonus,
+          stage_min_minutes: v.stage_min_minutes,
+          battle_pair_limit: v.battle_pair_limit,
+          gold_packs: v.gold_packs,
         },
       });
       setSettings(r.settings);
@@ -114,6 +120,71 @@ export default function SettingsPage() {
                   <InputNumber min={0} max={1000000} step={500} style={{ width: 200 }} suffix="₮" />
                 </Form.Item>
                 <Typography.Paragraph type="secondary">Аймгийн тоо: {settings.province_count} (бүгд үнэгүй)</Typography.Paragraph>
+              </Card>
+            </Col>
+            <Col xs={24} lg={12}>
+              <Card title="Нээлттэй өрөө ба тулаан" variant="borderless" style={{ height: '100%' }}>
+                <Form.Item
+                  name="room_fee"
+                  label="Өрөөнд орох төлбөр"
+                  extra="Хост ба зочин хоёулаа төлнө (ганцаарчилсан тоглолтод үгүй)."
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} max={10000} style={{ width: 200 }} suffix="Gold" />
+                </Form.Item>
+                <Form.Item
+                  name="room_stake"
+                  label="Барьцаа (ялагдвал өгөх)"
+                  extra={`Орохын тулд нийт ${(values?.room_fee ?? 0) + (values?.room_stake ?? 0)} Gold хэрэгтэй; бага бол ганцаарчилсан.`}
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} max={10000} style={{ width: 200 }} suffix="Gold" />
+                </Form.Item>
+                <Form.Item name="stage_bonus" label="Үе шат дуусгасны шагнал" rules={[{ required: true }]}>
+                  <InputNumber min={0} max={10000} style={{ width: 200 }} suffix="Gold" />
+                </Form.Item>
+                <Form.Item
+                  name="stage_min_minutes"
+                  label="Шагнал авах хамгийн бага хугацаа"
+                  extra="Өрөө нээгдсэнээс хойш ийм хугацаанаас өмнө дуусгавал шагнал олгохгүй."
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} max={240} style={{ width: 200 }} suffix="минут" />
+                </Form.Item>
+                <Form.Item
+                  name="battle_pair_limit"
+                  label="Нэг хосын хоногийн төлбөртэй тулаан"
+                  extra="Ижил хоёр тоглогч хоногт үүнээс олон удаа тулалдвал Gold шилжихгүй (зориуд ээлжлэн ялагдах)."
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} max={100} style={{ width: 200 }} suffix="тулаан" />
+                </Form.Item>
+              </Card>
+            </Col>
+            <Col xs={24} lg={12}>
+              <Card title="Gold худалдах багц (вэб: /api/topup/)" variant="borderless" style={{ height: '100%' }}>
+                <Form.List name="gold_packs">
+                  {(fields, { add, remove }) => (
+                    <>
+                      {fields.map((field) => (
+                        <Space key={field.key} align="baseline" wrap>
+                          <Form.Item name={[field.name, 'gold']} rules={[{ required: true }]}>
+                            <InputNumber min={1} max={1000000} style={{ width: 150 }} suffix="Gold" />
+                          </Form.Item>
+                          <Form.Item name={[field.name, 'price']} rules={[{ required: true }]}>
+                            <InputNumber min={100} max={10000000} step={500} style={{ width: 170 }} suffix="₮" />
+                          </Form.Item>
+                          {fields.length > 1 && <Button icon={<DeleteOutlined />} onClick={() => remove(field.name)} />}
+                        </Space>
+                      ))}
+                      {fields.length < 8 && (
+                        <Button icon={<PlusOutlined />} onClick={() => add({ gold: 100, price: 1000 })}>
+                          Багц нэмэх
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </Form.List>
               </Card>
             </Col>
           </Row>

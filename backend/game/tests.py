@@ -204,22 +204,22 @@ class FlowTests(TestCase):
         self.assertEqual(self.post("rooms/join/", {}, third, status=402)["error"], "not_enough_gold")
 
     def test_host_leaving_burns_the_stake(self):
-        host, guest = self.two_players()
+        host = self.register()["token"]
         room_id = self.post("provinces/start/", {"province": 7}, host)["room"]["id"]
-        self.post("rooms/join/", {}, guest)
         account = self.post(f"rooms/{room_id}/leave/", {}, host)["account"]
         self.assertEqual((account["gold"], account["gold_locked"]), (430, 0))  # 500 - 20 - 50, хэнд ч очоогүй
-        guest_player = Player.objects.get(phone="+97688112233")
-        self.assertEqual((guest_player.gold, guest_player.locked_gold), (480, 0))  # зочны барьцаа суллагдсан
         self.assertEqual(self.post(f"rooms/{room_id}/leave/", {}, host, status=410)["error"], "room_closed")
         self.assertEqual(Room.objects.get().closed_reason, "host_left")
 
-    def test_guest_leaving_frees_the_seat(self):
+    def test_guest_leaving_keeps_the_battle(self):
         host, guest = self.two_players()
         room_id = self.post("provinces/start/", {"province": 7}, host)["room"]["id"]
         self.post("rooms/join/", {}, guest)
-        self.assertEqual(self.post(f"rooms/{room_id}/leave/", {}, guest)["account"]["gold_locked"], 0)
-        self.assertEqual(self.post("rooms/join/", {}, guest)["room"]["id"], room_id)  # сул байранд дахин орно
+        # Тулааны үеэр гарсан зочны багийг AI тулалдуулна: барьцаа үр дүн гартал түгжээтэй, байр сул биш
+        self.assertEqual(self.post(f"rooms/{room_id}/leave/", {}, guest)["account"]["gold_locked"], 50)
+        third = self.register(phone="95112233", device="device-cccc-3333", name="Сүх")["token"]
+        self.assertEqual(self.post("rooms/join/", {}, third, status=404)["error"], "no_rooms")
+        self.assertTrue(Room.objects.get().guest_left)
 
     def test_completing_the_stage_pays_once(self):
         host, guest = self.two_players()
@@ -244,6 +244,119 @@ class FlowTests(TestCase):
         self.assertEqual((host_player.gold, host_player.locked_gold), (480, 0))
         self.assertEqual(Room.objects.get().closed_reason, "timeout")
         self.assertEqual(sum(t.amount for t in host_player.gold_transactions.all()), host_player.gold)
+
+    # ---- тулаан
+    def battle(self):
+        host, guest = self.two_players()
+        room_id = self.post("provinces/start/", {"province": 7}, host)["room"]["id"]
+        joined = self.post("rooms/join/", {}, guest)["room"]
+        self.assertEqual(joined["battle"], 1)
+        self.assertEqual(self.post(f"rooms/{room_id}/beat/", {}, host)["guest"], "Дорж")
+        return host, guest, room_id
+
+    def gold_of(self, phone):
+        player = Player.objects.get(phone=phone)
+        return player.gold, player.locked_gold
+
+    def test_host_wins_when_both_agree(self):
+        host, guest, room_id = self.battle()
+        first = self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, host)
+        self.assertFalse(first["settled"])
+        second = self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, guest)
+        self.assertEqual((second["settled"], second["winner"]), (True, "host"))
+        self.assertEqual(self.gold_of("+97699112233"), (530, 50))  # 500 - 20 + 50, барьцаа хэвээр (өрөөнд)
+        self.assertEqual(self.gold_of("+97688112233"), (430, 0))   # 500 - 20 - 50, өрөөнөөс гарсан
+        # Хожуу мэдэгдэл давхар тооцогдохгүй
+        self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, guest, status=410)
+        self.assertTrue(self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, host)["settled"])
+        self.assertEqual(self.gold_of("+97699112233"), (530, 50))
+        # Сул байранд дараагийн зочин орно, ахиц хэвээр
+        self.post(f"rooms/{room_id}/stage/", {"stage": "1 3 0 0 0", "recruits": 2}, host)
+        third = self.register(phone="95112233", device="device-cccc-3333", name="Сүх")["token"]
+        room = self.post("rooms/join/", {}, third)["room"]
+        self.assertEqual((room["id"], room["battle"], room["stage"]), (room_id, 2, "1 3 0 0 0"))
+
+    def test_guest_wins_and_becomes_host(self):
+        host, guest, room_id = self.battle()
+        self.post(f"rooms/{room_id}/stage/", {"stage": "4 15 0 0 0", "recruits": 3}, host)
+        self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "guest"}, guest)
+        result = self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "guest"}, host)
+        self.assertEqual((result["settled"], result["winner"]), (True, "guest"))
+        # Түрүүлж мэдэгдсэн зочин дахин асуухад шинэ хостын тасалбар, ахиц, ялагдагчийн цэргүүд
+        polled = self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "guest"}, guest)
+        self.assertTrue(polled["settled"])
+        self.assertEqual((polled["room"]["role"], polled["room"]["stage"], polled["room"]["recruits"]), ("host", "4 15 0 0 0", 3))
+        self.assertEqual(self.gold_of("+97688112233"), (530, 50))  # шинэ хост, барьцаа хэвээр
+        self.assertEqual(self.gold_of("+97699112233"), (430, 0))
+        self.assertEqual(Room.objects.get().host.name, "Дорж")
+        self.post(f"rooms/{room_id}/leave/", {}, host, status=410)  # хуучин хост өрөөнд байхгүй
+
+    def test_disputed_result_pays_nobody(self):
+        host, guest, room_id = self.battle()
+        self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, host)
+        self.assertTrue(self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "guest"}, guest)["settled"])
+        self.assertEqual(self.gold_of("+97699112233"), (480, 50))
+        self.assertEqual(self.gold_of("+97688112233"), (480, 0))
+        self.assertTrue(Event.objects.filter(kind="battle_disputed").exists())
+
+    def test_single_report_settles_after_waiting(self):
+        host, guest, room_id = self.battle()
+        self.post(f"rooms/{room_id}/leave/", {}, guest)  # зочин гарсан: AI тулалдана
+        self.assertFalse(self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, host)["settled"])
+        Room.objects.filter(pk=room_id).update(report_at=timezone.now() - timedelta(seconds=61))
+        self.assertTrue(self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, host)["settled"])
+        self.assertEqual(self.gold_of("+97688112233"), (430, 0))
+
+    def test_host_leaving_during_battle_hands_the_room_over(self):
+        host, guest, room_id = self.battle()
+        self.post(f"rooms/{room_id}/leave/", {}, host)
+        self.assertEqual(self.gold_of("+97699112233"), (430, 0))
+        self.assertEqual(self.gold_of("+97688112233"), (530, 50))
+        polled = self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "guest"}, guest)
+        self.assertEqual(polled["room"]["role"], "host")
+
+    def test_same_pair_is_paid_a_few_times_a_day(self):
+        settings = GameSettings.load()
+        settings.battle_pair_limit = 1
+        settings.save()
+        host, guest, room_id = self.battle()
+        for token in (host, guest):
+            self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, token)
+        self.post("rooms/join/", {}, guest)
+        for token in (host, guest):
+            self.post(f"rooms/{room_id}/result/", {"battle": 2, "winner": "host"}, token)
+        # Хоёр дахь тулаанд Gold шилжээгүй (зөвхөн 20 төлбөр)
+        self.assertEqual(self.gold_of("+97699112233"), (530, 50))
+        self.assertEqual(self.gold_of("+97688112233"), (410, 0))
+
+    def test_bad_stage_and_results(self):
+        host, guest, room_id = self.battle()
+        self.post(f"rooms/{room_id}/stage/", {"stage": "1; drop", "recruits": 0}, host, status=400)
+        self.post(f"rooms/{room_id}/stage/", {"stage": "1", "recruits": 0}, guest, status=403)
+        self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "nobody"}, host, status=400)
+        self.post(f"rooms/{room_id}/result/", {"battle": 9, "winner": "host"}, host, status=410)
+
+    # ---- Gold худалдах (вэб)
+    def test_web_topup_buys_gold_once(self):
+        self.register()
+        login = self.post("web/login/", {"phone": "99112233", "password": "secret1"})
+        token = login["token"]
+        self.assertEqual(login["packs"][0], {"index": 0, "gold": 200, "price": 2000})
+        # Вэб нэвтрэлт тоглоомын нэвтрэлтийг гаргахгүй
+        self.assertEqual(AuthToken.objects.filter(revoked=False).count(), 2)
+        invoice = self.post("invoices/", {"kind": "gold", "pack": 1}, token)["invoice"]
+        self.assertEqual((invoice["amount"], invoice["gold"]), (5000, 550))
+        self.pay(invoice["id"])
+        key = Invoice.objects.get(pk=invoice["id"]).callback_key
+        self.client.get(f"/api/qpay/callback/{invoice['id']}/{key}/")  # давхар мэдэгдэл
+        self.assertEqual(self.get(f"invoices/{invoice['id']}/", token)["account"]["gold"], 1050)
+        self.assertEqual(GoldTransaction.objects.filter(reason="purchase").count(), 1)
+        # Вэбээс зөвхөн Gold
+        self.post("invoices/", {"kind": "device"}, token, status=403)
+        self.post("shop/buy/", {"item": "damage", "level": 0}, token, status=402)
+        self.post("provinces/start/", {"province": 1}, token, status=402)
+        self.post("invoices/", {"kind": "gold", "pack": 7}, token, status=400)
+        self.assertEqual(self.client.get("/api/topup/").status_code, 200)
 
     # ---- төхөөрөмж
     def test_second_device_is_free_third_needs_payment(self):
@@ -359,6 +472,10 @@ class ManageApiTests(FlowTests.__base__):
         self.assertEqual((entry.amount, entry.balance, entry.reason, entry.data["staff"]), (250, 750, "admin", "boss"))
         self.call("patch", f"players/{self.player.pk}/", {"gold": -5}, token=token, status=400)
         self.assertEqual(self.call("put", "settings/", {"price_soldier": 150}, token=token)["settings"]["price_soldier"], 150)
+        packs = self.call("put", "settings/", {"gold_packs": [{"gold": 100, "price": 1000}]}, token=token)["settings"]["gold_packs"]
+        self.assertEqual(packs, [{"gold": 100, "price": 1000}])
+        self.call("put", "settings/", {"gold_packs": [{"gold": 0, "price": 1000}]}, token=token, status=400)
+        self.assertEqual(self.call("get", "rooms/", token=token)["total"], 0)
 
     def test_settings_and_mark_paid(self):
         token = self.login()

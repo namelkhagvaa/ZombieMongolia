@@ -91,7 +91,7 @@ export default function InvoiceTable({
         <Space direction="vertical" size={0}>
           {KIND_LABEL[kind]}
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {kind === 'pack' ? `${row.credits} эрх` : ''} {PLATFORM_LABEL[row.platform] ?? row.platform}
+            {kind === 'pack' ? `${row.credits} эрх` : kind === 'gold' ? `${row.gold} Gold` : ''} {PLATFORM_LABEL[row.platform] ?? row.platform}
           </Typography.Text>
         </Space>
       ),

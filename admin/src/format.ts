@@ -42,7 +42,24 @@ export const STATUS_LABEL: Record<string, { text: string; color: string }> = {
   cancelled: { text: 'Цуцлагдсан', color: 'default' },
 };
 
-export const KIND_LABEL: Record<string, string> = { pack: 'Аймгийн багц', device: 'Төхөөрөмж солих', capital: 'Улаанбаатар' };
+export const KIND_LABEL: Record<string, string> = {
+  pack: 'Аймгийн багц',
+  device: 'Төхөөрөмж солих',
+  capital: 'Улаанбаатар',
+  gold: 'Gold',
+};
+
+export const GOLD_REASON: Record<string, string> = {
+  signup: 'Эхлэл',
+  shop: 'Дэлгүүр',
+  admin: 'Админ',
+  room_fee: 'Өрөөнд орсон',
+  room_leave: 'Барьцаа шатсан',
+  stage_complete: 'Үе шат дуусгасан',
+  battle_win: 'Тулаанд ялсан',
+  battle_loss: 'Тулаанд ялагдсан',
+  purchase: 'Худалдаж авсан',
+};
 
 // Лог: үйлдлийн нэр ба өнгө
 export const EVENT_LABEL: Record<string, { text: string; color: string }> = {

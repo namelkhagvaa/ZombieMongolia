@@ -34,11 +34,9 @@ import {
   GlobalOutlined,
 } from '@ant-design/icons';
 import { api, PlayerDetail } from '../api';
-import { ago, dateTime, PLATFORM_LABEL, money } from '../format';
+import { ago, dateTime, GOLD_REASON, PLATFORM_LABEL, money } from '../format';
 import InvoiceTable from './InvoiceTable';
 import EventTable from './EventTable';
-
-const GOLD_REASON: Record<string, string> = { signup: 'Эхлэл', shop: 'Дэлгүүр', admin: 'Админ' };
 
 const PLATFORM_ICON: Record<string, React.ReactNode> = {
   windows: <DesktopOutlined />,
@@ -130,7 +128,12 @@ export default function PlayerDrawer({ playerId, onClose, onChanged }: { playerI
           <Row gutter={[12, 12]}>
             <Col xs={12} sm={6}>
               <Card size="small">
-                <Statistic title="Gold" value={player.gold} valueStyle={{ color: '#f0b030' }} />
+                <Statistic
+                  title="Gold"
+                  value={player.gold}
+                  valueStyle={{ color: '#f0b030' }}
+                  suffix={player.gold_locked ? <span style={{ fontSize: 13 }}>{`(${player.gold_locked} барьцаанд)`}</span> : undefined}
+                />
               </Card>
             </Col>
             <Col xs={24} sm={12}>
