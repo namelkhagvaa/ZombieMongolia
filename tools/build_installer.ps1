@@ -7,8 +7,11 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
 
-cmake --build (Join-Path $root "build")
+# exe-г cmake-build-release-д build хийж, суулгагчийн авдаг build\ хавтас руу хуулна
+# (build\ хавтасны CMakeCache өөр замаас үүссэн тул тэнд шууд build хийж болохгүй).
+cmake --build (Join-Path $root "cmake-build-release")
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+Copy-Item (Join-Path $root "cmake-build-release\ZombieMongolia.exe") (Join-Path $root "build\ZombieMongolia.exe") -Force
 
 $iscc = @(
     (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"),
