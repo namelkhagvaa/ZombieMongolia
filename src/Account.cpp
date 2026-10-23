@@ -129,6 +129,7 @@ namespace
     std::vector<std::pair<std::string, std::string>> banks; // нэр, апп нээх холбоос
 
     Rectangle badge = {};
+    Rectangle topupBadge = {}; // "Gold авах": вэбээр цэнэглэх хуудас (/api/topup/)
 
     // --- Шууд зурах (immediate mode) UI: нэг функц Update-д товшилт шалгаж, Draw-д зурна ---
     bool drawPass = false, tapped = false, enter = false, testEnter = false;
@@ -1515,6 +1516,7 @@ bool Account::Update()
     if (screen == Screen::None)
     {
         if (Hit(badge)) ConfirmLogout();
+        if (Hit(topupBadge)) Online::OpenUrl(apiBase + "topup/");
         return Blocking();
     }
 
@@ -1682,11 +1684,18 @@ int Account::DrawBadge(int x, int y)
 {
     if (!enabled || !signedIn)
     {
-        badge = {};
+        badge = topupBadge = {};
         return 0;
     }
     const std::string text = playerName + "  ·  " + std::to_string(gold) + " Gold";
-    const int width = Ui::Chip(text.c_str(), x, y, Ui::kText, Ui::kAccent);
+    int width = Ui::Chip(text.c_str(), x, y, Ui::kText, Ui::kAccent);
+    // Gold авах (вэб хуудас): алтан товч
+    const char* topup = "+ Gold авах";
+    topupBadge = { (float)(x + width + 6), (float)y, (float)(Ui::MeasureBold(topup, 14) + 24), 32.0f };
+    const bool topupHover = !InTouchMode() && CheckCollisionPointRec(InPointer(), topupBadge);
+    DrawRectangleRounded(topupBadge, 0.5f, 8, topupHover ? Color{ 255, 218, 110, 255 } : Color{ 242, 178, 48, 255 });
+    Ui::TextBold(topup, (int)topupBadge.x + 12, y + 8, 14, { 34, 24, 6, 255 });
+    width += 6 + (int)topupBadge.width;
     const char* label = "Гарах";
     badge = { (float)(x + width + 6), (float)y, (float)(Ui::Measure(label, 15) + 24), 32.0f };
     const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), badge);
