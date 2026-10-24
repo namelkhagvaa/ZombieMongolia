@@ -207,6 +207,7 @@ private:
     bool guestSetupSent = false;    // зочин: нэгдсэний дараа тохиргоогоо илгээсэн
     void GuestTakeOver(int index, bool leaveDead, bool hold); // хост: зочныг index дахь AI гишүүний байранд
     void GuestTeamInput();          // зочин: Tab / F1-F3 / "энд бай"
+    void AcceptGuest();             // хост: нэгдэх хүсэлтийг хүлээн авна (нээлттэй өрөөнд асуулгүй, тулаан эхэлнэ)
     void UpdateBattle(float dt);
     void AutoFight(float dt);
     void MigrateToHost();

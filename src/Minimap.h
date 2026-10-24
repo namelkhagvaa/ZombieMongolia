@@ -12,6 +12,16 @@ class Navigator;
 // Газрын зураг дээр харуулах хөтлөх зам (nullptr бол харуулахгүй)
 void SetMapNavigator(const Navigator* navigator);
 
+// Хамтарсан тоглолт / тулаан: газрын зураг дээрх хүмүүс (өөрийн баг ногоон, эсрэг баг улбар шар; нөгөө бодит
+// тоглогч цагаан хүрээтэй том). nullptr бол багийн цэргүүдийг (SoldierSquad) ердийнхөөр зурна.
+struct MapPerson
+{
+    Vector3 position;
+    bool enemy;
+    bool human; // нөгөө бодит тоглогч
+};
+void SetMapPeople(const std::vector<MapPerson>* people);
+
 // Дэлгэцийн баруун доод буланд байрлах жижиг газрын зураг.
 constexpr int kMinimapSize = 190;  // пиксел
 constexpr int kMinimapTouchSize = 150; // мэдрэгчтэй дэлгэцэд (дээд мөр шахцалдахгүй)

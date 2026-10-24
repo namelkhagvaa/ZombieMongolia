@@ -480,7 +480,7 @@ void Game::Run()
             if (quitRequested) break;
             // Ганцаараа: тоглоом түр зогсоно. Хамтарсан тоглолтод нөгөө тоглогч үргэлжлүүлж байгаа тул ертөнц
             // хөдөлсөөр (snapshot, зомби), зөвхөн энэ тоглогчийн оролт хаагдана.
-            if (!(net.Connected() && (coopGuest || remoteActive)))
+            if (!(net.Connected()))
             {
                 Draw();
                 continue;
@@ -500,7 +500,7 @@ void Game::Run()
             {
                 UpdateShopMenu(); // дэлгүүрийн цэс: тоглоом түр зогсоно
                 // Хамтарсан тоглолт: нөгөө тоглогч үргэлжлүүлж байгаа тул ертөнц хөдөлсөөр (энэ тоглогчийн оролтгүй)
-                if (shopOpen && net.Connected() && (coopGuest || remoteActive))
+                if (shopOpen && net.Connected())
                 {
                     InSetMuted(true);
                     UpdateMission(dt);
@@ -536,7 +536,7 @@ void Game::Run()
             if (journalOpen)
             {
                 // түр зогссон (хамтарсан тоглолтод ертөнц хөдөлсөөр, оролтгүй)
-                if (net.Connected() && (coopGuest || remoteActive))
+                if (net.Connected())
                 {
                     InSetMuted(true);
                     UpdateMission(dt);
@@ -552,7 +552,7 @@ void Game::Run()
                     if (clear) navigator.Clear();
                     else navigator.SetTarget(world, player.Position(), point); // хөтлөх замыг тооцно
                 }
-                if (net.Connected() && (coopGuest || remoteActive))
+                if (net.Connected())
                 {
                     InSetMuted(true);
                     UpdateMission(dt);
@@ -2786,6 +2786,35 @@ void Game::DrawMission() const
     std::vector<Vector3> markers;
     mission.Markers(markers);
 
+    // Хамтарсан тоглолт: газрын зураг дээр өөрийн ба эсрэг багийг ялгаж харуулна (тулаангүй үед нөгөө тоглогч
+    // хамт тоглогч). Хост: зочин ба түүний баг; зочин: хост ба түүний баг (snapshot).
+    std::vector<MapPerson> people;
+    const bool together = coopGuest || remoteActive || squad.HasGuestTeam();
+    if (together)
+    {
+        const bool versus = battleActive || hostGone;
+        if (!coopGuest)
+        {
+            for (const Soldier& soldier : squad.All())
+            {
+                if (soldier.alive) people.push_back({ soldier.mover.position, versus && soldier.guestTeam, false });
+            }
+            if (remoteActive && guestFigure.alive) people.push_back({ guestFigure.position, versus, true });
+        }
+        else
+        {
+            for (size_t i = 0; i < hostSoldiers.size() && i < hostSoldierSide.size(); ++i)
+            {
+                if (!hostSoldiers[i].alive) continue;
+                const bool enemyTeam = hostSoldierSide[i] == 1 || hostSoldierSide[i] == 3;
+                people.push_back({ hostSoldiers[i].position, versus && enemyTeam, false });
+            }
+            if (hostFigure.alive && !hostGone) people.push_back({ hostFigure.position, versus, true });
+        }
+    }
+    SetMapPeople(together ? &people : nullptr);
+    struct ClearPeople { ~ClearPeople() { SetMapPeople(nullptr); } } clearPeople; // (people энэ функцээс гарахад устна)
+
     if (fullMap.IsOpen())
     {
         fullMap.Draw(world, player, horde, squad, garage, markers, medKits.Positions(), info.provinceName);
@@ -3504,6 +3533,11 @@ void Game::UpdateNetwork(float dt)
             {
                 joinRequestPending = true;
                 joinRequester = event.text;
+                // Нээлттэй өрөө: асуулгүй шууд (газрын зураг, журнал, дэлгүүр, цэс нээлттэй байсан ч)
+                if (Account::CurrentRoomRole() == Account::RoomRole::Host || (options.screenshotPath && options.coopTest))
+                {
+                    AcceptGuest();
+                }
             }
             else
             {
@@ -4123,6 +4157,26 @@ void Game::UpdateBattle(float dt)
     }
 }
 
+void Game::AcceptGuest()
+{
+    net.AnswerJoin(true, provinceIndex);
+    joinRequestPending = false;
+    if (Account::CurrentRoomRole() == Account::RoomRole::Host || options.battleTest)
+    {
+        TraceLog(LOG_INFO, "BATTLE: guest %s joined, battle started", joinRequester.c_str());
+        battleActive = true;
+        guestTeamSpawned = false;
+        battleWaitTimer = 0.0f;
+        takeoverCooldown = 3.0f;
+        Account::RefreshRoom(); // тулааны дугаар
+        SetNotice(joinRequester + " өрөөнд орж ирлээ — ТУЛААН! Эсрэг багийн 3 дайчныг ал", 4.0f);
+    }
+    else
+    {
+        SetNotice(joinRequester + " нэгдлээ", 2.5f);
+    }
+}
+
 void Game::UpdateCoopMission(float dt)
 {
     // ---- Хост: хүсэлтэд хариулах, зочныг бай болгох, snapshot илгээх ----
@@ -4133,25 +4187,7 @@ void Game::UpdateCoopMission(float dt)
             // Нээлттэй өрөө: зочин урилгагүй орно (сервер Gold-ийг шалгаж тасалбар өгсөн). Туршилт: автоматаар.
             const bool autoAccept = (options.screenshotPath && options.coopTest) ||
                                     Account::CurrentRoomRole() == Account::RoomRole::Host;
-            if (InKeyPressed(KEY_Y) || autoAccept)
-            {
-                net.AnswerJoin(true, provinceIndex);
-                joinRequestPending = false;
-                if (Account::CurrentRoomRole() == Account::RoomRole::Host || options.battleTest)
-                {
-                    TraceLog(LOG_INFO, "BATTLE: guest %s joined, battle started", joinRequester.c_str());
-                    battleActive = true;
-                    guestTeamSpawned = false;
-                    battleWaitTimer = 0.0f;
-                    takeoverCooldown = 3.0f;
-                    Account::RefreshRoom(); // тулааны дугаар
-                    SetNotice(joinRequester + " өрөөнд орж ирлээ — ТУЛААН! Эсрэг багийн 3 дайчныг ал", 4.0f);
-                }
-                else
-                {
-                    SetNotice(joinRequester + " нэгдлээ", 2.5f);
-                }
-            }
+            if (InKeyPressed(KEY_Y) || autoAccept) AcceptGuest();
             else if (InKeyPressed(KEY_N))
             {
                 net.AnswerJoin(false, provinceIndex);
@@ -4212,7 +4248,7 @@ void Game::UpdateCoopMission(float dt)
         for (size_t i = 0; i < snapshot.soldiers.size(); ++i)
         {
             const Net::SoldierState& s = snapshot.soldiers[i];
-            hostSoldierSide[i] = (int8_t)(s.member < 0 ? 0 : s.guest ? 2 : 1);
+            hostSoldierSide[i] = (int8_t)(s.guest ? (s.member < 0 ? 4 : 2) : (s.member < 0 ? 3 : 1));
         }
         for (size_t i = 0; i < snapshot.soldiers.size(); ++i)
         {

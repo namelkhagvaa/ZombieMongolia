@@ -41,6 +41,9 @@ namespace
     const Color kBoundary = { 200, 80, 60, 255 };
     const Color kZombie = { 230, 60, 50, 255 };
     const Color kSoldier = { 110, 220, 110, 255 };
+    const Color kEnemy = { 255, 150, 30, 255 };   // эсрэг багийн хүн (зомбины улаанаас ялгарна)
+    const Color kPartner = { 90, 175, 255, 255 }; // хамтран тоглож буй нөгөө тоглогч
+    const std::vector<MapPerson>* mapPeople = nullptr;
     const Color kPlayer = { 250, 220, 90, 255 };
     const Color kVehicle = { 90, 190, 240, 255 };
     const Color kObjective = { 250, 214, 70, 255 };
@@ -406,16 +409,33 @@ namespace
             return true;
         };
 
-        for (const Soldier& soldier : squad.All())
+        if (mapPeople)
         {
-            if (!soldier.alive) continue;
-            Vector2 p = view.ToScreen(soldier.mover.position.x, soldier.mover.position.z);
-            bool outside = false;
-            if (!place(p, outside)) continue;
-            const float icon = 9.0f * markerScale;
-            if (Ui::DrawIcon(Ui::Icon::MapAlly, { p.x - icon * 0.5f, p.y - icon * 0.5f, icon, icon })) continue;
-            DrawCircleV(p, 3.5f * markerScale, BLACK);
-            DrawCircleV(p, 2.5f * markerScale, kSoldier);
+            // Хамтарсан тоглолт: өөрийн ба эсрэг баг өөр өнгөөр, нөгөө тоглогч томоор (ирмэг дээр ч харагдана)
+            for (const MapPerson& person : *mapPeople)
+            {
+                Vector2 p = view.ToScreen(person.position.x, person.position.z);
+                bool outside = false;
+                if (!place(p, outside)) continue;
+                const Color color = person.enemy ? kEnemy : person.human ? kPartner : kSoldier;
+                const float radius = (person.human ? 4.6f : 2.8f) * markerScale;
+                DrawCircleV(p, radius + 1.5f * markerScale, person.human ? WHITE : BLACK);
+                DrawCircleV(p, radius, outside ? Fade(color, 0.7f) : color);
+            }
+        }
+        else
+        {
+            for (const Soldier& soldier : squad.All())
+            {
+                if (!soldier.alive) continue;
+                Vector2 p = view.ToScreen(soldier.mover.position.x, soldier.mover.position.z);
+                bool outside = false;
+                if (!place(p, outside)) continue;
+                const float icon = 9.0f * markerScale;
+                if (Ui::DrawIcon(Ui::Icon::MapAlly, { p.x - icon * 0.5f, p.y - icon * 0.5f, icon, icon })) continue;
+                DrawCircleV(p, 3.5f * markerScale, BLACK);
+                DrawCircleV(p, 2.5f * markerScale, kSoldier);
+            }
         }
 
         for (int i = 0; i < horde.Count(); ++i)
@@ -467,6 +487,11 @@ namespace
 }
 
 // ---------------------------------------------------------------- Жижиг зураг
+
+void SetMapPeople(const std::vector<MapPerson>* people)
+{
+    mapPeople = people;
+}
 
 int MinimapSize()
 {
@@ -731,6 +756,12 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     DrawLegendEntry(x + 240, legendY, kVehicle, "унаа");
     DrawLegendEntry(x + 320, legendY, kObjective, "даалгавар");
     DrawLegendEntry(x + 450, legendY, kMedKit, "эмнэлэг");
+    bool enemies = false;
+    if (mapPeople)
+    {
+        for (const MapPerson& person : *mapPeople) enemies = enemies || person.enemy;
+    }
+    if (enemies) DrawLegendEntry(x + 570, legendY, kEnemy, "дайсан");
     const char* help = InTouchMode() ? "Товш — очих газар (дахин товшвол арилна)   Чир — зөөх   Чимх — томруулах"
                                      : "Товш — очих газар   X — арилгах   Дугуй — томруулах   Чир — зөөх   C — өөр дээрээ   M — хаах";
     UiText(help, width - (int)view.area.x - UiMeasure(help, 16), legendY + 1, 16, kFrame);
