@@ -3118,11 +3118,16 @@ TouchState Game::MakeTouchState() const
     if (garage.IsDriving())
     {
         touch.useLabel = "УНААНААС БУУХ";
+        touch.useVehicle = true;
     }
     else
     {
         const Interaction interaction = FindInteraction();
-        if (interaction.vehicle >= 0) touch.useLabel = "УНААНД СУУХ";
+        if (interaction.vehicle >= 0)
+        {
+            touch.useLabel = "УНААНД СУУХ";
+            touch.useVehicle = true;
+        }
         else if (interaction.door >= 0) touch.useLabel = world.IsDoorOpen(interaction.door) ? "ХААЛГА ХААХ" : "ХААЛГА НЭЭХ";
         else if (interaction.passage >= 0) touch.useLabel = PassageLabel(world.GetPassage(interaction.passage).kind, true);
     }
@@ -4250,9 +4255,25 @@ void Game::UpdateCoopMission(float dt)
         }
         if (!guestPlaced)
         {
-            // Эхний snapshot: хостын хажууд гарч ирнэ
+            // Эхний snapshot: хостоос ~1 км зайд (аймгийн хил дотор) гарч ирнэ; хүрэлцэхгүй бол ойртуулна
             guestPlaced = true;
             Vector3 spot = { snapshot.host.position.x + 2.5f, 0.0f, snapshot.host.position.z - 2.0f };
+            const float start = (float)GetRandomValue(0, 359) * DEG2RAD;
+            bool found = false;
+            for (float distance = 1000.0f; distance >= 300.0f && !found; distance -= 175.0f)
+            {
+                for (int k = 0; k < 16 && !found; ++k)
+                {
+                    const float angle = start + (float)k * (2.0f * PI / 16.0f);
+                    const float x = snapshot.host.position.x + std::sin(angle) * distance;
+                    const float z = snapshot.host.position.z + std::cos(angle) * distance;
+                    if (!world.InsideBoundary(x, z) || world.InteriorAt(x, z) >= 0) continue;
+                    spot = { x, 0.0f, z };
+                    found = true;
+                }
+            }
+            TraceLog(LOG_INFO, "COOP: guest placed %.0f m from the host",
+                     std::hypot(spot.x - snapshot.host.position.x, spot.z - snapshot.host.position.z));
             world.ResolveHorizontal(spot, config.playerRadius, config.playerHeight, 0.0f);
             spot.y = world.GroundHeight(spot.x, spot.z);
             player.Teleport(spot);
@@ -4282,7 +4303,7 @@ void Game::UpdateCoopMission(float dt)
     }
 
     coopSendTimer -= dt;
-    if (coopSendTimer <= 0.0f)
+    if (coopSendTimer <= 0.0f && guestPlaced)
     {
         coopSendTimer = kCoopSendInterval;
         net.SendGuestState(LocalAvatar());
@@ -4291,7 +4312,7 @@ void Game::UpdateCoopMission(float dt)
 
 void Game::SendHostSnapshot(float dt)
 {
-    if (coopGuest || !net.Connected() || !remoteActive) return;
+    if (coopGuest || !net.Connected()) return; // (зочин эхний snapshot-оор байрлаж байж өөрийн байдлыг илгээнэ)
 
     // Дэлбэрсэн торх, зочныг цохисон хохирол: шууд
     std::vector<int> exploded;

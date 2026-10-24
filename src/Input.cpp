@@ -70,6 +70,7 @@ namespace
         kGlyphNone,
         kGlyphBackpack, // үүргэвч (зурган икон байхгүй тул шугамаар)
         kGlyphHidden,   // зурахгүй: доор нь HUD өөрөө зурсан (багийн хөрөг)
+        kGlyphVehicle,  // унааны дүрс, доор нь жижиг бичвэр (унаанд суух / буух)
     };
 
     struct Button
@@ -159,7 +160,14 @@ namespace
             // Баруун талын товчнуудын (ЦЭНЭГЛЭХ-ийн зүүн ирмэг ~w-378) зүүн талд: 16:9 дэлгэцэд давхцдаг байсан
             const float actionX = std::min(w * 0.5f + 90.0f, w - 620.0f);
             float actionY = h * 0.5f - 18.0f;
-            if (state.useLabel)
+            if (state.useLabel && state.useVehicle)
+            {
+                // Унаанд суух / буух: жижиг дугуй дүрст товч баруун талын товчнуудын дээгүүр (дэлгэцийн голд биш:
+                // унаа, бай халхлагдахгүй). Явган ба жолоодох үеийн товчнуудтай давхцахгүй байрлал.
+                Add(Circle(w - 270.0f, h - 440.0f, 34.0f), state.useLabel, Kind::Key, KEY_F, true, true);
+                buttons.back().glyph = kGlyphVehicle;
+            }
+            else if (state.useLabel)
             {
                 Add({ actionX, actionY, 220.0f, 58.0f }, state.useLabel, Kind::Key, KEY_F, false, true);
                 actionY += 68.0f;
@@ -804,6 +812,22 @@ void InDrawTouch(const TouchState& state)
             DrawRectangleRoundedLinesEx({ body.x + s * 0.04f, body.y - s * 0.02f, body.width - s * 0.08f, s * 0.14f }, 0.5f, 6, 2.0f, c);
             DrawRing({ center.x, body.y - s * 0.02f }, s * 0.07f, s * 0.07f + 2.0f, 180.0f, 360.0f, 12, c);
             DrawRectangleRoundedLinesEx({ center.x - s * 0.12f, body.y + body.height * 0.52f, s * 0.24f, body.height * 0.32f }, 0.3f, 4, 1.8f, c);
+        }
+        else if (button.glyph == kGlyphVehicle)
+        {
+            // Унааны дүрс (зураг байхгүй бол шугамаар), товчны доор жижиг бичвэр
+            const float side = button.area.width * 0.62f;
+            if (!Ui::DrawIcon(Ui::Icon::MapVehicle, { center.x - side * 0.5f, center.y - side * 0.5f, side, side }))
+            {
+                const Rectangle body = { center.x - side * 0.4f, center.y - side * 0.12f, side * 0.8f, side * 0.3f };
+                DrawRectangleRounded(body, 0.4f, 6, text);
+                DrawRectangleRounded({ body.x + side * 0.14f, body.y - side * 0.2f, side * 0.52f, side * 0.24f }, 0.4f, 6, text);
+                DrawCircleV({ body.x + side * 0.18f, body.y + body.height }, side * 0.09f, { 20, 20, 24, 255 });
+                DrawCircleV({ body.x + body.width - side * 0.18f, body.y + body.height }, side * 0.09f, { 20, 20, 24, 255 });
+            }
+            const int size = 11;
+            Ui::TextShadow(button.label, (int)(center.x - (float)Ui::MeasureBold(button.label, size) * 0.5f),
+                           (int)(button.area.y + button.area.height) + 3, size, text, true);
         }
         else if (button.uiIcon >= 0 && Ui::HasIcon((Ui::Icon)button.uiIcon) && button.label && !button.label[0])
         {
