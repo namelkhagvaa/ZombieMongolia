@@ -22,6 +22,43 @@ struct Obstacle
     }
 };
 
+// Нимгэн босоо хана (хашаа, хотын налуу байшингийн хана): хоёр цэгийн хоорондох хавтан. Налуу байрлалыг AABB-ээр
+// илэрхийлж чадахгүй тул тусдаа. Явган хүн, зомбийг хаана (унаа нэвтэрнэ). climbable: цэрэг, тоглогч давж гарна
+// (хашаа). blocksRays: сум, камерыг хаана (байшингийн хана; хашаа хаахгүй).
+struct WallSegment
+{
+    Vector2 a, b;           // (x, z)
+    float bottom, top;      // доод, дээд өндөр
+    float halfThickness = 0.08f;
+    bool climbable = true;
+    bool blocksRays = false;
+};
+
+// Унаагаар дайрвал нурдаг хашааны хэсэг (~2 м). Геометр нь World-ийн тусдаа хашааны mesh-д (нурахад нуугдана),
+// мөргөлдөөн нь wall (хотын хашаа) эсвэл obstacle (банзан хашаа).
+struct FencePanel
+{
+    Vector2 a, b;            // суурийн хэрчим (x, z)
+    float height = 2.0f;
+    Color color = { 120, 100, 80, 255 };
+    float breakSpeed = 3.0f; // ийм хурдаас (м/с) дээш дайрвал нурна
+    int wall = -1, obstacle = -1;
+    size_t first = 0, count = 0; // гурвалжны муж: бүтээх үед solid builder-т, дараа нь хашааны mesh-д
+    int piece = -1;          // хашааны mesh-ийн хэсэг ба түүн доторх эхний орой
+    int vertexStart = 0;
+    bool settlement = false; // суурингийн (үе бүрд шинээр) эсвэл тогтмол хэсгийнх
+    bool broken = false;
+    Vector2 fall = {};       // нурсан зүг
+};
+
+// Явган хүмүүст зориулсан унааны мөргөлдөөн: тэнхлэгийн дагуух хэрчим + радиус (капсул)
+struct VehicleBlocker
+{
+    Vector2 a, b;
+    float radius;
+    float bottom, top;
+};
+
 // Нээж хаадаг хаалга. Хаалттай үедээ саад болж, нээлттэй үедээ гадагш эргэсэн байна.
 struct Door
 {
@@ -34,6 +71,7 @@ struct Door
     bool open = false;
     float swing = 0.0f; // 0 = хаалттай, 1 = бүрэн нээлттэй (зөөлөн шилжинэ)
     float pound = 0.0f; // зомби хэр удаан нүдсэн (секунд); хангалттай болбол эвдэрч нээгдэнэ
+    bool gate = false;  // хашааны хаалга: унаа түрж нээнэ
 
     Vector3 Center() const
     {
@@ -58,7 +96,8 @@ enum class PassageKind
     LadderDown, // шатаар доош буух
     WindowOut,  // 1 давхрын цонхоор үсэрч гарах
     WindowIn,   // 1 давхрын цонхоор авирч орох
-    WindowDrop  // 2 давхрын цонхоор гарч, тавцангаас нь зүүгдээд доош үсрэх
+    WindowDrop, // 2 давхрын цонхоор гарч, тавцангаас нь зүүгдээд доош үсрэх
+    FenceOver   // хашаа давах (World::FindVault: тоглоомын явцад үүсгэнэ, top = хашааны орой)
 };
 
 struct Passage
@@ -69,6 +108,7 @@ struct Passage
     float facing;   // туулах үед харах зүг, радиан
     float wall = 0.0f; // цонх: from-оос ханын төв хүртэлх хэвтээ зай (дотор тавилга байвал цэг цааш шилждэг);
                        // шат: доод цэгээс шат хүртэлх хэвтээ зай (харах зүгийн дагуу)
+    float top = 0.0f;  // хашаа: давах оройн өндөр
 };
 
 // Дотогш орж болох барилгын (гэр, байшин) дотор тал ба хаалга.
@@ -90,6 +130,8 @@ struct Interior
 
     // Дэлгүүр: зомби дотогш орохгүй, доторх хүнийг бай болгохгүй.
     bool safe = false;
+    // Тэгш өнцөгтийн halfX талын чиглэл (хотын налуу байшин); анхдагч нь +X
+    Vector2 axis = { 1.0f, 0.0f };
 
     bool Contains(float x, float z) const
     {
@@ -98,6 +140,7 @@ struct Interior
         {
             return dx * dx + dz * dz < halfX * halfX;
         }
-        return std::fabs(dx) < halfX && std::fabs(dz) < halfZ;
+        const float along = dx * axis.x + dz * axis.y, across = -dx * axis.y + dz * axis.x;
+        return std::fabs(along) < halfX && std::fabs(across) < halfZ;
     }
 };

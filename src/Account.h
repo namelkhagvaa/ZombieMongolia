@@ -35,12 +35,19 @@ namespace Account
     // Энэ аймаг тоглогчид нээгдсэн эсэх (Enabled биш бол үргэлж true).
     bool Unlocked(int province);
     // Аймаг эхлүүлэх: сервер шалгана, шаардлагатай бол үнэгүй эрх ашиглах эсвэл төлөх цонх нээнэ.
-    void RequestStart(int province, const char* name);
+    // skin: 1-р дайчны дүр (онцгой дүр бол сервер SkinPrice Gold авна).
+    void RequestStart(int province, const char* name, int skin = 0);
+    // Онцгой дүр (DEMON, IRON): тэдгээрээр аймаг эхлүүлэх бүрийн үнэ
+    bool PremiumSkin(int skin);
+    int SkinPrice(int skin);
+    // Найзтайгаа кодоор хамт давсны шагнал, хүн бүрд (серверийн тохиргоо)
+    int CoopReward();
     // Зөвшөөрөгдсөн (эрх нь баталгаажсан) аймаг; байхгүй бол -1. Frame бүрд асууна.
     int TakeApproved();
 
     // Газрын зургийн дээд мөрөнд: "Бат · 500 Gold" чип ба "Гарах" товч. Өргөнийг буцаана (нэвтрээгүй бол 0).
-    int DrawBadge(int x, int y);
+    // alignRight: x нь баруун ирмэг (баруун дээд буланд)
+    int DrawBadge(int x, int y, bool alignRight = false);
 
     // Gold ба сайжруулалт (серверт). Нэвтэрсэн үед л үйлчилнэ (ServerShop); эс бөгөөс Shop.cpp төхөөрөмж дээрх
     // зоосоор (туршилтын горим). item: ShopItem-ийн дараалал (0 хохирол, 1 буудах хурд, 2 сумны хайрцаг, 3 амь, 4 цэрэг).
@@ -50,6 +57,8 @@ namespace Account
     int UpgradePrice(int item); // дараагийн түвшний үнэ (сервер: суурь үнэ x (түвшин + 1))
     // Дараагийн түвшинг серверээр авна (хариу ирэхэд түвшин, Gold шинэчлэгдэнэ; алдааг цонхоор харуулна).
     void BuyUpgrade(int item);
+    // Тоглолтод Gold-оор авсан count цэрэг үхэв: шууд хасна (серверт ард нь илгээнэ, тасарвал дахин оролдоно)
+    void LoseSoldiers(int count);
 
     // Нээлттэй өрөө. Аймаг эхлэхэд (RequestStart) Gold хүрэлцвэл (RoomEntry: 20 + 50) сервер заавал өрөө нээж
     // Host болгоно; эс бөгөөс ганцаарчилсан (None): хэн ч орж ирэхгүй, Gold өөрчлөгдөхгүй. Зочин JoinRoom-оор
@@ -58,10 +67,26 @@ namespace Account
     RoomRole CurrentRoomRole();
     const std::string& RoomTicket();
     int RoomProvince();
+    // Өрөөний найзын код (4 орон); өөр тоглогч урилгагүй орж тулалддаг (Gold хүрэлцсэн) эсэх; энэ тоглогч (эсвэл
+    // зочин нь) найзын кодоор орсон хамт тоглолт эсэх
+    const std::string& RoomCode();
+    bool RoomPvp();
+    bool RoomCoop();
+    // Найзын кодоор нэгдэх: хамт тоглолт (тулаангүй, төлбөргүй). Амжилттай бол TakeJoinedRoom, эс бөгөөс
+    // TakeSearchNote-д шалтгаан.
+    void JoinCoop(const std::string& code);
     int GoldAvailable(); // барьцаалаагүй Gold
     int RoomEntry();
+    // Сул өрөө олдох хүртэл (60 секунд) хайж, олдмогц оруулна; CancelRoomSearch-ээр зогсоно.
     void JoinRoom();
+    bool SearchingRoom();
+    void CancelRoomSearch();
+    bool TakeSearchNote(std::string& text); // нэг удаа: хайлтын үр дүн ("өрөө олдсонгүй" г.м.)
     bool TakeJoinedRoom(); // нэг удаа: JoinRoom амжилттай (RoomTicket, RoomProvince бэлэн)
+    // Тоглоом дотроос Gold авах: багц сонгоод QPay (QR, банкны апп) — тоглоомоос гарахгүй.
+    void OpenGoldShop();
+    // Gold татах цонх (тоглоомоос хожсон Gold-оо банкны данс руу)
+    void OpenCashout();
     // Санаатай гарах: хост даалгавар дуусаагүй байхад гарвал ялагдал (барьцаа шатна). Зочин: барьцаа суллагдана.
     void LeaveRoom();
     // Хост: сүүлийн даалгавар биелэв (+40 Gold, өрөө хаагдана).

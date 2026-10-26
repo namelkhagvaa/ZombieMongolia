@@ -6,9 +6,13 @@
 #include <cstdint>
 #include <vector>
 
+// Ойрын зам (цэрэг, AI): from-оос to хүртэл 2 м-ийн нарийн торон дээр (хашаа, байшин, торхыг radius-аар
+// томруулж) A* хайна. Хүрээ нь хоёр цэгийг багтаасан, 200 м хүртэл. Олдвол out = эргэлтийн цэгүүд (эхлэлээс бусад).
+bool FindLocalPath(const World& world, Vector2 from, Vector2 to, float radius, std::vector<Vector2>& out);
+
 // Газрын зураг дээр тэмдэглэсэн газар руу хөтлөх зам (GPS шиг): засмал замыг илүүд үзэж, шороон замаар,
 // эсвэл хээр талаар; барилга, саадаар нэвтрэхгүй. 8 м-ийн тор дээр A* хайлт.
-// Зам нь газрын зураг, жижиг зураг дээр шугамаар, газар дээр сумаар, дэлгэцийн дээд хэсэгт чиглэлийн сумаар харагдана.
+// Зам нь газрын зураг, жижиг зураг дээр шугамаар, дэлгэцийн дээд хэсэгт нэг 3D чиглэлийн сумаар харагдана.
 class Navigator
 {
 public:
@@ -27,9 +31,10 @@ public:
     const std::vector<Vector2>& Route() const { return route; }
     float RemainingDistance() const;
 
-    // Газар дээрх сумнууд (BeginMode3D дотор)
-    void Draw3D(const World& world, Vector3 player) const;
-    // Дэлгэцийн дээд хэсэгт: дараагийн эргэлт рүү чиглэсэн сум ба үлдсэн зай
+    // Дэлгэцийн дээд хэсэгт (камерын өмнө) хөвөх 3D сум: очих газар аль зүгт байгааг (шулуун) ертөнцөд заана
+    // (BeginMode3D дотор, бусад бүхний дараа).
+    void Draw3D(const Camera3D& view, Vector3 player) const;
+    // Дэлгэцийн дээд хэсэгт: 3D сумны доор очих газар хүртэлх шулуун зай
     void DrawHud(Vector3 player, float cameraYaw) const;
 
 private:
@@ -42,6 +47,10 @@ private:
     Vector2 target = { 0.0f, 0.0f };
     std::vector<Vector2> route;
     float replanTimer = 0.0f;
+    // 3D сумны зөөлрүүлсэн зүг (камерт харьцангуй) ба хазайлт: утсанд хараа, машинтай үед камер бага зэрэг
+    // чичирдэг тул сум хөдлөхгүй
+    mutable float shownHeading = 0.0f, shownTilt = 0.0f;
+    mutable bool shownValid = false;
 
     // Зардлын тор: 0 = нэвтрэхгүй, бусад нь алхамын жин (засмал 10, шороон 13, хээр 30, ус 90)
     static constexpr float kCell = 8.0f;

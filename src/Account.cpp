@@ -26,6 +26,8 @@ namespace
         Sms,     // 144773 руу мессеж илгээхийг хүлээж буй
         Offer,   // аймаг нээх: үнэгүй эрх, худалдаж авсан эрх, багц худалдаж авах, төхөөрөмж солих
         Pay,     // QPay: QR, банкны апп
+        Gold,    // Gold авах: багц сонгох (дараа нь Pay)
+        Cashout, // Gold татах: банк, данс, дүн (дараа нь Sms баталгаажуулалт)
         Message
     };
     enum class Offer
@@ -41,6 +43,9 @@ namespace
         kName,
         kPhone,
         kPassword,
+        kAccount, // Gold татах: дансны дугаар
+        kHolder,  // данс эзэмшигчийн нэр
+        kAmount,  // татах Gold
         kFieldCount
     };
     enum class Style
@@ -76,9 +81,30 @@ namespace
     constexpr int kUpgradeCount = 5;
     const char* const kUpgradeNames[kUpgradeCount] = { "damage", "fire_rate", "magazine", "health", "soldier" };
     int gold = 0, goldLocked = 0, roomEntry = 70;
+    int skinPrice = 50, startSkin = 0, coopReward = 30;
+    int skinPrices[8] = { 50, 50, 50, 50, 50, 50, 50, 50 }; // дүр тус бүрийн үнэ (серверийн "skin_prices")
+    std::vector<int> premiumSkins = { 3, 4 };
+    std::vector<std::pair<int, int>> goldPacks = { { 300, 3000 }, { 550, 5000 }, { 1200, 10000 } }; // Gold, ₮ (серверээс)
+    int invoiceGold = 0;
+    // Gold татах (зөвхөн тоглоомоос хожсон Gold, серверийн "cashout")
+    bool cashoutEnabled = false;
+    bool cashoutKnown = false; // сервер Gold татахыг дэмждэг (хариунд "cashout" ирсэн)
+    int cashoutMin = 20000, cashoutWithdrawable = 0;
+    double cashoutRate = 1.0;
+    std::vector<std::string> cashoutBanks;
+    int cashoutBank = -1;  // сонгосон банк
+    int cashoutId = 0;     // утсаар баталгаажуулж буй хүсэлт
+    int activeCashout = 0, activeGold = 0; // нээлттэй (баталгаажуулж / шилжүүлэг хүлээж буй) хүсэлт
+    std::string activeStatus, activeBank;
+    bool smsCashout = false; // Sms цонх: Gold татах хүсэлтийг баталгаажуулж байна
+    // Өрөө хайх: олдох хүртэл давтана
+    bool roomSearching = false;
+    double roomSearchUntil = 0.0, nextRoomSearch = 0.0;
+    std::string roomSearchNote;
     // Нээлттэй өрөө (сервер нээсэн / орсон)
     int roomId = -1, roomProvince = -1, roomBattle = 0, roomRecruits = 0;
-    std::string roomStage;
+    std::string roomStage, roomCode;
+    bool roomPvp = false, roomCoop = false;
     // Тулааны мэдэгдэл: ялагч (host/guest), шийдэгдтэл давтана
     std::string battleReport;
     int battleReportFor = 0;
@@ -90,6 +116,9 @@ namespace
     double nextRoomBeat = 0.0;
     int upgradeLevels[kUpgradeCount] = {};
     int upgradePrices[kUpgradeCount] = { 60, 60, 40, 50, 120 };
+    constexpr int kSoldierUpgrade = 4;   // kUpgradeNames дахь "soldier"
+    int soldierTarget = 0;               // алдсаны дараах үлдэх цэрэг (серверт илгээх)
+    bool soldierLossDirty = false;       // илгээгээгүй алдагдал байна
 
     // --- Цонх ---
     Screen screen = Screen::None;
@@ -130,6 +159,7 @@ namespace
 
     Rectangle badge = {};
     Rectangle topupBadge = {}; // "Gold авах": вэбээр цэнэглэх хуудас (/api/topup/)
+    Rectangle cashoutBadge = {}; // "Gold татах": хожсон Gold-оо данс руу
 
     // --- Шууд зурах (immediate mode) UI: нэг функц Update-д товшилт шалгаж, Draw-д зурна ---
     bool drawPass = false, tapped = false, enter = false, testEnter = false;
@@ -164,7 +194,7 @@ namespace
         return out + "}";
     }
 
-    std::string Money(int amount)
+    std::string Thousands(long long amount)
     {
         std::string digits = std::to_string(amount), out;
         for (size_t i = 0; i < digits.size(); ++i)
@@ -172,7 +202,18 @@ namespace
             if (i > 0 && (digits.size() - i) % 3 == 0) out += ' ';
             out += digits[i];
         }
-        return out + "₮";
+        return out;
+    }
+
+    std::string Money(long long amount) { return Thousands(amount) + "₮"; }
+
+    // Ханш: бүхэл бол "1", үгүй бол "0.5"
+    std::string RateText()
+    {
+        if (std::fabs(cashoutRate - std::round(cashoutRate)) < 0.001) return std::to_string((long long)std::llround(cashoutRate));
+        std::string text = TextFormat("%.2f", cashoutRate);
+        while (text.back() == '0') text.pop_back();
+        return text;
     }
 
     void AppendUtf8(std::string& out, int code)
@@ -222,6 +263,7 @@ namespace
         case Screen::Login: return { kPhone, kPassword };
         case Screen::Register: return { kName, kPhone, kPassword };
         case Screen::Reset: return { kPhone, kPassword };
+        case Screen::Cashout: return { kAccount, kHolder, kAmount };
         default: return {};
         }
     }
@@ -229,13 +271,8 @@ namespace
     void Focus(int index)
     {
         focus = index;
-        layout = index == kPhone ? 2 : index == kPassword ? 1 : 0;
-        shift = index == kName && fields[kName].empty();
-    }
-
-    const char* Placeholder(int index)
-    {
-        return index == kName ? "Нэр" : index == kPhone ? "Утасны дугаар" : "Нууц үг";
+        layout = index == kPhone || index == kAccount || index == kAmount ? 2 : index == kPassword ? 1 : 0;
+        shift = (index == kName || index == kHolder) && fields[index].empty();
     }
 
     // Дараагийн талбар (сүүлийнх бол -1)
@@ -293,6 +330,10 @@ namespace
         if (focus == kPhone)
         {
             if (code < '0' || code > '9' || text.size() >= 8) return;
+        }
+        else if (focus == kAccount || focus == kAmount)
+        {
+            if (code < '0' || code > '9' || text.size() >= (focus == kAccount ? 20u : 9u)) return;
         }
         else if (focus == kPassword)
         {
@@ -362,10 +403,51 @@ namespace
         gold = account["gold"].Int(gold);
         goldLocked = account["gold_locked"].Int(goldLocked);
         roomEntry = account["room_entry"].Int(roomEntry);
+        skinPrice = account["skin_price"].Int(skinPrice);
+        coopReward = account["coop_reward"].Int(coopReward);
+        for (int skin = 0; skin < 8; ++skin)
+        {
+            // Шинэ сервер дүр тус бүрийн үнэ өгнө; хуучин нь нэг үнэ
+            const char* key = TextFormat("%d", skin);
+            skinPrices[skin] = account["skin_prices"].Has(key) ? account["skin_prices"][key].Int(skinPrice) : skinPrice;
+        }
+        if (account["premium_skins"].type == Json::Type::Array)
+        {
+            premiumSkins.clear();
+            for (size_t i = 0; i < account["premium_skins"].Size(); ++i) premiumSkins.push_back(account["premium_skins"][i].Int());
+        }
+        const Json& packs = account["gold_packs"];
+        if (packs.Size() > 0)
+        {
+            goldPacks.clear();
+            for (size_t i = 0; i < packs.Size(); ++i) goldPacks.emplace_back(packs[i]["gold"].Int(), packs[i]["price"].Int());
+        }
         for (int i = 0; i < kUpgradeCount; ++i)
         {
             upgradeLevels[i] = account["upgrades"][kUpgradeNames[i]].Int(upgradeLevels[i]);
             upgradePrices[i] = account["shop"][kUpgradeNames[i]]["price"].Int(upgradePrices[i]);
+        }
+        // Серверт хүрээгүй алдагдал: хуучин тоог буцааж харуулахгүй
+        if (soldierLossDirty) upgradeLevels[kSoldierUpgrade] = std::min(upgradeLevels[kSoldierUpgrade], soldierTarget);
+        const Json& cashout = account["cashout"];
+        cashoutKnown = cashout.type == Json::Type::Object;
+        if (cashout.type == Json::Type::Object)
+        {
+            cashoutEnabled = cashout["enabled"].Bool();
+            cashoutMin = cashout["min"].Int(cashoutMin);
+            if (cashout["rate"].type == Json::Type::Number) cashoutRate = cashout["rate"].number;
+            cashoutWithdrawable = cashout["withdrawable"].Int();
+            const Json& list = cashout["banks"];
+            if (list.Size() > 0)
+            {
+                cashoutBanks.clear();
+                for (size_t i = 0; i < list.Size(); ++i) cashoutBanks.push_back(list[i].Str());
+            }
+            const Json& active = cashout["active"];
+            activeCashout = active["id"].Int();
+            activeGold = active["gold"].Int();
+            activeStatus = active["status"].Str();
+            activeBank = active["bank"].Str();
         }
     }
 
@@ -389,6 +471,8 @@ namespace
             roomId = -1;
             roomRole = Account::RoomRole::None;
             roomTicket.clear();
+            roomCode.clear();
+            roomPvp = roomCoop = false;
             return;
         }
         roomId = room["id"].Int(-1);
@@ -398,16 +482,23 @@ namespace
         roomBattle = room["battle"].Int(roomBattle);
         roomStage = room["stage"].Str();
         roomRecruits = room["recruits"].Int(0);
+        roomCode = room["code"].Str();
+        roomPvp = room["pvp"].Bool();
+        roomCoop = room["coop"].Bool();
         nextRoomBeat = GetTime() + 60.0;
     }
 
     // Өрөөний хүсэлт (гарах, дуусгах, дохио): цонхыг хаахгүй, даалгаврын үеэр ч (Tick) хариуг авна.
-    Pending roomRequest, roomBeat, roomStageCall, battleCall;
+    Pending roomRequest, roomBeat, roomStageCall, battleCall, roomSearchCall, soldierLossCall;
 
     void BeatHandler(int status, const Json& reply)
     {
         if (status == 410) SetRoom(Json()); // сервер өрөөг хаасан
-        else if (status == 200) roomBattle = reply["battle"].Int(roomBattle);
+        else if (status == 200)
+        {
+            roomBattle = reply["battle"].Int(roomBattle);
+            roomCoop = reply["coop"].Bool();
+        }
     }
 
     void SendBattleReport()
@@ -430,12 +521,12 @@ namespace
             }
             if (status == 410 || status == 403 || status == 404)
             {
-                // Нөгөө тал шийдүүлсэн, энэ тоглогч өрөөнд байхгүй: ялагдсан (эсвэл хүчингүй)
+                // Нөгөө тал шийдүүлсэн, энэ тоглогч өрөөнд байхгүй: ялагдсан. Өрөө хаагдсан бол хүчингүй.
                 Background("GET", "account/", "", [](int code, const Json& fresh) {
                     if (code == 200) ReadAccount(fresh["account"]);
                 });
                 SetRoom(Json());
-                battleResult = Account::BattleResult::Lost;
+                battleResult = reply["error"].Str() == "room_closed" ? Account::BattleResult::Void : Account::BattleResult::Lost;
                 battleReport.clear();
             }
             // бусад (сүлжээ, шийдэгдээгүй): Tick дахин илгээнэ
@@ -567,8 +658,9 @@ namespace
              "Нэвтэрч байна...");
     }
 
-    void StartSms(const Json& reply, bool reset)
+    void StartSms(const Json& reply, bool reset, bool cashout = false)
     {
+        smsCashout = cashout;
         verificationId = reply["verification_id"].Int();
         const Json& sms = reply["sms"];
         smsNumber = sms["shortcode"].Str();
@@ -605,9 +697,102 @@ namespace
              "Илгээж байна...");
     }
 
+    // ---------------------------------------------------------------- Gold татах
+
+    void RequestCashout()
+    {
+        const std::string& account = fields[kAccount];
+        const long long gold = fields[kAmount].empty() ? 0 : std::atoll(fields[kAmount].c_str());
+        if (cashoutBank < 0 || cashoutBank >= (int)cashoutBanks.size())
+        {
+            ShowMessage("Банк", "Мөнгө хүлээн авах банкаа сонгоно уу.");
+            return;
+        }
+        if (account.size() < 6)
+        {
+            ShowMessage("Дансны дугаар", "Дансны дугаараа (6-20 оронтой) оруулна уу.");
+            return;
+        }
+        if (CodepointCount(fields[kHolder]) < 2)
+        {
+            ShowMessage("Данс эзэмшигч", "Данс эзэмшигчийн нэрийг оруулна уу.");
+            return;
+        }
+        if (gold < cashoutMin)
+        {
+            ShowMessage("Татах дүн", "Хамгийн багадаа " + Thousands(cashoutMin) + " Gold татна.");
+            return;
+        }
+        if (gold > cashoutWithdrawable)
+        {
+            ShowMessage("Татах дүн", "Зөвхөн тоглоомоос хожсон Gold-оо татна. Одоо " + Thousands(cashoutWithdrawable) +
+                                         " Gold татах боломжтой (цэнэглэсэн Gold татагдахгүй).");
+            return;
+        }
+        Call("POST", "cashouts/",
+             Obj({ { "gold", std::to_string(gold) }, { "bank", JsonQuote(cashoutBanks[(size_t)cashoutBank]) },
+                   { "account", JsonQuote(account) }, { "holder", JsonQuote(fields[kHolder]) } }),
+             [](int status, const Json& reply) {
+                 if (status != 200)
+                 {
+                     Fail(status, reply);
+                     return;
+                 }
+                 ReadAccount(reply["account"]);
+                 cashoutId = reply["cashout"]["id"].Int();
+                 StartSms(reply, false, true);
+             },
+             "Хүсэлт илгээж байна...");
+    }
+
+    // Баталгаажаагүй хүсэлтийг цуцлана: Gold буцна
+    void CancelCashout(int id)
+    {
+        Call("POST", "cashouts/" + std::to_string(id) + "/cancel/", "{}",
+             [](int status, const Json& reply) {
+                 if (status == 200) ReadAccount(reply["account"]);
+                 if (status == 200 || status == 409) Open(Screen::Cashout);
+                 else Fail(status, reply);
+             },
+             "Цуцалж байна...");
+    }
+
+    void PollCashout()
+    {
+        Background("GET", "cashouts/" + std::to_string(cashoutId) + "/", "", [](int status, const Json& reply) {
+            nextPoll = GetTime() + 3.0;
+            if (screen != Screen::Sms || !smsCashout || status == 0) return;
+            if (status != 200)
+            {
+                Fail(status, reply);
+                return;
+            }
+            ReadAccount(reply["account"]);
+            const Json& cashout = reply["cashout"];
+            const std::string state = cashout["status"].Str();
+            if (state == "pending")
+            {
+                fields[kAmount].clear();
+                ShowMessage("Хүсэлт илгээгдлээ",
+                            Thousands(cashout["gold"].Int()) + " Gold (" + Money(cashout["amount"].Int()) + ") " + cashout["bank"].Str() + " " +
+                                cashout["account"].Str() + " данс руу шилжинэ. Админ шалгаад шилжүүлэхэд түр хугацаа шаардагдана.",
+                            Screen::None);
+            }
+            else if (state != "verifying")
+            {
+                ShowMessage("Хүсэлт цуцлагдлаа", "Мессеж ирээгүй тул хүсэлт цуцлагдаж, Gold буцлаа. Дахин оролдоно уу.", Screen::Cashout);
+            }
+        });
+    }
+
     // Мессеж ирсэн эсэхийг асууна (ирээгүй бол сервер 409 буцаана).
     void PollSms()
     {
+        if (smsCashout)
+        {
+            PollCashout();
+            return;
+        }
         const std::string id = std::to_string(verificationId);
         const std::string path = smsReset ? "password/reset/confirm/" : "register/confirm/";
         const std::string body = smsReset ? Obj({ { "verification_id", id }, { "password", JsonQuote(fields[kPassword]) } })
@@ -641,7 +826,8 @@ namespace
 
     void StartProvince()
     {
-        Call("POST", "provinces/start/", Obj({ { "province", std::to_string(province) } }), [](int status, const Json& reply) {
+        Call("POST", "provinces/start/", Obj({ { "province", std::to_string(province) }, { "skin", std::to_string(startSkin) } }),
+             [](int status, const Json& reply) {
             if (status == 200)
             {
                 ReadAccount(reply["account"]);
@@ -717,6 +903,7 @@ namespace
         invoiceId = invoice["id"].Int();
         invoiceKind = invoice["kind"].Str();
         invoiceAmount = invoice["amount"].Int();
+        invoiceGold = invoice["gold"].Int();
         qrText = invoice["qr_text"].Str();
         const std::string& image = invoice["qr_image"].Str();
         if (!image.empty())
@@ -750,9 +937,26 @@ namespace
              "Нэхэмжлэх үүсгэж байна...");
     }
 
+    void BuyGold(int pack)
+    {
+        Call("POST", "invoices/",
+             Obj({ { "kind", JsonQuote("gold") }, { "pack", std::to_string(pack) }, { "platform", JsonQuote(Platform()) } }),
+             [](int status, const Json& reply) {
+                 if (status == 200) OpenPay(reply["invoice"]);
+                 else Fail(status, reply);
+             },
+             "Нэхэмжлэх үүсгэж байна...");
+    }
+
     void Paid()
     {
         ClosePay();
+        if (invoiceKind == "gold")
+        {
+            ShowMessage("Төлбөр орлоо", std::to_string(invoiceGold) + " Gold нэмэгдлээ. Одоо танд " + std::to_string(gold) + " Gold байна.",
+                        Screen::None);
+            return;
+        }
         if (province < 0)
         {
             ShowMessage("Төлбөр орлоо", "Баярлалаа!", Screen::None);
@@ -835,7 +1039,8 @@ namespace
             // Утасны гар: талбарын дээр үл үзэгдэх <input> (хуруу шууд түүнд хүрнэ)
             const float w = (float)ViewWidth(), h = (float)ViewHeight();
             WebFieldPlace(index, area.x / w, area.y / h, area.width / w, area.height / h,
-                          index == kPhone ? 1 : index == kPassword ? 2 : 0, NextAfter(index), fields[index].c_str());
+                          index == kPhone ? 1 : index == kPassword ? 2 : index == kAccount || index == kAmount ? 3 : 0, NextAfter(index),
+                          fields[index].c_str());
         }
         if (drawPass)
         {
@@ -939,8 +1144,8 @@ namespace
 
     const int kShift = -1, kErase = -2, kLayout = -3, kDone = -4;
 
-    // Дээд талд нь бичиж буй талбарын харагдац (самбар гарын ард нуугдсан ч юу бичсэнээ харна), доор нь товчнууд
-    const float kPreviewHeight = 60.0f;
+    // Гарын дээд зай (бичиж буй талбарыг давхар харуулахгүй: цонх өөрөө дээш шилжиж талбар харагдана)
+    const float kPreviewHeight = 10.0f;
     float KeyboardHeight() { return std::clamp((float)ViewHeight() * 0.56f, 320.0f, 460.0f); }
     bool KeyboardVisible() { return InTouchMode() && keyboardOpen && focus >= 0 && !FieldsOf(screen).empty(); }
 
@@ -1009,10 +1214,6 @@ namespace
             DrawRectangle(0, (int)top, (int)width, (int)height, { 8, 10, 14, 250 });
             DrawRectangle(0, (int)top, (int)width, 2, kFrame);
         }
-        // Бичиж буй талбар
-        const float previewWidth = std::min(width - 24.0f, 720.0f);
-        FieldBox({ (width - previewWidth) * 0.5f, top + 8.0f, previewWidth, kPreviewHeight - 12.0f }, focus, Placeholder(focus));
-
         const float rowsTop = top + kPreviewHeight;
         const float rowHeight = (height - kPreviewHeight - 8.0f) / (float)rows.size();
         const float maxKey = layout == 2 ? 220.0f : 132.0f;
@@ -1157,14 +1358,17 @@ namespace
     {
         const float width = 540.0f, inner = width - 56.0f;
         const std::vector<std::string> lines =
-            Wrap("Утасны дугаараа баталгаажуулахын тулд " + fields[kPhone] + " дугаартай утаснаасаа доорх мессежийг илгээнэ үү.", 16, inner);
+            Wrap(smsCashout ? "Gold татах хүсэлтээ баталгаажуулахын тулд бүртгэлтэй утаснаасаа доорх мессежийг илгээнэ үү. "
+                              "Баталгаажсаны дараа мөнгийг таны данс руу шилжүүлнэ."
+                            : "Утасны дугаараа баталгаажуулахын тулд " + fields[kPhone] + " дугаартай утаснаасаа доорх мессежийг илгээнэ үү.",
+                 16, inner);
         const bool touch = InTouchMode();
         const float height = 22.0f + 40.0f + (float)lines.size() * LineHeight(16) + 14.0f + 104.0f + 16.0f + 28.0f + 34.0f +
                              (touch ? 62.0f : 0.0f) + 30.0f + 22.0f;
         const Rectangle panel = Panel(width, height);
         const float x = panel.x + 28.0f;
         float y = panel.y + 22.0f;
-        Title("УТАС БАТАЛГААЖУУЛАХ", x, y);
+        Title(smsCashout ? "ХҮСЭЛТ БАТАЛГААЖУУЛАХ" : "УТАС БАТАЛГААЖУУЛАХ", x, y);
         y += 40.0f;
         Paragraph(lines, x, y, 16, Ui::kText);
         y += (float)lines.size() * LineHeight(16) + 14.0f;
@@ -1194,7 +1398,11 @@ namespace
             if (Button({ x, y, inner, 50.0f }, "МЕССЕЖ БИЧИХ", Style::Primary) && !smsUri.empty()) Online::OpenUrl(smsUri);
             y += 62.0f;
         }
-        if (Button({ x, y, inner, 30.0f }, "Цуцлах", Style::Link)) Open(smsReset ? Screen::Reset : Screen::Register);
+        if (Button({ x, y, inner, 30.0f }, "Цуцлах", Style::Link))
+        {
+            if (smsCashout) CancelCashout(cashoutId);
+            else Open(smsReset ? Screen::Reset : Screen::Register);
+        }
     }
 
     void OfferScreen()
@@ -1273,6 +1481,148 @@ namespace
         }
     }
 
+    void GoldScreen()
+    {
+        // Gold авах: багц сонгоход QPay-ийн цонх (QR, банкны апп) нээгдэнэ, тоглоомоос гарахгүй
+        const float width = 500.0f, inner = width - 56.0f, row = 64.0f;
+        const float height = 22.0f + 42.0f + 30.0f + (float)goldPacks.size() * (row + 10.0f) + 10.0f + (cashoutEnabled ? 56.0f : 0.0f) +
+                             30.0f + 20.0f;
+        const Rectangle panel = Panel(width, height);
+        const float x = panel.x + 28.0f;
+        float y = panel.y + 22.0f;
+        Title("GOLD АВАХ", x, y);
+        y += 42.0f;
+        if (drawPass) Ui::Text(TextFormat("Танд одоо %d Gold байна. Багцаа сонгоно уу:", gold), (int)x, (int)y, 16, Ui::kTextDim);
+        y += 30.0f;
+        for (size_t i = 0; i < goldPacks.size(); ++i)
+        {
+            const Rectangle box = { x, y, inner, row };
+            if (drawPass)
+            {
+                const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), box);
+                DrawRectangleRounded(box, 0.2f, 8, hover ? Color{ 60, 46, 14, 220 } : Color{ 0, 0, 0, 130 });
+                DrawRectangleRoundedLinesEx(box, 0.2f, 8, 1.5f, kFrame);
+                Ui::Coin({ x + 26.0f, y + row * 0.5f }, 10.0f);
+                Ui::TextBold(TextFormat("%d Gold", goldPacks[i].first), (int)x + 46, (int)(y + row * 0.5f) - 13, 22, Ui::kText);
+                const std::string money = Money(goldPacks[i].second);
+                Ui::TextBold(money.c_str(), (int)(x + inner) - 16 - Ui::MeasureBold(money.c_str(), 22), (int)(y + row * 0.5f) - 13, 22,
+                             Ui::kAccent);
+            }
+            if (Hit(box))
+            {
+                BuyGold((int)i);
+                return;
+            }
+            y += row + 10.0f;
+        }
+        y += 10.0f;
+        if (cashoutEnabled)
+        {
+            const std::string label = "GOLD ТАТАХ  (хожсон " + Thousands(cashoutWithdrawable) + " Gold)"; // (дээд мөрөнд ч товч бий)
+            if (Button({ x, y, inner, 44.0f }, label.c_str(), Style::Secondary))
+            {
+                Open(Screen::Cashout);
+                return;
+            }
+            y += 56.0f;
+        }
+        if (Button({ x, y, inner, 30.0f }, "Болих", Style::Link)) Open(Screen::None);
+    }
+
+    void CashoutScreen()
+    {
+        // Gold татах: зөвхөн тоглоомоос хожсон Gold. Банк, данс, дүн -> 144773 руу SMS-ээр баталгаажуулна.
+        const float width = std::min(640.0f, (float)ViewWidth() - 16.0f), inner = width - 56.0f;
+        const int columns = 4, rows = std::max(1, ((int)cashoutBanks.size() + columns - 1) / columns);
+        const bool active = activeCashout > 0;
+        const float height = 22.0f + 40.0f + 26.0f + 24.0f + (active ? 28.0f : 0.0f) + 10.0f + 24.0f + (float)rows * 42.0f + 10.0f + 60.0f +
+                             60.0f + 14.0f + 56.0f + 30.0f + 18.0f;
+        const Rectangle panel = Panel(width, height);
+        const float x = panel.x + 28.0f;
+        float y = panel.y + 22.0f;
+        Title("GOLD ТАТАХ", x, y);
+        y += 40.0f;
+        if (drawPass)
+        {
+            Ui::Coin({ x + 9.0f, y + 11.0f }, 9.0f);
+            const std::string text = "Татах боломжтой: " + Thousands(cashoutWithdrawable) + " Gold (тоглоомоос хожсон)";
+            Ui::TextBold(text.c_str(), (int)x + 26, (int)y, 18, cashoutWithdrawable >= cashoutMin ? Ui::kAccent : Ui::kText);
+        }
+        y += 26.0f;
+        if (drawPass)
+        {
+            const std::string text = "Доод хэмжээ " + Thousands(cashoutMin) + " Gold · 1 Gold = " + RateText() + "₮ · Цэнэглэсэн Gold татагдахгүй";
+            Ui::Text(text.c_str(), (int)x, (int)y, 15, Ui::kTextDim);
+        }
+        y += 24.0f;
+        if (active)
+        {
+            const bool verifying = activeStatus == "verifying";
+            if (drawPass)
+            {
+                const std::string text = verifying ? "Баталгаажаагүй хүсэлт байна: " + Thousands(activeGold) + " Gold"
+                                                   : "Шилжүүлэг хүлээж буй: " + Thousands(activeGold) + " Gold → " + activeBank;
+                Ui::Text(text.c_str(), (int)x, (int)y + 4, 15, verifying ? Ui::kText : Ui::kAccent);
+            }
+            if (verifying && Button({ x + inner - 140.0f, y, 140.0f, 26.0f }, "Цуцлах", Style::Link))
+            {
+                CancelCashout(activeCashout);
+                return;
+            }
+            y += 28.0f;
+        }
+        y += 10.0f;
+        if (drawPass) Ui::Text("Хүлээн авах банк", (int)x, (int)y, 15, Ui::kTextDim);
+        y += 24.0f;
+        const float cell = inner / (float)columns;
+        for (size_t i = 0; i < cashoutBanks.size(); ++i)
+        {
+            const Rectangle area = { x + (float)(i % columns) * cell, y + (float)(i / columns) * 42.0f, cell - 8.0f, 36.0f };
+            const bool chosen = (int)i == cashoutBank;
+            if (drawPass)
+            {
+                std::string label = cashoutBanks[i];
+                const std::string suffix = " банк";
+                if (label.size() > suffix.size() && label.compare(label.size() - suffix.size(), suffix.size(), suffix) == 0)
+                {
+                    label.erase(label.size() - suffix.size()); // "Хаан банк" -> "Хаан"
+                }
+                bool cut = false;
+                while (!label.empty() && (float)Ui::Measure((label + (cut ? ".." : "")).c_str(), 14) > area.width - 10.0f)
+                {
+                    EraseLast(label);
+                    cut = true;
+                }
+                if (cut) label += "..";
+                const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), area);
+                DrawRectangleRounded(area, 0.3f, 8, chosen ? Color{ 242, 178, 48, 255 } : Color{ 255, 255, 255, (unsigned char)(hover ? 40 : 20) });
+                if (!chosen) DrawRectangleRoundedLinesEx(area, 0.3f, 8, 1.0f, { 255, 255, 255, 50 });
+                Centered(label.c_str(), area, 14, chosen ? kInk : Ui::kText, chosen);
+            }
+            if (Hit(area)) cashoutBank = (int)i;
+        }
+        y += (float)rows * 42.0f + 10.0f;
+        const float half = inner * 0.5f - 6.0f;
+        FieldBox({ x, y, half, 48.0f }, kAccount, "Дансны дугаар");
+        FieldBox({ x + half + 12.0f, y, half, 48.0f }, kHolder, "Данс эзэмшигчийн нэр");
+        y += 60.0f;
+        FieldBox({ x, y, half, 48.0f }, kAmount, "Татах Gold");
+        if (Button({ x + half + 12.0f, y + 6.0f, 110.0f, 36.0f }, "Бүгдийг", Style::Secondary))
+        {
+            fields[kAmount] = std::to_string(cashoutWithdrawable);
+        }
+        if (drawPass)
+        {
+            const long long gold = fields[kAmount].empty() ? 0 : std::atoll(fields[kAmount].c_str());
+            const std::string money = "= " + Money((long long)std::floor((double)gold * cashoutRate));
+            Ui::TextBold(money.c_str(), (int)(x + inner) - Ui::MeasureBold(money.c_str(), 22), (int)y + 11, 22, Ui::kAccent);
+        }
+        y += 60.0f + 14.0f;
+        if (Button({ x, y, inner, 50.0f }, "ТАТАХ ХҮСЭЛТ ИЛГЭЭХ", Style::Primary, true)) RequestCashout();
+        y += 56.0f;
+        if (Button({ x, y, inner, 30.0f }, "Болих", Style::Link)) Open(Screen::Gold);
+    }
+
     void PayScreen()
     {
         const bool touch = InTouchMode() && !banks.empty();
@@ -1305,7 +1655,8 @@ namespace
             Ui::Text("Төлөх дүн", (int)rx, (int)ry, 15, Ui::kTextDim);
             const std::string money = Money(invoiceAmount);
             Ui::TextBold(money.c_str(), (int)rx, (int)ry + 20, 36, Ui::kAccent);
-            Ui::Text(invoiceKind == "pack"      ? TextFormat("%d аймгийн эрх", packSize)
+            Ui::Text(invoiceKind == "gold"      ? TextFormat("%d Gold", invoiceGold)
+                     : invoiceKind == "pack"    ? TextFormat("%d аймгийн эрх", packSize)
                      : invoiceKind == "capital" ? "Улаанбаатар хот"
                                                 : "Төхөөрөмж солих",
                      (int)rx, (int)ry + 68, 16,
@@ -1383,6 +1734,8 @@ namespace
         case Screen::Sms: SmsScreen(); break;
         case Screen::Offer: OfferScreen(); break;
         case Screen::Pay: PayScreen(); break;
+        case Screen::Gold: GoldScreen(); break;
+        case Screen::Cashout: CashoutScreen(); break;
         case Screen::Message: MessageScreen(); break;
         case Screen::None: break;
         }
@@ -1448,6 +1801,57 @@ void Account::Tick()
     Finish(roomBeat);
     Finish(roomStageCall);
     Finish(battleCall);
+    Finish(roomSearchCall);
+    Finish(soldierLossCall);
+    if (soldierLossDirty && soldierLossCall.id < 0 && ServerShop())
+    {
+        // Үлдсэн тоог илгээнэ (давтан илгээвэл дахин хасахгүй)
+        soldierLossDirty = false;
+        const int target = soldierTarget;
+        soldierLossCall.id = Online::Send("POST", apiBase + "soldiers/lost/", Obj({ { "soldiers", std::to_string(target) } }), token);
+        soldierLossCall.handler = [target](int status, const Json& reply) {
+            if (status == 200)
+            {
+                ReadAccount(reply["account"]);
+                return;
+            }
+            if (status == 0 || status >= 500)
+            {
+                soldierLossDirty = true; // сүлжээ тасарсан: дахин оролдоно
+                soldierTarget = std::min(soldierTarget, target);
+            }
+        };
+    }
+    if (roomSearching && roomSearchCall.id < 0 && GetTime() >= nextRoomSearch)
+    {
+        // Сул өрөө хайна: олдтол 3 секунд тутам (60 секунд хүртэл)
+        if (GetTime() > roomSearchUntil)
+        {
+            roomSearching = false;
+            roomSearchNote = "Одоогоор сул өрөө олдсонгүй. Дараа дахин оролдоно уу";
+        }
+        else
+        {
+            nextRoomSearch = GetTime() + 3.0;
+            roomSearchCall.id = Online::Send("POST", apiBase + "rooms/join/", "{}", token);
+            roomSearchCall.handler = [](int status, const Json& reply) {
+                if (!roomSearching) return; // цуцалсан (сервер өрөөнд оруулсан бол дохиогүй тул 10 минутад гаргана)
+                if (status == 200)
+                {
+                    ReadAccount(reply["account"]);
+                    SetRoom(reply["room"]);
+                    roomJoined = roomRole == Account::RoomRole::Guest;
+                    roomSearching = false;
+                }
+                else if (status != 404 && status != 0)
+                {
+                    roomSearching = false;
+                    const std::string message = reply["message"].Str();
+                    roomSearchNote = message.empty() ? "Өрөөнд орж чадсангүй" : message;
+                }
+            };
+        }
+    }
     if (roomId >= 0 && roomBeat.id < 0 && GetTime() >= nextRoomBeat)
     {
         // Өрөөнд байгаагаа минут тутам мэдэгдэнэ (тасарвал сервер шийтгэлгүй гаргана)
@@ -1496,7 +1900,8 @@ bool Account::Update()
     {
         if (screen == Screen::Sms)
         {
-            if (GetTime() > smsExpires + 5.0) ShowMessage("Хугацаа дууссан", "Дахин оролдоно уу.", smsReset ? Screen::Reset : Screen::Register);
+            // Gold татах: хугацаа дууссаныг сервер шийдэж Gold-ийг буцаана (асуусаар байна)
+            if (GetTime() > smsExpires + 5.0 && !smsCashout) ShowMessage("Хугацаа дууссан", "Дахин оролдоно уу.", smsReset ? Screen::Reset : Screen::Register);
             else PollSms();
         }
         else if (screen == Screen::Pay)
@@ -1516,7 +1921,8 @@ bool Account::Update()
     if (screen == Screen::None)
     {
         if (Hit(badge)) ConfirmLogout();
-        if (Hit(topupBadge)) Online::OpenUrl(apiBase + "topup/");
+        if (Hit(topupBadge)) Open(Screen::Gold); // тоглоом дотроос QPay
+        if (Hit(cashoutBadge)) OpenCashout();
         return Blocking();
     }
 
@@ -1550,9 +1956,11 @@ bool Account::Update()
     }
 
     // Утасны гар дэлгэцийн доод хэсгийг дардаг: идэвхтэй талбар харагдах хэсгээс доош орвол цонхыг дээш шилжүүлнэ
-    if (nativeEdit)
+    if (nativeEdit || KeyboardVisible())
     {
-        const float visible = (float)ViewHeight() * WebVisibleFraction() - 12.0f;
+        // Гар (утасны эсвэл тоглоомын) идэвхтэй талбарыг дарвал цонхыг дээш шилжүүлнэ
+        const float visible = nativeEdit ? (float)ViewHeight() * WebVisibleFraction() - 12.0f
+                                         : (float)ViewHeight() - KeyboardHeight() - 12.0f;
         if (focusBottom > visible) panelShift -= focusBottom - visible;
         else if (panelShift < 0.0f && focusBottom < visible - 60.0f) panelShift = std::min(0.0f, panelShift + (visible - 60.0f - focusBottom));
     }
@@ -1601,8 +2009,13 @@ bool Account::Back()
     {
     case Screen::Register:
     case Screen::Reset: Open(Screen::Login); return true;
-    case Screen::Sms: Open(smsReset ? Screen::Reset : Screen::Register); return true;
+    case Screen::Sms:
+        if (smsCashout) CancelCashout(cashoutId);
+        else Open(smsReset ? Screen::Reset : Screen::Register);
+        return true;
+    case Screen::Cashout: Open(Screen::Gold); return true;
     case Screen::Offer: province = -1; Open(Screen::None); return true;
+    case Screen::Gold: Open(Screen::None); return true;
     case Screen::Pay:
         ClosePay();
         province = -1;
@@ -1647,9 +2060,10 @@ void Account::Draw()
 
 bool Account::Unlocked(int index) { return !enabled || Owns(index); }
 
-void Account::RequestStart(int index, const char* name)
+void Account::RequestStart(int index, const char* name, int skin)
 {
     province = index;
+    startSkin = skin;
     provinceName = name;
     approved = -1;
     if (!signedIn)
@@ -1680,28 +2094,86 @@ int Account::TakeApproved()
 
 void Account::TestEnter() { testEnter = true; }
 
-int Account::DrawBadge(int x, int y)
+int Account::DrawBadge(int x, int y, bool alignRight)
 {
     if (!enabled || !signedIn)
     {
-        badge = topupBadge = {};
+        badge = topupBadge = cashoutBadge = {};
         return 0;
     }
-    const std::string text = playerName + "  ·  " + std::to_string(gold) + " Gold";
-    int width = Ui::Chip(text.c_str(), x, y, Ui::kText, Ui::kAccent);
-    // Gold авах (вэб хуудас): алтан товч
-    const char* topup = "+ Gold авах";
-    topupBadge = { (float)(x + width + 6), (float)y, (float)(Ui::MeasureBold(topup, 14) + 24), 32.0f };
-    const bool topupHover = !InTouchMode() && CheckCollisionPointRec(InPointer(), topupBadge);
-    DrawRectangleRounded(topupBadge, 0.5f, 8, topupHover ? Color{ 255, 218, 110, 255 } : Color{ 242, 178, 48, 255 });
-    Ui::TextBold(topup, (int)topupBadge.x + 12, y + 8, 14, { 34, 24, 6, 255 });
-    width += 6 + (int)topupBadge.width;
-    const char* label = "Гарах";
-    badge = { (float)(x + width + 6), (float)y, (float)(Ui::Measure(label, 15) + 24), 32.0f };
-    const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), badge);
-    Ui::Panel(badge, hover ? Color{ 40, 46, 58, 220 } : Ui::kPanel, 16.0f);
-    Ui::Text(label, (int)badge.x + 12, y + 7, 15, hover ? Ui::kText : Ui::kTextDim);
-    return width + 6 + (int)badge.width;
+    // Нэг багц: [тоглогч · Gold] [+ Gold авах] [Gold татах] [гарах]: бүгд 36 px өндөр, дүрстэй
+    const float h = 36.0f, cy = (float)y + h * 0.5f;
+    const Color ink = { 34, 24, 6, 255 }, goldInk = { 255, 205, 90, 255 };
+    {
+        // Нийт өргөн (баруун ирмэгт тэгшлэхэд), ард нь нэг шилэн самбар
+        const int chipW = Ui::Measure(playerName.c_str(), 15) + Ui::MeasureBold(Thousands(gold).c_str(), 17) + 76;
+        const int total = chipW + 8 + Ui::MeasureBold("Gold авах", 15) + 56 + 8 + Ui::MeasureBold("Gold татах", 15) + 54 + 8 + (int)h;
+        if (alignRight) x -= total;
+        const Rectangle bar = { (float)x - 7.0f, (float)y - 7.0f, (float)total + 14.0f, h + 14.0f };
+        Ui::Panel(bar, { 8, 10, 14, 175 }, bar.height * 0.5f);
+        Ui::Outline(bar, { 255, 200, 90, 80 }, 1.0f, bar.height * 0.5f);
+    }
+    int width = 0;
+    // Тоглогч ба Gold: бараан хавтан, Gold-ын зоос, нэр бүдэг, тоо тод алтан
+    {
+        const std::string amount = Thousands(gold);
+        const int nameW = Ui::Measure(playerName.c_str(), 15), amountW = Ui::MeasureBold(amount.c_str(), 17);
+        const Rectangle chip = { (float)x, (float)y, (float)(nameW + amountW) + 76.0f, h };
+        Ui::Panel(chip, { 14, 18, 26, 232 }, h * 0.5f);
+        Ui::Outline(chip, { 255, 255, 255, 34 }, 1.0f, h * 0.5f);
+        Ui::Coin({ chip.x + 20.0f, cy }, 9.0f);
+        Ui::Text(playerName.c_str(), (int)chip.x + 36, (int)cy - 10, 15, Ui::kTextDim);
+        DrawCircleV({ chip.x + 44.0f + (float)nameW, cy }, 2.0f, Fade(Ui::kTextDim, 0.7f));
+        Ui::TextBold(amount.c_str(), (int)(chip.x + 54.0f + (float)nameW), (int)cy - 11, 17, goldInk);
+        Ui::Text("G", (int)(chip.x + 57.0f + (float)(nameW + amountW)), (int)cy - 8, 13, Fade(goldInk, 0.75f));
+        width = (int)chip.width;
+    }
+    // + Gold авах: алтан, дээд хагас нь тод (гэрэлтсэн), "+" тойрог дүрстэй
+    {
+        const char* label = "Gold авах";
+        topupBadge = { (float)(x + width + 8), (float)y, (float)Ui::MeasureBold(label, 15) + 56.0f, h };
+        const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), topupBadge);
+        DrawRectangleRounded(topupBadge, 0.5f, 10, hover ? Color{ 255, 222, 120, 255 } : Color{ 242, 178, 48, 255 });
+        DrawRectangleRounded({ topupBadge.x + 3.0f, topupBadge.y + 2.0f, topupBadge.width - 6.0f, h * 0.45f }, 0.6f, 8, { 255, 255, 255, 46 });
+        const Vector2 icon = { topupBadge.x + 20.0f, cy };
+        DrawCircleV(icon, 10.0f, ink);
+        DrawRectangleRec({ icon.x - 5.0f, icon.y - 1.2f, 10.0f, 2.4f }, goldInk);
+        DrawRectangleRec({ icon.x - 1.2f, icon.y - 5.0f, 2.4f, 10.0f }, goldInk);
+        Ui::TextBold(label, (int)topupBadge.x + 38, (int)cy - 10, 15, ink);
+        width += 8 + (int)topupBadge.width;
+    }
+    // Gold татах: бараан, алтан хүрээтэй, "доош сум тавиур руу" дүрс
+    {
+        const char* label = "Gold татах";
+        cashoutBadge = { (float)(x + width + 8), (float)y, (float)Ui::MeasureBold(label, 15) + 54.0f, h };
+        const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), cashoutBadge);
+        Ui::Panel(cashoutBadge, hover ? Color{ 64, 48, 14, 240 } : Color{ 30, 24, 10, 232 }, h * 0.5f);
+        Ui::Outline(cashoutBadge, Fade(goldInk, hover ? 1.0f : 0.75f), 1.5f, h * 0.5f);
+        const float ix = cashoutBadge.x + 20.0f;
+        DrawLineEx({ ix, cy - 8.0f }, { ix, cy + 3.0f }, 2.4f, goldInk);
+        DrawLineEx({ ix - 5.0f, cy - 2.0f }, { ix, cy + 3.5f }, 2.4f, goldInk);
+        DrawLineEx({ ix + 5.0f, cy - 2.0f }, { ix, cy + 3.5f }, 2.4f, goldInk);
+        DrawLineEx({ ix - 8.0f, cy + 4.0f }, { ix - 8.0f, cy + 8.0f }, 2.0f, goldInk);
+        DrawLineEx({ ix - 8.0f, cy + 8.0f }, { ix + 8.0f, cy + 8.0f }, 2.0f, goldInk);
+        DrawLineEx({ ix + 8.0f, cy + 8.0f }, { ix + 8.0f, cy + 4.0f }, 2.0f, goldInk);
+        Ui::TextBold(label, (int)cashoutBadge.x + 36, (int)cy - 10, 15, goldInk);
+        width += 8 + (int)cashoutBadge.width;
+    }
+    // Гарах: дугуй дүрст товч (хаалганаас гарах сум)
+    {
+        badge = { (float)(x + width + 8), (float)y, h, h };
+        const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), badge);
+        Ui::Panel(badge, hover ? Color{ 70, 30, 30, 235 } : Color{ 14, 18, 26, 232 }, h * 0.5f);
+        Ui::Outline(badge, hover ? Color{ 240, 110, 100, 220 } : Color{ 255, 255, 255, 40 }, 1.0f, h * 0.5f);
+        const Color c = hover ? Color{ 255, 160, 150, 255 } : Ui::kTextDim;
+        const float bx = badge.x + h * 0.5f;
+        DrawRectangleLinesEx({ bx - 9.0f, cy - 8.0f, 9.0f, 16.0f }, 2.0f, c); // хаалга
+        DrawLineEx({ bx - 3.0f, cy }, { bx + 9.0f, cy }, 2.2f, c);
+        DrawLineEx({ bx + 5.0f, cy - 4.0f }, { bx + 9.0f, cy }, 2.2f, c);
+        DrawLineEx({ bx + 5.0f, cy + 4.0f }, { bx + 9.0f, cy }, 2.2f, c);
+        width += 8 + (int)badge.width;
+    }
+    return width;
 }
 
 bool Account::ServerShop() { return enabled && signedIn; }
@@ -1710,7 +2182,16 @@ int Account::UpgradeLevel(int item) { return item >= 0 && item < kUpgradeCount ?
 
 int Account::UpgradePrice(int item)
 {
+    if (item == kSoldierUpgrade) return upgradePrices[item]; // цэрэг бүр ижил үнэтэй
     return item >= 0 && item < kUpgradeCount ? upgradePrices[item] * (upgradeLevels[item] + 1) : 0;
+}
+
+void Account::LoseSoldiers(int count)
+{
+    if (!ServerShop() || count <= 0) return;
+    upgradeLevels[kSoldierUpgrade] = std::max(0, upgradeLevels[kSoldierUpgrade] - count);
+    soldierTarget = upgradeLevels[kSoldierUpgrade];
+    soldierLossDirty = true;
 }
 
 void Account::BuyUpgrade(int item)
@@ -1735,22 +2216,65 @@ void Account::BuyUpgrade(int item)
 Account::RoomRole Account::CurrentRoomRole() { return enabled ? roomRole : RoomRole::None; }
 const std::string& Account::RoomTicket() { return roomTicket; }
 int Account::RoomProvince() { return roomProvince; }
-int Account::GoldAvailable() { return std::max(0, gold - goldLocked); }
-int Account::RoomEntry() { return roomEntry; }
+const std::string& Account::RoomCode() { return roomCode; }
+bool Account::RoomPvp() { return enabled && roomPvp; }
+bool Account::RoomCoop() { return enabled && roomCoop; }
 
-void Account::JoinRoom()
+void Account::JoinCoop(const std::string& code)
 {
-    if (!ServerShop() || request.id >= 0) return;
-    Call("POST", "rooms/join/", "{}", [](int status, const Json& reply) {
+    if (!ServerShop() || roomSearchCall.id >= 0) return;
+    roomSearching = false;
+    roomSearchNote.clear();
+    roomSearchCall.id = Online::Send("POST", apiBase + "rooms/coop/", Obj({ { "code", JsonQuote(code) } }), token);
+    roomSearchCall.handler = [](int status, const Json& reply) {
         if (status == 200)
         {
             ReadAccount(reply["account"]);
             SetRoom(reply["room"]);
-            roomJoined = roomRole == RoomRole::Guest;
+            roomJoined = roomRole == Account::RoomRole::Guest;
             return;
         }
-        Fail(status, reply);
-    }, "Өрөө хайж байна...");
+        const std::string message = reply["message"].Str();
+        roomSearchNote = status == 0 ? "Сервертэй холбогдож чадсангүй. Интернэтээ шалгана уу"
+                       : message.empty() ? "Найзын өрөөнд орж чадсангүй" : message;
+    };
+}
+int Account::GoldAvailable() { return std::max(0, gold - goldLocked); }
+int Account::RoomEntry() { return roomEntry; }
+bool Account::PremiumSkin(int skin) { return std::find(premiumSkins.begin(), premiumSkins.end(), skin) != premiumSkins.end(); }
+int Account::SkinPrice(int skin) { return skin >= 0 && skin < 8 ? skinPrices[skin] : skinPrice; }
+int Account::CoopReward() { return coopReward; }
+
+void Account::JoinRoom()
+{
+    if (!ServerShop() || roomSearching) return;
+    roomSearching = true;
+    roomSearchUntil = GetTime() + 60.0;
+    nextRoomSearch = 0.0;
+    roomSearchNote.clear();
+}
+
+bool Account::SearchingRoom() { return roomSearching; }
+void Account::CancelRoomSearch() { roomSearching = false; }
+
+bool Account::TakeSearchNote(std::string& text)
+{
+    if (roomSearchNote.empty()) return false;
+    text = std::exchange(roomSearchNote, std::string());
+    return true;
+}
+
+void Account::OpenGoldShop()
+{
+    if (ServerShop()) Open(Screen::Gold);
+}
+
+void Account::OpenCashout()
+{
+    if (!ServerShop()) return;
+    if (!cashoutKnown) ShowMessage("Gold татах", "Gold татах үйлчилгээ одоогоор ажиллахгүй байна. Дараа дахин оролдоно уу.", Screen::None);
+    else if (!cashoutEnabled) ShowMessage("Gold татах", "Gold татах түр хаалттай байна.", Screen::None);
+    else Open(Screen::Cashout);
 }
 
 bool Account::TakeJoinedRoom() { return std::exchange(roomJoined, false); }

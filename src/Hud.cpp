@@ -101,6 +101,39 @@ namespace
         DrawCircleV({ cx, cy }, 1.5f, WHITE);
     }
 
+    // Сум онов: загалмайн эргэн тойронд ташуу дөрвөн зураас (толгой: улаан, устгасан: том)
+    void DrawHitMarker(float strength, int kind)
+    {
+        if (strength <= 0.0f) return;
+        const float cx = (float)ViewWidth() * 0.5f, cy = (float)ViewHeight() * 0.5f;
+        const float inner = kind == 2 ? 9.0f : 7.0f, outer = (kind == 2 ? 20.0f : 14.0f) + 4.0f * (1.0f - strength);
+        const Color color = Fade(kind == 1 ? Color{ 255, 70, 60, 255 } : kind == 2 ? Color{ 255, 200, 70, 255 } : WHITE, std::min(1.0f, strength * 1.6f));
+        const float thick = kind == 0 ? 2.0f : 3.0f;
+        for (const Vector2 d : { Vector2{ 1, 1 }, Vector2{ -1, 1 }, Vector2{ 1, -1 }, Vector2{ -1, -1 } })
+        {
+            const Vector2 a = { cx + d.x * inner * 0.7071f, cy + d.y * inner * 0.7071f };
+            const Vector2 b = { cx + d.x * outer * 0.7071f, cy + d.y * outer * 0.7071f };
+            DrawLineEx(a, b, thick + 2.0f, Fade(BLACK, 0.45f * strength));
+            DrawLineEx(a, b, thick, color);
+        }
+    }
+
+    // Хаанаас цохиулсан: загалмайг тойрсон улаан нум (тухайн зүгт)
+    void DrawDamageArrow(float strength, float angle)
+    {
+        if (strength <= 0.0f) return;
+        const Vector2 c = { (float)ViewWidth() * 0.5f, (float)ViewHeight() * 0.5f };
+        const float radius = std::min((float)ViewHeight() * 0.22f, 150.0f);
+        const float degrees = angle * RAD2DEG - 90.0f; // raylib: 0 = баруун, цагийн зүүний дагуу
+        DrawRing(c, radius, radius + 9.0f, degrees - 26.0f, degrees + 26.0f, 24, Fade({ 230, 30, 30, 255 }, 0.75f * strength));
+        const float a = angle - PI * 0.5f;
+        const Vector2 tip = { c.x + std::cos(a) * (radius + 26.0f), c.y + std::sin(a) * (radius + 26.0f) };
+        const Vector2 l = { c.x + std::cos(a - 0.12f) * (radius + 11.0f), c.y + std::sin(a - 0.12f) * (radius + 11.0f) };
+        const Vector2 r = { c.x + std::cos(a + 0.12f) * (radius + 11.0f), c.y + std::sin(a + 0.12f) * (radius + 11.0f) };
+        DrawTriangle(tip, l, r, Fade({ 230, 30, 30, 255 }, 0.85f * strength));
+        DrawTriangle(tip, r, l, Fade({ 230, 30, 30, 255 }, 0.85f * strength));
+    }
+
     // Цохиулсан үед: дэлгэцийн ирмэгээс дотогш бүдгэрэх улаан туяа.
     void DrawDamage(float strength)
     {
@@ -194,6 +227,26 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
 
     if (info.scoped) DrawScope();
     else DrawCrosshair();
+    if (info.tutorial)
+    {
+        // Шинэ тоглогчийн заавар: доод голд, зэвсгийн мөрийн дээр
+        const int size = info.touch ? 22 : 20;
+        const int textWidth = Ui::MeasureBold(info.tutorial, size);
+        const float cardW = (float)std::max(textWidth + 48, 360), cardH = (float)size + 52.0f;
+        const Rectangle card = { ((float)width - cardW) * 0.5f, (float)height - (info.touch ? 330.0f : 200.0f), cardW, cardH };
+        Ui::Panel(card, { 12, 16, 22, 230 }, 12.0f);
+        Ui::Outline(card, Fade(Ui::kAccent, 0.8f), 1.5f, 12.0f);
+        const char* label = TextFormat("ЗААВАР  %d / %d", info.tutorialStep + 1, info.tutorialSteps);
+        Ui::TextBold(label, (int)(card.x + 24.0f), (int)card.y + 10, 13, Ui::kAccent);
+        for (int i = 0; i < info.tutorialSteps; ++i)
+        {
+            const Vector2 dot = { card.x + card.width - 24.0f - (float)(info.tutorialSteps - 1 - i) * 14.0f, card.y + 18.0f };
+            DrawCircleV(dot, 4.0f, i < info.tutorialStep ? Ui::kAccent : i == info.tutorialStep ? Ui::kText : Fade(Ui::kText, 0.25f));
+        }
+        Ui::TextBold(info.tutorial, (int)(card.x + (card.width - (float)textWidth) * 0.5f), (int)card.y + 30, size, Ui::kText);
+    }
+    DrawHitMarker(info.hitMarker, info.hitMarkerKind);
+    DrawDamageArrow(info.damageArrow, info.damageAngle);
 
     // --- Зүүн дээд: даалгаврын карт (аймаг, одоогийн зорилт, зай) ---
     {
@@ -474,7 +527,7 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
             { "Z", "хэвтэх" },         { "LMB", "буудах" },        { "RMB", "онилох" },           { "R", "цэнэглэх" },
             { "1–5", "зэвсэг" },       { "TAB", "гишүүн солих" }, { "F", "унах / хаалга / цонх" }, { "E", "үйлдэл" },
             { "Q", "журнал" },         { "M", "газрын зураг" },    { "ESC", "цэс, ухрах" },            { "V", "камер 1-р / 3-р" },
-            { "H", "энд бай (гишүүн)" }, { "F10", "тусламж нуух" },
+            { "H", "энд бай (гишүүн)" }, { "G", "бүгд надад ир" }, { "B", "байг онил (баг)" }, { "F10", "тусламж нуух" },
         };
         const int columns = 2, rowHeight = 26;
         const int rows = (int)(sizeof(help) / sizeof(help[0]) + columns - 1) / columns;

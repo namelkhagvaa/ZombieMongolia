@@ -76,6 +76,14 @@ public:
     // Том ертөнцийн барилга, замыг ингэж хуваавал зөвхөн ойрын хэсгийг зурах боломжтой болно.
     std::vector<MeshPiece> UploadPartitioned(float cellSize) const;
 
+    // Гурвалжны мужуудыг (first, count; өсөх дарааллаар, давхцахгүй) энэ builder-ээс тасдаж, шинэ builder-т
+    // дараалуулан хийнэ.
+    MeshBuilder Extract(const std::vector<std::pair<size_t, size_t>>& ranges);
+    // Бүлэг (first, count гурвалжин) бүрийг бүхлээр нь нэг нүдэнд хийж хуваана; бүлэг бүрийн хэсэг ба түүн дэх
+    // эхний оройг буцаана (дараа нь UpdateMeshBuffer-оор нуух).
+    std::vector<MeshPiece> UploadGroups(float cellSize, const std::vector<std::pair<size_t, size_t>>& groups,
+                                        std::vector<int>& groupPiece, std::vector<int>& groupStart) const;
+
 private:
     void Vertex(Vector3 position, Color color);
 

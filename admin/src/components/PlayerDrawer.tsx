@@ -129,7 +129,7 @@ export default function PlayerDrawer({ playerId, onClose, onChanged }: { playerI
             <Col xs={12} sm={6}>
               <Card size="small">
                 <Statistic
-                  title="Gold"
+                  title={`Gold · хожсон ${player.gold_won ?? 0} · урамшуулал ${player.gold_bonus ?? 0}`}
                   value={player.gold}
                   valueStyle={{ color: '#f0b030' }}
                   suffix={player.gold_locked ? <span style={{ fontSize: 13 }}>{`(${player.gold_locked} барьцаанд)`}</span> : undefined}

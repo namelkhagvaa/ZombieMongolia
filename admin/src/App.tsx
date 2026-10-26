@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import { App as AntApp, Avatar, Button, ConfigProvider, Dropdown, Grid, Layout, Menu, Spin, Tooltip, theme } from 'antd';
 import mnMN from 'antd/locale/mn_MN';
 import {
+  BankOutlined,
   DashboardOutlined,
   FileTextOutlined,
   FireOutlined,
@@ -24,6 +25,7 @@ import InvoicesPage from './pages/Invoices';
 import EventsPage from './pages/Events';
 import SettingsPage from './pages/Settings';
 import RoomsPage from './pages/Rooms';
+import CashoutsPage from './pages/Cashouts';
 
 const { Sider, Header, Content } = Layout;
 const GOLD = '#f0b030';
@@ -42,6 +44,7 @@ const MENU = [
   { key: '/', icon: <DashboardOutlined />, label: 'Хянах самбар' },
   { key: '/players', icon: <TeamOutlined />, label: 'Тоглогчид' },
   { key: '/invoices', icon: <WalletOutlined />, label: 'Төлбөр' },
+  { key: '/cashouts', icon: <BankOutlined />, label: 'Gold татах' },
   { key: '/rooms', icon: <FireOutlined />, label: 'Өрөө, тулаан' },
   { key: '/events', icon: <FileTextOutlined />, label: 'Үйлдлийн лог' },
   { key: '/settings', icon: <SettingOutlined />, label: 'Тохиргоо' },
@@ -134,6 +137,7 @@ function Shell({ user, onLogout, dark, setDark }: { user: StaffUser; onLogout: (
             <Route path="/players" element={<PlayersPage />} />
             <Route path="/players/:id" element={<PlayersPage />} />
             <Route path="/invoices" element={<InvoicesPage />} />
+            <Route path="/cashouts" element={<CashoutsPage />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/rooms" element={<RoomsPage />} />
             <Route path="/settings" element={<SettingsPage />} />

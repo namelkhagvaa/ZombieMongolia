@@ -47,6 +47,8 @@ World::~World()
     UnloadPieces(settlementStructures);
     UnloadPieces(settlementShadows);
     UnloadPieces(settlementGlass);
+    UnloadPieces(fences);
+    UnloadPieces(settlementFences);
     UnloadPieces(boundaryPosts);
     UnloadPieces(boundaryBand);
 }
@@ -56,23 +58,33 @@ void World::BuildStatic()
     UnloadPieces(structures);
     UnloadPieces(shadows);
     UnloadPieces(glass);
+    UnloadPieces(fences);
+    UnloadPieces(settlementFences);
     obstacles.clear();
     interiors.clear();
     doors.clear();
     passages.clear();
+    walls.clear();
+    panels.clear();
+    brokenPanels.clear();
 
     MeshBuilder solidBuilder, shadowBuilder, glassBuilder;
     BuildStaticStructures(layout, terrain, obstacles, solidBuilder, shadowBuilder, glassBuilder, interiors, doors,
-                          passages);
+                          passages, walls, panels);
+    fences = ExtractFences(solidBuilder, 0, false);
+    staticPanelCount = panels.size();
     staticPassageCount = passages.size();
+    staticWallCount = walls.size();
+    staticInteriorCount = interiors.size();
+    staticDoorCount = doors.size();
 
     structures = solidBuilder.UploadPartitioned(kPieceSize);
     shadows = shadowBuilder.UploadPartitioned(kPieceSize);
     glass = glassBuilder.UploadPartitioned(kPieceSize);
     staticObstacleCount = obstacles.size();
 
-    TraceLog(LOG_INFO, "WORLD: %d static structure triangles in %d pieces, %d colliders", solidBuilder.TriangleCount(),
-             (int)structures.size(), (int)obstacles.size());
+    TraceLog(LOG_INFO, "WORLD: %d static structure triangles in %d pieces, %d colliders, %d fence walls",
+             solidBuilder.TriangleCount(), (int)structures.size(), (int)obstacles.size(), (int)walls.size());
 }
 
 void World::SwitchCity(int province)
@@ -268,17 +280,23 @@ void World::BuildSettlements(int variant)
     UnloadPieces(settlementStructures);
     UnloadPieces(settlementShadows);
     UnloadPieces(settlementGlass);
+    UnloadPieces(settlementFences);
     obstacles.resize(staticObstacleCount);
-    interiors.clear();
-    doors.clear();
+    interiors.resize(staticInteriorCount);
+    doors.resize(staticDoorCount);
     passages.resize(staticPassageCount);
+    walls.resize(staticWallCount);
+    panels.resize(staticPanelCount);
+    brokenPanels.erase(std::remove_if(brokenPanels.begin(), brokenPanels.end(), [&](int i) { return (size_t)i >= staticPanelCount; }),
+                       brokenPanels.end());
 
     // Буянт-Ухаа нисэх буудлын хучилт зөвхөн хуучин (зохиомол) Улаанбаатарын үед (өвс ургахгүй, засмал замын хурд)
     layout.SetAirfieldActive(variant == kUlaanbaatarProvince && cityProvince < 0);
 
     MeshBuilder solidBuilder, shadowBuilder, glassBuilder;
     BuildSettlementStructures(variant, layout, terrain, obstacles, solidBuilder, shadowBuilder, glassBuilder, interiors,
-                              doors, passages);
+                              doors, passages, walls, panels);
+    settlementFences = ExtractFences(solidBuilder, staticPanelCount, true);
 
     settlementStructures = solidBuilder.UploadPartitioned(kPieceSize);
     settlementShadows = shadowBuilder.UploadPartitioned(kPieceSize);
@@ -308,6 +326,43 @@ void World::BuildObstacleGrid()
 {
     gridSide = (int)std::ceil(kWorldHalfExtent * 2.0f / kGridCell);
     obstacleGrid.assign((size_t)gridSide * gridSide, {});
+    wallGrid.assign((size_t)gridSide * gridSide, {});
+    panelGrid.assign((size_t)gridSide * gridSide, {});
+    for (int i = 0; i < (int)panels.size(); ++i)
+    {
+        const Vector2 mid = Vector2Lerp(panels[(size_t)i].a, panels[(size_t)i].b, 0.5f);
+        panelGrid[(size_t)GridCell(mid.y) * gridSide + GridCell(mid.x)].push_back(i);
+    }
+    interiorGrid.assign((size_t)gridSide * gridSide, {});
+    doorGrid.assign((size_t)gridSide * gridSide, {});
+    for (int i = 0; i < (int)interiors.size(); ++i)
+    {
+        const Interior& r = interiors[(size_t)i];
+        const float reach = r.round ? r.halfX : std::sqrt(r.halfX * r.halfX + r.halfZ * r.halfZ);
+        for (int z = GridCell(r.center.y - reach); z <= GridCell(r.center.y + reach); ++z)
+        {
+            for (int x = GridCell(r.center.x - reach); x <= GridCell(r.center.x + reach); ++x) interiorGrid[(size_t)z * gridSide + x].push_back(i);
+        }
+    }
+    for (int i = 0; i < (int)doors.size(); ++i)
+    {
+        const Vector3 c = doors[(size_t)i].Center();
+        const float reach = doors[(size_t)i].width + 0.5f;
+        for (int z = GridCell(c.z - reach); z <= GridCell(c.z + reach); ++z)
+        {
+            for (int x = GridCell(c.x - reach); x <= GridCell(c.x + reach); ++x) doorGrid[(size_t)z * gridSide + x].push_back(i);
+        }
+    }
+    for (int i = 0; i < (int)walls.size(); ++i)
+    {
+        const WallSegment& w = walls[(size_t)i];
+        const int x0 = GridCell(std::min(w.a.x, w.b.x)), x1 = GridCell(std::max(w.a.x, w.b.x));
+        const int z0 = GridCell(std::min(w.a.y, w.b.y)), z1 = GridCell(std::max(w.a.y, w.b.y));
+        for (int z = z0; z <= z1; ++z)
+        {
+            for (int x = x0; x <= x1; ++x) wallGrid[(size_t)z * gridSide + x].push_back(i);
+        }
+    }
 
     for (int i = 0; i < (int)obstacles.size(); ++i)
     {
@@ -471,6 +526,81 @@ int World::NearestDoor(Vector3 position, float maxDistance) const
     return best;
 }
 
+std::vector<MeshPiece> World::ExtractFences(MeshBuilder& solid, size_t from, bool settlement)
+{
+    std::vector<std::pair<size_t, size_t>> ranges;
+    for (size_t i = from; i < panels.size(); ++i) ranges.push_back({ panels[i].first, panels[i].count });
+    MeshBuilder fence = solid.Extract(ranges);
+    std::vector<std::pair<size_t, size_t>> groups;
+    size_t next = 0;
+    for (size_t i = from; i < panels.size(); ++i)
+    {
+        groups.push_back({ next, panels[i].count });
+        next += panels[i].count;
+    }
+    std::vector<int> piece, start;
+    std::vector<MeshPiece> pieces = fence.UploadGroups(kPieceSize, groups, piece, start);
+    for (size_t i = from; i < panels.size(); ++i)
+    {
+        panels[i].settlement = settlement;
+        panels[i].piece = piece[i - from];
+        panels[i].vertexStart = start[i - from];
+    }
+    return pieces;
+}
+
+void World::BreakPanel(int index, Vector2 direction)
+{
+    FencePanel& panel = panels[(size_t)index];
+    panel.broken = true;
+    const Vector2 along = Vector2Normalize(Vector2Subtract(panel.b, panel.a));
+    panel.fall = { -along.y, along.x };
+    if (Vector2DotProduct(panel.fall, direction) < 0.0f) panel.fall = Vector2Negate(panel.fall);
+    brokenPanels.push_back(index);
+    // Мөргөлдөөнгүй болгоно (торын нүднүүдэд үлдэнэ, өндөр нь хаахгүй)
+    if (panel.wall >= 0 && panel.wall < (int)walls.size()) walls[(size_t)panel.wall].top = walls[(size_t)panel.wall].bottom = -1.0e6f;
+    if (panel.obstacle >= 0 && panel.obstacle < (int)obstacles.size())
+    {
+        obstacles[(size_t)panel.obstacle].center.y = -1.0e6f;
+        obstacles[(size_t)panel.obstacle].size = { 0.0f, 0.0f, 0.0f };
+    }
+    // Геометрийг нуух: гурвалжнуудыг нэг цэг болгоно (зурагдахгүй)
+    const std::vector<MeshPiece>& list = panel.settlement ? settlementFences : fences;
+    if (panel.piece >= 0 && panel.piece < (int)list.size() && list[(size_t)panel.piece].mesh.vertexCount > 0)
+    {
+        const std::vector<float> collapsed(panel.count * 9, 0.0f);
+        UpdateMeshBuffer(list[(size_t)panel.piece].mesh, 0, collapsed.data(), (int)(collapsed.size() * sizeof(float)),
+                         panel.vertexStart * 3 * (int)sizeof(float));
+    }
+}
+
+int World::BreakFences(Vector3 position, float radius, Vector2 direction, float speed)
+{
+    if (panelGrid.empty()) return 0;
+    int broken = 0;
+    const Vector2 at = { position.x, position.z };
+    for (int cz = GridCell(position.z - kGridCell); cz <= GridCell(position.z + kGridCell); ++cz)
+    {
+        for (int cx = GridCell(position.x - kGridCell); cx <= GridCell(position.x + kGridCell); ++cx)
+        {
+            for (int index : panelGrid[(size_t)cz * gridSide + cx])
+            {
+                const FencePanel& panel = panels[(size_t)index];
+                if (panel.broken || speed < panel.breakSpeed) continue;
+                const Vector2 ab = Vector2Subtract(panel.b, panel.a);
+                const float t = Clamp(Vector2DotProduct(Vector2Subtract(at, panel.a), ab) / std::max(1e-4f, Vector2DotProduct(ab, ab)), 0.0f, 1.0f);
+                const Vector2 closest = Vector2Add(panel.a, Vector2Scale(ab, t));
+                const Vector2 to = Vector2Subtract(closest, at);
+                if (Vector2Length(to) > radius || Vector2DotProduct(to, direction) <= 0.0f) continue;
+                if (std::fabs(GroundHeight(closest.x, closest.y) - position.y) > 2.0f) continue;
+                BreakPanel(index, direction);
+                ++broken;
+            }
+        }
+    }
+    return broken;
+}
+
 void World::SetDoorOpen(int index, bool open)
 {
     doors[index].open = open;
@@ -561,14 +691,11 @@ void World::KeepOutOfSafeRooms(Vector3& position, float radius) const
 
 int World::InteriorAt(float x, float z) const
 {
-    for (int i = 0; i < (int)interiors.size(); ++i)
+    if (interiorGrid.empty()) return -1;
+    // Торын нүдний барилгууд л (хотод мянга гаруй барилга)
+    for (int i : interiorGrid[(size_t)GridCell(z) * gridSide + GridCell(x)])
     {
-        // Хурдан шүүлт: ихэнх барилга хол байдаг
-        if (std::fabs(interiors[i].center.x - x) > 12.0f || std::fabs(interiors[i].center.y - z) > 12.0f) continue;
-        if (interiors[i].Contains(x, z))
-        {
-            return i;
-        }
+        if (interiors[(size_t)i].Contains(x, z)) return i;
     }
     return -1;
 }
@@ -597,6 +724,22 @@ void World::DrawDoors(Vector3 viewPosition) const
         DrawCubeV({ 0.0f, door.height * 0.25f, door.width * 0.5f }, { 0.09f, 0.08f, door.width * 0.9f }, trim);
         DrawCubeV({ 0.0f, door.height * 0.75f, door.width * 0.5f }, { 0.09f, 0.08f, door.width * 0.9f }, trim);
         DrawCubeV({ 0.0f, door.height * 0.5f, door.width * 0.85f }, { 0.14f, 0.1f, 0.06f }, { 190, 170, 110, 255 });
+        rlPopMatrix();
+    }
+
+    // Унаагаар нураасан хашааны хэсэг: газар хэвтэнэ
+    for (int index : brokenPanels)
+    {
+        const FencePanel& panel = panels[(size_t)index];
+        const Vector2 mid = Vector2Lerp(panel.a, panel.b, 0.5f);
+        if (std::fabs(mid.x - viewPosition.x) > kDoorDrawDistance || std::fabs(mid.y - viewPosition.z) > kDoorDrawDistance) continue;
+        const Vector2 along = Vector2Normalize(Vector2Subtract(panel.b, panel.a));
+        const Vector2 lying = Vector2Add(mid, Vector2Scale(panel.fall, panel.height * 0.5f + 0.1f));
+        rlPushMatrix();
+        rlTranslatef(lying.x, GroundHeight(lying.x, lying.y) + 0.05f, lying.y);
+        rlRotatef(std::atan2(along.x, along.y) * RAD2DEG, 0.0f, 1.0f, 0.0f);
+        rlRotatef(4.0f, 1.0f, 0.0f, 0.0f); // бага зэрэг хазгай
+        DrawCubeV({ 0.0f, 0.0f, 0.0f }, { panel.height, 0.07f, Vector2Distance(panel.a, panel.b) }, ScaleColor(panel.color, 0.8f));
         rlPopMatrix();
     }
 }
@@ -703,7 +846,49 @@ void World::FitWindowPassages()
     TraceLog(LOG_INFO, "WORLD: window passages: %d moved past furniture or fences, %d removed", moved, removed);
 }
 
-void World::ResolveHorizontal(Vector3& feetPos, float radius, float height, float stepHeight) const
+namespace
+{
+    // Тойрог (center, radius)-ийг a-b хэрчмээс (зузаан thickness) хэвтээ чиглэлд түлхэж гаргана.
+    void PushOutOfSegment(Vector2 a, Vector2 b, float thickness, Vector3& feetPos, float radius)
+    {
+        const Vector2 ab = Vector2Subtract(b, a);
+        const float lengthSq = Vector2LengthSqr(ab);
+        const Vector2 p = { feetPos.x, feetPos.z };
+        const float t = lengthSq > 1e-8f ? std::clamp(Vector2DotProduct(Vector2Subtract(p, a), ab) / lengthSq, 0.0f, 1.0f) : 0.0f;
+        const Vector2 closest = Vector2Add(a, Vector2Scale(ab, t));
+        Vector2 away = Vector2Subtract(p, closest);
+        const float limit = radius + thickness;
+        const float distSq = Vector2LengthSqr(away);
+        if (distSq >= limit * limit) return;
+        float dist = std::sqrt(distSq);
+        if (dist < 1e-4f)
+        {
+            // Яг шугам дээр: шугамын перпендикуляр зүг рүү
+            const float length = std::sqrt(std::max(lengthSq, 1e-8f));
+            away = { -ab.y / length, ab.x / length };
+            dist = 1.0f;
+            feetPos.x = closest.x + away.x * limit;
+            feetPos.z = closest.y + away.y * limit;
+            return;
+        }
+        feetPos.x = closest.x + away.x / dist * limit;
+        feetPos.z = closest.y + away.y / dist * limit;
+    }
+
+    // a-b ба c-d хэрчмүүд огтлолцох бол a-b дагуух хувь (0..1), үгүй бол -1
+    float SegmentHit(Vector2 a, Vector2 b, Vector2 c, Vector2 d)
+    {
+        const Vector2 r = Vector2Subtract(b, a), s = Vector2Subtract(d, c);
+        const float denom = r.x * s.y - r.y * s.x;
+        if (std::fabs(denom) < 1e-8f) return -1.0f;
+        const Vector2 ac = Vector2Subtract(c, a);
+        const float t = (ac.x * s.y - ac.y * s.x) / denom;
+        const float u = (ac.x * r.y - ac.y * r.x) / denom;
+        return t >= 0.0f && t <= 1.0f && u >= 0.0f && u <= 1.0f ? t : -1.0f;
+    }
+}
+
+void World::ResolveHorizontal(Vector3& feetPos, float radius, float height, float stepHeight, bool person) const
 {
     // Зөвхөн ойр орчмын нүднүүдийн саадуудыг шалгана.
     const int x0 = GridCell(feetPos.x - radius), x1 = GridCell(feetPos.x + radius);
@@ -730,16 +915,46 @@ void World::ResolveHorizontal(Vector3& feetPos, float radius, float height, floa
         }
     }
 
-    // Хаалттай (эсвэл дөнгөж хаагдаж буй) хаалганууд
-    for (const Door& door : doors)
+    if (!wallGrid.empty())
     {
-        if (door.swing > 0.5f) continue;
-        if (std::fabs(door.hinge.x - feetPos.x) > 4.0f || std::fabs(door.hinge.z - feetPos.z) > 4.0f) continue;
-
-        const Obstacle blocker = door.Blocker();
-        if (blocker.Top() > feetPos.y + stepHeight && blocker.Bottom() < feetPos.y + height)
+        // Хашаа: налуу нимгэн хана (хүн, зомби, унаа бүгд нэвтрэхгүй)
+        for (int cz = z0; cz <= z1; ++cz)
         {
-            PushOutOfBox(blocker, feetPos, radius);
+            for (int cx = x0; cx <= x1; ++cx)
+            {
+                for (int index : wallGrid[(size_t)cz * gridSide + cx])
+                {
+                    const WallSegment& w = walls[(size_t)index];
+                    if (w.top <= feetPos.y + stepHeight || w.bottom >= feetPos.y + height) continue;
+                    PushOutOfSegment(w.a, w.b, w.halfThickness, feetPos, person ? radius : radius * 0.6f);
+                }
+            }
+        }
+    }
+    if (person)
+    {
+        // Зогсож буй (удаан явж буй) унаа
+        for (const VehicleBlocker& v : vehicleBlockers)
+        {
+            if (std::fabs(v.a.x - feetPos.x) > 8.0f || std::fabs(v.a.y - feetPos.z) > 8.0f) continue;
+            if (v.top <= feetPos.y + stepHeight || v.bottom >= feetPos.y + height) continue;
+            PushOutOfSegment(v.a, v.b, v.radius, feetPos, radius);
+        }
+    }
+
+    // Хаалттай (эсвэл дөнгөж хаагдаж буй) хаалганууд (торын нүдээр)
+    if (!doorGrid.empty())
+    {
+        for (int index : doorGrid[(size_t)GridCell(feetPos.z) * gridSide + GridCell(feetPos.x)])
+        {
+            const Door& door = doors[(size_t)index];
+            if (door.swing > 0.5f) continue;
+            if (std::fabs(door.hinge.x - feetPos.x) > 4.0f || std::fabs(door.hinge.z - feetPos.z) > 4.0f) continue;
+            const Obstacle blocker = door.Blocker();
+            if (blocker.Top() > feetPos.y + stepHeight && blocker.Bottom() < feetPos.y + height)
+            {
+                PushOutOfBox(blocker, feetPos, radius);
+            }
         }
     }
 
@@ -752,6 +967,104 @@ void World::ResolveHorizontal(Vector3& feetPos, float radius, float height, floa
     const float limit = halfSize - radius;
     feetPos.x = Clamp(feetPos.x, -limit, limit);
     feetPos.z = Clamp(feetPos.z, -limit, limit);
+}
+
+float World::WallRayDistance(Ray ray, float maxDistance) const
+{
+    // Сум, камер хаадаг налуу хана (хотын байшин): туяаны хэвтээ төсөөллийг хэрчимтэй огтлолцуулна
+    float distance = maxDistance;
+    if (wallGrid.empty()) return distance;
+    const Vector2 from = { ray.position.x, ray.position.z };
+    const Vector2 to = { ray.position.x + ray.direction.x * maxDistance, ray.position.z + ray.direction.z * maxDistance };
+    const int x0 = GridCell(std::min(from.x, to.x)), x1 = GridCell(std::max(from.x, to.x));
+    const int z0 = GridCell(std::min(from.y, to.y)), z1 = GridCell(std::max(from.y, to.y));
+    for (int cz = z0; cz <= z1; ++cz)
+    {
+        for (int cx = x0; cx <= x1; ++cx)
+        {
+            for (int index : wallGrid[(size_t)cz * gridSide + cx])
+            {
+                const WallSegment& w = walls[(size_t)index];
+                if (!w.blocksRays) continue;
+                const float t = SegmentHit(from, to, w.a, w.b);
+                if (t < 0.0f) continue;
+                const float along = t * maxDistance;
+                const float y = ray.position.y + ray.direction.y * along;
+                if (y >= w.bottom && y <= w.top && along < distance) distance = along;
+            }
+        }
+    }
+    return distance;
+}
+
+bool World::CrossesWall(Vector2 a, Vector2 b, float feetY) const
+{
+    if (wallGrid.empty()) return false;
+    const int x0 = GridCell(std::min(a.x, b.x)), x1 = GridCell(std::max(a.x, b.x));
+    const int z0 = GridCell(std::min(a.y, b.y)), z1 = GridCell(std::max(a.y, b.y));
+    for (int cz = z0; cz <= z1; ++cz)
+    {
+        for (int cx = x0; cx <= x1; ++cx)
+        {
+            for (int index : wallGrid[(size_t)cz * gridSide + cx])
+            {
+                const WallSegment& w = walls[(size_t)index];
+                if (w.top <= feetY + 0.3f || w.bottom >= feetY + 1.6f) continue;
+                if (SegmentHit(a, b, w.a, w.b) >= 0.0f) return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool World::FindVault(Vector3 feet, Vector2 dir, float reach, float radius, float maxRise, Passage& out) const
+{
+    if (wallGrid.empty()) return false;
+    const Vector2 from = { feet.x, feet.z }, to = Vector2Add(from, Vector2Scale(dir, reach));
+    const int x0 = GridCell(std::min(from.x, to.x) - 0.5f), x1 = GridCell(std::max(from.x, to.x) + 0.5f);
+    const int z0 = GridCell(std::min(from.y, to.y) - 0.5f), z1 = GridCell(std::max(from.y, to.y) + 0.5f);
+    const WallSegment* best = nullptr;
+    float bestT = 2.0f;
+    for (int cz = z0; cz <= z1; ++cz)
+    {
+        for (int cx = x0; cx <= x1; ++cx)
+        {
+            for (int index : wallGrid[(size_t)cz * gridSide + cx])
+            {
+                const WallSegment& w = walls[(size_t)index];
+                const float rise = w.top - feet.y;
+                if (!w.climbable || rise > maxRise || rise < 0.3f || w.bottom > feet.y + 1.0f) continue;
+                const float t = SegmentHit(from, to, w.a, w.b);
+                if (t >= 0.0f && t < bestT)
+                {
+                    bestT = t;
+                    best = &w;
+                }
+            }
+        }
+    }
+    if (!best) return false;
+    const float wallDistance = bestT * reach;
+    // Цаад талын чөлөөт газар (хашааны ард өөр хашаа, саад байвал бага зэрэг цааш)
+    for (float extra : { 0.45f, 0.85f })
+    {
+        const Vector2 land = Vector2Add(from, Vector2Scale(dir, wallDistance + best->halfThickness + radius + extra));
+        Vector3 landing = { land.x, terrain.HeightAt(land.x, land.y), land.y };
+        landing.y = SurfaceHeightAt(land.x, land.y, landing.y + 0.5f);
+        Vector3 resolved = landing;
+        ResolveHorizontal(resolved, radius, 1.7f, 0.3f);
+        if (Vector2Distance({ resolved.x, resolved.z }, land) > 0.2f || std::fabs(landing.y - feet.y) > 1.5f) continue;
+        if (CrossesWall({ land.x, land.y }, Vector2Add(from, Vector2Scale(dir, wallDistance + best->halfThickness + 0.02f)), landing.y)) continue;
+        out = {};
+        out.from = feet;
+        out.to = landing;
+        out.kind = PassageKind::FenceOver;
+        out.facing = std::atan2(dir.x, dir.y);
+        out.wall = wallDistance;
+        out.top = best->top;
+        return true;
+    }
+    return false;
 }
 
 float World::DoorRayDistance(Ray ray, float maxDistance) const
@@ -814,7 +1127,7 @@ float World::ClipDistance(Vector3 from, Vector3 dir, float maxDistance) const
             break;
         }
     }
-    return std::max(distance, 0.5f);
+    return std::max(0.5f, std::min(distance, WallRayDistance(ray, maxDistance) - margin));
 }
 
 float World::RayDistance(Ray ray, float maxDistance) const
@@ -872,7 +1185,7 @@ float World::RayDistance(Ray ray, float maxDistance) const
         }
         previous = current;
     }
-    return distance;
+    return std::min(distance, WallRayDistance(ray, maxDistance));
 }
 
 // ---------------------------------------------------------------- Зураглал
@@ -888,6 +1201,8 @@ void World::Draw(const Camera3D& camera, const Material& material, const Materia
     terrain.Draw(camera, groundMaterial, detailMaterial, detailDistance);
     DrawPieces(structures, material, view, kStructureDistance);
     DrawPieces(settlementStructures, material, view, kStructureDistance);
+    DrawPieces(fences, material, view, kStructureDistance);
+    DrawPieces(settlementFences, material, view, kStructureDistance);
     DrawPieces(boundaryPosts, material, view, kBoundaryDistance);
 
     // Сүүдэр: газар дээр наалдсан хагас тунгалаг давхарга, гүний буферт бичихгүй.
@@ -911,6 +1226,8 @@ void World::DrawShadowCasters(Vector3 center, float radius, const Material& mate
     terrain.DrawShadowCasters(center, radius, material);
     DrawPieces(structures, material, all, radius);
     DrawPieces(settlementStructures, material, all, radius);
+    DrawPieces(fences, material, all, radius);
+    DrawPieces(settlementFences, material, all, radius);
     rlEnableBackfaceCulling();
 }
 

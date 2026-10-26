@@ -37,6 +37,22 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(raylib)
 
+# raylib-ийн үндсэн vertex shader (DrawTriangle3D, DrawCube, DrawLine3D г.м.) OpenGL ES дээр mediump: олон утасны GPU
+# үүнийг 16 битээр тооцдог тул мянган метрийн ертөнцийн координатад ~2 м нарийвчлалтай болж, хөтлөгч сум, сумны мөр
+# чичирч хэлбэр нь эвдэрдэг байсан (компьютер үргэлж highp). Vertex shader-т highp заавал дэмжигддэг.
+set(RLGL_HEADER ${raylib_SOURCE_DIR}/src/rlgl.h)
+file(READ ${RLGL_HEADER} RLGL_TEXT)
+set(RLGL_PATCHED "${RLGL_TEXT}")
+foreach(api "ES3 (WebGL 2)" "ES2 (WebGL)")
+    string(REPLACE "\"precision mediump float;           \\n\"     // Precision required for OpenGL ${api} (on some browsers)"
+                   "\"precision highp float;             \\n\"     // Precision required for OpenGL ${api} (on some browsers)"
+                   RLGL_PATCHED "${RLGL_PATCHED}")
+endforeach()
+if(NOT RLGL_PATCHED STREQUAL RLGL_TEXT)
+    file(WRITE ${RLGL_HEADER} "${RLGL_PATCHED}")
+    message(STATUS "raylib: default vertex shader set to highp")
+endif()
+
 # Wi-Fi дээрх хамтарсан тоглолт: ENet (UDP, Android ба Windows дээр ажилладаг жижиг сан)
 FetchContent_Declare(
     enet
@@ -48,6 +64,9 @@ FetchContent_MakeAvailable(enet)
 set(GAME_SOURCES
     main.cpp
     src/Account.cpp
+    src/Profile.cpp
+    src/ProvinceMap.cpp
+    src/WorldEvents.cpp
     src/Json.cpp
     src/Online.cpp
     src/Airstrike.cpp

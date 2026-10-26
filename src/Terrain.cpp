@@ -170,12 +170,13 @@ void Terrain::Rebuild()
             }
             if (layout.HasDem())
             {
-                // Газрын жинхэнэ өндөр (SRTM): тэгш бүсүүд (застав, ШТС, хот айл...) төвийнхөө өндөрт тэгшлэгдэнэ
+                // Газрын жинхэнэ өндөр (Copernicus GLO-30): тэгш бүсүүд (застав, ШТС, хот айл...) өөрийн дундаж
+                // өндөрт тэгшлэгдэж, хүрээнээсээ 45 м-т аажим (зөөлөн налуугаар) жинхэнэ газартаа нийлнэ
                 height = layout.DemHeight(x, z);
                 float zoneDistance = 0.0f, level = 0.0f;
                 if (layout.NearestZone(x, z, zoneDistance, level))
                 {
-                    height = level + (height - level) * SmoothStep(0.0f, 35.0f, zoneDistance);
+                    height = level + (height - level) * SmoothStep(0.0f, 45.0f, zoneDistance);
                 }
                 height -= layout.LakeDepth(x, z);
             }
@@ -192,6 +193,46 @@ void Terrain::Rebuild()
             }
             heights[(size_t)iz * (size_t)side + (size_t)ix] = height;
             maxHeight = std::max(maxHeight, height);
+        }
+    }
+
+    // Булган уулын цогцолборын дугуй талбайнууд: уулыг тэгшилсэн (дундаж өндөрт, захаасаа 16 м-т налуугаар
+    // жинхэнэ энгэртээ нийлнэ). Шат нь энгэрийн налууг дагана.
+    for (const Mountain& m : layout.Mountains())
+    {
+        if (m.buddha.x > 1e8f) continue;
+        for (const std::pair<Vector2, float>& plaza : { std::make_pair(m.buddha, m.buddhaRadius), std::make_pair(m.rest, m.restRadius) })
+        {
+            const Vector2 c = plaza.first;
+            const float radius = plaza.second, reach = radius + 16.0f;
+            const int x0 = std::max(0, (int)std::floor((c.x - reach + halfExtent) / cellSize));
+            const int x1 = std::min(side - 1, (int)std::ceil((c.x + reach + halfExtent) / cellSize));
+            const int z0 = std::max(0, (int)std::floor((c.y - reach + halfExtent) / cellSize));
+            const int z1 = std::min(side - 1, (int)std::ceil((c.y + reach + halfExtent) / cellSize));
+            float sum = 0.0f;
+            int count = 0;
+            for (int iz = z0; iz <= z1; ++iz)
+            {
+                for (int ix = x0; ix <= x1; ++ix)
+                {
+                    const float x = -halfExtent + (float)ix * cellSize, z = -halfExtent + (float)iz * cellSize;
+                    if (Vector2Distance({ x, z }, c) > radius) continue;
+                    sum += heights[(size_t)iz * (size_t)side + (size_t)ix];
+                    ++count;
+                }
+            }
+            if (count == 0) continue;
+            const float level = sum / (float)count;
+            for (int iz = z0; iz <= z1; ++iz)
+            {
+                for (int ix = x0; ix <= x1; ++ix)
+                {
+                    const float x = -halfExtent + (float)ix * cellSize, z = -halfExtent + (float)iz * cellSize;
+                    const float t = SmoothStep(radius + 1.0f, reach, Vector2Distance({ x, z }, c));
+                    float& h = heights[(size_t)iz * (size_t)side + (size_t)ix];
+                    h = level + (h - level) * t;
+                }
+            }
         }
     }
 
@@ -654,13 +695,18 @@ void Terrain::Stream(Vector3 viewPosition, int budget)
     }
     std::sort(jobs.begin(), jobs.end(), [](const Job& a, const Job& b) { return a.distance < b.distance; });
 
+    // Ажлын хэмжээ ба хугацаа: нэг frame-д 3 мс-ээс ихгүй (удаан утсанд ч тоглоом гацахгүй, үлдсэнийг дараагийн frame-д)
+    const double started = GetTime();
+    const bool timed = budget < 1000; // (даалгаврын эхэнд бүгдийг нэг дор: хугацаагүй)
+    bool first = true;
     for (const Job& job : jobs)
     {
         const int cost = job.kind == 1 ? 1 : 3; // нарийн тор, өвс чулуу нь бүдүүн торноос ~3 дахин үнэтэй
-        if (budget < cost)
+        if (budget < cost || (timed && !first && GetTime() - started > 0.003))
         {
             break;
         }
+        first = false;
         budget -= cost;
 
         Chunk& chunk = chunks[(size_t)job.chunk];

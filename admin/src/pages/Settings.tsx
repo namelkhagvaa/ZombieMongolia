@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, App, Button, Card, Col, Form, InputNumber, Row, Skeleton, Space, Typography } from 'antd';
+import { Alert, App, Button, Card, Col, Form, InputNumber, Row, Skeleton, Space, Switch, Typography } from 'antd';
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
 import { api, Settings } from '../api';
 import { useAuth } from '../auth';
@@ -36,12 +36,19 @@ export default function SettingsPage() {
           price_magazine: v.price_magazine,
           price_health: v.price_health,
           price_soldier: v.price_soldier,
+          skin_price: v.skin_price,
+          skin_price_iron: v.skin_price_iron,
+          coop_reward: v.coop_reward,
+          coop_daily_limit: v.coop_daily_limit,
           room_fee: v.room_fee,
           room_stake: v.room_stake,
           stage_bonus: v.stage_bonus,
           stage_min_minutes: v.stage_min_minutes,
           battle_pair_limit: v.battle_pair_limit,
           gold_packs: v.gold_packs,
+          cashout_enabled: v.cashout_enabled,
+          cashout_min: v.cashout_min,
+          cashout_rate: v.cashout_rate,
         },
       });
       setSettings(r.settings);
@@ -54,12 +61,13 @@ export default function SettingsPage() {
     }
   };
 
-  const upgradePrices: { name: keyof Settings; label: string; max: number }[] = [
+  // flat: нэг бүр ижил үнэтэй (цэрэг: тоо, тоглолтод алдвал хасагдана)
+  const upgradePrices: { name: keyof Settings; label: string; max: number; flat?: boolean }[] = [
     { name: 'price_damage', label: 'Хохирол', max: 5 },
     { name: 'price_fire_rate', label: 'Буудах хурд', max: 5 },
     { name: 'price_magazine', label: 'Сумны хайрцаг', max: 5 },
     { name: 'price_health', label: 'Амь', max: 5 },
-    { name: 'price_soldier', label: 'Цэрэг', max: 4 },
+    { name: 'price_soldier', label: 'Цэрэг', max: 10, flat: true },
   ];
 
   return (
@@ -90,10 +98,12 @@ export default function SettingsPage() {
                   <Form.Item
                     key={item.name}
                     name={item.name}
-                    label={`${item.label} (1–${item.max} түвшин)`}
-                    extra={values?.[item.name] ? `Дараагийн түвшин = ${values[item.name]} × түвшин (бүгд: ${
-                      (values[item.name] as number) * ((item.max * (item.max + 1)) / 2)
-                    } Gold)` : undefined}
+                    label={item.flat ? `${item.label} (нэг бүр, дээд тал ${item.max})` : `${item.label} (1–${item.max} түвшин)`}
+                    extra={!values?.[item.name] ? undefined : item.flat
+                      ? `Нэг цэрэг = ${values[item.name]} Gold. Тоглолтод үхсэн цэрэг шууд хасагдана.`
+                      : `Дараагийн түвшин = ${values[item.name]} × түвшин (бүгд: ${
+                          (values[item.name] as number) * ((item.max * (item.max + 1)) / 2)
+                        } Gold)`}
                     rules={[{ required: true }]}
                   >
                     <InputNumber min={0} max={100000} style={{ width: 200 }} suffix="Gold" />
@@ -140,6 +150,38 @@ export default function SettingsPage() {
                 >
                   <InputNumber min={0} max={10000} style={{ width: 200 }} suffix="Gold" />
                 </Form.Item>
+                <Form.Item
+                  name="skin_price"
+                  label="DEMON дүрээр тоглох"
+                  extra="Төлбөртэй дүрээр аймаг эхлүүлэх бүрд хасагдана. 0 бол үнэгүй."
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} max={100000} style={{ width: 200 }} suffix="Gold" />
+                </Form.Item>
+                <Form.Item
+                  name="skin_price_iron"
+                  label="IRON дүрээр тоглох"
+                  extra="Төлбөртэй дүрээр аймаг эхлүүлэх бүрд хасагдана. 0 бол үнэгүй."
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} max={100000} style={{ width: 200 }} suffix="Gold" />
+                </Form.Item>
+                <Form.Item
+                  name="coop_reward"
+                  label="Найзтайгаа кодоор хамт давсны шагнал"
+                  extra="Үеийг хамт давахад хоёуланд нь (хүн бүрд) урамшууллын Gold — татах боломжгүй. 0 бол шагналгүй."
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} max={10000} style={{ width: 200 }} suffix="Gold" />
+                </Form.Item>
+                <Form.Item
+                  name="coop_daily_limit"
+                  label="Хамт давсны шагнал өдөрт"
+                  extra="Нэг тоглогч өдөрт ийм удаа хүртэл хамт давсны шагнал авна."
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} max={100} style={{ width: 200 }} suffix="удаа" />
+                </Form.Item>
                 <Form.Item name="stage_bonus" label="Үе шат дуусгасны шагнал" rules={[{ required: true }]}>
                   <InputNumber min={0} max={10000} style={{ width: 200 }} suffix="Gold" />
                 </Form.Item>
@@ -185,6 +227,31 @@ export default function SettingsPage() {
                     </>
                   )}
                 </Form.List>
+              </Card>
+            </Col>
+            <Col xs={24} lg={12}>
+              <Card title="Gold татах (зөвхөн тоглоомоос хожсон Gold)" variant="borderless" style={{ height: '100%' }}>
+                <Form.Item name="cashout_enabled" label="Gold татах нээлттэй" valuePropName="checked">
+                  <Switch />
+                </Form.Item>
+                <Form.Item
+                  name="cashout_min"
+                  label="Татах доод хэмжээ"
+                  extra="Тулаан, үе шатаас хожсон Gold-оос л татна; цэнэглэсэн Gold татагдахгүй."
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={1} max={10000000} style={{ width: 200 }} suffix="Gold" />
+                </Form.Item>
+                <Form.Item
+                  name="cashout_rate"
+                  label="Ханш: 1 Gold ="
+                  extra={values?.cashout_min && values?.cashout_rate
+                    ? `${values.cashout_min} Gold = ${Math.floor(values.cashout_min * values.cashout_rate)}₮`
+                    : undefined}
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0.01} max={1000} step={0.1} style={{ width: 200 }} suffix="₮" />
+                </Form.Item>
               </Card>
             </Col>
           </Row>

@@ -106,7 +106,8 @@ namespace
 
     bool IsWindow(PassageKind kind)
     {
-        return kind == PassageKind::WindowIn || kind == PassageKind::WindowOut || kind == PassageKind::WindowDrop;
+        return kind == PassageKind::WindowIn || kind == PassageKind::WindowOut || kind == PassageKind::WindowDrop ||
+               kind == PassageKind::FenceOver;
     }
 
     VaultKey SampleVault(PassageKind kind, float t)
@@ -133,6 +134,7 @@ namespace
     // суурнаас 0.1 м өндөр, 2 давхарт эхлэх цэг нь давхрын суурь өөрөө).
     float VaultSill(const Passage& passage)
     {
+        if (passage.kind == PassageKind::FenceOver) return passage.top + 0.05f; // хашааны орой дээгүүр
         return passage.kind == PassageKind::WindowDrop ? passage.from.y + 1.05f
                                                        : std::max(passage.from.y, passage.to.y) + 0.95f;
     }
@@ -301,7 +303,8 @@ void Player::StartTraverse(const Passage& passage)
     traverse = passage;
     traverseTime = 0.0f;
     traverseDuration = passage.kind == PassageKind::LadderUp || passage.kind == PassageKind::LadderDown ? 1.9f
-                     : passage.kind == PassageKind::WindowDrop ? 2.4f : 1.4f;
+                     : passage.kind == PassageKind::WindowDrop ? 2.4f
+                     : passage.kind == PassageKind::FenceOver ? 1.25f : 1.4f;
     stance = Stance::Stand;
     velocity = { 0.0f, 0.0f, 0.0f };
 }
@@ -314,12 +317,51 @@ void Player::StartAction(float duration)
 
 void Player::TakeDamage(float amount)
 {
-    health = std::max(0.0f, health - amount / kTeamToughness);
     timeSinceHit = 0.0f;
+    hitFromKnown = false; // TakeDamageFrom дахин тавина
+    if (downed)
+    {
+        // Унасан хүнийг цохивол босгох хугацаа хурдан дуусна
+        downTimer -= amount * 0.12f;
+        if (downTimer <= 0.0f)
+        {
+            downed = false;
+            health = 0.0f;
+        }
+        return;
+    }
+    health = std::max(0.0f, health - amount / kTeamToughness);
+    if (health <= 0.0f && rideStyle == RideStyle::None)
+    {
+        downed = true; // үхэхийн оронд унана: багийнхан босгох боломжтой
+        downTimer = kDownTime;
+        health = 1.0f;
+        stance = Stance::Prone;
+    }
+}
+
+void Player::UpdateDowned(float dt)
+{
+    if (!downed) return;
+    downTimer -= dt;
+    if (downTimer <= 0.0f)
+    {
+        downed = false;
+        health = 0.0f;
+    }
+}
+
+void Player::Revive(float fraction)
+{
+    if (!downed) return;
+    downed = false;
+    health = std::max(health, maxHealth * fraction);
+    stance = Stance::Stand;
 }
 
 void Player::Heal(float amount)
 {
+    if (downed) Revive(0.0f); // эмнэлгийн хайрцаг ч босгоно
     health = std::min(maxHealth, health + amount);
 }
 
@@ -331,6 +373,15 @@ float Player::HorizontalSpeed() const
 void Player::Update(float dt, const GameConfig& config, const World& world, float cameraYaw)
 {
     timeSinceHit += dt;
+    if (downed)
+    {
+        // Унасан: хэвтэнэ, хөдлөхгүй (босгохыг хүлээнэ)
+        stance = Stance::Prone;
+        velocity = { 0.0f, 0.0f, 0.0f };
+        pronePose += (1.0f - pronePose) * std::min(1.0f, 6.0f * dt);
+        crouchPose = std::max(0.0f, crouchPose - dt * 4.0f);
+        return;
+    }
     aimTimer -= dt;
     aimPose += ((aimTimer > 0.0f ? 1.0f : 0.0f) - aimPose) * std::min(1.0f, 9.0f * dt);
     recoil = std::max(0.0f, recoil - dt * 9.0f);

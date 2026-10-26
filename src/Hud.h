@@ -31,6 +31,10 @@ struct HudInfo
     int slotCount = 0;
     const char* stance = nullptr; // "CROUCH" / "PRONE"; босоо үед nullptr
     bool scoped = false;       // мэргэн буудагчийн дуран хараа дэлгэцэд гарна
+    float hitMarker = 0.0f;    // 0..1: загалмайн эргэн тойронд "X" (сум онов)
+    int hitMarkerKind = 0;     // 0 бие, 1 толгой (улаан), 2 устгасан (том)
+    float damageArrow = 0.0f;  // 0..1: хаанаас цохиулсныг заах улаан нум
+    float damageAngle = 0.0f;  // радиан, 0 = урд (дэлгэцийн дээш), эерэг = баруун
     struct TeamEntry
     {
         const char* name = "";
@@ -48,6 +52,8 @@ struct HudInfo
     bool showMagazine = true;  // гранатад зөвхөн үлдсэн тоо
     int squadAlive = 0;
     int squadTotal = 0;
+    const char* tutorial = nullptr;  // шинэ тоглогчийн заавар (доод голд карт)
+    int tutorialStep = 0, tutorialSteps = 0;
     const char* banner = nullptr;    // дэлгэцийн төвд том бичвэр
     const char* subBanner = nullptr; // доор нь жижиг бичвэр
     const char* rideText = nullptr;  // унааны хурд, гадаргуу эсвэл "E: ride ..." санамж

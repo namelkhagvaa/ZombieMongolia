@@ -912,6 +912,31 @@ void DrawHumanoid(Vector3 feet, float facing, float scale, const HumanoidPose& p
 {
     const Color torso = look.shirtless ? look.skin : look.body;
 
+    // Унах: урт бууг онилсон байрлалаар нь гартаа үлдээвэл нуруугаараа хэвтсэн биеэс тэнгэр рүү босоо гозойдог.
+    // Унах явцын хагасаас бие сул гартай, буу нь хажууд нь газар хажуулдаа хэвтэнэ.
+    const bool longGun = look.held == HeldItem::Rifle || look.held == HeldItem::Sniper || look.held == HeldItem::Launcher ||
+                         look.held == HeldItem::Shotgun;
+    if (longGun && pose.fall > 0.55f)
+    {
+        HumanoidLook unarmed = look;
+        unarmed.held = HeldItem::None;
+        DrawHumanoid(feet, facing, scale, pose, unarmed, detailed);
+        rlPushMatrix();
+        rlTranslatef(feet.x, feet.y, feet.z);
+        rlRotatef(facing * RAD2DEG, 0.0f, 1.0f, 0.0f);
+        rlScalef(scale, scale, scale);
+        rlTranslatef(-0.55f, 0.05f, -0.75f); // биеийн баруун талд, их биеийн хажууд (бие -Z тийш хэвтэнэ)
+        rlRotatef(-35.0f, 0.0f, 1.0f, 0.0f);
+        rlRotatef(90.0f, 0.0f, 0.0f, 1.0f);  // хажуулдаа
+        rlTranslatef(-kHumanoidMuzzle.x, -(kHumanoidMuzzle.y - kHipHeight), -0.45f);
+        if (look.held == HeldItem::Rifle) DrawGun(0.0f, detailed);
+        else if (look.held == HeldItem::Sniper) DrawSniper(0.0f, detailed);
+        else if (look.held == HeldItem::Launcher) DrawLauncher(0.0f, detailed);
+        else DrawShotgun(0.0f, detailed);
+        rlPopMatrix();
+        return;
+    }
+
     rlPushMatrix();
     rlTranslatef(feet.x, feet.y, feet.z);
     rlRotatef(facing * RAD2DEG, 0.0f, 1.0f, 0.0f);

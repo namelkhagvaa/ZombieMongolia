@@ -15,7 +15,8 @@ namespace
     const char* const kNames[kCharacterCount] = { "fighter1",     "fighter2",       "fighter3",
                                                   "survivor_man", "survivor_woman", "zombie_walker",
                                                   "zombie_runner", "zombie_brute",  "giant_zombie",
-                                                  "model-1",       "model-3" };
+                                                  "model-1",       "model-3",       "demon",
+                                                  "iron" };
 
     // Загварын өндөр тоглоомын хүний өндөртэй (~1.9 м) таарахаар томруулна.
     const float kTargetHeight = 1.9f;
@@ -630,7 +631,9 @@ void LoadCharacterModels(Shader shader)
             // гадагш гарсан) загвар өргөн гишгэнэ, эс бөгөөс гуя, өвдөг хоорондоо шүргэлцэнэ.
             const float hip = std::fabs(c.bind[(size_t)c.joints[LeftUpLeg]].x) * c.scale;
             const float knee = std::fabs(c.bind[(size_t)c.joints[LeftLeg]].x) * c.scale;
-            c.stepWidth = hip * 0.5f + std::max(0.0f, knee - hip) * 1.6f;
+            // Хүрээ: хөлөө алцайлгаж зогссон (demon) загвар хэт өргөн гишгэж алцгандаг, хуяг өмссөн (iron) нь хэт
+            // нарийн гишгэж гуя нь шүргэлцдэг байсан (бусад загвар 0.11-0.15 м).
+            c.stepWidth = std::clamp(hip * 0.5f + std::max(0.0f, knee - hip) * 1.6f, 0.10f, 0.15f);
         }
 
         c.texture = LoadTexture(texturePath.c_str());

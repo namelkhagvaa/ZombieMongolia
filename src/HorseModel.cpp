@@ -158,9 +158,13 @@ float HorseStridePhase(float animation)
     return p - std::floor(p);
 }
 
-void DrawHorseModel(float animation, float gait, float steer, float seed, float gallop)
+void DrawHorseModel(float animation, float gait, float steer, float seed, float gallop, float dead)
 {
     if (!horse.loaded) return;
+    if (dead > 0.0f)
+    {
+        gait = gallop = steer = 0.0f; // үхсэн: алхахгүй, эргэхгүй
+    }
     std::fill(horse.local.begin(), horse.local.end(), QuaternionIdentity());
     std::fill(horse.solved.begin(), horse.solved.end(), 0);
 
@@ -205,6 +209,15 @@ void DrawHorseModel(float animation, float gait, float steer, float seed, float 
         Turn(leg.upper, side, -swing);
         Turn(leg.middle, side, leg.hind ? -0.75f * lift : 0.95f * lift);
         Turn(leg.lower, side, 0.6f * lift);
+        if (dead > 0.0f)
+        {
+            // Хажуулдаа хэвтсэн: урд хөл өвдгөөрөө нугарч, хойд хөл хойш сунана; дээд хос (Z) хөл бага зэрэг өргөгдөнө
+            const float d = dead * dead * (3.0f - 2.0f * dead);
+            const float spread = (index % 2 == 0 ? 0.18f : -0.12f) * d;
+            Turn(leg.upper, side, d * (leg.hind ? -0.55f : 0.45f) + spread);
+            Turn(leg.middle, side, d * (leg.hind ? -0.35f : 1.1f));
+            Turn(leg.lower, side, d * (leg.hind ? 0.25f : 0.5f));
+        }
     }
     // Хүзүү, толгой: давхихад дохиж, эргэх зүг рүү эргэнэ.
     // Зогсолт (gait 0) ба явдлын хооронд зөөлөн шилжинэ.
@@ -222,7 +235,14 @@ void DrawHorseModel(float animation, float gait, float steer, float seed, float 
     const float gallopNod = 0.17f * std::sin(2.0f * PI * (stride - 0.35f));
     Turn("Neck_0", side, 0.05f + graze + gait * (0.12f + trotNod + (gallopNod - trotNod) * gallop));
     Turn("Head", side, idle * 0.05f * std::sin(time * 1.1f + 0.3f));
-    Turn("Head", Vector3{ 1.0f, 0.0f, 0.0f }, shake);
+    Turn("Head", Vector3{ 1.0f, 0.0f, 0.0f }, dead > 0.0f ? 0.0f : shake);
+    if (dead > 0.0f)
+    {
+        // Хүзүү, толгой сул унжиж газарт тулна
+        const float d = dead * dead * (3.0f - 2.0f * dead);
+        Turn("Neck_0", side, 0.55f * d);
+        Turn("Head", side, 0.45f * d);
+    }
     // Сүүл: хурдлах тусам өргөгдөж, хоёр тийш найгана.
     // Сүүл (6 үе, дээрээс доош): үе бүр дээд үеэсээ хоцорч хөдөлдөг тул хөдөлгөөн суурийнаас үзүүр рүү
     // долгио шиг урсаж, үс намирна. Доод үеүүд хөнгөн тул илүү их хазайна.
@@ -247,6 +267,11 @@ void DrawHorseModel(float animation, float gait, float steer, float seed, float 
         sway += idle * (swishing * (k == 0 ? 0.45f : 0.16f * loose) * wave + 0.03f * loose * std::sin(time * 0.8f - lag));
         lift += idle * (k == 0 ? 0.08f + 0.06f * swishing : 0.0f);
 
+        if (dead > 0.0f)
+        {
+            sway *= 1.0f - dead; // үхсэн: сүүл хөдлөхгүй, сул унжина
+            lift = -0.08f * dead;
+        }
         Turn(tail[k], up, sway);
         Turn(tail[k], side, lift);
     }

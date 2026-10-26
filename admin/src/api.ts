@@ -82,6 +82,8 @@ export interface PlayerRow {
   credits: number;
   gold: number;
   gold_locked: number;
+  gold_won: number;
+  gold_bonus?: number;
   blocked: boolean;
   created: string;
   provinces: number | null;
@@ -149,18 +151,43 @@ export interface Settings {
   price_magazine: number;
   price_health: number;
   price_soldier: number;
+  skin_price: number;
+  skin_price_iron: number;
+  coop_reward: number;
+  coop_daily_limit: number;
   room_fee: number;
   room_stake: number;
   stage_bonus: number;
   stage_min_minutes: number;
   battle_pair_limit: number;
   gold_packs: { gold: number; price: number }[];
+  cashout_enabled: boolean;
+  cashout_min: number;
+  cashout_rate: number;
+}
+
+export interface CashoutRow {
+  id: number;
+  player: { id: number; name: string; phone: string; won: number };
+  gold: number;
+  amount: number;
+  rate: number;
+  bank: string;
+  account: string;
+  holder: string;
+  status: 'verifying' | 'pending' | 'paid' | 'rejected' | 'expired' | 'cancelled';
+  note: string;
+  handled_by: string;
+  created: string;
+  verified_at: string | null;
+  closed_at: string | null;
 }
 
 export interface RoomRow {
   id: number;
   province: number;
   status: 'open' | 'closed';
+  phase: 'mission' | 'battle' | 'completed' | 'closed';
   host: { id: number; name: string; phone: string };
   guest: { id: number; name: string; phone: string } | null;
   battle: number;

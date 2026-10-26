@@ -1,6 +1,8 @@
 """Аймгийн төвүүдийн OpenStreetMap өгөгдлийг Overpass API-аас татна (tools/data/towns/<дугаар>.json.gz).
 
-    python tools/fetch_towns.py [дугаар ...]
+    python tools/fetch_towns.py [--refresh] [дугаар ...]
+
+--refresh: татсан файлыг ч дахин татна (хамгийн сүүлийн OSM; хуучин нь <дугаар>.json.gz.old болж үлдэнэ).
 
 Төв бүрээс ±2.65 км: зам, барилга, хашаа, ус, цэцэрлэг, төмөр зам (out geom), онцлох газрууд (out center).
 Өгөгдөл: (c) OpenStreetMap contributors, ODbL 1.0.
@@ -60,16 +62,20 @@ def fetch(lat, lon):
 def main():
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'towns')
     os.makedirs(out, exist_ok=True)
-    wanted = [int(a) for a in sys.argv[1:]] or sorted(TOWNS)
+    refresh = '--refresh' in sys.argv
+    wanted = [int(a) for a in sys.argv[1:] if a != '--refresh'] or sorted(TOWNS)
     for index in wanted:
         name, lat, lon = TOWNS[index]
         path = os.path.join(out, '%02d.json.gz' % index)
-        if os.path.exists(path):
+        if os.path.exists(path) and not refresh:
             print('%2d %s: already downloaded' % (index, name), flush=True)
             continue
         body = fetch(lat, lon)
-        with gzip.open(path, 'wb', 9) as f:
+        with gzip.open(path + '.part', 'wb', 9) as f:
             f.write(body)
+        if os.path.exists(path):
+            os.replace(path, path + '.old')
+        os.replace(path + '.part', path)
         print('%2d %s: %d KB (%d elements)' % (index, name, len(body) // 1024, len(json.loads(body)['elements'])), flush=True)
         time.sleep(8)
 

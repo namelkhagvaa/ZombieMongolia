@@ -62,6 +62,8 @@ struct TouchState
 
     const char* useLabel = nullptr; // F-ийн үйлдэл: "Суух", "Буух", "Хаалга"; nullptr = товчлуур гарахгүй
     bool useVehicle = false;        // useLabel нь унаанд суух / буух: жижиг дүрст дугуй товч (унааг халхлахгүй)
+    int useVehicleKind = 0;         // VehicleType: товчны дүрс (машин, мотоцикл, гурван дугуйт, морь, ачааны машин)
+    bool showOrders = false;        // багийн тушаал (бүгд над руу, байг онил)
     const char* actLabel = nullptr; // E-ийн үйлдэл (даалгаврын объект); nullptr = гарахгүй
     bool driving = false;           // унаа жолоодож буй: үсрэх товч тоормос болно
     bool sniper = false;            // онилох товч дуран хараа нээнэ

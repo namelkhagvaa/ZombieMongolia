@@ -53,7 +53,13 @@ struct Zombie
     float climbTimer = 0.0f;
     Vector3 climbFrom = { 0.0f, 0.0f, 0.0f };
     Vector3 climbTo = { 0.0f, 0.0f, 0.0f };
+    float climbTop = 0.0f; // хашаа: орой (нумын өндөр); 0 = цонх
     bool boss = false;    // аварга: толгойн буудлага, хутга, машины цохилтод шууд үхэхгүй
+    // Онцлог (жирийн зомбинд): бөөн зомби үхэхдээ дэлбэрнэ, орилогч хүн хармагц орилж холын зомбиудыг дуудна
+    bool exploder = false;
+    bool screamer = false;
+    bool screamed = false;
+    float screamTimer = 0.0f; // >0: одоо орилж байна (зочинд дуу)
 
     // Зомби бүрийн санамсаргүй гадаад төрх
     Color shirt = {};
@@ -78,6 +84,9 @@ struct Zombie
     float predicted = 0.0f; // зочин: өөрийн сумаар үхсэн гэж урьдчилан тооцсон (хост батлах хүртэл, секунд)
     float netFacing = 0.0f;
     float netSeen = 0.0f; // зочин: сүүлд snapshot-д орсноос хойш
+    float netSent = -1.0f; // зочин: тэр snapshot-ыг хост илгээсэн цаг (хурдыг тооцоход)
+    float netPrevSent = -1.0f;                  // зочин: өмнөх мэдээ (жигд шилжүүлэхэд)
+    Vector3 netPrevTarget = { 0.0f, 0.0f, 0.0f };
     Vector3 netVelocity = { 0.0f, 0.0f, 0.0f }; // зочин: хоёр snapshot-оос тооцсон хурд (хоцролтыг нөхөж урагш таамаглана)
     bool netAttack = false;                     // зочин: өмнөх snapshot-д довтолж байсан (шинэ цохилтыг нэг л удаа эхлүүлнэ)
 
@@ -115,6 +124,7 @@ public:
     // minDistance-аас ойрхон оногдлыг тооцохгүй (камер, тоглогч хоёрын хоорондох зомби).
     ZombieHit Raycast(Ray ray, float minDistance, float maxDistance) const;
     int Nearest(Vector3 position, float maxDistance) const; // -1 = байхгүй
+    int FindId(uint32_t id) const;                          // амьд зомбины индекс (-1 = байхгүй)
     void Damage(int index, float amount);
     // Бүрэн амины fraction хувийг авна (хутга: зомбины төрлөөс үл хамааран тогтмол тооны цохилт).
     void DamageFraction(int index, float fraction);
@@ -137,7 +147,7 @@ public:
     // Зочин: зомбинууд хостоос ирсэн мэдээллээр л хөдөлнө, хохирол хүлээж авахгүй (хост тооцно).
     void SetPuppet(bool active) { puppet = active; }
     bool IsPuppet() const { return puppet; }
-    void ApplySnapshot(const std::vector<Net::ZombieState>& states, const MissionParams& mission);
+    void ApplySnapshot(const std::vector<Net::ZombieState>& states, const MissionParams& mission, float sentAt = 0.0f);
     void UpdatePuppets(float dt);
 
     // Бүх зомбины хөдөлгөөний хурдны үржүүлэгч (устгасан тоогоор өснө: Game тохируулна).
@@ -161,6 +171,13 @@ public:
     // Хамтарсан тоглолт (хост): true үед устгасан зомбины зоос зочинд очно (зочны унаа мөргөхөд).
     // Үеийн тоололд (нөөц) тоологдсоор.
     void SetCreditRemote(bool enabled) { creditRemote = enabled; }
+    // Үхсэн бөөн зомбины дэлбэрэлтүүд (Game: гал, хохирол; зочинд зөвхөн харагдана)
+    std::vector<Vector3> TakeExploderBlasts()
+    {
+        std::vector<Vector3> out;
+        out.swap(exploderBlasts);
+        return out;
+    }
     void TakeRemoteRewards(std::vector<KillReward>& out)
     {
         out.insert(out.end(), remoteRewards.begin(), remoteRewards.end());
@@ -199,6 +216,9 @@ private:
     Vector3 remotePosition = { 0.0f, 0.0f, 0.0f };
     float remoteDamage = 0.0f;
     std::vector<KillReward> killRewards;
+    std::vector<Vector3> exploderBlasts;
+    // Зочин: хостын цагаар харуулж буй мөч (0.1 с хоцроосон), сүүлд ирсэн snapshot-ын цаг
+    float netClock = -1.0f, netLatest = -1.0f;
     bool creditRemote = false;
     std::vector<KillReward> remoteRewards; // зочинд илгээх зоос
     float navClock = 0.0f; // орох гарцыг дахин сонгох хугацааг тоолно

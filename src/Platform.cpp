@@ -2,6 +2,9 @@
 
 #include "raylib.h"
 
+#include <string>
+#include <thread>
+
 #if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
 #include <emscripten/heap.h>
@@ -102,9 +105,9 @@ namespace
             // Бүгд энгийн текст талбар: password / tel төрөл Chrome-ийн автоматаар бөглөх (нууц үг, карт, хаяг)
             // цагаан мөрийг гарын дээр гаргадаг. Талбар үл үзэгдэх тул нууц үгийг тоглоом өөрөө "•"-ээр харуулна.
             input.type = 'text';
-            input.inputMode = kind === 1 ? 'numeric' : 'text';
+            input.inputMode = kind === 1 || kind === 3 ? 'numeric' : 'text';
             input.name = 'zm-field-' + slot;
-            input.maxLength = kind === 1 ? 8 : kind === 2 ? 32 : 30;
+            input.maxLength = kind === 1 ? 8 : kind === 3 ? 20 : kind === 2 ? 32 : 30; // 3: дансны дугаар, дүн
         }
         input.zmNext = next;
         input.enterKeyHint = next >= 0 ? 'next' : 'done';
@@ -243,6 +246,30 @@ namespace
     });
 }
 
+namespace
+{
+    // Хөтчийн бодит видео карт (WEBGL_debug_renderer_info): тусдаа canvas дээр асууна. Зарим хөтөч нуудаг.
+    EM_JS(void, ReadGpuName, (char* out, int capacity), {
+        var name = '';
+        try {
+            var gl = document.createElement('canvas').getContext('webgl2') || document.createElement('canvas').getContext('webgl');
+            var info = gl && gl.getExtension('WEBGL_debug_renderer_info');
+            name = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : (gl ? gl.getParameter(gl.RENDERER) : '');
+        } catch (e) {}
+        stringToUTF8(String(name || ''), out, capacity);
+    });
+
+    EM_JS(int, ReadCpuCores, (), { return navigator.hardwareConcurrency || 2; });
+}
+
+const char* GpuName()
+{
+    static char name[256] = {};
+    if (!name[0]) ReadGpuName(name, (int)sizeof(name));
+    return name;
+}
+int CpuCores() { return ReadCpuCores(); }
+
 bool AppShouldClose() { return false; }
 void FrameYield() { WaitAnimationFrame(); }
 bool WebIsTouchDevice() { return IsCoarsePointer() != 0; }
@@ -271,6 +298,25 @@ void WebRestoreFile(const char* path) { RestoreFromStorage(path); }
 void WebPersistFile(const char* path) { PersistToStorage(path); }
 
 #else
+
+// OpenGL 1.1-ийн функц (Windows: opengl32.dll, Android: GLES) — raylib-ийн glad-ийг шаардахгүй
+#if defined(_WIN32)
+extern "C" __declspec(dllimport) const unsigned char* __stdcall glGetString(unsigned int name);
+#else
+extern "C" const unsigned char* glGetString(unsigned int name);
+#endif
+
+const char* GpuName()
+{
+    static std::string name;
+    if (name.empty())
+    {
+        const unsigned char* renderer = glGetString(0x1F01); // GL_RENDERER
+        name = renderer ? (const char*)renderer : "";
+    }
+    return name.c_str();
+}
+int CpuCores() { return (int)std::thread::hardware_concurrency(); }
 
 bool AppShouldClose() { return WindowShouldClose(); }
 void FrameYield() {}

@@ -49,7 +49,8 @@ struct Soldier
     int riding = -1;           // сууж яваа хэрэгслийн индекс; -1 = явган
     bool boarding = false;     // boardPoint дахь хэрэгсэл рүү гүйж яваа
     Vector3 boardPoint = { 0.0f, 0.0f, 0.0f };
-    int seatStyle = 0;         // 1 = мотоцикл, 2 = эмээл, 3 = бүхээг дотор (харагдахгүй), 4 = тэвшинд
+    int seatStyle = 0;         // 1 = мотоцикл, 2 = эмээл, 3 = бүхээг дотор (харагдахгүй), 4 = тэвшинд,
+                               // 5 = бүхээгийн буудагч (харагдахгүй, цонхоор буудна)
     Vector3 seat = { 0.0f, 0.0f, 0.0f }; // ташааны ертөнцийн байрлал
     float seatHeading = 0.0f;  // унааны зүг (буудахад бие эргэх ч ташаа, хөл энэ зүгт үлдэнэ)
     bool hasRein = false;      // жолооч: зүүн гар жолоо (бариул, хазаар) барина
@@ -59,8 +60,30 @@ struct Soldier
     // Хамтарсан тоглолт: буудсан сумны тоолуур ба сүүлийн сумны туссан цэг (зочинд сумны мөр зурахад)
     uint8_t shots = 0;
     Vector3 shotEnd = { 0.0f, 0.0f, 0.0f };
+    uint8_t kills = 0; // алсан зомбины тоолуур (яриа: "нэг нь унав")
     // Тулаан: тасарсан / хөдлөхгүй тоглогчийн дүр AI болоход эхний хугацаанд хөдлөхгүй (секунд)
     float frozen = 0.0f;
+    // Gold-оор авсан цэрэг: тоглолтод үхвэл серверээс шууд хасагдана (lossSent: нэг л удаа)
+    bool bought = false;
+    bool lossSent = false;
+    // Дагаж буй удирдагчийн хурд: түүнтэй ижил хурдаар алхана (зогсож-явж чичигнэхгүй)
+    Vector3 lastLeader = { 0.0f, 0.0f, 0.0f };
+    float leaderSpeed = 0.0f;
+    float regroupTimer = 0.0f; // >0: "бүгд надад ир" (байлдахгүй, дагана)
+    bool waitingRescue = false; // гэнэтийн үйл явдал: аврагдахыг хүлээж буй хүн (holdPoint дээрээ зогсож буудна)
+    // Унасан (багийн гишүүн): амь дууссан ч Player::kDownTime секунд босгохыг хүлээнэ. reviveProgress: босгож буй хугацаа.
+    bool downed = false;
+    float downTimer = 0.0f;
+    float reviveProgress = 0.0f;
+    int reviveTarget = -2; // энэ гишүүний босгохоор очиж буй: squad индекс, -1 хостын тоглогч, -3 зочин, -2 = үгүй
+    // Тойрох зам (FindLocalPath): зорилт руу шууд шугам байшин, хашаанд хаагдвал эсвэл гацвал
+    std::vector<Vector2> path;
+    size_t pathIndex = 0;
+    float pathCheck = 0.0f; // дараагийн шалгалт хүртэл (секунд)
+    float pathAge = 0.0f;
+    // Хашаа давж буй (World::FindVault): vaultTime >= 0 үед vault.from -> vault.to нум зурж шилжинэ
+    float vaultTime = -1.0f;
+    Passage vault = {};
 };
 
 // Тулаан (нээлттэй өрөө): AI дайчин буудаж болох хүн (байрлал = цээж). id: squad-ийн индекс, эсвэл kHostTarget /
@@ -98,10 +121,31 @@ public:
     bool HasGuestTeam() const;
     // Зочны багийнхны дагах байрлал (зочин холбогдсон үед)
     void SetGuestLeader(bool active, Vector3 position) { guestLeaderActive = active; guestLeader = position; }
+    // Унасан тоглогчид (хост, зочин): AI нөхөд нь гүйж очиж босгоно. Босгосон бол дараагийн Take*-д true.
+    void SetLeadersDowned(bool host, bool guest)
+    {
+        hostDowned = host;
+        guestDowned = guest;
+        if (!host) hostRevive = 0.0f;
+        if (!guest) guestRevive = 0.0f;
+    }
+    bool TakeHostRevived() { const bool v = hostRevived; hostRevived = false; return v; }
+    bool TakeGuestRevived() { const bool v = guestRevived; guestRevived = false; return v; }
+    float HostReviveProgress() const { return hostRevive; }
     // world нь тогтмол биш: цэргүүд замдаа таарсан хаалгыг онгойлгоно.
     void Update(float dt, World& world, Vector3 playerPosition, ZombieHorde& horde, Tracers& tracers,
                 Particles& particles);
     void Damage(int index, float amount);
+    // Амийн дээд хэмжээний fraction хувийг хасна (унаагаар дайрах г.м.)
+    void DamageFraction(int index, float fraction);
+    // Тушаал (тоглогчийн баг, зочны багт биш): seconds хугацаанд байлдахаа түр больж удирдагч руу гүйнэ ("энд бай" цуцлагдана)
+    void Regroup(float seconds);
+    // Бүгд энэ зомби руу буудна (seconds хугацаанд, буудах зайд байвал)
+    void Focus(uint32_t zombieId, float seconds)
+    {
+        focusId = zombieId;
+        focusTimer = seconds;
+    }
     // Тулаан: багийн гишүүд (элсүүлсэн цэрэг биш) эсрэг багийн хүмүүс рүү ч буудна. hostSide: хостын багийн бай
     // (зочны дайчид буудна), guestSide: зочны багийн бай (хостын дайчид буудна). Оносон хохирлыг TakeHumanHits.
     void SetBattle(bool active, std::vector<HumanTarget> hostSide, std::vector<HumanTarget> guestSide)
@@ -128,6 +172,11 @@ public:
     int AliveCount() const;
 
 private:
+    bool hostDowned = false, guestDowned = false, hostRevived = false, guestRevived = false;
+    float hostRevive = 0.0f, guestRevive = 0.0f;
+    void UpdateRevives(float dt, Vector3 hostPosition);
+    uint32_t focusId = 0;     // тушаалаар онилох зомби
+    float focusTimer = 0.0f;
     int leaderSkin = 0, guestLeaderSkin = 0;
     Vector3 SlotPosition(int index, Vector3 playerPosition, float radius) const;
     // Элсүүлсэн цэргийн дараагийн харуулын байр: өөрийн хэсэг (сектор) дотор, удирдагчаас 6-12 м.

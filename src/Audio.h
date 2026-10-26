@@ -28,6 +28,9 @@ enum class Sfx
     Hoof,  // морины туурай
     Screech, // дугуй чахирах (шарвалт)
     Rumble,  // дэлбэрэлтийн гүн нүргээн (дотоод давхарга)
+    Marker,    // сум онов (тоглогчид: богино "тик")
+    Headshot,  // толгойд онов (төмөрлөг "дин")
+    Heartbeat, // амь бага: зүрхний цохилт
     Count
 };
 
@@ -39,6 +42,31 @@ enum class EngineSound
     Moto,  // мотоцикл
     Trike, // гурван дугуйт
     Truck  // ачааны машин (дизель)
+};
+
+// Цэргийн яриа (assets/sounds/voice/<a|b|c>_<код>_<n>.wav): гурван өөр дуу хоолой, үйл явдал бүрд 1-3 хувилбар.
+enum class VoiceLine
+{
+    Spot,     // зомби харсан
+    Enemy,    // нөгөө багийн хүн (тулаан)
+    Fire,     // гал нээх
+    Reload,
+    Hurt,
+    Downed,
+    Revived,
+    Lost,     // нөхөр нь үхсэн
+    Follow,   // "над руу" тушаал
+    Hold,     // "энд бай" тушаал
+    Kill,
+    Exploder, // тэсрэгч зомби ойртсон
+    Boss,
+    Swarm,    // олон зомби бүсэлсэн
+    Ammo,     // нөөц сум дуусч байна
+    Grenade,
+    Vehicle,  // унаанд суух
+    Crate,    // ачааны хайрцаг газардсан
+    Idle,     // удаан чимээгүй
+    Count
 };
 
 namespace Audio
@@ -56,4 +84,9 @@ namespace Audio
 
     // Хөдөлгүүр (2 дуу хоолой: 0 = тоглогчийн унаа, 1 = ойрын бусад): rpm 0..1, throttle 0..1
     void SetEngine(int voice, EngineSound kind, float rpm, float throttle, Vector3 position);
+
+    // Цэргийн яриа: speaker 0..2 (дуу хоолой), нэг удаад нэг л хүн ярина. urgent: ярьж буйг тасалж ярина.
+    // Ярьсан бол true (бичлэг байхгүй, өөр хүн ярьж байгаа, хэт хол бол false).
+    bool Say(int speaker, VoiceLine line, Vector3 position, float pitch = 1.0f, bool urgent = false);
+    bool HasVoice(int speaker, VoiceLine line);
 }

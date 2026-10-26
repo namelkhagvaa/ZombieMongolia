@@ -28,6 +28,7 @@ namespace
     const Color kConcrete = { 150, 148, 140, 255 };
     const Color kBrick = { 138, 78, 62, 255 };
     const Color kWindow = { 34, 40, 48, 255 };
+    const Color kWindowHole = { 14, 15, 17, 255 }; // шилгүй цонхны нүх (цул барилга: дотор нь харанхуй)
     const Color kWindowFrame = { 206, 200, 186, 255 };
     const Color kDoor = { 96, 66, 46, 255 };
     const Color kRust = { 128, 76, 50, 255 };
@@ -98,6 +99,8 @@ namespace
         std::vector<Interior>& interiors;
         std::vector<Door>& doors;
         std::vector<Passage>& passages;
+        std::vector<WallSegment>& walls;
+        std::vector<FencePanel>& panels;
         Rng rng{ 20240u };
         int variant = 0;               // аймгийн дугаар
         Region region = Region::West;  // аймгийн бүс нутаг
@@ -105,6 +108,24 @@ namespace
         void Collider(Vector3 center, Vector3 size, bool blocksRays = true, bool walkable = false)
         {
             obstacles.push_back({ center, size, blocksRays, walkable });
+        }
+
+        // Нурдаг хашааны хэсэг: BeginPanel ба EndPanel хооронд solid-д нэмсэн гурвалжнууд тухайн хэсгийнх.
+        size_t panelFirst = 0;
+        void BeginPanel() { panelFirst = (size_t)solid.TriangleCount(); }
+        void EndPanel(Vector2 a, Vector2 b, float height, Color color, float breakSpeed, int wall, int obstacle)
+        {
+            FencePanel panel;
+            panel.a = a;
+            panel.b = b;
+            panel.height = height;
+            panel.color = color;
+            panel.breakSpeed = breakSpeed;
+            panel.wall = wall;
+            panel.obstacle = obstacle;
+            panel.first = panelFirst;
+            panel.count = (size_t)solid.TriangleCount() - panelFirst;
+            if (panel.count > 0) panels.push_back(panel);
         }
 
         // Нээж хаадаг хаалга ба түүний ард байгаа дотор талыг бүртгэнэ.
@@ -1039,6 +1060,7 @@ namespace
                 continue;
             }
 
+            s.BeginPanel();
             post(a + 0.07f, height + 0.1f);
             box(mid, 0.6f, segmentLength, 0.09f, 0.07f, -0.08f, ScaleColor(kWood, 0.8f));       // хөндлөвч
             box(mid, 1.6f, segmentLength, 0.09f, 0.07f, -0.08f, ScaleColor(kWood, 0.8f));
@@ -1065,6 +1087,9 @@ namespace
 
             if (alongX) s.Collider({ mid, height * 0.5f, fixed }, { segmentLength, height, 0.25f });
             else s.Collider({ fixed, height * 0.5f, mid }, { 0.25f, height, segmentLength });
+            const Vector3 p0 = at(a, 0.0f, 0.0f), p1 = at(a + segmentLength, 0.0f, 0.0f);
+            s.EndPanel({ p0.x, p0.z }, { p1.x, p1.z }, height, painted ? paint : MixColor(kWood, kWoodGrey, 0.5f), 3.0f, -1,
+                       (int)s.obstacles.size() - 1);
         }
         post(start + length - 0.07f, height + 0.1f);
         shadowRun(runStart, start + length);
@@ -4647,6 +4672,161 @@ namespace
 
     // Аймгийн төвийн барилга: хэлбэрээс хамаарсан өндөр, хана, цонх, дээвэр.
     // Налуу газарт суурь нь хамгийн нам буланд (бусад нь газарт шигдэнэ).
+    // Аймгийн төвийн нэг давхар байшин, дэлгүүр: дотогш орж болно. Налуу тэгш өнцөгт (OSM-ийн хэлбэр) тул хана бүр
+    // эргэлттэй хайрцаг, мөргөлдөөн нь налуу хана (WallSegment: хүн, зомбийг хаана, сум, камерыг хаана). Цонх нь
+    // жинхэнэ нүх (шилгүй): нэвт харагдана, нэвт буудна, F-ээр авирч орж гарна. Хаалга нь замын талын урт хананд.
+    void EnterableTownBuilding(Scene& s, const Plan& f, bool shop, float low, float high, float storey, Color wall, Color roof,
+                               Color frame, bool pitched)
+    {
+        const float thick = 0.2f, floorY = high + 0.08f, ceiling = floorY + storey, base = low - 0.3f;
+        const float doorWidth = 1.3f, doorHeight = 2.3f;
+        const float windowWidth = shop ? 1.6f : 1.1f, sill = shop ? 0.7f : 0.95f, head = shop ? 2.3f : 2.15f;
+        const float L = f.halfLong, S = f.halfShort;
+        const Vector2 u = f.axis, v = f.Side();
+        // Булангууд ба хана (a -> b, гадагш харсан чиглэл)
+        const Vector2 c0 = f.At(-L, -S), c1 = f.At(L, -S), c2 = f.At(L, S), c3 = f.At(-L, S);
+        struct Edge
+        {
+            Vector2 a, b, out;
+            bool longSide;
+        };
+        const Edge edges[4] = { { c0, c1, Vector2Negate(v), true }, { c1, c2, u, false }, { c2, c3, v, true }, { c3, c0, Vector2Negate(u), false } };
+        // Хаалга: зам руу ойр урт хана
+        const Vector2 m0 = Vector2Lerp(c0, c1, 0.5f), m2 = Vector2Lerp(c2, c3, 0.5f);
+        const int doorEdge = s.layout.RoadDistance(m0.x, m0.y) <= s.layout.RoadDistance(m2.x, m2.y) ? 0 : 2;
+
+        auto box = [&](Vector2 at, float yaw, float y0, float y1, float across, float along, Color color) {
+            s.solid.SetTransform(MatrixMultiply(MatrixRotateY(yaw), MatrixTranslate(at.x, (y0 + y1) * 0.5f, at.y)));
+            s.solid.Box({ 0.0f, 0.0f, 0.0f }, { across, y1 - y0, along }, color);
+            s.solid.ResetTransform();
+        };
+
+        for (int e = 0; e < 4; ++e)
+        {
+            const Edge& edge = edges[e];
+            const float length = Vector2Distance(edge.a, edge.b);
+            const Vector2 dir = Vector2Scale(Vector2Subtract(edge.b, edge.a), 1.0f / length);
+            const float yaw = std::atan2(dir.x, dir.y);
+            const Vector2 inset = Vector2Scale(edge.out, -thick * 0.5f); // ханын төв шугам
+            auto at = [&](float t) { return Vector2Add(Vector2Add(edge.a, Vector2Scale(dir, t)), inset); };
+
+            // Нээлхийнүүд (хана дагуу метрээр)
+            struct Opening
+            {
+                float t0, t1;
+                bool door;
+            };
+            std::vector<Opening> openings;
+            float doorCenter = -100.0f;
+            if (e == doorEdge)
+            {
+                doorCenter = length * 0.3f;
+                openings.push_back({ doorCenter - doorWidth * 0.5f, doorCenter + doorWidth * 0.5f, true });
+            }
+            const int windows = edge.longSide ? std::clamp((int)((length - 1.0f) / 3.2f), 1, 3) : (length >= 3.5f ? 1 : 0);
+            for (int k = 0; k < windows; ++k)
+            {
+                const float c = length * ((float)k + 0.5f) / (float)windows;
+                if (std::fabs(c - doorCenter) < (doorWidth + windowWidth) * 0.5f + 0.4f) continue;
+                if (c - windowWidth * 0.5f < 0.5f || c + windowWidth * 0.5f > length - 0.5f) continue;
+                openings.push_back({ c - windowWidth * 0.5f, c + windowWidth * 0.5f, false });
+            }
+            std::sort(openings.begin(), openings.end(), [](const Opening& x, const Opening& y) { return x.t0 < y.t0; });
+
+            const Color inner = ScaleColor(wall, 0.6f); // дотор тал бараан: гаднаас цонхоор харахад нүх тод
+            // Ханын хэсэг: гадна, дотор хоёр хавтгай (барилгыг culling-гүй зурдаг), нээлхийн талд л таг (тавцан, тотго,
+            // хажуу): хотод зуу зуун байшин тул хайрцгаас хоёр дахин цөөн гурвалжин.
+            auto piece = [&](float t0, float t1, float y0, float y1) {
+                if (t1 - t0 < 0.02f || y1 - y0 < 0.02f) return;
+                s.walls.push_back({ at(t0), at(t1), y0, y1, thick * 0.5f, false, true });
+                const Vector2 half = Vector2Scale(edge.out, thick * 0.5f);
+                const Vector2 oa = Vector2Add(at(t0), half), ob = Vector2Add(at(t1), half);
+                const Vector2 ia = Vector2Subtract(at(t0), half), ib = Vector2Subtract(at(t1), half);
+                auto quad = [&](Vector2 p0, float h0, Vector2 p1, float h1, Vector2 p2, float h2, Vector2 p3, float h3, Color c) {
+                    s.solid.Quad({ p0.x, h0, p0.y }, { p1.x, h1, p1.y }, { p2.x, h2, p2.y }, { p3.x, h3, p3.y }, c);
+                };
+                quad(ob, y0, oa, y0, oa, y1, ob, y1, wall);
+                const float lowY = std::max(y0, floorY);
+                if (y1 > lowY) quad(ia, lowY, ib, lowY, ib, y1, ia, y1, inner);
+                if (y1 < ceiling - 0.01f) quad(oa, y1, ob, y1, ib, y1, ia, y1, wall);  // цонхны тавцан
+                if (y0 > base + 0.01f) quad(oa, y0, ia, y0, ib, y0, ob, y0, wall);    // тотгоны доод тал
+                if (t0 > 0.01f) quad(oa, y0, ia, y0, ia, y1, oa, y1, wall);           // нээлхийн хажуу
+                if (t1 < length - 0.01f) quad(ob, y0, ob, y1, ib, y1, ib, y0, wall);
+            };
+            float cursor = 0.0f;
+            for (const Opening& o : openings)
+            {
+                piece(cursor, o.t0, base, ceiling);
+                const float top = o.door ? floorY + doorHeight : floorY + head;
+                if (!o.door) piece(o.t0, o.t1, base, floorY + sill);
+                piece(o.t0, o.t1, top, ceiling);
+                const Vector2 mid = at((o.t0 + o.t1) * 0.5f);
+                const float width = o.t1 - o.t0;
+                // Жааз: тотго, (цонх бол) тавцан
+                box(Vector2Add(mid, Vector2Scale(edge.out, 0.02f)), yaw, top, top + 0.08f, thick + 0.06f, width + 0.16f, frame);
+                if (!o.door)
+                {
+                    box(Vector2Add(mid, Vector2Scale(edge.out, 0.06f)), yaw, floorY + sill - 0.06f, floorY + sill, thick + 0.14f,
+                        width + 0.2f, frame);
+                    // Цонхоор авирч орох, үсэрч гарах гарц
+                    const float outward = std::atan2(edge.out.x, edge.out.y);
+                    const Vector2 face = Vector2Add(mid, Vector2Scale(edge.out, thick * 0.5f));
+                    const Vector2 inQ = Vector2Subtract(face, Vector2Scale(edge.out, 0.8f + thick));
+                    const Vector2 outQ = Vector2Add(face, Vector2Scale(edge.out, 0.95f));
+                    const Vector3 inside = { inQ.x, floorY, inQ.y };
+                    const Vector3 outside = { outQ.x, s.terrain.HeightAt(outQ.x, outQ.y), outQ.y };
+                    s.passages.push_back({ inside, outside, PassageKind::WindowOut, outward, 0.7f });
+                    s.passages.push_back({ outside, inside, PassageKind::WindowIn, outward + PI, 1.05f });
+                }
+                else
+                {
+                    // Нээж хаадаг хаалга: нугас нээлхийн эхэнд, гадагш эргэнэ
+                    Door leaf = {};
+                    const Vector2 hinge = at(o.t0);
+                    leaf.hinge = { hinge.x, floorY, hinge.y };
+                    leaf.width = doorWidth;
+                    leaf.height = doorHeight - 0.05f;
+                    leaf.closedYaw = yaw;
+                    leaf.openYaw = std::atan2(edge.out.x, edge.out.y);
+                    leaf.color = kDoor;
+                    Interior room = {};
+                    room.center = f.center;
+                    room.axis = u;
+                    room.halfX = L - thick;
+                    room.halfZ = S - thick;
+                    room.round = false;
+                    room.doorOutside = Vector2Add(mid, Vector2Scale(edge.out, 1.5f));
+                    room.doorInside = Vector2Subtract(mid, Vector2Scale(edge.out, 1.2f));
+                    s.Entrance(leaf, room);
+                }
+                cursor = o.t1;
+            }
+            piece(cursor, length, base, ceiling);
+        }
+
+        // Газар доорх тэмдэглэгээ (хэнийг ч хаахгүй): дотор нь өвс ургахгүй
+        {
+            const float minX = std::min({ c0.x, c1.x, c2.x, c3.x }), maxX = std::max({ c0.x, c1.x, c2.x, c3.x });
+            const float minZ = std::min({ c0.y, c1.y, c2.y, c3.y }), maxZ = std::max({ c0.y, c1.y, c2.y, c3.y });
+            s.Collider({ (minX + maxX) * 0.5f, base - 0.6f, (minZ + maxZ) * 0.5f }, { maxX - minX, 0.4f, maxZ - minZ });
+        }
+
+        // Шал, тааз (дотроос харагдана), дээвэр
+        const float axisYaw = std::atan2(u.x, u.y);
+        box(f.center, axisYaw, floorY - 0.1f, floorY, 2.0f * S - 0.1f, 2.0f * L - 0.1f, JitterColor(kWood, s.rng, 0.08f));
+        box(f.center, axisYaw, ceiling - 0.08f, ceiling, 2.0f * S, 2.0f * L, { 214, 208, 196, 255 });
+        if (pitched) TownGableRoof(s, f, ceiling, std::clamp(S * 0.6f, 0.6f, 3.2f), 0.4f, roof, wall);
+        else FlatRoof(s, { c0, c1, c2, c3 }, ceiling, roof);
+
+        // Тавилга (налуу тул WallSegment-ээр мөргөлдөнө): дэлгүүрт лангуу, байшинд ор
+        const Vector2 back = f.At(0.0f, (doorEdge == 0 ? 1.0f : -1.0f) * (S - thick - (shop ? 0.6f : 0.55f)));
+        const float span = std::min(shop ? 3.0f : 1.9f, 2.0f * L - 1.6f);
+        const float halfDepth = shop ? 0.3f : 0.45f, height = shop ? 1.0f : 0.55f;
+        const Vector2 e0 = Vector2Subtract(back, Vector2Scale(u, span * 0.5f)), e1 = Vector2Add(back, Vector2Scale(u, span * 0.5f));
+        box(back, axisYaw, floorY, floorY + height, halfDepth * 2.0f, span, shop ? Color{ 120, 92, 64, 255 } : Color{ 150, 60, 52, 255 });
+        s.walls.push_back({ e0, e1, floorY, floorY + height, halfDepth, false, false });
+    }
+
     void TownBuilding(Scene& s, const CityBuilding& b)
     {
         const std::vector<Vector2>& p = b.outline;
@@ -4695,7 +4875,8 @@ namespace
         const float top = high + (float)floors * floorHeight + (kind == TownKind::Apartments || kind == TownKind::Office ? 0.6f : 0.0f);
 
         // --- Өнгө ---
-        Color wall, roof = { 92, 90, 88, 255 }, frame = kWindowFrame, glass = { 52, 66, 82, 255 };
+        // Цонх: шилгүй нүх (дотор нь харанхуй)
+        Color wall, roof = { 92, 90, 88, 255 }, frame = kWindowFrame, glass = kWindowHole;
         bool pitched = false, windows = true;
         switch (kind)
         {
@@ -4716,7 +4897,7 @@ namespace
         case TownKind::Office: wall = JitterColor(gTown.publicWalls[s.rng.Int(0, 1)], s.rng, 0.03f); break;
         case TownKind::Apartments: wall = JitterColor(gTown.publicWalls[s.rng.Int(0, 1)], s.rng, 0.03f); break;
         case TownKind::School: wall = JitterColor({ 226, 196, 150, 255 }, s.rng, 0.03f); break;
-        case TownKind::Government: wall = { 232, 228, 216, 255 }; glass = { 40, 60, 86, 255 }; break;
+        case TownKind::Government: wall = { 232, 228, 216, 255 }; break;
         case TownKind::Warehouse:
             wall = JitterColor(s.rng.Chance(0.5f) ? Color{ 150, 152, 150, 255 } : Color{ 120, 136, 150, 255 }, s.rng, 0.05f);
             roof = { 120, 122, 124, 255 };
@@ -4724,6 +4905,15 @@ namespace
             windows = false;
             break;
         case TownKind::Temple: wall = { 232, 226, 210, 255 }; roof = { 52, 120, 84, 255 }; windows = false; break;
+        }
+
+        // Нэг давхар байшин, дэлгүүр: дотогш орж болно (бусад нь цул)
+        if ((kind == TownKind::House || kind == TownKind::Shop) && floors == 1 && rectangular && f.area >= 24.0f && f.area <= 260.0f &&
+            f.halfShort >= 2.0f && high - low < 0.45f)
+        {
+            EnterableTownBuilding(s, f, kind == TownKind::Shop, low, high, floorHeight, wall, roof, frame, pitched);
+            gCityMask.Fill(p);
+            return;
         }
 
         // --- Хана, цонх ---
@@ -4945,15 +5135,15 @@ namespace
                                          { 120, 140, 110, 255 }, { 170, 140, 110, 255 } };
         static const Color tin[] = { { 70, 110, 84, 255 }, { 52, 84, 130, 255 }, { 150, 58, 46, 255 }, { 118, 118, 120, 255 },
                                      { 92, 128, 140, 255 } };
-        Color wall, roof = { 86, 86, 90, 255 }, window = kWindow;
+        Color wall, roof = { 86, 86, 90, 255 }, window = kWindowHole; // шилгүй цонхны нүх
         bool windows = !house && height >= 5.0f;
         bool pitched = false;
         switch (b.type)
         {
         case CityBuildingType::Apartments: wall = panel[s.rng.Int(0, 6)]; break;
-        case CityBuildingType::Commercial: wall = glassy[s.rng.Int(0, 3)]; window = { 60, 86, 108, 255 }; break;
+        case CityBuildingType::Commercial: wall = glassy[s.rng.Int(0, 3)]; break;
         case CityBuildingType::School: wall = { 206, 186, 150, 255 }; break;
-        case CityBuildingType::Government: wall = { 214, 210, 200, 255 }; window = { 48, 66, 90, 255 }; break;
+        case CityBuildingType::Government: wall = { 214, 210, 200, 255 }; break;
         case CityBuildingType::Religious: wall = { 200, 176, 128, 255 }; roof = { 70, 110, 84, 255 }; pitched = n <= 8; break;
         case CityBuildingType::Industrial: wall = { 150, 148, 140, 255 }; windows = false; break;
         case CityBuildingType::Garage: wall = { 128, 124, 118, 255 }; windows = false; break;
@@ -5083,9 +5273,84 @@ namespace
 
     // ------------------------------------------------------------------ Хашаа, талбай, дурсгалт газар, хотын үүд
 
-    // Хашаа: нэг шугам бүхэлдээ нэг материал (банз, будсан төмөр, шавар хана), булан бүрд багана, замд хамгийн
-    // ойр хэсэгт хаалга. Мөргөлдөөнгүй (OSM-д хаалга нь тэмдэглэгддэггүй тул хашаан доторх гэр, байшинд орох
-    // замыг хаахгүй).
+    const float kGateWidth = 4.0f; // хашааны хаалганы өргөн (машин чөлөөтэй багтана)
+
+    // Хашааны хаалгатай хэсгүүд: замд хамгийн ойр урт хэсэгт заавал нэг, урт хашаанд ~50 м тутамд нэмэлт
+    // (OSM-д хаалга нь тэмдэглэгддэггүй).
+    std::vector<bool> FenceGates(Scene& s, const std::vector<Vector2>& path)
+    {
+        const int count = (int)path.size();
+        std::vector<bool> gates(count > 1 ? (size_t)count - 1 : 0, false);
+        std::vector<float> along((size_t)std::max(count, 1), 0.0f);
+        for (int i = 1; i < count; ++i) along[(size_t)i] = along[(size_t)i - 1] + Vector2Distance(path[(size_t)i - 1], path[(size_t)i]);
+        auto fits = [&](int i) { return Vector2Distance(path[(size_t)i], path[(size_t)i + 1]) >= kGateWidth + 1.2f; };
+        int best = -1, longest = -1;
+        float bestDistance = 1e9f, longestLength = 0.0f;
+        for (int i = 0; i + 1 < count; ++i)
+        {
+            const float length = Vector2Distance(path[(size_t)i], path[(size_t)i + 1]);
+            if (length > longestLength)
+            {
+                longestLength = length;
+                longest = i;
+            }
+            if (!fits(i)) continue;
+            const Vector2 mid = Vector2Lerp(path[(size_t)i], path[(size_t)i + 1], 0.5f);
+            const float distance = s.layout.RoadDistance(mid.x, mid.y);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = i;
+            }
+        }
+        // Урт хэсэггүй (жижиг хэсгүүдээс тогтсон) хашаа: хамгийн урт хэсэгт нь (FenceGate нарийсгана)
+        if (best < 0 && longestLength >= 3.0f) best = longest;
+        if (best < 0) return gates;
+        gates[(size_t)best] = true;
+        std::vector<float> marks = { (along[(size_t)best] + along[(size_t)best + 1]) * 0.5f };
+        for (int i = 0; i + 1 < count; ++i)
+        {
+            if (gates[(size_t)i] || !fits(i)) continue;
+            const float mark = (along[(size_t)i] + along[(size_t)i + 1]) * 0.5f;
+            bool far = true;
+            for (float other : marks) far = far && std::fabs(other - mark) >= 50.0f;
+            if (!far) continue;
+            gates[(size_t)i] = true;
+            marks.push_back(mark);
+        }
+        return gates;
+    }
+
+    // a -> b хэсгийн голд kGateWidth өргөн нүх (g0, g1 гаргана). Нүхэнд g0 нугастай нэг хавтас хаалга: F-ээр
+    // нээж хаана, хаалттай үед хүн, унаа нэвтрэхгүй (зомби удаан нүдвэл эвдэрнэ). Замаас холдох тал руу нээгдэнэ.
+    void FenceGate(Scene& s, Vector2 a, Vector2 b, float height, Color paint, Vector2& g0, Vector2& g1)
+    {
+        const float length = Vector2Distance(a, b);
+        const float width = std::min(kGateWidth, length - 0.6f);
+        const float half = width * 0.5f / length;
+        g0 = Vector2Lerp(a, b, 0.5f - half);
+        g1 = Vector2Lerp(a, b, 0.5f + half);
+        const Vector2 dir = Vector2Normalize(Vector2Subtract(g1, g0));
+        const Vector2 mid = Vector2Lerp(g0, g1, 0.5f);
+        Vector2 inward = { -dir.y, dir.x };
+        if (s.layout.RoadDistance(mid.x + inward.x * 2.0f, mid.y + inward.y * 2.0f) <
+            s.layout.RoadDistance(mid.x - inward.x * 2.0f, mid.y - inward.y * 2.0f))
+        {
+            inward = Vector2Negate(inward);
+        }
+        Door leaf = {};
+        leaf.hinge = { g0.x, std::min(s.terrain.HeightAt(g0.x, g0.y), s.terrain.HeightAt(g1.x, g1.y)) - 0.05f, g0.y };
+        leaf.width = width;
+        leaf.height = height;
+        leaf.gate = true;
+        leaf.closedYaw = std::atan2(dir.x, dir.y);
+        leaf.openYaw = std::atan2(inward.x, inward.y);
+        leaf.color = paint;
+        s.doors.push_back(leaf);
+    }
+
+    // Хашаа: нэг шугам бүхэлдээ нэг материал (банз, будсан төмөр, шавар хана), булан бүрд багана. Хаалга нь
+    // замд хамгийн ойр хэсэгт (урт хашаанд хэд хэд), нээж хаадаг.
     void TownFence(Scene& s, const std::vector<Vector2>& path, bool masonry)
     {
         const int count = (int)path.size();
@@ -5110,26 +5375,23 @@ namespace
         const Color dusty = ScaleColor(color, 0.72f); // доод хэсэг шороонд
         const Color post = ScaleColor(color, 0.62f);
 
-        // Хаалга: замд хамгийн ойр (9 м дотор), хангалттай урт хэсэгт
-        int gate = -1;
-        float gateDistance = 9.0f;
-        for (int i = 0; i + 1 < count; ++i)
-        {
-            if (Vector2Distance(path[(size_t)i], path[(size_t)i + 1]) < 4.5f) continue;
-            const Vector2 mid = Vector2Lerp(path[(size_t)i], path[(size_t)i + 1], 0.5f);
-            const float distance = s.layout.RoadDistance(mid.x, mid.y);
-            if (distance < gateDistance)
-            {
-                gateDistance = distance;
-                gate = i;
-            }
-        }
+        const std::vector<bool> gates = FenceGates(s, path);
 
-        auto panel = [&](Vector2 a, Vector2 b, float h, Color bottom, Color upper) {
-            const float ha = s.terrain.HeightAt(a.x, a.y) - 0.1f, hb = s.terrain.HeightAt(b.x, b.y) - 0.1f;
-            const Vector3 a0 = { a.x, ha, a.y }, b0 = { b.x, hb, b.y }, b1 = { b.x, hb + h, b.y }, a1 = { a.x, ha + h, a.y };
-            s.solid.Triangle(a0, b0, b1, bottom, bottom, upper);
-            s.solid.Triangle(a0, b1, a1, bottom, upper, upper);
+        // ~2.2 м хэсгүүд: хэсэг бүр машинаар дайрвал тусдаа нурна (шавар хана илүү хурдад)
+        auto panel = [&](Vector2 from, Vector2 to, float h, Color bottom, Color upper) {
+            const int pieces = std::max(1, (int)std::round(Vector2Distance(from, to) / 2.2f));
+            for (int k = 0; k < pieces; ++k)
+            {
+                const Vector2 a = Vector2Lerp(from, to, (float)k / (float)pieces), b = Vector2Lerp(from, to, (float)(k + 1) / (float)pieces);
+                const float ha = s.terrain.HeightAt(a.x, a.y) - 0.1f, hb = s.terrain.HeightAt(b.x, b.y) - 0.1f;
+                const Vector3 a0 = { a.x, ha, a.y }, b0 = { b.x, hb, b.y }, b1 = { b.x, hb + h, b.y }, a1 = { a.x, ha + h, a.y };
+                s.BeginPanel();
+                s.solid.Triangle(a0, b0, b1, bottom, bottom, upper);
+                s.solid.Triangle(a0, b1, a1, bottom, upper, upper);
+                // Мөргөлдөөн: хүн, зомби нэвтрэхгүй; банзан, төмөр хашааг цэрэг давна (чулуун ханыг ч)
+                s.walls.push_back({ a, b, std::min(ha, hb), std::max(ha, hb) + h, 0.08f, true });
+                s.EndPanel(a, b, h, upper, masonry ? 7.0f : 3.0f, (int)s.walls.size() - 1, -1);
+            }
         };
         auto postAt = [&](Vector2 q, float h, Color c, float size) {
             const float ground = s.terrain.HeightAt(q.x, q.y) - 0.1f;
@@ -5140,21 +5402,19 @@ namespace
         {
             const Vector2 a = path[(size_t)i], b = path[(size_t)i + 1];
             gFenceMask.Mark(a, b);
-            if (i != gate)
+            if (!gates[(size_t)i])
             {
                 panel(a, b, height, dusty, color);
                 continue;
             }
-            // Хаалга: будсан төмөр хоёр хаалт, хоёр өндөр багана, дээр нь хөндлөвч
+            // Хаалга: будсан төмөр хавтас (нээж хаадаг), хоёр өндөр багана, дээр нь хөндлөвч
             static const Color paints[] = { { 40, 90, 160, 255 }, { 50, 120, 80, 255 }, { 150, 50, 40, 255 }, { 110, 80, 50, 255 } };
-            const float length = Vector2Distance(a, b);
-            const Vector2 g0 = Vector2Lerp(a, b, 0.5f - 1.6f / length), g1 = Vector2Lerp(a, b, 0.5f + 1.6f / length);
+            const Color paint = JitterColor(paints[s.rng.Int(0, 3)], s.rng, 0.05f);
+            Vector2 g0, g1;
+            FenceGate(s, a, b, height, paint, g0, g1);
             panel(a, g0, height, dusty, color);
             panel(g1, b, height, dusty, color);
-            const Color paint = JitterColor(paints[s.rng.Int(0, 3)], s.rng, 0.05f);
             const Vector2 gm = Vector2Lerp(g0, g1, 0.5f);
-            panel(g0, gm, height + 0.1f, ScaleColor(paint, 0.85f), paint);
-            panel(gm, g1, height + 0.1f, ScaleColor(paint, 0.85f), paint);
             postAt(g0, height + 0.7f, post, 0.24f);
             postAt(g1, height + 0.7f, post, 0.24f);
             const Vector2 dir = Vector2Scale(Vector2Subtract(g1, g0), 1.0f / Vector2Distance(g0, g1));
@@ -5913,6 +6173,7 @@ namespace
         }
         const std::vector<Vector2> path = fence ? line.points : Resample(line.points, 6.0f);
         const int count = (int)path.size();
+        const std::vector<bool> gates = fence ? FenceGates(s, path) : std::vector<bool>();
         std::vector<Vector2> side(count);
         for (int i = 0; i < count; ++i)
         {
@@ -5924,15 +6185,39 @@ namespace
         {
             if (line.kind == CityLineKind::Fence || line.kind == CityLineKind::Wall)
             {
-                // Хашаа: газрын налууг дагасан банз (саарал, хүрэн) эсвэл чулуун хана. Мөргөлдөөнгүй (хаалга нь
-                // OSM-д тэмдэглэгддэггүй тул хашаан доторх гэр, байшинд орох замыг хаахгүй).
+                // Хашаа: газрын налууг дагасан банз (саарал, хүрэн) эсвэл чулуун хана. Хүн, зомби давж гарна
+                // (World::FindVault), дундуур нь нэвтрэхгүй; хаалгаар (FenceGates) орж гарна.
                 const bool wall = line.kind == CityLineKind::Wall;
                 const float height = wall ? 2.0f : 1.7f;
                 const Color color = wall ? JitterColor({ 150, 144, 132, 255 }, s.rng, 0.05f)
                                          : JitterColor(s.rng.Chance(0.5f) ? kWood : kWoodGrey, s.rng, 0.08f);
+                auto piece = [&](Vector2 from, Vector2 to) {
+                    const int pieces = std::max(1, (int)std::round(Vector2Distance(from, to) / 2.2f));
+                    for (int k = 0; k < pieces; ++k)
+                    {
+                        const Vector2 a = Vector2Lerp(from, to, (float)k / (float)pieces), b = Vector2Lerp(from, to, (float)(k + 1) / (float)pieces);
+                        const float ha = s.terrain.HeightAt(a.x, a.y), hb = s.terrain.HeightAt(b.x, b.y);
+                        s.BeginPanel();
+                        s.solid.Quad({ a.x, ha - 0.1f, a.y }, { b.x, hb - 0.1f, b.y }, { b.x, hb + height, b.y }, { a.x, ha + height, a.y }, color);
+                        s.walls.push_back({ a, b, std::min(ha, hb) - 0.1f, std::max(ha, hb) + height, 0.08f, true });
+                        s.EndPanel(a, b, height, color, wall ? 7.0f : 3.0f, (int)s.walls.size() - 1, -1);
+                    }
+                };
                 const Vector2 a = path[i], b = path[i + 1];
-                const float ha = s.terrain.HeightAt(a.x, a.y), hb = s.terrain.HeightAt(b.x, b.y);
-                s.solid.Quad({ a.x, ha - 0.1f, a.y }, { b.x, hb - 0.1f, b.y }, { b.x, hb + height, b.y }, { a.x, ha + height, a.y }, color);
+                if (!gates[(size_t)i])
+                {
+                    piece(a, b);
+                    continue;
+                }
+                Vector2 g0, g1;
+                FenceGate(s, a, b, height, wall ? Color{ 70, 80, 90, 255 } : ScaleColor(color, 0.8f), g0, g1);
+                piece(a, g0);
+                piece(g1, b);
+                for (Vector2 q : { g0, g1 })
+                {
+                    const float ground = s.terrain.HeightAt(q.x, q.y) - 0.1f;
+                    s.solid.Box({ q.x, ground + (height + 0.3f) * 0.5f, q.y }, { 0.22f, height + 0.3f, 0.22f }, ScaleColor(color, 0.7f));
+                }
                 continue;
             }
             if (line.kind == CityLineKind::Railway)
@@ -5981,6 +6266,8 @@ namespace
         default: return false;
         }
     }
+
+    bool NearBulganComplex(const Mountain& m, float x, float z);
 
     void BuildCity(Scene& s, const CityData& city)
     {
@@ -6081,7 +6368,12 @@ namespace
         // Гудамжны мод ба гэрэлтүүлэг: том замуудын хоёр талаар
         Rng rng(4242u);
         int trees = 0, lamps = 0;
+        // Булган уулын цогцолборын шат, хаалганы дэргэд гудамжны мод тавихгүй
         auto freeSpot = [&](float x, float z, float radius) {
+            for (const Mountain& m : s.layout.Mountains())
+            {
+                if (NearBulganComplex(m, x, z)) return false;
+            }
             return std::fabs(x) < kCityHalfExtent - 5.0f && std::fabs(z) < kCityHalfExtent - 5.0f && !gCityMask.Blocked(x, z, radius) &&
                    s.layout.RoadDistance(x, z) > 0.6f && s.layout.CityGround(x, z) != 6;
         };
@@ -6236,42 +6528,312 @@ namespace
                  built, buildingTriangles, skipped, streetTriangles, trees, lamps, parked, (int)gCityVehicleSpots.size(), s.solid.TriangleCount());
     }
 
-    // Энгэр дээрх цагаан суварга (Галдан зуу) ба сүм хийдээс өгсөх шат: цагаан хашлагатай, газрыг дагасан гишгүүр.
+    // Хятад маягийн шар дээвэр (одоогийн SetTransform-ийн дотор): c = хормойн төв, halfW (X) x halfD (Z), rise өндөр
+    // нуруу; хормойн булангууд дээшээ сөрвөлзөнө, доод тал нь улаан.
+    void PagodaRoof(Scene& s, Vector3 c, float halfW, float halfD, float rise, Color color)
+    {
+        const Color under = { 150, 40, 34, 255 }, ridge = ScaleColor(color, 0.85f);
+        const float lift = std::min(0.45f, rise * 0.4f);
+        for (int layer = 0; layer < 2; ++layer)
+        {
+            const float dy = layer == 0 ? 0.0f : -0.22f;
+            const Color face = layer == 0 ? color : under;
+            const Vector3 rl = { c.x - halfW * 0.72f, c.y + rise + dy, c.z }, rr = { c.x + halfW * 0.72f, c.y + rise + dy, c.z };
+            for (float side : { -1.0f, 1.0f })
+            {
+                const Vector3 el = { c.x - halfW, c.y + lift + dy, c.z + side * halfD };
+                const Vector3 em = { c.x, c.y + dy, c.z + side * halfD };
+                const Vector3 er = { c.x + halfW, c.y + lift + dy, c.z + side * halfD };
+                s.solid.Triangle(rl, el, em, face);
+                s.solid.Triangle(rl, em, rr, face);
+                s.solid.Triangle(rr, em, er, face);
+            }
+            // Хажуугийн гурвалжин (hip)
+            for (float side : { -1.0f, 1.0f })
+            {
+                const Vector3 r = side < 0.0f ? rl : rr;
+                s.solid.Triangle(r, { c.x + side * halfW, c.y + lift + dy, c.z - halfD }, { c.x + side * halfW, c.y + lift + dy, c.z + halfD }, face);
+            }
+        }
+        // Нурууны тагла ба үзүүрийн чимэглэл, хормойн улаан хүрээ
+        s.solid.Box({ c.x, c.y + rise + 0.12f, c.z }, { halfW * 1.44f + 0.3f, 0.26f, 0.32f }, ridge);
+        for (float side : { -1.0f, 1.0f })
+        {
+            s.solid.Box({ c.x + side * (halfW * 0.72f + 0.1f), c.y + rise + 0.4f, c.z }, { 0.22f, 0.5f, 0.3f }, ridge);
+            s.solid.Box({ c.x, c.y + 0.02f, c.z + side * (halfD - 0.25f) }, { halfW * 1.7f, 0.16f, 0.12f }, ScaleColor(color, 0.8f));
+        }
+    }
+
+    // Цагаан чулуун Будда: бадамлянхуан тавцан дээр зогссон, баруун гараа өргөсөн (айшгүй мудра). Орон нутгийн
+    // хүрээнд (SetTransform) -Z тал руу харна; base = тавцангийн ёроол.
+    void BuddhaStatue(Scene& s, float scale)
+    {
+        const Color stone = { 232, 230, 222, 255 }, shade = { 214, 210, 200, 255 };
+        auto v = [&](float x, float y, float z) { return Vector3{ x * scale, y * scale, z * scale }; };
+        // Тавцан: найман талт хоёр давхар, бадам цэцгийн дэлбээ
+        s.solid.Cylinder(v(0.0f, -0.6f, 0.0f), 2.5f * scale, 2.5f * scale, 1.4f * scale, 8, shade);
+        s.solid.Cylinder(v(0.0f, 0.8f, 0.0f), 2.0f * scale, 1.7f * scale, 1.0f * scale, 8, stone);
+        for (int i = 0; i < 14; ++i)
+        {
+            const float a = (float)i / 14.0f * 2.0f * PI;
+            s.solid.Ellipsoid(v(std::sin(a) * 1.75f, 2.0f, std::cos(a) * 1.75f), v(0.5f, 0.4f, 0.5f), 3, 6, stone);
+        }
+        s.solid.Cylinder(v(0.0f, 2.05f, 0.0f), 1.6f * scale, 1.5f * scale, 0.35f * scale, 12, shade);
+        const float y0 = 2.4f;
+        // Нөмрөг (доороо өргөн), цээж, мөр
+        s.solid.Cylinder(v(0.0f, y0, 0.0f), 1.05f * scale, 0.78f * scale, 4.3f * scale, 14, stone);
+        s.solid.Cylinder(v(0.0f, y0, 0.0f), 1.12f * scale, 1.08f * scale, 0.35f * scale, 14, shade); // хормой
+        s.solid.Ellipsoid(v(0.0f, y0 + 4.55f, 0.0f), v(1.05f, 0.75f, 0.62f), 5, 12, stone);
+        s.solid.Cylinder(v(0.0f, y0 + 5.05f, 0.0f), 0.3f * scale, 0.3f * scale, 0.45f * scale, 10, stone);
+        // Толгой, ушниша (оройн товгор), чих
+        s.solid.Ellipsoid(v(0.0f, y0 + 5.9f, 0.0f), v(0.46f, 0.56f, 0.5f), 6, 12, stone);
+        s.solid.Ellipsoid(v(0.0f, y0 + 6.5f, 0.0f), v(0.27f, 0.24f, 0.27f), 4, 8, shade);
+        for (float x : { -0.47f, 0.47f }) s.solid.Ellipsoid(v(x, y0 + 5.75f, 0.0f), v(0.08f, 0.3f, 0.13f), 3, 6, stone);
+        // Баруун гар (статуйн): тохой бөхийлгөж, алгаа урагш өргөнө
+        s.solid.Tube(v(-0.95f, y0 + 4.7f, 0.0f), v(-1.12f, y0 + 3.6f, -0.15f), 0.24f * scale, 0.2f * scale, 8, stone);
+        s.solid.Tube(v(-1.12f, y0 + 3.6f, -0.15f), v(-1.02f, y0 + 4.75f, -0.62f), 0.2f * scale, 0.16f * scale, 8, stone);
+        s.solid.Ellipsoid(v(-1.02f, y0 + 5.0f, -0.66f), v(0.17f, 0.3f, 0.07f), 3, 8, stone);
+        // Зүүн гар: доош унжуулж, алгаа урагш
+        s.solid.Tube(v(0.95f, y0 + 4.7f, 0.0f), v(1.12f, y0 + 3.6f, -0.1f), 0.24f * scale, 0.2f * scale, 8, stone);
+        s.solid.Tube(v(1.12f, y0 + 3.6f, -0.1f), v(0.85f, y0 + 2.8f, -0.45f), 0.2f * scale, 0.16f * scale, 8, stone);
+        s.solid.Ellipsoid(v(0.82f, y0 + 2.6f, -0.5f), v(0.16f, 0.28f, 0.08f), 3, 8, stone);
+        // Нөмрөгийн нугалаа (урд талд)
+        for (float x : { -0.45f, 0.0f, 0.45f }) s.solid.Box(v(x, y0 + 1.6f, -0.86f), v(0.06f, 2.6f, 0.08f), shade);
+    }
+
+    // Энгэр дээрх дугуй талбай: газрын налууг дагасан хавтан (явж гарахад ирмэггүй); захаараа намхан
+    // цагаан хашлага, баганатай. Хашлагад шатны чигт (d ба -d) gap өнцгийн (радиан) нүх үлдээнэ (back = false бол
+    // зөвхөн урд талд, шат дээшээ үргэлжлэхгүй).
+    float RoundPlaza(Scene& s, Vector2 c, float radius, Vector2 d, float curb, float gap, bool back, Color paving)
+    {
+        auto at = [&](float r, float a) {
+            const float x = c.x + std::sin(a) * r, z = c.y + std::cos(a) * r;
+            return Vector3{ x, s.terrain.HeightAt(x, z) + 0.1f, z };
+        };
+        const int rings = std::max(2, (int)(radius / 3.0f));
+        for (int k = 0; k < rings; ++k)
+        {
+            const float r0 = radius * (float)k / (float)rings, r1 = radius * (float)(k + 1) / (float)rings;
+            const Color tile = k % 2 ? paving : ScaleColor(paving, 0.94f);
+            for (int i = 0; i < 40; ++i)
+            {
+                const float a0 = (float)i / 40.0f * 2.0f * PI, a1 = (float)(i + 1) / 40.0f * 2.0f * PI;
+                s.solid.Quad(at(r0, a0), at(r1, a0), at(r1, a1), at(r0, a1), tile);
+            }
+        }
+        const float top = s.terrain.HeightAt(c.x, c.y) + 0.1f;
+        const Color white = { 236, 234, 226, 255 };
+        const float front = std::atan2(-d.x, -d.y), rear = std::atan2(d.x, d.y);
+        const int segments = 40;
+        for (int i = 0; i < segments; ++i)
+        {
+            const float a0 = (float)i / (float)segments * 2.0f * PI, a1 = (float)(i + 1) / (float)segments * 2.0f * PI;
+            const float mid = (a0 + a1) * 0.5f;
+            const bool open = std::fabs(std::remainder(mid - front, 2.0f * PI)) < gap ||
+                              (back && std::fabs(std::remainder(mid - rear, 2.0f * PI)) < gap);
+            if (open) continue;
+            const Vector2 p0 = { c.x + std::sin(a0) * (radius - 0.2f), c.y + std::cos(a0) * (radius - 0.2f) };
+            const Vector2 p1 = { c.x + std::sin(a1) * (radius - 0.2f), c.y + std::cos(a1) * (radius - 0.2f) };
+            const Vector2 n = { std::sin(mid) * 0.12f, std::cos(mid) * 0.12f };
+            const float h0 = s.terrain.HeightAt(p0.x, p0.y), h1 = s.terrain.HeightAt(p1.x, p1.y);
+            // Хашлага: хоёр нүүртэй нимгэн хана, дээрээ тагтай (газрыг дагана)
+            for (float side : { -1.0f, 1.0f })
+            {
+                const Vector2 q0 = Vector2Add(p0, Vector2Scale(n, side)), q1 = Vector2Add(p1, Vector2Scale(n, side));
+                s.solid.Quad({ q0.x, h0 - 0.1f, q0.y }, { q1.x, h1 - 0.1f, q1.y }, { q1.x, h1 + curb, q1.y }, { q0.x, h0 + curb, q0.y }, white);
+            }
+            const Vector2 i0 = Vector2Subtract(p0, n), o0 = Vector2Add(p0, n), i1 = Vector2Subtract(p1, n), o1 = Vector2Add(p1, n);
+            s.solid.Quad({ i0.x, h0 + curb, i0.y }, { i1.x, h1 + curb, i1.y }, { o1.x, h1 + curb, o1.y }, { o0.x, h0 + curb, o0.y },
+                         { 222, 220, 212, 255 });
+            if (i % 3 == 0) s.solid.Box({ p0.x, h0 + curb * 0.5f + 0.2f, p0.y }, { 0.35f, curb + 0.4f, 0.35f }, white);
+            s.walls.push_back({ p0, p1, std::min(h0, h1) - 0.2f, std::max(h0, h1) + curb, 0.12f, true });
+        }
+        return top;
+    }
+
+    // Хүрэл тулга: гурван муруй хөл, хоёр цагираг (галын голомт)
+    void BronzeTulga(Scene& s, Vector3 base)
+    {
+        const Color bronze = { 168, 112, 52, 255 }, dark = { 120, 80, 40, 255 };
+        s.solid.Cylinder(base, 0.9f, 0.85f, 0.25f, 12, { 150, 146, 138, 255 }); // чулуун суурь
+        const Vector3 b = { base.x, base.y + 0.25f, base.z };
+        auto ring = [&](float y, float r, float thick) {
+            for (int i = 0; i < 16; ++i)
+            {
+                const float a0 = (float)i / 16.0f * 2.0f * PI, a1 = (float)(i + 1) / 16.0f * 2.0f * PI;
+                s.solid.Tube({ b.x + std::sin(a0) * r, b.y + y, b.z + std::cos(a0) * r }, { b.x + std::sin(a1) * r, b.y + y, b.z + std::cos(a1) * r },
+                             thick, thick, 5, bronze, false);
+            }
+        };
+        ring(1.05f, 0.5f, 0.06f);
+        ring(0.55f, 0.42f, 0.045f);
+        for (int k = 0; k < 3; ++k)
+        {
+            const float a = (float)k / 3.0f * 2.0f * PI;
+            const Vector3 foot = { b.x + std::sin(a) * 0.62f, b.y, b.z + std::cos(a) * 0.62f };
+            const Vector3 knee = { b.x + std::sin(a) * 0.4f, b.y + 0.55f, b.z + std::cos(a) * 0.4f };
+            const Vector3 head = { b.x + std::sin(a) * 0.5f, b.y + 1.25f, b.z + std::cos(a) * 0.5f };
+            s.solid.Tube(foot, knee, 0.07f, 0.06f, 6, dark);
+            s.solid.Tube(knee, head, 0.06f, 0.07f, 6, bronze);
+            s.solid.Ellipsoid(head, { 0.09f, 0.11f, 0.09f }, 3, 6, bronze); // толгойн чимэглэл
+        }
+        s.Collider({ base.x, base.y + 0.7f, base.z }, { 1.6f, 1.4f, 1.6f });
+    }
+
+    // Найман талт асар: улаан шар багана, ногоон шовх дээвэр
+    void Pavilion(Scene& s, float x, float z)
+    {
+        const float ground = s.terrain.HeightAt(x, z);
+        s.solid.Cylinder({ x, ground - 0.4f, z }, 2.4f, 2.4f, 0.65f, 8, kConcrete);
+        for (int i = 0; i < 8; ++i)
+        {
+            const float a = (float)i / 8.0f * 2.0f * PI;
+            s.solid.Box({ x + std::sin(a) * 2.0f, ground + 1.5f, z + std::cos(a) * 2.0f }, { 0.2f, 2.5f, 0.2f }, { 214, 120, 40, 255 });
+        }
+        s.solid.Cylinder({ x, ground + 2.65f, z }, 2.3f, 2.3f, 0.35f, 8, { 196, 60, 40, 255 });
+        s.solid.Cylinder({ x, ground + 3.0f, z }, 2.9f, 0.2f, 1.6f, 8, { 52, 140, 80, 255 });
+        s.solid.Cylinder({ x, ground + 4.55f, z }, 0.12f, 0.04f, 0.6f, 6, { 206, 168, 72, 255 });
+        s.Collider({ x, ground + 1.5f, z }, { 0.6f, 3.0f, 0.6f });
+    }
+
+    // Булган уулын өврийн цогцолбор (Цэцэрлэг): шар дээвэртэй гурван хаалгатай үүд, хоёр эгнээ урт шат, шатны оройд
+    // Зуу бурханы хийдийн яг урд цагаан Будда, хоёр талдаа бяцхан суварга.
+    void BulganComplex(Scene& s, const Mountain& m)
+    {
+        const Color white = { 236, 234, 226, 255 }, stoneGrey = { 204, 200, 192, 255 }, red = { 160, 42, 36, 255 };
+        const Color yellow = { 228, 186, 38, 255 }, blue = { 46, 112, 196, 255 }, teal = { 40, 120, 130, 255 };
+        const Vector2 top = m.buddha, bottom = m.gate;
+        TraceLog(LOG_INFO, "TOWN: Bulgan complex gate (%.0f, %.0f), rest (%.0f, %.0f), Buddha (%.0f, %.0f)", bottom.x, bottom.y, m.rest.x, m.rest.y, top.x, top.y);
+        const float length = Vector2Distance(bottom, top);
+        const Vector2 d = Vector2Scale(Vector2Subtract(top, bottom), 1.0f / length);
+        const Vector2 right = { d.y, -d.x }; // орон нутгийн +X (MatrixRotateY(atan2(d.x, d.y)))
+        const float yaw = std::atan2(d.x, d.y);
+        auto world = [&](Vector2 origin, float x, float z) { return Vector2Add(origin, Vector2Add(Vector2Scale(right, x), Vector2Scale(d, z))); };
+
+        // --- Үүдний талбай ба хаалга
+        const Vector2 gate = world(bottom, 0.0f, -3.0f);
+        TownPaving(s, world(bottom, 0.0f, -6.0f), d, 3.5f, 11.0f, { 170, 166, 158, 255 });
+        float gateGround = s.terrain.HeightAt(gate.x, gate.y);
+        for (float x : { -8.0f, 8.0f }) gateGround = std::min(gateGround, s.terrain.HeightAt(world(gate, x, 0.0f).x, world(gate, x, 0.0f).y));
+        const float base = gateGround + 0.9f; // хаалганы тавцан (урдаа гишгүүртэй)
+        s.solid.SetTransform(MatrixMultiply(MatrixRotateY(yaw), MatrixTranslate(gate.x, base, gate.y)));
+        s.solid.Box({ 0.0f, -0.9f, 0.6f }, { 17.4f, 2.0f, 4.4f }, kConcrete); // тавцан
+        for (int i = 0; i < 5; ++i) s.solid.Box({ 0.0f, -0.2f - 0.18f * (float)i, -1.9f - 0.42f * (float)i }, { 10.0f, 0.18f, 0.42f }, ScaleColor(kConcrete, 0.95f));
+        // Гол хоёр багана: чулуун, урд хойд талдаа улаан самбартай
+        for (float x : { -3.3f, 3.3f })
+        {
+            s.solid.Box({ x, 3.25f, 0.0f }, { 1.3f, 6.5f, 1.3f }, stoneGrey);
+            for (float z : { -0.67f, 0.67f }) s.solid.Box({ x, 3.3f, z }, { 0.62f, 4.6f, 0.04f }, red);
+            s.solid.Box({ x, 0.2f, 0.0f }, { 1.6f, 0.4f, 1.6f }, ScaleColor(stoneGrey, 0.9f));
+        }
+        // Хөндлөвч: улаан, дээрээ хөх ногоон хээтэй тууз, голдоо самбар
+        s.solid.Box({ 0.0f, 6.25f, 0.0f }, { 8.4f, 0.75f, 1.0f }, red);
+        s.solid.Box({ 0.0f, 6.78f, 0.0f }, { 8.2f, 0.3f, 1.06f }, teal);
+        s.solid.Box({ 0.0f, 6.25f, -0.53f }, { 2.4f, 0.5f, 0.05f }, { 230, 226, 210, 255 });
+        PagodaRoof(s, { 0.0f, 7.0f, 0.0f }, 5.6f, 2.3f, 2.0f, yellow);
+        s.solid.Cylinder({ 0.0f, 9.2f, 0.0f }, 0.14f, 0.08f, 0.9f, 6, { 206, 168, 72, 255 }); // оройн гандирс
+        // Хажуугийн хоёр жижиг хаалга: намхан багана, хөндлөвч, шар дээвэр
+        for (float side : { -1.0f, 1.0f })
+        {
+            const float outer = side * 8.0f, mid = side * 5.65f;
+            s.solid.Box({ outer, 1.9f, 0.0f }, { 0.9f, 3.8f, 0.9f }, stoneGrey);
+            s.solid.Box({ outer, 2.0f, -0.46f }, { 0.4f, 2.6f, 0.04f }, red);
+            s.solid.Box({ mid, 3.55f, 0.0f }, { 4.0f, 0.45f, 0.8f }, red);
+            PagodaRoof(s, { mid, 3.95f, 0.0f }, 2.75f, 1.45f, 1.2f, yellow);
+            // Хадаг ороосон арслан (хөх)
+            const float lx = side * 3.3f;
+            s.solid.Box({ lx, 0.35f, -1.4f }, { 0.8f, 0.7f, 0.8f }, stoneGrey);
+            s.solid.Ellipsoid({ lx, 1.15f, -1.4f }, { 0.36f, 0.5f, 0.36f }, 4, 8, blue);
+            s.solid.Ellipsoid({ lx, 1.75f, -1.45f }, { 0.28f, 0.28f, 0.28f }, 4, 8, { 120, 120, 116, 255 });
+        }
+        s.solid.ResetTransform();
+        for (float x : { -8.0f, -3.3f, 3.3f, 8.0f })
+        {
+            const Vector2 q = world(gate, x, 0.0f);
+            const float w = std::fabs(x) > 5.0f ? 0.9f : 1.3f;
+            s.Collider({ q.x, base + 3.0f, q.y }, { w, 8.0f, w });
+        }
+
+        // --- Шат: хоёр эгнээ (дундуураа цагаан баганатай хуваагч), гадна талдаа цагаан хашлага. Буддагийн өмнөх
+        // талбай хүртэл.
+        const float kBuddhaPlaza = m.buddhaRadius, kRestPlaza = m.restRadius;
+        const float stairsLength = std::max(10.0f, length - kBuddhaPlaza + 0.5f);
+        const float restAt = Vector2Distance(bottom, m.rest);
+        const int steps = (int)(stairsLength / 0.8f);
+        for (int i = 0; i < steps; ++i)
+        {
+            const float along = ((float)i + 0.5f) * stairsLength / (float)steps;
+            if (std::fabs(along - restAt) < kRestPlaza - 0.4f) continue;
+            const Vector2 p = Vector2Add(bottom, Vector2Scale(d, along));
+            const float ground = s.terrain.HeightAt(p.x, p.y);
+            s.solid.SetTransform(MatrixMultiply(MatrixRotateY(yaw), MatrixTranslate(p.x, ground, p.y)));
+            const Color step = i % 2 ? kConcrete : ScaleColor(kConcrete, 0.9f);
+            for (float x : { -2.55f, 2.55f }) s.solid.Box({ x, -0.35f, 0.0f }, { 3.6f, 1.24f, 0.8f }, step); // газарт суулгасан (налуу дээр хөвөхгүй)
+            s.solid.Box({ 0.0f, -0.25f, 0.0f }, { 1.4f, 1.38f, 0.82f }, ScaleColor(kConcrete, 0.8f)); // хуваагч
+            if (i % 8 == 0) s.solid.Box({ 0.0f, 1.0f, 0.0f }, { 0.4f, 1.2f, 0.4f }, white);  // хуваагчийн багана
+            if (i % 3 == 0)
+            {
+                for (float x : { -4.45f, 4.45f }) s.solid.Box({ x, 0.55f, 0.0f }, { 0.12f, 1.0f, 0.12f }, white); // хашлагын багана
+            }
+            s.solid.ResetTransform();
+            if (i % 3 == 0)
+            {
+                for (float sx : { -4.45f, 4.45f })
+                {
+                    const Vector2 a = Vector2Add(p, Vector2Scale(right, sx));
+                    const Vector2 b = Vector2Add(a, Vector2Scale(d, 3.0f * stairsLength / (float)steps));
+                    const float ha = s.terrain.HeightAt(a.x, a.y) + 1.0f, hb = s.terrain.HeightAt(b.x, b.y) + 1.0f;
+                    s.solid.Quad({ a.x, ha, a.y }, { b.x, hb, b.y }, { b.x, hb + 0.1f, b.y }, { a.x, ha + 0.1f, a.y }, white);
+                }
+            }
+        }
+
+        // --- Шатны дундах амрах талбай: энгийн дугуй, голд нь хүрэл тулга
+        const Vector2 rest = m.rest;
+        const float restTop = RoundPlaza(s, rest, kRestPlaza, d, 0.5f, 0.32f, true, { 180, 176, 168, 255 });
+        BronzeTulga(s, { rest.x, restTop, rest.y });
+
+        // --- Шатны орой: хийдийн урд дугуй талбай, голд нь өндөр тавцан дээр Будда (хот руу, шат руу харна);
+        // захаараа цагаан хашлага, хоёр талдаа асар, гэрлийн шон
+        const float topGround = RoundPlaza(s, top, kBuddhaPlaza, d, 0.8f, 0.2f, false, { 172, 168, 160, 255 });
+        s.solid.SetTransform(MatrixMultiply(MatrixRotateY(yaw), MatrixTranslate(top.x, topGround, top.y)));
+        s.solid.Box({ 0.0f, 0.35f, 0.0f }, { 6.0f, 0.7f, 6.0f }, { 200, 198, 192, 255 }); // дөрвөлжин тавцан
+        s.solid.Box({ 0.0f, 0.9f, 0.0f }, { 4.8f, 0.4f, 4.8f }, { 214, 212, 206, 255 });
+        s.solid.ResetTransform();
+        s.solid.SetTransform(MatrixMultiply(MatrixRotateY(yaw), MatrixTranslate(top.x, topGround + 1.7f, top.y)));
+        BuddhaStatue(s, 1.25f);
+        s.solid.ResetTransform();
+        s.Collider({ top.x, topGround + 5.5f, top.y }, { 6.0f, 11.0f, 6.0f });
+        for (float x : { -18.0f, 18.0f })
+        {
+            const Vector2 q = world(top, x, 2.0f);
+            Pavilion(s, q.x, q.y);
+        }
+        for (float a : { 0.7f, -0.7f, 2.2f, -2.2f })
+        {
+            // Хашлагын дотор талд, шатнаас хоёр тийш
+            const Vector2 q = world(top, std::sin(a) * (kBuddhaPlaza - 1.2f), -std::cos(a) * (kBuddhaPlaza - 1.2f));
+            CityLamp(s, q.x, q.y, Vector2Subtract(top, q));
+        }
+    }
+
+    // Цогцолборын шат, талбай, сүмийн дэргэд мод, хад ургуулахгүй
+    bool NearBulganComplex(const Mountain& m, float x, float z)
+    {
+        if (m.buddha.x > 1e8f) return false;
+        const Vector2 a = m.gate, b = m.buddha, q = { x, z };
+        const Vector2 ab = Vector2Subtract(b, a);
+        const float t = Clamp(Vector2DotProduct(Vector2Subtract(q, a), ab) / Vector2DotProduct(ab, ab), -0.03f, 1.08f);
+        if (Vector2Distance(q, m.rest) < m.restRadius + 4.0f || Vector2Distance(q, b) < m.buddhaRadius + 12.0f) return true;
+        return Vector2Distance(q, Vector2Add(a, Vector2Scale(ab, t))) < 14.0f;
+    }
+
+    // Энгэр дээрх цагаан суварга (Галдан зуу); доороос нь Булган уулын цогцолборын шат өгсөнө.
     void MountainStupa(Scene& s, const Mountain& m, Rng& rng)
     {
         const Color white = { 236, 234, 226, 255 }, gold = { 206, 168, 72, 255 };
         const Vector2 top = m.stupa;
-        if (m.stairs.x < 1e8f)
-        {
-            const Vector2 bottom = m.stairs;
-            const float length = Vector2Distance(bottom, top);
-            const Vector2 dir = Vector2Scale(Vector2Subtract(top, bottom), 1.0f / length);
-            const Vector2 side = { -dir.y, dir.x };
-            const int steps = (int)(length / 0.8f);
-            for (int i = 0; i < steps; ++i)
-            {
-                const Vector2 p = Vector2Add(bottom, Vector2Scale(dir, ((float)i + 0.5f) * length / (float)steps));
-                const float ground = s.terrain.HeightAt(p.x, p.y);
-                s.solid.SetTransform(MatrixMultiply(MatrixRotateY(std::atan2(dir.x, dir.y)), MatrixTranslate(p.x, ground, p.y)));
-                s.solid.Box({ 0.0f, 0.12f, 0.0f }, { 3.0f, 0.3f, 0.8f }, i % 2 ? kConcrete : ScaleColor(kConcrete, 0.9f)); // гишгүүр
-                if (i % 3 == 0)
-                {
-                    for (float x : { -1.6f, 1.6f }) s.solid.Box({ x, 0.55f, 0.0f }, { 0.12f, 1.0f, 0.12f }, white); // хашлагын багана
-                }
-                s.solid.ResetTransform();
-                if (i % 3 == 0)
-                {
-                    for (float sx : { -1.6f, 1.6f })
-                    {
-                        // Хашлагын хөндлөвч: дараагийн багана хүртэл
-                        const Vector2 a = Vector2Add(p, Vector2Scale(side, sx));
-                        const Vector2 b = Vector2Add(a, Vector2Scale(dir, 3.0f * length / (float)steps));
-                        const float ha = s.terrain.HeightAt(a.x, a.y) + 1.0f, hb = s.terrain.HeightAt(b.x, b.y) + 1.0f;
-                        s.solid.Quad({ a.x, ha, a.y }, { b.x, hb, b.y }, { b.x, hb + 0.1f, b.y }, { a.x, ha + 0.1f, a.y }, white);
-                    }
-                }
-            }
-        }
+        if (m.buddha.x < 1e8f) BulganComplex(s, m);
         // Суварга: тавцан, шатлалт суурь, бөмбөгөр, алтан оргил
         const float ground = s.terrain.HeightAt(top.x, top.y);
         float low = ground;
@@ -6310,6 +6872,7 @@ namespace
                     const float profile = m.Profile(x, z);
                     if (profile < 0.06f || s.layout.CityBuiltDistance(x, z) < 50.0f || s.layout.RoadDistance(x, z) < 2.0f) continue;
                     if (m.ovoo.x < 1e8f && std::fabs(x - m.ovoo.x) < 6.0f && std::fabs(z - m.ovoo.y) < 6.0f) continue;
+                    if (NearBulganComplex(m, x, z)) continue;
                     const Vector3 n = GroundNormalAt(s, x, z);
                     const float grove = Fbm(x * 0.006f + 41.0f, z * 0.006f + 9.0f, 3);
                     if (profile < 0.9f && grove > 0.36f && larches < 1600 && rng.Chance(n.z > 0.05f ? 0.07f + 0.15f * n.z : 0.012f))
@@ -6425,9 +6988,10 @@ const std::vector<Vector3>& CityVehicleSpots()
 void BuildStaticStructures(const Layout& layout, const Terrain& terrain, std::vector<Obstacle>& obstacles,
                            MeshBuilder& solid, MeshBuilder& shadows, MeshBuilder& glass,
                            std::vector<Interior>& interiors, std::vector<Door>& doors,
-                           std::vector<Passage>& passages)
+                           std::vector<Passage>& passages, std::vector<WallSegment>& walls,
+                           std::vector<FencePanel>& panels)
 {
-    Scene scene = { layout, terrain, obstacles, solid, shadows, glass, interiors, doors, passages };
+    Scene scene = { layout, terrain, obstacles, solid, shadows, glass, interiors, doors, passages, walls, panels };
     if (layout.IsCity())
     {
         BuildCity(scene, CurrentCity()); // Улаанбаатар / аймгийн жинхэнэ төв
@@ -6446,9 +7010,10 @@ void BuildStaticStructures(const Layout& layout, const Terrain& terrain, std::ve
 void BuildSettlementStructures(int variant, const Layout& layout, const Terrain& terrain,
                                std::vector<Obstacle>& obstacles, MeshBuilder& solid, MeshBuilder& shadows,
                                MeshBuilder& glass, std::vector<Interior>& interiors, std::vector<Door>& doors,
-                           std::vector<Passage>& passages)
+                           std::vector<Passage>& passages, std::vector<WallSegment>& walls,
+                           std::vector<FencePanel>& panels)
 {
-    Scene scene = { layout, terrain, obstacles, solid, shadows, glass, interiors, doors, passages };
+    Scene scene = { layout, terrain, obstacles, solid, shadows, glass, interiors, doors, passages, walls, panels };
     scene.rng = Rng((uint32_t)(5000 + variant * 97)); // үе бүрд өөр, гэхдээ тухайн үед үргэлж ижил
     scene.variant = variant;
     scene.region = RegionFor(variant);

@@ -26,8 +26,9 @@ namespace Net
     constexpr uint16_t kDiscoveryPort = 47811;
     // Сүлжээний мессежийн хувилбар: мессежийн бүтэц өөрчлөгдөх бүрд нэмэгдүүлнэ. Хост ба зочин ижил хувилбартай
     // байж л нэгдэнэ (эс бөгөөс өгөгдөл буруу уншигдаж, жишээ нь цэргүүд "үхсэн" мэт харагдана).
-    constexpr uint16_t kProtocolVersion = 8; // 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris; 6: 1-р дайчны дүр;
-                                             // 7: тулаан (тоглогч хооронд); 8: зочин хосттой адил (гишүүн солих г.м.)
+    constexpr uint16_t kProtocolVersion = 11; // 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris; 6: 1-р дайчны дүр;
+                                             // 7: тулаан (тоглогч хооронд); 8: зочин хосттой адил (гишүүн солих г.м.);
+                                             // 9: унааг буудах, Gold-ийн цэрэг алдах; 10: илгээсэн цаг (жигд хөдөлгөөн)
 
     // Мессежийн төрөл (пакетийн эхний байт)
     enum class Msg : uint8_t
@@ -57,7 +58,12 @@ namespace Net
         GuestSwitch,     // зочин -> хост: өөрийн AI гишүүн рүү шилжих (гишүүн, орхих гишүүн "энд бай" эсэх)
         GuestRecruit,    // зочин -> хост: дэлгүүрээс цэрэг элсүүлсэн (тоо)
         GuestHeal,       // зочин -> хост: дэлгүүрээс багийн амь дүүргэсэн
-        GuestSetup       // зочин -> хост: нэгдмэгц: гишүүдийн амийн дээд хэмжээ, Gold-оор авсан цэргийн тоо
+        GuestSetup,      // зочин -> хост: нэгдмэгц: гишүүдийн амийн дээд хэмжээ, Gold-оор авсан цэргийн тоо
+        VehicleHit,      // аль аль нь: нөгөө талын тооцдог унаанд сум онов (индекс, хохирол)
+        SoldierLost,     // хост -> зочин: зочны Gold-оор авсан цэрэг үхэв (тоо): серверээс шууд хасна
+        WorldEvent,      // хост -> зочин: гэнэтийн үйл явдал (төрөл, дугаар, байрлал, өндөр)
+        CrateTaken,      // аль аль нь: ачааны хайрцгийг авлаа (дугаар)
+        Revive           // аль аль нь: нөгөө талын унасан тоглогчийг босголоо
     };
     constexpr uint32_t kHostPlayer = 0xFFFF; // GuestHitHuman: хостын удирдаж буй тоглогч
 
@@ -72,6 +78,7 @@ namespace Net
         uint8_t member = 0;  // гадаад төрх (багийн гишүүний дугаар)
         uint8_t flags = 0;   // kAlive, kCrouch, kProne, kAiming, kFired, kRiding
         float health = 100.0f;
+        float sentAt = 0.0f; // илгээгчийн цаг (секунд): хурдыг ирсэн цагаар биш (сүлжээний савлагаа) илгээсэн цагаар тооцно
         // Буудлага: буудсан сумны тоолуур (255-аас эргэнэ) ба сүүлийн сумны туссан цэг. Нөгөө тал тоолуур
         // өөрчлөгдөхөд сумны мөр, амны гал, ухралтыг зурна (илгээх завсарт хэд буудсан ч алдагдахгүй).
         uint8_t shots = 0;
@@ -84,6 +91,8 @@ namespace Net
         uint8_t leaderSkin = 0;     // энэ тоглогчийн 1-р дайчны дүр (Team.h)
     };
     constexpr uint8_t kAlive = 1, kCrouch = 2, kProne = 4, kAiming = 8, kFired = 16, kRiding = 32;
+    constexpr uint8_t kPassenger = 64; // kRiding-тэй хамт: жолоочийн биш, буудагчийн суудалд
+    constexpr uint8_t kDowned = 128;   // унасан (босгохыг хүлээж буй)
 
     struct ZombieState
     {
@@ -97,6 +106,8 @@ namespace Net
     constexpr uint8_t kZombieAirborne = 8; // унаанд мөргүүлж агаарт нисэж яваа (зочин эргэлдүүлж зурна)
     // Дээд 4 бит: довтолгооны үлдсэн хугацаа (1..15 = цохилтын 1/15..15/15) — зочин цохилтыг хосттой зэрэг харуулна
     constexpr int kZombieAttackShift = 4;
+    // ZombieState.type-ийн дээд битүүд: онцлог (доод 4 бит нь ZombieType)
+    constexpr uint8_t kZombieExploder = 16, kZombieScreamer = 32, kZombieScreaming = 64;
 
     struct SoldierState
     {
@@ -160,6 +171,7 @@ namespace Net
         bool accepted = false; // JoinReply
         int province = 0;      // JoinReply
         int version = 0;       // JoinRequest / JoinReply: нөгөө талын протоколын хувилбар (0 = хуучин, хувилбаргүй)
+        bool coop = false;     // JoinRequest: зочин найзын кодоор орсон (хамт тоглолт, тулаангүй)
         AvatarState avatar;    // GuestState
         uint32_t id = 0;       // GuestHit: зомби, GuestBarrel / BarrelExploded: торх
         float amount = 0.0f;   // хохирол, зоос
@@ -208,6 +220,8 @@ namespace Net
         void SetTicket(const std::string& value) { ticket = value; }
         // Зочин: backend-ийн сонгосон өрөө рүү тасалбараар нэгдэнэ (код хэрэггүй).
         void RequestJoinTicket(const std::string& value);
+        // Дараагийн нэгдэх хүсэлт найзын кодоор (хамт тоглолт) эсэх
+        void SetJoinCoop(bool value) { joinCoop = value; }
         // Бүгдийг хааж, холболтыг таслана.
         void Stop();
 
@@ -241,6 +255,11 @@ namespace Net
         void SendGuestRecruit(int count);
         void SendGuestHeal();
         void SendGuestSetup(float memberHealth, int recruits);
+        void SendVehicleHit(int index, float damage);
+        void SendSoldierLost(int count);
+        void SendWorldEvent(int kind, int id, Vector3 position, float altitude);
+        void SendCrateTaken(int id);
+        void SendRevive();
 
         // Хүлээн авсан сүүлийн snapshot (зочин)
         bool TakeSnapshot(Snapshot& out);
@@ -266,6 +285,7 @@ namespace Net
         void* host = nullptr;      // ENetHost*
         void* peer = nullptr;      // ENetPeer*
         bool connected = false;
+        bool joinCoop = false;
         bool joinPending = false;  // зочин: хүсэлт илгээсэн, хариу хүлээж байна
         intptr_t discoverySocket = -1;
         float probeTimer = 0.0f;

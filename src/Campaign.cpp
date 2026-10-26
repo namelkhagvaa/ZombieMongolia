@@ -3,6 +3,7 @@
 #include "Account.h"
 
 #include "Input.h"
+#include "ProvinceMap.h"
 #include "UiFont.h"
 #include "UiStyle.h"
 
@@ -44,7 +45,8 @@ namespace
     // Аймаг бүрийн дэлгэц дээрх дүрс: нэг удаа тооцоод хадгална.
     struct ProvinceArt
     {
-        Shape shape;                    // дэлгэцийн координатаар (товшилт шалгахад)
+        Shape shape;                    // дэлгэцийн координатаар (товшилт шалгахад): хамгийн том хэсэг
+        std::vector<Polygon> extra;     // бусад хэсэг (Улаанбаатарын Багануур, Багахангай)
         std::vector<Vector2> triangles; // дүүргэлт
         Vector2 label;                  // нэр бичих цэг
     };
@@ -54,17 +56,24 @@ namespace
         static std::vector<ProvinceArt> art;
         if (art.empty())
         {
-            for (const Province& province : Provinces())
+            // Бодит хил (ProvinceMap.cpp); даалгаврын талбарын бүдүүвч (Regions.cpp) биш
+            auto toScreen = [](const Polygon& ring) {
+                Polygon out;
+                for (const Vector2& p : ring) out.push_back(ToScreen(p));
+                return out;
+            };
+            for (const ProvinceMapShape& province : ProvinceMapShapes())
             {
                 ProvinceArt item;
-                for (const Vector2& p : province.outline) item.shape.outline.push_back(ToScreen(p));
-                for (const Polygon& hole : province.holes)
+                for (size_t k = 0; k < province.parts.size(); ++k)
                 {
-                    Polygon ring;
-                    for (const Vector2& p : hole) ring.push_back(ToScreen(p));
-                    item.shape.holes.push_back(ring);
+                    const Polygon ring = toScreen(province.parts[k]);
+                    if (k == 0) item.shape.outline = ring;
+                    else item.extra.push_back(ring);
+                    const std::vector<Vector2> triangles = Triangulate(ring);
+                    item.triangles.insert(item.triangles.end(), triangles.begin(), triangles.end());
                 }
-                item.triangles = Triangulate(item.shape.outline);
+                for (const Polygon& hole : province.holes) item.shape.holes.push_back(toScreen(hole));
                 item.label = item.shape.InteriorPoint();
                 art.push_back(item);
             }
@@ -79,12 +88,12 @@ namespace
         return IsProvinceUnlocked(progress, index) && Account::Unlocked(index) ? kAvailable : kLocked;
     }
 
-    // Цэг бүрийн өнгө: дээрээсээ (гэрэлтэй) доошоо (бараан) шилжинэ, байрлалаас хамаарсан бага зэрэг толбо.
+    // Цэг бүрийн өнгө: дээрээсээ (гэрэлтэй) доошоо (бараан) шугаман шилжинэ. Шугаман тул гурвалжны оройн
+    // өнгийг холиход яг таарна (бодит хилийн урт нарийн гурвалжнууд туяа шиг харагдахгүй).
     Color ShadeAt(Vector2 p, Color fill)
     {
         const float t = std::clamp((p.y - kMapRect.y) / kMapRect.height, 0.0f, 1.0f);
-        const float noise = std::sin(p.x * 0.071f + p.y * 0.043f) * std::sin(p.y * 0.089f - p.x * 0.027f);
-        const float k = 1.08f - 0.3f * t + 0.05f * noise;
+        const float k = 1.08f - 0.3f * t;
         auto channel = [k](unsigned char c) { return (unsigned char)std::clamp((float)c * k, 0.0f, 255.0f); };
         return { channel(fill.r), channel(fill.g), channel(fill.b), fill.a };
     }
@@ -109,13 +118,15 @@ namespace
 
     }
 
+    void DrawRing(const Polygon& ring, float width, Color color)
+    {
+        for (size_t i = 0; i < ring.size(); ++i) DrawLineEx(ring[i], ring[(i + 1) % ring.size()], width, color);
+    }
+
     void DrawEdges(const ProvinceArt& art, float width, Color color)
     {
-        const Polygon& outline = art.shape.outline;
-        for (size_t i = 0; i < outline.size(); ++i)
-        {
-            DrawLineEx(outline[i], outline[(i + 1) % outline.size()], width, color);
-        }
+        DrawRing(art.shape.outline, width, color);
+        for (const Polygon& part : art.extra) DrawRing(part, width, color);
     }
 
     // Газрын зургийн сүүдэр: бүх аймгийг бага зэрэг доош шилжүүлж бараанаар
@@ -430,6 +441,39 @@ MapScreen::Result MapScreen::Update(Progress& progress, bool& progressChanged)
     const std::vector<ProvinceArt>& art = Art();
     const int count = (int)art.size();
 
+    // Сайжруулалт авах уу? цонх: АВАХ / Болих (цонхны гадна товшвол хаагдана). Бусад оролт хаагдана.
+    if (confirmItem >= 0)
+    {
+        const ShopItem item = (ShopItem)confirmItem;
+        const bool maxed = ShopLevel(progress, item) >= ShopMaxLevel(item);
+        const bool affordable = !maxed && ShopWallet(progress) >= ShopCost(progress, item);
+        bool yes = InKeyPressed(KEY_ENTER) || InKeyPressed(KEY_KP_ENTER);
+        bool no = false;
+        if (InMousePressed(MOUSE_BUTTON_LEFT))
+        {
+            const Vector2 mouse = InPointer();
+            yes = CheckCollisionPointRec(mouse, confirmYes);
+            no = CheckCollisionPointRec(mouse, confirmNo) || !CheckCollisionPointRec(mouse, confirmPanel);
+        }
+        if (yes)
+        {
+            confirmItem = -1;
+            if (affordable)
+            {
+                if (ShopBuy(progress, item)) progressChanged = true;
+            }
+            else if (!maxed && Account::ServerShop())
+            {
+                Account::OpenGoldShop(); // Gold хүрэлцэхгүй: Gold авах цонх
+            }
+        }
+        else if (no)
+        {
+            confirmItem = -1;
+        }
+        return Result::None;
+    }
+
     // Сонголт: сум товч (аяны дарааллаар) эсвэл аймаг дээр товших
     if (InKeyPressed(KEY_RIGHT) || InKeyPressed(KEY_DOWN)) selected = (selected + 1) % count;
     if (InKeyPressed(KEY_LEFT) || InKeyPressed(KEY_UP)) selected = (selected + count - 1) % count;
@@ -456,17 +500,18 @@ MapScreen::Result MapScreen::Update(Progress& progress, bool& progressChanged)
         }
     }
 
-    // Дэлгүүр: 1..5 товч
+    // Дэлгүүр: мөрийг товших эсвэл 1..5 товч -> баталгаажуулах цонх
     for (int i = 0; i < (int)ShopItem::Count; ++i)
     {
-        if (InKeyPressed(KEY_ONE + i) && ShopBuy(progress, (ShopItem)i))
-        {
-            progressChanged = true;
-        }
+        const bool tapped = InMousePressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(InPointer(), shopCards[i]);
+        if (InKeyPressed(KEY_ONE + i) || tapped) confirmItem = i;
     }
+    if (confirmItem >= 0) return Result::None;
 
     // Аймаг эсвэл довтлох товч дээр хулганы заагч "гар" хэлбэртэй
-    const bool pointing = !InTouchMode() && (HoveredProvince(art) >= 0 || CheckCollisionPointRec(InPointer(), kAttackButton));
+    bool overCard = false;
+    for (int i = 0; i < (int)ShopItem::Count; ++i) overCard = overCard || CheckCollisionPointRec(InPointer(), shopCards[i]);
+    const bool pointing = !InTouchMode() && (HoveredProvince(art) >= 0 || overCard || CheckCollisionPointRec(InPointer(), kAttackButton));
     SetMouseCursor(pointing ? MOUSE_CURSOR_POINTING_HAND : MOUSE_CURSOR_DEFAULT);
 
     if ((doubleClicked || attackPressed || InKeyPressed(KEY_ENTER)) && IsProvinceUnlocked(progress, selected))
@@ -475,6 +520,64 @@ MapScreen::Result MapScreen::Update(Progress& progress, bool& progressChanged)
         return Result::StartMission;
     }
     return Result::None;
+}
+
+void MapScreen::DrawConfirm(const Progress& progress) const
+{
+    confirmYes = confirmNo = confirmPanel = {};
+    if (confirmItem < 0) return;
+    const ShopItem item = (ShopItem)confirmItem;
+    const int level = ShopLevel(progress, item), maxLevel = ShopMaxLevel(item), cost = ShopCost(progress, item);
+    const int wallet = ShopWallet(progress);
+    const bool maxed = level >= maxLevel, affordable = !maxed && wallet >= cost;
+    const int screenWidth = ViewWidth(), screenHeight = ViewHeight();
+    DrawRectangle(0, 0, screenWidth, screenHeight, { 0, 0, 0, 160 });
+
+    const float width = std::min(480.0f, (float)screenWidth - 24.0f), height = 250.0f;
+    const Rectangle panel = { ((float)screenWidth - width) * 0.5f, ((float)screenHeight - height) * 0.5f, width, height };
+    confirmPanel = panel;
+    Ui::Panel(panel, { 12, 16, 22, 245 }, 14.0f);
+    Ui::Outline(panel, { 255, 200, 90, 140 }, 1.5f, 14.0f);
+    const float x = panel.x + 26.0f, inner = width - 52.0f;
+    if (!Ui::DrawIcon(ShopHudIconFor(item), { x, panel.y + 22.0f, 54.0f, 54.0f }))
+    {
+        DrawShopIcon(item, { x + 6.0f, panel.y + 28.0f, 42.0f, 42.0f }, Ui::kAccent);
+    }
+    Ui::TextBold(ShopItemName(item), (int)x + 68, (int)panel.y + 24, 22, Ui::kText);
+    const char* detail = maxed ? "Хамгийн дээд түвшинд хүрсэн"
+                       : item == ShopItem::Soldier ? TextFormat("+1 цэрэг  (одоо %d / %d)", level, maxLevel)
+                                                   : TextFormat("Түвшин %d  ->  %d  (дээд %d)", level, level + 1, maxLevel);
+    Ui::Text(detail, (int)x + 68, (int)panel.y + 54, 16, Ui::kTextDim);
+    // Түвшний цэгүүд: дараагийнх нь лугшина
+    const float pulse = 0.5f + 0.5f * std::sin((float)GetTime() * 5.0f);
+    for (int k = 0; k < maxLevel; ++k)
+    {
+        const Color color = k < level ? Ui::kAccent : k == level && !maxed ? Fade(Ui::kAccent, 0.35f + 0.5f * pulse) : Color{ 255, 255, 255, 40 };
+        DrawRectangleRounded({ x + (float)k * 22.0f, panel.y + 96.0f, 16.0f, 7.0f }, 1.0f, 4, color);
+    }
+    if (!maxed)
+    {
+        const char* price = TextFormat("%d Gold", cost);
+        Ui::Coin({ x + 10.0f, panel.y + 136.0f }, 9.0f);
+        Ui::TextBold(price, (int)x + 26, (int)panel.y + 124, 22, affordable ? Ui::kAccent : Ui::kDanger);
+        const char* have = TextFormat("Танд %d Gold", wallet);
+        Ui::Text(have, (int)(x + inner) - Ui::Measure(have, 16), (int)panel.y + 129, 16, Ui::kTextDim);
+    }
+    const float by = panel.y + height - 74.0f, half = inner * 0.5f - 6.0f;
+    const char* yesLabel = maxed ? "ОК" : affordable ? "АВАХ" : Account::ServerShop() ? "+ GOLD АВАХ" : "ЗООС ХҮРЭЛЦЭХГҮЙ";
+    confirmYes = { x, by, maxed ? inner : half, 52.0f };
+    confirmNo = maxed ? Rectangle{} : Rectangle{ x + half + 12.0f, by, half, 52.0f };
+    const bool yesHover = !InTouchMode() && CheckCollisionPointRec(InPointer(), confirmYes);
+    DrawRectangleRounded(confirmYes, 0.35f, 8, yesHover ? Color{ 255, 218, 110, 255 } : Color{ 242, 178, 48, 255 });
+    Ui::TextBold(yesLabel, (int)(confirmYes.x + (confirmYes.width - (float)Ui::MeasureBold(yesLabel, 19)) * 0.5f), (int)by + 15, 19,
+                 { 34, 24, 6, 255 });
+    if (!maxed)
+    {
+        const bool noHover = !InTouchMode() && CheckCollisionPointRec(InPointer(), confirmNo);
+        DrawRectangleRounded(confirmNo, 0.35f, 8, { 255, 255, 255, (unsigned char)(noHover ? 44 : 22) });
+        DrawRectangleRoundedLinesEx(confirmNo, 0.35f, 8, 1.0f, { 255, 255, 255, 70 });
+        Ui::TextBold("Болих", (int)(confirmNo.x + (confirmNo.width - (float)Ui::MeasureBold("Болих", 18)) * 0.5f), (int)by + 16, 18, Ui::kText);
+    }
 }
 
 void MapScreen::Preload() const
@@ -507,7 +610,7 @@ void MapScreen::Draw(const Progress& progress) const
     Ui::Bar({ 42.0f + (float)Ui::Measure(progressText, 16), 62.0f, 200.0f, 7.0f }, (float)liberated / (float)count, kLiberated,
             { 0, 0, 0, 140 });
     // Данс: нэр, үнэгүй үлдсэн аймаг, худалдаж авсан эрх, "Гарах" товч
-    Account::DrawBadge(58 + Ui::Measure(progressText, 16) + 200, 52);
+    Account::DrawBadge(screenWidth - 28, 20, true); // баруун дээд буланд
     if (liberated == count)
     {
         Ui::Chip("МОНГОЛ УЛС ЧӨЛӨӨЛӨГДЛӨӨ!", 420, 22, Ui::kAccent, kLiberated);
@@ -534,7 +637,7 @@ void MapScreen::Draw(const Progress& progress) const
     {
         for (int i = 0; i < count; ++i)
         {
-            const bool hasEnclave = !provinces[i].holes.empty();
+            const bool hasEnclave = !art[i].shape.holes.empty();
             if ((pass == 0) != hasEnclave) continue;
             DrawProvince(art[i], StatusColor(progress, i), false);
         }
@@ -577,14 +680,44 @@ void MapScreen::Draw(const Progress& progress) const
         }
     }
 
-    // Нэрс: аяны дугаартай; Улаанбаатарын өмнө од
+    // Нэрс: аяны дугаартай; Улаанбаатарын өмнө од. Давхцвал жижиг аймгийн (Орхон, Дархан-Уул г.м.) нэр доош.
+    std::vector<Rectangle> labels((size_t)count);
+    for (int i = 0; i < count; ++i)
+    {
+        const int size = i == selected ? 18 : 14;
+        const float width = (float)Ui::MeasureBold(TextFormat("%d %s", i + 1, provinces[i].name), size) + 16.0f;
+        labels[(size_t)i] = { art[i].label.x - width * 0.5f, art[i].label.y - (float)size * 0.5f, width, (float)size };
+    }
+    auto area = [&](int i) {
+        const Polygon& ring = art[i].shape.outline;
+        float sum = 0.0f;
+        for (size_t k = 0; k < ring.size(); ++k)
+        {
+            const Vector2 p = ring[k], q = ring[(k + 1) % ring.size()];
+            sum += p.x * q.y - q.x * p.y;
+        }
+        return std::fabs(sum);
+    };
+    for (int pass = 0; pass < 3; ++pass)
+    {
+        for (int i = 0; i < count; ++i)
+        {
+            for (int j = 0; j < count; ++j)
+            {
+                if (i == j || i == selected || !CheckCollisionRecs(labels[(size_t)i], labels[(size_t)j]) || area(i) > area(j)) continue;
+                const Rectangle& other = labels[(size_t)j];
+                labels[(size_t)i].y = labels[(size_t)i].y < other.y ? other.y - labels[(size_t)i].height - 2.0f
+                                                                    : other.y + other.height + 2.0f;
+            }
+        }
+    }
     for (int i = 0; i < count; ++i)
     {
         const char* text = TextFormat("%d %s", i + 1, provinces[i].name);
         const int size = i == selected ? 18 : 14;
         const int width = Ui::MeasureBold(text, size);
-        const int x = (int)art[i].label.x - width / 2;
-        const int y = (int)art[i].label.y - size / 2;
+        const int x = (int)(labels[(size_t)i].x + labels[(size_t)i].width * 0.5f) - width / 2;
+        const int y = (int)labels[(size_t)i].y;
         if (std::strcmp(provinces[i].name, "Улаанбаатар") == 0)
         {
             DrawStar({ (float)x - 9.0f, (float)y + (float)size * 0.5f + 1.0f }, 8.0f, Fade(BLACK, 0.6f));
@@ -741,7 +874,10 @@ void MapScreen::Draw(const Progress& progress) const
         const bool affordable = !maxed && ShopWallet(progress) >= cost;
 
         const Rectangle card = { (float)panelX + 8.0f, (float)y, (float)panelWidth - 16.0f, 40.0f };
-        DrawRectangleRounded(card, 0.25f, 6, { 255, 255, 255, 12 });
+        shopCards[i] = card;
+        const bool hover = !InTouchMode() && confirmItem < 0 && CheckCollisionPointRec(InPointer(), card);
+        DrawRectangleRounded(card, 0.25f, 6, hover ? Color{ 255, 205, 90, 34 } : Color{ 255, 255, 255, 12 });
+        if (hover) DrawRectangleRoundedLinesEx(card, 0.25f, 6, 1.0f, Fade(kGold, 0.6f));
         Ui::KeyBadge(TextFormat("%d", i + 1), panelX + 16, y + 8, 13, affordable ? kGold : Ui::kTextDim);
         // assets/huds-ийн сайжруулалтын икон; байхгүй бол assets/icons-ийнх, тэр нь ч байхгүй бол зурсан дүрс
         const Color iconTint = maxed ? Color{ 255, 255, 255, 170 } : WHITE;
@@ -774,7 +910,7 @@ void MapScreen::Draw(const Progress& progress) const
         Ui::TextShadow("аймаг сонгох", x, hy + 3, 15, Ui::kText);
         x += Ui::Measure("аймаг сонгох", 15) + 22;
         const struct { const char* key; const char* text; } hints[] = {
-            { "2× / ENTER", "довтлох" }, { "1–5", "сайжруулалт авах" }, { "ESC", "цэс" } };
+            { "2× / ENTER", "довтлох" }, { "1–5 / товш", "сайжруулалт" }, { "ESC", "цэс" } };
         for (const auto& hint : hints)
         {
             x += Ui::KeyBadge(hint.key, x, hy, 14, Ui::kText) + 8;

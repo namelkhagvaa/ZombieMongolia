@@ -1129,8 +1129,9 @@ void Environment::SetTimeOfDay(float t)
 
 void Environment::DrawSky(const Camera3D& camera) const
 {
-    const int width = ViewWidth();
-    const int height = ViewHeight();
+    // Бага нягтралтай текстурт зурж байвал түүний хэмжээгээр (тэнгэр бүхэлдээ багтана)
+    const int width = sceneActive ? scene.texture.width : ViewWidth();
+    const int height = sceneActive ? scene.texture.height : ViewHeight();
 
     // --- Тэнгэр: shader-ээр (үүл, нар, хаяаны манан) ---
     const Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
@@ -1338,10 +1339,11 @@ void Environment::EndShadowPass()
 
 // ---------------------------------------------------------------- Дэлгэцийн эффект
 
-bool Environment::BeginScene(int width, int height)
+bool Environment::BeginScene(int width, int height, bool lowRes)
 {
     sceneActive = false;
-    if (!postEnabled || postShader.id == 0 || postShader.id == rlGetShaderIdDefault()) return false;
+    sceneShaded = postEnabled && postShader.id != 0 && postShader.id != rlGetShaderIdDefault();
+    if (!sceneShaded && !lowRes) return false;
     if (scene.id == 0 || scene.texture.width != width || scene.texture.height != height)
     {
         if (scene.id) UnloadRenderTexture(scene);
@@ -1352,7 +1354,7 @@ bool Environment::BeginScene(int width, int height)
         scene = LoadRenderTexture(width, height);
         SetTextureFilter(scene.texture, TEXTURE_FILTER_BILINEAR);
     }
-    if (bloomEnabled && bloomA.id == 0)
+    if (sceneShaded && bloomEnabled && bloomA.id == 0)
     {
         bloomA = LoadRenderTexture(std::max(1, width / 4), std::max(1, height / 4));
         bloomB = LoadRenderTexture(std::max(1, width / 4), std::max(1, height / 4));
@@ -1370,7 +1372,7 @@ void Environment::EndScene()
     if (!sceneActive) return;
     EndTextureMode();
 
-    if (bloomEnabled && bloomA.id && bloomB.id)
+    if (sceneShaded && bloomEnabled && bloomA.id && bloomB.id)
     {
         // Гэрэлтэй хэсгийг 1/4 хэмжээнд ялгаж, хоёр чиглэлд бүдгэрүүлнэ
         const float w = (float)scene.texture.width, h = (float)scene.texture.height;
@@ -1400,12 +1402,15 @@ void Environment::DrawScene() const
 {
     if (!sceneActive) return;
     const float w = (float)scene.texture.width, h = (float)scene.texture.height;
-    BeginShaderMode(postShader);
-    if (bloomEnabled && bloomA.id)
+    if (sceneShaded)
     {
-        SetShaderValueTexture(postShader, GetShaderLocation(postShader, "bloomTexture"), bloomA.texture);
+        BeginShaderMode(postShader);
+        if (bloomEnabled && bloomA.id)
+        {
+            SetShaderValueTexture(postShader, GetShaderLocation(postShader, "bloomTexture"), bloomA.texture);
+        }
     }
     DrawTexturePro(scene.texture, { 0.0f, 0.0f, w, -h }, { 0.0f, 0.0f, (float)ViewWidth(), (float)ViewHeight() },
                    { 0.0f, 0.0f }, 0.0f, WHITE);
-    EndShaderMode();
+    if (sceneShaded) EndShaderMode();
 }

@@ -1,3 +1,4 @@
+#include "ViewCull.h"
 #include "Vehicle.h"
 #include "VehicleModel.h"
 
@@ -31,14 +32,16 @@ float RamLaunchSpeed(VehicleType type)
 const VehicleSpec& SpecFor(VehicleType type)
 {
     //                name          top   acc   brake rev  turn  rad   asph  dirt  steppe slope ram   encl   seat                   cam
+    // (бүрэн бүтэн байдал: өмнөхөөс 3.5 дахин их — зомби мөргөж, буудуулж удаан тэсэнэ)
+    // (дээд хурд: өмнөхөөс 1.5 дахин их; хурдлалт нь дээд хурд руу ойртох тусам суларна — Garage::Update)
     static const VehicleSpec specs[] = {
-        /* Jeep  */ { "ЖИЙП",       30.0f, 9.0f, 20.0f, 7.0f, 1.9f, 1.5f, 1.00f, 0.70f, 0.45f, 1.6f, 9.0f, true,  { 0.0f, 1.0f, 0.0f },   4.0f, 160.0f, 9.0f, 1.6f },
-        /* Moto  */ { "МОТОЦИКЛ", 26.0f, 11.0f, 18.0f, 3.0f, 2.4f, 0.7f, 1.00f, 0.80f, 0.60f, 1.2f, 3.0f, false, { 0.0f, 0.86f, -0.22f }, 1.5f, 60.0f, 7.0f, 0.35f },
-        /* Trike */ { "ГУРВАН ДУГУЙТ",      17.0f, 6.0f, 14.0f, 4.0f, 1.8f, 1.0f, 1.00f, 0.85f, 0.70f, 1.4f, 4.5f, false, { 0.0f, 0.92f, 0.05f },  2.0f, 90.0f, 6.0f, 0.7f },
-        /* Horse */ { "МОРЬ",      17.0f, 9.0f, 12.0f, 2.0f, 2.8f, 0.8f, 0.85f, 1.00f, 0.95f, 0.6f, 2.0f, false, { 0.0f, 1.5f, -0.05f },  1.5f, 90.0f, 0.0f, 0.6f },
-        /* Truck */ { "АЧААНЫ МАШИН", 22.0f, 4.5f, 12.0f, 4.0f, 1.25f, 2.1f, 1.00f, 0.78f, 0.55f, 1.9f, 16.0f, true, { 0.5f, 1.75f, 1.25f }, 7.0f, 420.0f, 8.0f, 6.0f },
-        /* Suv   */ { "X-TRAIL",    31.0f, 9.5f, 20.0f, 7.0f, 1.95f, 1.5f, 1.00f, 0.72f, 0.50f, 1.5f, 8.0f, true,  { 0.0f, 0.95f, 0.0f },  4.0f, 140.0f, 10.0f, 1.45f },
-        /* Hatch */ { "YARIS",      35.0f, 10.0f, 21.0f, 7.0f, 2.15f, 1.35f, 1.00f, 0.62f, 0.35f, 2.0f, 6.0f, true, { 0.0f, 0.85f, 0.0f },  3.5f, 105.0f, 12.0f, 1.05f },
+        /* Jeep  */ { "ЖИЙП",       45.0f, 9.0f, 20.0f, 7.0f, 1.9f, 1.5f, 1.00f, 0.70f, 0.45f, 1.6f, 9.0f, true,  { 0.0f, 1.0f, 0.0f },   4.0f, 560.0f, 9.0f, 1.6f },
+        /* Moto  */ { "МОТОЦИКЛ", 39.0f, 11.0f, 18.0f, 3.0f, 2.4f, 0.7f, 1.00f, 0.80f, 0.60f, 1.2f, 3.0f, false, { 0.0f, 0.86f, -0.22f }, 1.5f, 210.0f, 7.0f, 0.35f },
+        /* Trike */ { "ГУРВАН ДУГУЙТ",      25.5f, 6.0f, 14.0f, 4.0f, 1.8f, 1.0f, 1.00f, 0.85f, 0.70f, 1.4f, 4.5f, false, { 0.0f, 0.92f, 0.05f },  2.0f, 315.0f, 6.0f, 0.7f },
+        /* Horse */ { "МОРЬ",      25.5f, 9.0f, 12.0f, 2.0f, 2.8f, 0.8f, 0.85f, 1.00f, 0.95f, 0.6f, 2.0f, false, { 0.0f, 1.5f, -0.05f },  1.5f, 315.0f, 0.0f, 0.6f },
+        /* Truck */ { "АЧААНЫ МАШИН", 33.0f, 4.5f, 12.0f, 4.0f, 1.25f, 2.1f, 1.00f, 0.78f, 0.55f, 1.9f, 16.0f, true, { 0.5f, 1.75f, 1.25f }, 7.0f, 1470.0f, 8.0f, 6.0f },
+        /* Suv   */ { "X-TRAIL",    46.5f, 9.5f, 20.0f, 7.0f, 1.95f, 1.5f, 1.00f, 0.72f, 0.50f, 1.5f, 8.0f, true,  { 0.0f, 0.95f, 0.0f },  4.0f, 490.0f, 10.0f, 1.45f },
+        /* Hatch */ { "YARIS",      52.5f, 10.0f, 21.0f, 7.0f, 2.15f, 1.35f, 1.00f, 0.62f, 0.35f, 2.0f, 6.0f, true, { 0.0f, 0.85f, 0.0f },  3.5f, 370.0f, 12.0f, 1.05f },
     };
     return specs[(int)type];
 }
@@ -490,6 +493,13 @@ namespace
 
     void DrawMotorcycle(const Vehicle& v)
     {
+        // Текстуртай загвар (moto.vmesh) байвал түүгээр; эс бөгөөс кодоор угсарсан мотоцикл
+        if (HasVehicleModel(VehicleModelId::Motorcycle))
+        {
+            const Color tint = propMaterial && !modelDepthMaterial ? propMaterial->maps[MATERIAL_MAP_DIFFUSE].color : WHITE;
+            DrawVehicleModel(VehicleModelId::Motorcycle, v.animation, v.steer, modelDepthMaterial, tint);
+            return;
+        }
         DrawProp(MotorcycleBody());
         const float spin = v.animation / 0.34f;
         DrawMotoSteering(motorcycleSteer, v, spin);
@@ -684,6 +694,8 @@ namespace
         return b;
     }
 
+    Vector3 horseView = { 0.0f, 0.0f, 0.0f }; // Garage::Draw-ийн харах цэг (холын морийг хөнгөн дүрсээр)
+
     void DrawHorse(const Vehicle& v)
     {
         // (газар дээрээ эргэхэд ч хөлөө бага зэрэг өргөж гишгэлнэ)
@@ -703,11 +715,13 @@ namespace
         rlTranslatef(0.0f, 1.0f, 0.0f); // биеийн дундаас найгана
         rlRotatef(rock, 1.0f, 0.0f, 0.0f);
         rlTranslatef(0.0f, -1.0f, 0.0f);
-        if (HasHorseModel())
+        // Ястай загварыг процессор морь бүрт frame бүр арьслана (үнэтэй): холын морийг хөнгөн дүрсээр
+        if (HasHorseModel() && (v.occupied || v.remote || HorizontalDistance(v.position, horseView) < 45.0f))
         {
             // Ястай загвар (assets/horse_mesh.glb): хөл, хүзүү, сүүлийг HorseModel хөдөлгөнө. Эмээл, хазаар,
             // дөрөө нь загварын текстурт байгаа тул кодоор үүсгэсэн эмээлийг зурахгүй.
-            DrawHorseModel(v.animation, gait, v.steer, v.position.x * 0.37f + v.position.z * 0.61f, gallop);
+            const float dead = v.wrecked ? std::min(1.0f, (float)(GetTime() - v.wreckedAt) / 1.1f) : 0.0f;
+            DrawHorseModel(v.animation, gait, v.steer, v.position.x * 0.37f + v.position.z * 0.61f, gallop, dead);
             rlPopMatrix();
             return;
         }
@@ -867,7 +881,7 @@ void Garage::Collide(int index, const World& world)
         // Давхцлыг салгана: хөнгөн нь илүү холдоно
         const float overlap = minDistance - distance;
         Vector3 pushB = { b.position.x + n.x * overlap * ma / total, b.position.y, b.position.z + n.y * overlap * ma / total };
-        world.ResolveHorizontal(pushB, sb.radius, 1.6f, 0.3f);
+        world.ResolveHorizontal(pushB, sb.radius, 1.6f, 0.3f, false);
         b.position.x = pushB.x;
         b.position.z = pushB.z;
         a.position.x -= n.x * overlap * mb / total;
@@ -924,11 +938,49 @@ void Garage::Damage(int index, float amount)
     if (vehicle.health <= 0.0f)
     {
         vehicle.health = 0.0f;
+        if (!vehicle.wrecked) vehicle.wreckedAt = GetTime();
         vehicle.wrecked = true;
         // Эвдрэхэд: машин тэсрэх мэт, морь унах
         Audio::Play(vehicle.type == VehicleType::Horse ? Sfx::Thud : Sfx::Explosion, vehicle.position, 0.8f,
                     vehicle.type == VehicleType::Horse ? 0.7f : 1.3f);
     }
+}
+
+int Garage::Raycast(Ray ray, float minDistance, float maxDistance, int skipA, int skipB, float& distance) const
+{
+    int best = -1;
+    distance = maxDistance;
+    for (int i = 0; i < Count(); ++i)
+    {
+        if (i == skipA || i == skipB) continue;
+        const Vehicle& v = vehicles[(size_t)i];
+        const float dx = ray.position.x - v.position.x, dz = ray.position.z - v.position.z;
+        if (dx * dx + dz * dz > (maxDistance + 6.0f) * (maxDistance + 6.0f)) continue;
+        // Биеийн хагас өргөн, хагас урт, өндөр (м)
+        float halfWidth = 1.0f, halfLength = 2.2f, height = 1.9f;
+        switch (v.type)
+        {
+        case VehicleType::Motorcycle: halfWidth = 0.4f; halfLength = 1.0f; height = 1.2f; break;
+        case VehicleType::Trike: halfWidth = 0.75f; halfLength = 1.6f; height = 1.2f; break;
+        case VehicleType::Horse: halfWidth = 0.45f; halfLength = 1.2f; height = 1.8f; break;
+        case VehicleType::Truck: halfWidth = 1.25f; halfLength = 3.4f; height = 2.9f; break;
+        case VehicleType::Suv: halfWidth = 0.95f; halfLength = 2.2f; height = 1.8f; break;
+        case VehicleType::Hatchback: halfWidth = 0.85f; halfLength = 1.9f; height = 1.5f; break;
+        default: break;
+        }
+        // Туяаг хэрэгслийн орон нутгийн тэнхлэгт (урагш +Z) шилжүүлнэ: зай өөрчлөгдөхгүй.
+        const float c = std::cos(v.heading), s = std::sin(v.heading);
+        const Vector3 d = { ray.position.x - v.position.x, ray.position.y - v.position.y, ray.position.z - v.position.z };
+        const Ray local = { { d.x * c - d.z * s, d.y, d.x * s + d.z * c },
+                            { ray.direction.x * c - ray.direction.z * s, ray.direction.y, ray.direction.x * s + ray.direction.z * c } };
+        const RayCollision hit = GetRayCollisionBox(local, { { -halfWidth, 0.15f, -halfLength }, { halfWidth, height, halfLength } });
+        if (hit.hit && hit.distance > minDistance && hit.distance < distance)
+        {
+            distance = hit.distance;
+            best = i;
+        }
+    }
+    return best;
 }
 
 int Garage::Nearest(Vector3 position, float maxDistance) const
@@ -972,6 +1024,7 @@ void Garage::SyncHealth(int index, float health)
     vehicle.health = std::max(0.0f, health);
     if (vehicle.health <= 0.0f && !vehicle.wrecked)
     {
+        vehicle.wreckedAt = GetTime();
         vehicle.wrecked = true;
         Audio::Play(vehicle.type == VehicleType::Horse ? Sfx::Thud : Sfx::Explosion, vehicle.position, 0.8f,
                     vehicle.type == VehicleType::Horse ? 0.7f : 1.3f);
@@ -1033,12 +1086,15 @@ Vector3 Garage::SeatWorld(int index, bool passenger) const
 {
     const Vehicle& vehicle = vehicles[index];
     Vector3 seat = SpecFor(vehicle.type).seat;
+    // Текстуртай мотоцикл: суудал бага зэрэг өндөр, хойш
+    const bool motoModel = vehicle.type == VehicleType::Motorcycle && HasVehicleModel(VehicleModelId::Motorcycle);
+    if (motoModel) seat = { 0.0f, 0.95f, -0.3f };
     if (passenger)
     {
         switch (vehicle.type)
         {
         case VehicleType::Jeep: seat = { -0.45f, 1.0f, 0.0f }; break;         // жолоочийн эсрэг талын суудал
-        case VehicleType::Motorcycle: seat = { 0.0f, 0.9f, -0.62f }; break;   // сундлана
+        case VehicleType::Motorcycle: seat = motoModel ? Vector3{ 0.0f, 1.0f, -0.68f } : Vector3{ 0.0f, 0.9f, -0.62f }; break; // сундлана
         case VehicleType::Trike: seat = { -0.22f, 0.98f, -1.0f }; break;      // ачааны тэвшин дээр
         case VehicleType::Horse: seat = { 0.0f, 1.5f, -0.52f }; break;        // сундлана
         case VehicleType::Truck: seat = { -0.5f, 1.75f, -1.6f }; break;       // тэвшин дээр
@@ -1075,6 +1131,13 @@ Vector3 Garage::ReinWorld(int index, bool& hasRein) const
     {
         // Зүүн бариул (+X = зүүн тал): жолооны тэнхлэгийг (kMotoSteerZ) тойрон жолоотой хамт эргэнэ.
         const float angle = -vehicle.steer * 28.0f * DEG2RAD;
+        if (vehicle.type == VehicleType::Motorcycle && HasVehicleModel(VehicleModelId::Motorcycle))
+        {
+            // Текстуртай загвар: бариул өргөн, жолооны тэнхлэг арай хойш (z 0.3)
+            const float x = 0.38f;
+            local = { x * std::cos(angle), 1.18f, 0.3f - x * std::sin(angle) };
+            break;
+        }
         const float x = 0.31f, z = 0.48f - kMotoSteerZ;
         local = { x * std::cos(angle) + z * std::sin(angle), 1.16f, kMotoSteerZ - x * std::sin(angle) + z * std::cos(angle) };
         break;
@@ -1141,7 +1204,7 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
             const Vector3 before = vehicle.position;
             vehicle.position.x += vehicle.knock.x * dt;
             vehicle.position.z += vehicle.knock.y * dt;
-            world.ResolveHorizontal(vehicle.position, spec.radius, 1.6f, 0.3f);
+            world.ResolveHorizontal(vehicle.position, spec.radius, 1.6f, 0.3f, false);
             const float moved = HorizontalDistance(before, vehicle.position);
             if (knockSpeed > 3.0f && moved < knockSpeed * dt * 0.5f)
             {
@@ -1217,8 +1280,11 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
         }
         else if (input > 0.0f)
         {
-            // Урагш: ухарч байсан бол эхлээд тоормослоно.
-            vehicle.speed += (vehicle.speed < 0.0f ? spec.braking : spec.acceleration) * input * dt;
+            // Урагш: ухарч байсан бол эхлээд тоормослоно. Хурдлалт аажим: эхэндээ хүчтэй, дээд хурд руу ойртох тусам
+            // суларна (0-ээс дээд хурд хүртэл ~10-15 секунд), шууд дээд хурдандаа хүрэхгүй.
+            const float ratio = maxSpeed > 0.1f ? std::clamp(vehicle.speed / maxSpeed, 0.0f, 1.0f) : 0.0f;
+            const float pull = std::max(0.12f, 1.0f - ratio * std::sqrt(ratio)) * 0.75f;
+            vehicle.speed += (vehicle.speed < 0.0f ? spec.braking : spec.acceleration * pull) * input * dt;
         }
         else if (input < 0.0f)
         {
@@ -1294,9 +1360,15 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
             const float stepX = (std::sin(vehicle.heading) * vehicle.speed + std::cos(vehicle.heading) * vehicle.slip) * dt;
             const float stepZ = (std::cos(vehicle.heading) * vehicle.speed - std::sin(vehicle.heading) * vehicle.slip) * dt;
             const float step = std::sqrt(stepX * stepX + stepZ * stepZ);
-            vehicle.position.x += stepX;
-            vehicle.position.z += stepZ;
-            world.ResolveHorizontal(vehicle.position, spec.radius, 1.6f, 0.3f);
+            // Хурдтай (удаан frame) үед нэг алхам нь мөргөлдөөний радиусаас урт болж нимгэн хашаа, ханыг нэвт
+            // үсэрнэ: радиусын 40%-иас ихгүй жижиг алхмуудад хувааж алхам бүрд саадаас түлхэнэ.
+            const int substeps = std::clamp((int)std::ceil(step / (spec.radius * 0.4f)), 1, 12);
+            for (int k = 0; k < substeps; ++k)
+            {
+                vehicle.position.x += stepX / (float)substeps;
+                vehicle.position.z += stepZ / (float)substeps;
+                world.ResolveHorizontal(vehicle.position, spec.radius, 1.6f, 0.3f, false);
+            }
 
             // Саад мөргөсөн бол (төлөвлөснөөс хамаагүй бага явсан) хурдаа алдаж, хурдаас хамааран гэмтэнэ.
             const float moved = HorizontalDistance(before, vehicle.position);
@@ -1418,6 +1490,8 @@ void Garage::Draw(Vector3 viewPosition, float maxDistance, const Material* mater
     for (const Vehicle& vehicle : vehicles)
     {
         if (HorizontalDistance(viewPosition, vehicle.position) > maxDistance) continue;
+        if (!shadowPass && !ViewCull::Visible(vehicle.position, SpecFor(vehicle.type).radius + 2.0f)) continue; // камерын ард
+        horseView = viewPosition;
 
         DrawBlobShadow(vehicle.position, SpecFor(vehicle.type).radius * 1.15f);
 
@@ -1439,9 +1513,14 @@ void Garage::Draw(Vector3 viewPosition, float maxDistance, const Material* mater
         if (tintable) tintable->maps[MATERIAL_MAP_DIFFUSE].color = tint;
         if (vehicle.wrecked && vehicle.type == VehicleType::Horse)
         {
-            rlTranslatef(0.0f, 0.42f, 0.0f);
-            rlRotatef(84.0f, 0.0f, 0.0f, 1.0f);
-            rlTranslatef(0.0f, -0.9f, 0.0f);
+            // Үхсэн морь: эхлээд хөл нь суларч доош суугаад, хажуу тийш аажим (хурдасгаж) унана
+            const float t = std::min(1.0f, (float)(GetTime() - vehicle.wreckedAt) / 1.1f);
+            const float sink = std::min(1.0f, t * 2.2f), roll = std::max(0.0f, (t - 0.25f) / 0.75f);
+            const float tip = roll * roll;
+            rlTranslatef(0.0f, -0.25f * sink * (1.0f - tip), 0.0f);
+            rlTranslatef(0.0f, 0.42f * tip, 0.0f);
+            rlRotatef(84.0f * tip, 0.0f, 0.0f, 1.0f);
+            rlTranslatef(0.0f, -0.9f * tip, 0.0f);
         }
 
         switch (vehicle.type)

@@ -130,7 +130,7 @@ void Grenades::Update(float dt, const World& world, ZombieHorde& horde, Player& 
             const float distance = Vector3Distance(chest, grenade.position);
             if (distance < kGrenadeRadius)
             {
-                player.TakeDamage(kPlayerMaxDamage * (1.0f - distance / kGrenadeRadius));
+                player.TakeDamageFrom(kPlayerMaxDamage * (1.0f - distance / kGrenadeRadius), grenade.position);
             }
 
             particles.Explosion(grenade.position);

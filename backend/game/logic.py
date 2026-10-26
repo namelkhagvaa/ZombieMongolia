@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import re
+import secrets
 import time
 from datetime import timedelta
 
@@ -16,7 +17,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from . import qpay, sms
-from .models import (AuthToken, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, UnlockedProvince,
+from .models import (AuthToken, Cashout, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, UnlockedProvince,
                      Verification)
 
 VERIFICATION_TTL = timedelta(minutes=5)  # verify.mn-ийн сесс 5 минут
@@ -30,7 +31,10 @@ TICKET_TTL = 6 * 3600               # тасалбар: relay руу (дахин
 BATTLE_WAIT = timedelta(seconds=60)   # нэг тал л мэдэгдвэл (нөгөө нь тасарсан, AI тулалдсан) хүлээх хугацаа
 MAX_STAGE = 2000                      # өрөөний даалгаврын ахицын мөрийн урт
 WEB_DEVICE = "web-topup"              # вэбээр (Gold цэнэглэх хуудас) нэвтэрсэн токен: төхөөрөмж биш
-DEFAULT_GOLD_PACKS = [[200, 2000], [550, 5000], [1200, 10000]]
+DEFAULT_GOLD_PACKS = [[300, 3000], [550, 5000], [1200, 10000]]  # [Gold, ₮]: admin-аас өөрчилнө
+# Gold татах: тоглогчийн сонгох банкууд
+CASHOUT_BANKS = ["Хаан банк", "Голомт банк", "Худалдаа хөгжлийн банк", "Төрийн банк", "Хас банк", "Капитрон банк",
+                 "Богд банк", "Ариг банк", "Транс банк", "М банк", "Үндэсний хөрөнгө оруулалтын банк", "Чингис хаан банк"]
 
 # Газрын зургийн дэлгүүр: нэр -> (Player-ийн талбар, GameSettings-ийн үнийн талбар, дээд түвшин).
 # Дээд түвшин тоглоомын src/Shop.h, src/Weapon.h-тай ижил.
@@ -39,7 +43,7 @@ UPGRADES = {
     "fire_rate": ("fire_rate", "price_fire_rate", 5),
     "magazine": ("magazine", "price_magazine", 5),
     "health": ("health_level", "price_health", 5),
-    "soldier": ("soldiers", "price_soldier", 4),
+    "soldier": ("soldiers", "price_soldier", 10),  # цэрэг: тоо (дээд тал 10), нэг бүр ижил үнэтэй, алдвал хасагдана
 }
 
 
@@ -115,6 +119,8 @@ def revoke_other_sessions(player, keep=None):
 
 def account_state(player, device_id):
     settings = GameSettings.load()
+    if expire_cashouts(player):
+        player.refresh_from_db()  # хугацаа дууссан татах хүсэлтийн Gold буцсан
     return {
         "name": player.name,
         "phone": mask_phone(player.phone),
@@ -124,7 +130,14 @@ def account_state(player, device_id):
         "credits": 0,
         "gold": player.gold,
         "gold_locked": player.locked_gold,
+        "gold_packs": gold_packs(),
+        "cashout": cashout_info(player),
         "room_entry": settings.room_fee + settings.room_stake,
+        "skin_price": settings.skin_price,  # (хуучин тоглоом: бүх онцгой дүр энэ үнээр харагдана)
+        "skin_prices": {str(skin): skin_price(settings, skin) for skin in sorted(PREMIUM_SKINS)},
+        "premium_skins": sorted(PREMIUM_SKINS),
+        "coop_reward": settings.coop_reward,
+        "coop_daily_limit": settings.coop_daily_limit,
         "upgrades": {name: getattr(player, field) for name, (field, _, _) in UPGRADES.items()},
         "shop": {name: {"price": getattr(settings, price), "max": top} for name, (_, price, top) in UPGRADES.items()},
         "device_ok": device_ok(player, device_id),
@@ -198,7 +211,8 @@ def confirm_registration(verification_id, ip):
         if Device.objects.filter(device_id=data["device_id"]).exists():
             raise GameError("device_taken", "Энэ төхөөрөмж өөр дансанд бүртгэлтэй байна", 409)
         start = GameSettings.load().start_gold
-        player = Player.objects.create(name=data["name"], phone=verification.phone, password=data["password"], gold=start)
+        player = Player.objects.create(name=data["name"], phone=verification.phone, password=data["password"], gold=start,
+                                       bonus_gold=start)  # эхлэлийн Gold: урамшуулал (татагдахгүй)
         GoldTransaction.objects.create(player=player, amount=start, balance=start, reason=GoldTransaction.SIGNUP,
                                        ref=f"signup:{player.pk}")
         Device.objects.create(device_id=data["device_id"], player=player, platform=data.get("platform", ""))
@@ -294,9 +308,18 @@ def claim_province(player, device_id, province, ip):
     return player, None
 
 
-def start_province(player, device_id, province, ip):
-    """Аймаг эхлэхэд: room_fee + room_stake-ээс их Gold-той бол заавал нээлттэй өрөө нээгдэнэ (буцаана), эс бөгөөс
-    ганцаарчилсан тоглолт (None): зочин орж ирэхгүй, Gold өөрчлөгдөхгүй."""
+# Онцгой дүрүүд (тоглоомын leaderSkin дугаар) ба үнийн тохиргооны талбар: тэдгээрээр аймаг эхлүүлэх бүрд
+PREMIUM_SKINS = {3: "skin_price", 4: "skin_price_iron"}  # DEMON, IRON
+
+
+def skin_price(settings, skin):
+    field = PREMIUM_SKINS.get(skin)
+    return getattr(settings, field) if field else 0
+
+
+def start_province(player, device_id, province, ip, skin=0):
+    """Аймаг эхлэхэд үргэлж өрөө (найзын кодтой) нээнэ. room_fee + room_stake-ээс их Gold-той бол нээлттэй (тулаан),
+    эс бөгөөс зөвхөн найз кодоор орно, Gold өөрчлөгдөхгүй. Онцгой дүрээр (skin) бол эхлээд skin_price."""
     settings = _validate_province(province)
     if not device_ok(player, device_id):
         raise GameError("device_change_required", "Энэ төхөөрөмж дээр тоглохын тулд төхөөрөмж солих төлбөр төлнө", 402)
@@ -304,17 +327,35 @@ def start_province(player, device_id, province, ip):
         locked = Player.objects.select_for_update().get(pk=player.pk)
         _drop_rooms(locked, device_id, ip)  # өмнөх өрөө (апп унасан г.м.): холболт тасарсан гэж үзнэ
         locked.refresh_from_db()            # (барьцаа суллагдсан)
-        room = None
-        if locked.gold - locked.locked_gold >= settings.room_fee + settings.room_stake:
-            room = Room.objects.create(province=province, host=locked, host_seen=timezone.now())
+        price = skin_price(settings, skin)
+        if price:
+            if locked.gold - locked.locked_gold < price:
+                raise GameError("not_enough_gold", f"Энэ дүрээр тоглоход {price} Gold хэрэгтэй", 402)
+            change_gold(locked, -price, GoldTransaction.SKIN, f"skin:{locked.pk}:{time.time_ns()}",
+                        {"province": province, "skin": skin})
+        # Үргэлж өрөө (найзын кодтой: хамт тоглолт үнэгүй). Gold хүрэлцвэл нээлттэй (өөр тоглогч орж тулалдана),
+        # эс бөгөөс зөвхөн найз кодоор орно.
+        pvp = locked.gold - locked.locked_gold >= settings.room_fee + settings.room_stake
+        room = Room.objects.create(province=province, host=locked, host_seen=timezone.now(), pvp=pvp, code=_new_room_code())
+        if pvp:
             _enter_room(locked, room, settings, "host")
             room.host_stake = settings.room_stake
             room.save(update_fields=["host_stake"])
-        log_event(locked, "province_start", {"province": province, "room": room.pk if room else None}, device_id, ip)
+        log_event(locked, "province_start", {"province": province, "room": room.pk, "skin": skin}, device_id, ip)
     return room
 
 
 # ---------------------------------------------------------------- Нээлттэй өрөө
+
+def _new_room_code():
+    """Нээлттэй өрөөнүүдийн дунд давтагдашгүй 4 оронтой код."""
+    used = set(Room.objects.filter(status=Room.OPEN).values_list("code", flat=True))
+    for _ in range(50):
+        code = f"{secrets.randbelow(9000) + 1000}"
+        if code not in used:
+            return code
+    return f"{secrets.randbelow(9000) + 1000}"
+
 
 def room_ticket(room, player, role):
     """Relay серверт өрөөнд холбогдох тасалбар: base64url(JSON).hex(HMAC-SHA256). server/relay.js шалгана."""
@@ -328,7 +369,8 @@ def room_ticket(room, player, role):
 def room_json(room, player):
     role = "host" if room.host_id == player.pk else "guest"
     return {"id": room.pk, "province": room.province, "role": role, "host": room.host.name, "battle": room.battle,
-            "ticket": room_ticket(room, player, role), "stage": room.stage_state, "recruits": room.recruits}
+            "ticket": room_ticket(room, player, role), "stage": room.stage_state, "recruits": room.recruits,
+            "code": room.code, "pvp": room.pvp, "coop": room.guest_coop}
 
 
 def _enter_room(locked, room, settings, seat):
@@ -369,6 +411,7 @@ def _drop_guest(room):
     room.guest = None
     room.guest_stake = 0
     room.guest_seen = None
+    room.guest_coop = False
     _reset_battle(room)
     room.save()
 
@@ -378,7 +421,10 @@ def expire_rooms():
     stale = timezone.now() - ROOM_TIMEOUT
     for room in Room.objects.select_for_update().filter(status=Room.OPEN, host_seen__lt=stale):
         _close(room, "timeout")
-    for room in Room.objects.select_for_update().filter(status=Room.OPEN, guest__isnull=False, guest_seen__lt=stale):
+    # Тулааны үеэр санаатай гарсан зочны багийг AI тулалдуулж байгаа: үр дүнг хост мэдэгдэнэ (хостын дохио
+    # тасарвал дээр өрөө бүхэлдээ шийтгэлгүй хаагдана).
+    for room in Room.objects.select_for_update().filter(status=Room.OPEN, guest__isnull=False, guest_seen__lt=stale,
+                                                        guest_left=False):
         _drop_guest(room)
 
 
@@ -412,7 +458,7 @@ def join_room(player, device_id, ip):
         if locked.gold - locked.locked_gold < entry:
             raise GameError("not_enough_gold", f"Өрөөнд орохын тулд {entry} Gold хэрэгтэй", 402)
         room = (Room.objects.select_for_update()
-                .filter(status=Room.OPEN, guest__isnull=True, host_seen__gte=timezone.now() - ROOM_JOINABLE)
+                .filter(status=Room.OPEN, pvp=True, guest__isnull=True, host_seen__gte=timezone.now() - ROOM_JOINABLE)
                 .exclude(host=locked).order_by("created").first())
         if room is None:
             raise GameError("no_rooms", "Одоогоор нээлттэй өрөө алга. Дараа дахин оролдоно уу", 404)
@@ -424,6 +470,36 @@ def join_room(player, device_id, ip):
         _reset_battle(room)
         room.save()
         log_event(locked, "room_joined", {"room": room.pk, "province": room.province}, device_id, ip)
+    return room
+
+
+def join_coop(player, device_id, code, ip):
+    """Найзын кодоор: тэр өрөөнд хамт тоглоно (тулаангүй, төлбөр, барьцаагүй)."""
+    if not device_ok(player, device_id):
+        raise GameError("device_change_required", "Энэ төхөөрөмж дээр тоглохын тулд төхөөрөмж солих төлбөр төлнө", 402)
+    code = str(code or "").strip()
+    if not re.fullmatch(r"\d{4}", code):
+        raise GameError("bad_code", "Код 4 оронтой байна")
+    with transaction.atomic():
+        expire_rooms()
+    with transaction.atomic():
+        locked = Player.objects.select_for_update().get(pk=player.pk)
+        room = (Room.objects.select_for_update()
+                .filter(status=Room.OPEN, code=code, host_seen__gte=timezone.now() - ROOM_JOINABLE).first())
+        if room is None:
+            raise GameError("no_room", "Ийм кодтой өрөө алга (найз тань аймгаа эхлүүлсэн эсэхийг шалгаарай)", 404)
+        if room.host_id == locked.pk:
+            raise GameError("own_room", "Энэ таны өөрийн өрөө байна", 409)
+        if room.guest_id:
+            raise GameError("room_full", "Өрөөнд аль хэдийн өөр тоглогч байна", 409)
+        _drop_rooms(locked, device_id, ip)
+        room.guest = locked
+        room.guest_stake = 0
+        room.guest_seen = timezone.now()
+        room.guest_coop = True
+        _reset_battle(room)
+        room.save()
+        log_event(locked, "coop_joined", {"room": room.pk, "province": room.province, "host": room.host_id}, device_id, ip)
     return room
 
 
@@ -439,9 +515,18 @@ def room_beat(player, room_id):
     return room
 
 
+def room_phase(room):
+    """WAITING/MISSION (хост ганцаараа даалгавар хийж, зочин хүлээж байна), BATTLE (зочин орсон), COMPLETED (сүүлийн
+    даалгавар биелсэн), CLOSED (хост гарсан, холболт тасарсан). Хүснэгтэд тусдаа талбаргүй: status, guest-ээс."""
+    if room.status == Room.CLOSED:
+        return "completed" if room.closed_reason == "completed" else "closed"
+    return "battle" if room.guest_id else "mission"
+
+
 def room_state(room):
     """Хост, зочинд: одоогийн тулаан (зочин орсон бол), зочны нэр."""
-    return {"battle": room.battle if room.guest_id else 0, "guest": room.guest.name if room.guest_id else None}
+    return {"battle": room.battle if room.guest_id and not room.guest_coop else 0,
+            "guest": room.guest.name if room.guest_id else None, "coop": room.guest_coop}
 
 
 def save_stage(player, room_id, stage, recruits):
@@ -480,10 +565,12 @@ def _settle(room, winner_role, device_id, ip):
     loser.save(update_fields=["locked_gold"])
     if paid and stake:
         amount = min(stake, loser.gold)
+        # Ялагдагчийн урамшууллын Gold (эхлэлийн, шагнал) ялагчид урамшуулал хэвээр очно (татагдахгүй)
+        bonus_part = min(amount, loser.bonus_gold)
         change_gold(loser, -amount, GoldTransaction.BATTLE_LOSS, f"battle:{room.pk}:{room.battle}:loss",
                     {"room": room.pk, "opponent": winner.pk})
         change_gold(winner, amount, GoldTransaction.BATTLE_WIN, f"battle:{room.pk}:{room.battle}:win",
-                    {"room": room.pk, "opponent": loser.pk})
+                    {"room": room.pk, "opponent": loser.pk, "bonus": bonus_part}, bonus_part=bonus_part)
     if winner_role == "host":
         room.guest = None
         room.guest_stake = 0
@@ -513,10 +600,15 @@ def report_battle(player, device_id, room_id, battle, winner, ip):
         room = Room.objects.select_for_update().filter(pk=room_id).first() if isinstance(room_id, int) else None
         if room is None or room.battle != battle:
             raise GameError("battle_over", "Тулаан дууссан", 410)
+        if room.guest_coop:
+            raise GameError("not_battle", "Хамт тоглолтод тулаан байхгүй", 409)
         if room.status == Room.OPEN and not room.guest_id and room.host_id == player.pk:
             # Аль хэдийн шийдэгдсэн, энэ тоглогч хост (ялсан эсвэл зочноос шинэ хост болсон): өрөөг буцаана
             return True, None, room
-        if room.status != Room.OPEN or not room.guest_id or player.pk not in (room.host_id, room.guest_id):
+        if room.status != Room.OPEN:
+            # Өрөө хаагдсан (хост сүүлийн даалгаврыг дуусгасан, холболт тасарсан): тулаан хүчингүй, барьцаа буцсан
+            raise GameError("room_closed", "Өрөө хаагдсан: тулаан хүчингүй", 410)
+        if not room.guest_id or player.pk not in (room.host_id, room.guest_id):
             # Аль хэдийн шийдэгдсэн, энэ тоглогч өрөөнд байхгүй (ялагдсан эсвэл хүчингүй)
             raise GameError("battle_over", "Тулаан дууссан", 410)
         role = "host" if room.host_id == player.pk else "guest"
@@ -546,6 +638,13 @@ def leave_room(player, device_id, room_id, ip):
     AI тулалдуулж, үр дүнг хост мэдэгдэнэ. Тулаангүй үед хост гарвал ялагдал: барьцаа нь хэнд ч очихгүй шатна."""
     with transaction.atomic():
         room = _own_room(player, room_id)
+        if room.guest_id and room.guest_coop:
+            # Хамт тоглолт: шийтгэлгүй. Зочин гарвал өрөө хэвээр, хост гарвал (барьцаатай бол шатаж) хаагдана.
+            if room.guest_id == player.pk:
+                _drop_guest(room)
+                log_event(player, "coop_left", {"room": room.pk}, device_id, ip)
+                return
+            _drop_guest(room)
         if room.guest_id and room.guest_id == player.pk:
             room.guest_left = True
             room.save(update_fields=["guest_left"])
@@ -580,22 +679,33 @@ def complete_room(player, device_id, room_id, ip):
         if timezone.now() - room.created < timedelta(minutes=settings.stage_min_minutes):
             raise GameError("too_fast", "Үе шат хэт хурдан дууслаа", 409)
         locked = Player.objects.select_for_update().get(pk=player.pk)
-        change_gold(locked, settings.stage_bonus, GoldTransaction.STAGE_COMPLETE, f"complete:{room.pk}", {"room": room.pk})
+        if room.pvp:  # (өрөөний төлбөр төлсөн)
+            change_gold(locked, settings.stage_bonus, GoldTransaction.STAGE_COMPLETE, f"complete:{room.pk}", {"room": room.pk})
+        if room.guest_id and room.guest_coop and settings.coop_reward:
+            # Найзтайгаа хамт давсан: хоёуланд нь (урамшуулал), тоглогч бүр өдөрт coop_daily_limit удаа хүртэл
+            since = timezone.now() - timedelta(days=1)
+            for member in (locked, Player.objects.select_for_update().get(pk=room.guest_id)):
+                done = GoldTransaction.objects.filter(player=member, reason=GoldTransaction.COOP_WIN, created__gte=since).count()
+                if done < settings.coop_daily_limit:
+                    change_gold(member, settings.coop_reward, GoldTransaction.COOP_WIN, f"coop:{room.pk}:{member.pk}",
+                                {"room": room.pk})
         _close(room, "completed")
         log_event(locked, "room_completed", {"room": room.pk, "province": room.province}, device_id, ip)
 
 
 # ---------------------------------------------------------------- Gold, дэлгүүр
 
-def change_gold(locked, amount, reason, ref, data=None):
+def change_gold(locked, amount, reason, ref, data=None, bonus_part=0):
     """Gold-ийг өөрчилж бүртгэлд бичнэ. locked: transaction.atomic() дотор select_for_update()-ээр түгжсэн тоглогч.
-    Ижил ref өмнө нь бичигдсэн бол юу ч хийхгүй (False). Үлдэгдэл хүрэлцэхгүй бол GameError."""
+    Ижил ref өмнө нь бичигдсэн бол юу ч хийхгүй (False). Үлдэгдэл хүрэлцэхгүй бол GameError.
+    Хожсон, урамшууллын хэсгийг GoldTransaction.split_gold тооцно (bonus_part: тулааны хожлын урамшууллаас ирсэн нь)."""
     if GoldTransaction.objects.filter(ref=ref).exists():
         return False
     if locked.gold + amount < 0:
         raise GameError("not_enough_gold", "Gold хүрэлцэхгүй байна", 402)
-    locked.gold += amount
-    locked.save(update_fields=["gold"])
+    locked.gold, locked.won_gold, locked.bonus_gold = GoldTransaction.split_gold(
+        locked.gold, locked.won_gold, locked.bonus_gold, amount, reason, bonus_part)
+    locked.save(update_fields=["gold", "won_gold", "bonus_gold"])
     GoldTransaction.objects.create(player=locked, amount=amount, balance=locked.gold, reason=reason, ref=ref,
                                    data=data or {})
     return True
@@ -614,13 +724,16 @@ def shop_buy(player, device_id, item, level, ip):
         locked = Player.objects.select_for_update().get(pk=player.pk)
         current = getattr(locked, field)
         ref = f"shop:{locked.pk}:{item}:{level + 1}"
+        if item == "soldier":
+            ref += f":{locked.soldiers_lost}"  # алдаад дахин авсан цэрэг өмнөх худалдаатай давхцахгүй
         if current == level + 1 and GoldTransaction.objects.filter(ref=ref).exists():
             return locked
         if current != level:
             raise GameError("shop_changed", "Дэлгүүрийн мэдээлэл шинэчлэгдлээ. Дахин оролдоно уу", 409)
         if current >= top:
             raise GameError("max_level", "Хамгийн дээд түвшинд хүрсэн", 409)
-        cost = getattr(GameSettings.load(), price_field) * (current + 1)
+        price = getattr(GameSettings.load(), price_field)
+        cost = price if item == "soldier" else price * (current + 1)
         if locked.gold - locked.locked_gold < cost:
             raise GameError("not_enough_gold", "Gold хүрэлцэхгүй байна (нэг хэсэг нь өрөөнд барьцаалагдсан)", 402)
         change_gold(locked, -cost, GoldTransaction.SHOP, ref, {"item": item, "level": current + 1})
@@ -628,6 +741,163 @@ def shop_buy(player, device_id, item, level, ip):
         locked.save(update_fields=[field])
         log_event(locked, "shop_buy", {"item": item, "level": current + 1, "gold": cost}, device_id, ip)
     return locked
+
+
+def lose_soldiers(player, device_id, remaining, ip):
+    """Тоглолтод Gold-оор авсан цэрэг үхэхэд шууд хасна. remaining: тоглоомын тооцсон үлдсэн тоо (зөвхөн буурна, давтан
+    илгээсэн хүсэлт дахин хасахгүй)."""
+    if not isinstance(remaining, int) or isinstance(remaining, bool) or remaining < 0:
+        raise GameError("bad_request", "Буруу хүсэлт")
+    with transaction.atomic():
+        locked = Player.objects.select_for_update().get(pk=player.pk)
+        if remaining < locked.soldiers:
+            lost = locked.soldiers - remaining
+            locked.soldiers = remaining
+            locked.soldiers_lost += lost
+            locked.save(update_fields=["soldiers", "soldiers_lost"])
+            log_event(locked, "soldier_lost", {"lost": lost, "left": remaining}, device_id, ip)
+    return locked
+
+
+# ---------------------------------------------------------------- Gold татах
+
+def withdrawable(player):
+    """Татаж болох Gold: хожсон Gold, гэхдээ өрөөнд барьцаалснаас бусад нь."""
+    return max(0, min(player.won_gold, player.gold - player.locked_gold))
+
+
+def cashout_json(cashout):
+    return {"id": cashout.pk, "gold": cashout.gold, "amount": cashout.amount, "bank": cashout.bank,
+            "account": cashout.account, "holder": cashout.holder, "status": cashout.status, "note": cashout.note,
+            "created": cashout.created.isoformat() if cashout.created else None}
+
+
+def cashout_info(player):
+    settings = GameSettings.load()
+    active = player.cashouts.filter(status__in=Cashout.OPEN).order_by("-created").first()
+    return {"enabled": settings.cashout_enabled, "min": settings.cashout_min, "rate": float(settings.cashout_rate),
+            "withdrawable": withdrawable(player), "won": player.won_gold, "banks": CASHOUT_BANKS,
+            "active": cashout_json(active) if active else None}
+
+
+def start_cashout(player, device_id, gold, bank, account, holder, ip):
+    """Татах хүсэлт: Gold шууд хасагдаж, тоглогч утсаа баталгаажуулна (144773 руу SMS)."""
+    settings = GameSettings.load()
+    if not settings.cashout_enabled:
+        raise GameError("cashout_disabled", "Gold татах түр хаалттай байна", 403)
+    if not isinstance(gold, int) or isinstance(gold, bool) or gold <= 0:
+        raise GameError("bad_request", "Татах Gold-оо оруулна уу")
+    if gold < settings.cashout_min:
+        raise GameError("cashout_min", f"Хамгийн багадаа {settings.cashout_min} Gold татна")
+    if bank not in CASHOUT_BANKS:
+        raise GameError("bad_bank", "Банкаа сонгоно уу")
+    account = re.sub(r"[\s-]", "", account or "")
+    if not re.fullmatch(r"\d{6,20}", account):
+        raise GameError("bad_account", "Дансны дугаар 6-20 оронтой тоо байна")
+    holder = (holder or "").strip()
+    if not 2 <= len(holder) <= 60:
+        raise GameError("bad_holder", "Данс эзэмшигчийн нэрийг оруулна уу")
+    if not device_ok(player, device_id):
+        raise GameError("device_change_required", "Энэ төхөөрөмж дээр тоглохын тулд төхөөрөмж солих төлбөр төлнө", 402)
+    if expire_cashouts(player):
+        player.refresh_from_db()
+    if player.cashouts.filter(status=Cashout.VERIFYING).exists():
+        raise GameError("cashout_active", "Өмнөх хүсэлтээ баталгаажуулна уу эсвэл цуцална уу", 409)
+    if withdrawable(player) < gold:
+        raise GameError("cashout_too_much",
+                        f"Зөвхөн тоглоомоос хожсон Gold-оо татна. Одоо {withdrawable(player)} Gold татах боломжтой", 402)
+    verification, instruction = _start_verification(player.phone, Verification.CASHOUT, {"player": player.pk}, device_id, ip)
+    with transaction.atomic():
+        locked = Player.objects.select_for_update().get(pk=player.pk)
+        if withdrawable(locked) < gold:
+            raise GameError("cashout_too_much", f"Одоо {withdrawable(locked)} Gold татах боломжтой", 402)
+        cashout = Cashout.objects.create(player=locked, gold=gold, amount=int(gold * settings.cashout_rate),
+                                         rate=settings.cashout_rate, bank=bank, account=account, holder=holder,
+                                         verification=verification)
+        change_gold(locked, -gold, GoldTransaction.CASHOUT, f"cashout:{cashout.pk}", {"cashout": cashout.pk})
+        log_event(locked, "cashout_requested", {"cashout": cashout.pk, "gold": gold, "amount": cashout.amount, "bank": bank},
+                  device_id, ip)
+    return cashout, verification, instruction
+
+
+def _close_cashout(cashout_id, status, note="", by=""):
+    """Хүсэлтийг хаана. Олгоогүй (paid биш) бол Gold, хожсон Gold буцна. Аль хэдийн хаагдсан бол хэвээр."""
+    with transaction.atomic():
+        cashout = Cashout.objects.select_for_update().get(pk=cashout_id)
+        if cashout.status not in Cashout.OPEN:
+            return cashout
+        if status != Cashout.PAID:
+            locked = Player.objects.select_for_update().get(pk=cashout.player_id)
+            change_gold(locked, cashout.gold, GoldTransaction.CASHOUT_REFUND, f"cashout:{cashout.pk}:refund",
+                        {"cashout": cashout.pk, "status": status})
+        cashout.status = status
+        cashout.note = (note or "")[:200]
+        cashout.handled_by = by[:150]
+        cashout.closed_at = timezone.now()
+        cashout.save(update_fields=["status", "note", "handled_by", "closed_at"])
+        log_event(cashout.player, f"cashout_{status}", {"cashout": cashout.pk, "gold": cashout.gold, "by": by})
+    return cashout
+
+
+def refresh_cashout(cashout):
+    """Утас баталгаажуулж буй хүсэлт: SMS ирсэн бол шилжүүлэг хүлээх, хугацаа дууссан бол Gold буцна."""
+    if cashout.status != Cashout.VERIFYING:
+        return cashout
+    verification = cashout.verification
+    if verification is None or verification.expires < timezone.now():
+        return _close_cashout(cashout.pk, Cashout.EXPIRED, "Утас баталгаажуулаагүй")
+    try:
+        verified = sms.verifier().is_verified(verification)
+    except sms.SmsError:
+        return cashout
+    if verified:
+        with transaction.atomic():
+            locked = Cashout.objects.select_for_update().get(pk=cashout.pk)
+            if locked.status == Cashout.VERIFYING:
+                locked.status = Cashout.PENDING
+                locked.verified_at = timezone.now()
+                locked.save(update_fields=["status", "verified_at"])
+                Verification.objects.filter(pk=verification.pk).update(used=True)
+                log_event(locked.player, "cashout_verified", {"cashout": locked.pk})
+            return locked
+    return cashout
+
+
+def expire_cashouts(player=None):
+    """Баталгаажуулалтын хугацаа дууссан хүсэлтүүдийн Gold-ийг буцаана."""
+    qs = Cashout.objects.filter(status=Cashout.VERIFYING, verification__expires__lt=timezone.now())
+    if player is not None:
+        qs = qs.filter(player=player)
+    expired = list(qs.values_list("pk", flat=True)[:50])
+    for cashout_id in expired:
+        _close_cashout(cashout_id, Cashout.EXPIRED, "Утас баталгаажуулаагүй")
+    return len(expired)
+
+
+def player_cashout(player, cashout_id):
+    cashout = Cashout.objects.select_related("verification").filter(pk=cashout_id, player=player).first()
+    if cashout is None:
+        raise GameError("not_found", "Хүсэлт олдсонгүй", 404)
+    return cashout
+
+
+def cancel_cashout(player, cashout_id):
+    cashout = player_cashout(player, cashout_id)
+    if cashout.status != Cashout.VERIFYING:
+        raise GameError("cashout_locked", "Баталгаажсан хүсэлтийг цуцлах боломжгүй", 409)
+    return _close_cashout(cashout.pk, Cashout.CANCELLED, "Тоглогч цуцалсан")
+
+
+def admin_pay_cashout(cashout, by, note):
+    if cashout.status != Cashout.PENDING:
+        raise GameError("cashout_not_pending", "Зөвхөн баталгаажсан (шилжүүлэг хүлээж буй) хүсэлтийг олгоно", 409)
+    return _close_cashout(cashout.pk, Cashout.PAID, note, by)
+
+
+def admin_reject_cashout(cashout, by, note):
+    if cashout.status not in Cashout.OPEN:
+        raise GameError("cashout_closed", "Хүсэлт аль хэдийн шийдэгдсэн", 409)
+    return _close_cashout(cashout.pk, Cashout.REJECTED, note, by)
 
 
 # ---------------------------------------------------------------- Төлбөр

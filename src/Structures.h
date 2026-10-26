@@ -25,7 +25,8 @@
 void BuildStaticStructures(const Layout& layout, const Terrain& terrain, std::vector<Obstacle>& obstacles,
                            MeshBuilder& solid, MeshBuilder& shadows, MeshBuilder& glass,
                            std::vector<Interior>& interiors, std::vector<Door>& doors,
-                           std::vector<Passage>& passages);
+                           std::vector<Passage>& passages, std::vector<WallSegment>& walls,
+                           std::vector<FencePanel>& panels);
 
 // Улаанбаатарын хотод унаж болох машин тавих гудамжны зах (x, z, y = чиглэл радианаар). BuildStaticStructures
 // хотын layout-аар дуудагдсаны дараа бөглөгдөнө.
@@ -34,4 +35,5 @@ const std::vector<Vector3>& CityVehicleSpots();
 void BuildSettlementStructures(int variant, const Layout& layout, const Terrain& terrain,
                                std::vector<Obstacle>& obstacles, MeshBuilder& solid, MeshBuilder& shadows,
                                MeshBuilder& glass, std::vector<Interior>& interiors, std::vector<Door>& doors,
-                           std::vector<Passage>& passages);
+                           std::vector<Passage>& passages, std::vector<WallSegment>& walls,
+                           std::vector<FencePanel>& panels);

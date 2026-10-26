@@ -17,6 +17,10 @@
     Gold шилжихгүй (зориуд ээлжлэн ялагдах).
   * Gold: тоглогчийн байнгын мөнгө, зөвхөн сервер өөрчилнө. Өөрчлөлт бүр GoldTransaction-д (ref нь давтагдашгүй тул нэг
     үйл явдлыг хоёр удаа тооцохгүй). Gold-оор газрын зургийн дэлгүүрийн сайжруулалт (Player.damage ... soldiers) авна.
+  * Gold татах (Cashout): зөвхөн тоглоомоос хожсон Gold-ийг (Player.won_gold) банкны данс руу татна; цэнэглэсэн Gold
+    татагдахгүй. Хүсэлт илгээхэд Gold шууд хасагдаж, тоглогч утсаа verify.mn-ээр (144773 руу SMS) баталгаажуулна.
+    Баталгаажсан хүсэлтийг админ банкаар гараар шилжүүлээд "Олгосон" гэж тэмдэглэнэ; татгалзвал, баталгаажуулалтын
+    хугацаа дуусвал, тоглогч цуцалбал Gold (ба хожсон Gold) буцна.
   * Event: тоглогчийн бүх үйлдлийн түүх (засахгүй, нэмэгдэнэ).
 """
 import secrets
@@ -40,6 +44,9 @@ class GameSettings(models.Model):
     room_fee = models.PositiveIntegerField("Өрөөнд орох төлбөр (Gold)", default=20)
     room_stake = models.PositiveIntegerField("Өрөөний барьцаа (Gold)", default=50)
     stage_bonus = models.PositiveIntegerField("Үе шат дуусгасны шагнал (Gold)", default=40)
+    # Найзтайгаа кодоор хамт тоглож үе давсан: хоёуланд нь (урамшуулал, татагдахгүй), нэг тоглогч өдөрт хязгаартай
+    coop_reward = models.PositiveIntegerField("Хамт давсны шагнал, хүн бүрд (Gold)", default=30)
+    coop_daily_limit = models.PositiveSmallIntegerField("Хамт давсны шагнал өдөрт (удаа)", default=5)
     stage_min_minutes = models.PositiveSmallIntegerField("Шагнал авах хамгийн бага хугацаа (минут)", default=5)
     battle_pair_limit = models.PositiveSmallIntegerField("Нэг хосын хоногийн төлбөртэй тулаан", default=3)
     # Вэбээр Gold худалдах багцууд: [[Gold, үнэ ₮], ...]
@@ -50,6 +57,13 @@ class GameSettings(models.Model):
     price_magazine = models.PositiveIntegerField("Сумны хайрцаг (Gold)", default=40)
     price_health = models.PositiveIntegerField("Амь (Gold)", default=50)
     price_soldier = models.PositiveIntegerField("Цэрэг (Gold)", default=120)
+    # Онцгой дүр: тэр дүрээр аймаг эхлүүлэх бүрд (дүр тус бүр өөрийн үнэтэй)
+    skin_price = models.PositiveIntegerField("DEMON дүрээр тоглох (Gold)", default=50)
+    skin_price_iron = models.PositiveIntegerField("IRON дүрээр тоглох (Gold)", default=50)
+    # Gold татах (хожсон Gold-оос л): доод хэмжээ, 1 Gold-ийн ₮ ханш
+    cashout_enabled = models.BooleanField("Gold татах нээлттэй", default=True)
+    cashout_min = models.PositiveIntegerField("Татах доод хэмжээ (Gold)", default=20000)
+    cashout_rate = models.DecimalField("1 Gold = ₮", max_digits=8, decimal_places=2, default=1)
 
     class Meta:
         verbose_name = "Тохиргоо (үнэ)"
@@ -77,12 +91,20 @@ class Player(models.Model):
     blocked = models.BooleanField("Хаагдсан", default=False)
     gold = models.PositiveIntegerField("Gold", default=500)
     locked_gold = models.PositiveIntegerField("Барьцаалсан Gold", default=0)  # нээлттэй өрөөнд (gold-ийн нэг хэсэг)
+    # Gold гурван хэсэгтэй (gold = won_gold + bonus_gold + цэнэглэсэн, GoldTransaction.split_gold):
+    # won_gold: бусад тоглогчоос тулаанд хожсон бодит (цэнэглэсэн, хожсон) Gold, зөвхөн үүнийг татна.
+    # bonus_gold: эхлэлийн, үе шатны шагнал, админы Gold: тоглоход хэрэглэнэ, татагдахгүй; тулаанд алдвал ялагчид
+    # мөн урамшуулал болж очно (олон дансаар үнэгүй Gold-ийг мөнгө болгохгүй).
+    won_gold = models.PositiveIntegerField("Хожсон Gold (татах боломжтой)", default=0)
+    bonus_gold = models.PositiveIntegerField("Урамшууллын Gold (татагдахгүй)", default=0)
     # Газрын зургийн дэлгүүрийн сайжруулалт (Gold-оор; тоглоомын src/Shop.h-тай ижил дээд түвшин)
     damage = models.PositiveSmallIntegerField("Хохирлын түвшин", default=0)
     fire_rate = models.PositiveSmallIntegerField("Буудах хурдны түвшин", default=0)
     magazine = models.PositiveSmallIntegerField("Сумны хайрцгийн түвшин", default=0)
     health_level = models.PositiveSmallIntegerField("Амийн түвшин", default=0)
     soldiers = models.PositiveSmallIntegerField("Цэргийн тоо", default=0)
+    # Тоглолтод алдсан (шууд хасагдсан) Gold-ийн цэргийн нийт тоо: дахин авахад худалдааны ref давхцахгүй
+    soldiers_lost = models.PositiveIntegerField("Алдсан цэрэг", default=0)
     progress = models.TextField("Тоглоомын хадгалалт", blank=True)
     progress_updated = models.DateTimeField("Хадгалалт шинэчлэгдсэн", null=True, blank=True)
     created = models.DateTimeField("Бүртгүүлсэн", auto_now_add=True)
@@ -142,8 +164,8 @@ class UnlockedProvince(models.Model):
 class Verification(models.Model):
     """SMS кодоор утас баталгаажуулах оролдлого (бүртгэл, нууц үг сэргээх)."""
 
-    REGISTER, RESET = "register", "reset"
-    PURPOSES = [(REGISTER, "Бүртгэл"), (RESET, "Нууц үг сэргээх")]
+    REGISTER, RESET, CASHOUT = "register", "reset", "cashout"
+    PURPOSES = [(REGISTER, "Бүртгэл"), (RESET, "Нууц үг сэргээх"), (CASHOUT, "Gold татах")]
 
     phone = models.CharField(max_length=16, db_index=True)
     purpose = models.CharField(max_length=10, choices=PURPOSES)
@@ -218,9 +240,47 @@ class GoldTransaction(models.Model):
     SIGNUP, SHOP, ADMIN = "signup", "shop", "admin"
     ROOM_FEE, ROOM_LEAVE, STAGE_COMPLETE = "room_fee", "room_leave", "stage_complete"
     BATTLE_WIN, BATTLE_LOSS, PURCHASE = "battle_win", "battle_loss", "purchase"
+    CASHOUT, CASHOUT_REFUND = "cashout", "cashout_refund"
+    SKIN = "skin"
+    COOP_WIN = "coop_win"
     REASONS = [(SIGNUP, "Эхлэл"), (SHOP, "Дэлгүүр"), (ADMIN, "Админ"), (ROOM_FEE, "Өрөөнд орсон"),
                (ROOM_LEAVE, "Өрөөнөөс гарсан (барьцаа шатсан)"), (STAGE_COMPLETE, "Үе шат дуусгасан"),
-               (BATTLE_WIN, "Тулаанд ялсан"), (BATTLE_LOSS, "Тулаанд ялагдсан"), (PURCHASE, "Худалдаж авсан")]
+               (BATTLE_WIN, "Тулаанд ялсан"), (BATTLE_LOSS, "Тулаанд ялагдсан"), (PURCHASE, "Худалдаж авсан"),
+               (CASHOUT, "Gold татсан"), (CASHOUT_REFUND, "Татах хүсэлт буцсан"), (SKIN, "Онцгой дүрээр тоглосон"),
+               (COOP_WIN, "Найзтайгаа хамт давсан")]
+    # Хожсон Gold (Player.won_gold) нэмэгдэх шалтгаан; урамшууллын Gold (Player.bonus_gold) нэмэгдэх шалтгаан.
+    # Бусад орлого (худалдан авалт) цэнэглэсэн Gold. Үе шатны шагналыг хожсонд тооцохгүй: тоглоомгүйгээр (API-гаар)
+    # өрөө нээж 5 минут хүлээгээд "дууслаа" гэж олборлож болдог байсан.
+    WON_GAIN = (BATTLE_WIN, CASHOUT_REFUND)
+    BONUS_GAIN = (SIGNUP, STAGE_COMPLETE, ADMIN, COOP_WIN)
+
+    @classmethod
+    def split_gold(cls, gold, won, bonus, amount, reason, bonus_part=0):
+        """Gold-ийн өөрчлөлтийн дараах (gold, won, bonus). Зарцуулалт эхлээд урамшууллаас, дараа нь цэнэглэснээс,
+        эцэст нь хожсоноос (татах Gold хамгаалагдана); татах (CASHOUT) зөвхөн хожсоноос. Тулаанд хожсоны
+        bonus_part хэсэг нь ялагдагчийн урамшууллаас ирсэн тул урамшуулал хэвээр."""
+        if amount > 0:
+            if reason in cls.WON_GAIN:
+                part = min(max(0, bonus_part), amount)
+                won += amount - part
+                bonus += part
+            elif reason in cls.BONUS_GAIN:
+                bonus += amount
+        elif amount < 0:
+            spend = -amount
+            if reason == cls.CASHOUT:
+                won = max(0, won - spend)
+            else:
+                paid = max(0, gold - won - bonus)
+                take = min(spend, bonus)
+                bonus -= take
+                spend -= take
+                spend -= min(spend, paid)
+                won = max(0, won - spend)
+        gold += amount
+        won = min(won, gold)
+        bonus = min(bonus, gold - won)
+        return gold, won, bonus
 
     player = models.ForeignKey(Player, verbose_name="Тоглогч", related_name="gold_transactions", on_delete=models.CASCADE)
     amount = models.IntegerField("Дүн")
@@ -237,6 +297,39 @@ class GoldTransaction(models.Model):
 
     def __str__(self):
         return f"{self.created:%Y-%m-%d %H:%M} {self.amount:+d} ({self.reason})"
+
+
+class Cashout(models.Model):
+    """Хожсон Gold-ийг банкны данс руу татах хүсэлт. Gold хүсэлт үүсэхэд хасагдана (verifying), утсаа баталгаажуулбал
+    админ шилжүүлэхийг хүлээнэ (pending). Олгосон (paid); татгалзсан, хугацаа дууссан, цуцалсан бол Gold буцна."""
+
+    VERIFYING, PENDING, PAID, REJECTED, EXPIRED, CANCELLED = "verifying", "pending", "paid", "rejected", "expired", "cancelled"
+    STATUSES = [(VERIFYING, "Утас баталгаажуулж буй"), (PENDING, "Шилжүүлэг хүлээж буй"), (PAID, "Олгосон"),
+                (REJECTED, "Татгалзсан"), (EXPIRED, "Хугацаа дууссан"), (CANCELLED, "Цуцалсан")]
+    OPEN = (VERIFYING, PENDING)
+
+    player = models.ForeignKey(Player, verbose_name="Тоглогч", related_name="cashouts", on_delete=models.CASCADE)
+    gold = models.PositiveIntegerField("Gold")
+    amount = models.PositiveIntegerField("Олгох дүн (₮)")
+    rate = models.DecimalField("Ханш (1 Gold = ₮)", max_digits=8, decimal_places=2)
+    bank = models.CharField("Банк", max_length=60)
+    account = models.CharField("Дансны дугаар", max_length=32)
+    holder = models.CharField("Данс эзэмшигч", max_length=60)
+    status = models.CharField("Төлөв", max_length=10, choices=STATUSES, default=VERIFYING, db_index=True)
+    verification = models.ForeignKey(Verification, null=True, blank=True, on_delete=models.SET_NULL)
+    note = models.CharField("Тэмдэглэл", max_length=200, blank=True)
+    handled_by = models.CharField("Шийдсэн админ", max_length=150, blank=True)
+    created = models.DateTimeField("Үүссэн", auto_now_add=True, db_index=True)
+    verified_at = models.DateTimeField("Баталгаажсан", null=True, blank=True)
+    closed_at = models.DateTimeField("Шийдэгдсэн", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Gold татах хүсэлт"
+        verbose_name_plural = "Gold татах хүсэлт"
+        ordering = ["-created", "-id"]
+
+    def __str__(self):
+        return f"{self.player} {self.gold} Gold -> {self.bank} {self.account} ({self.status})"
 
 
 class Room(models.Model):
@@ -260,6 +353,11 @@ class Room(models.Model):
     guest_report = models.CharField("Зочны мэдэгдсэн ялагч", max_length=8, blank=True)
     report_at = models.DateTimeField("Анхны мэдэгдэл", null=True, blank=True)
     guest_left = models.BooleanField("Зочин тулааны үеэр гарсан (AI тулалдана)", default=False)
+    # Найзын код (4 орон): энэ кодоор орсон зочин хамт тоглоно (тулаангүй, төлбөргүй). pvp: Gold хүрэлцсэн тул өөр
+    # тоглогч урилгагүй орж тулалдана (эс бөгөөс зөвхөн найз кодоор).
+    code = models.CharField("Найзын код", max_length=4, blank=True, db_index=True)
+    pvp = models.BooleanField("Нээлттэй (тулаан)", default=True)
+    guest_coop = models.BooleanField("Зочин кодоор орсон найз", default=False)
     # Өрөөний даалгаврын ахиц: хост илгээнэ (тоглоомын StageSave-ийн мөр), шинэ хост үргэлжлүүлнэ
     stage_state = models.TextField("Даалгаврын ахиц", blank=True)
     recruits = models.PositiveSmallIntegerField("Хостын элсүүлсэн цэрэг", default=0)

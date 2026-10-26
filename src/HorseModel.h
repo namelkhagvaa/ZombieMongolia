@@ -15,4 +15,5 @@ bool HasHorseModel();
 float HorseStridePhase(float animation);
 
 // gallop 0..1: хатирах -> давхих (хөлийн дараалал, савлалт өөрчлөгдөнө).
-void DrawHorseModel(float animation, float gait, float steer, float seed = 0.0f, float gallop = 0.0f);
+// dead: 0 = амьд, 1 = үхсэн (хөл нугарч сулрах, хүзүү, толгой унжих, сүүл хөдлөхгүй)
+void DrawHorseModel(float animation, float gait, float steer, float seed = 0.0f, float gallop = 0.0f, float dead = 0.0f);

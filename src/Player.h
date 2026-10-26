@@ -114,8 +114,27 @@ public:
     void SetReload(float progress) { reload = progress; }
 
     void TakeDamage(float amount);
-    void Heal(float amount);
+    // Хаанаас цохиулсныг тэмдэглэнэ (HUD-ийн чиглэлийн сум)
+    void TakeDamageFrom(float amount, Vector3 source)
+    {
+        TakeDamage(amount);
+        hitFrom = source;
+        hitFromKnown = true;
+    }
+    bool HitDirection(Vector3& source) const
+    {
+        source = hitFrom;
+        return hitFromKnown;
+    }
+    void Heal(float amount); // унасан бол босгоно
     bool IsAlive() const { return health > 0.0f; }
+    // Унасан: амь дууссан ч kDownTime секунд босгохыг хүлээнэ (хөдлөх, буудах боломжгүй, хэвтэнэ). Энэ хооронд
+    // цохиулбал хугацаа хурдан дуусна. Хугацаа дуусвал үхнэ (health = 0).
+    static constexpr float kDownTime = 20.0f;
+    bool IsDowned() const { return downed; }
+    float DownTimeLeft() const { return downTimer; }
+    void UpdateDowned(float dt);
+    void Revive(float fraction); // амийн дээд хэмжээний fraction-тай босно
     float Health() const { return health; }
     float MaxHealth() const { return maxHealth; }
     float TimeSinceHit() const { return timeSinceHit; }
@@ -165,5 +184,9 @@ private:
     float health = 100.0f;
     float maxHealth = 100.0f;
     float timeSinceHit = 10.0f;
+    bool downed = false;
+    float downTimer = 0.0f;
+    Vector3 hitFrom = { 0.0f, 0.0f, 0.0f };
+    bool hitFromKnown = false;
     bool grounded = true;
 };

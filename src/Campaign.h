@@ -40,11 +40,18 @@ public:
     Result Update(Progress& progress, bool& progressChanged);
     void Draw(const Progress& progress) const;
     void Preload() const; // дэвсгэр зураг, аймгуудын дүрсийг урьдчилан ачаална
+    void DrawConfirm(const Progress& progress) const; // (газрын зургийн бусад самбарын дараа: хамгийн дээр)
 
     int Selected() const { return selected; }
     void Select(int provinceIndex) { selected = provinceIndex; }
+    // Сайжруулалт авах баталгаажуулах цонх
+    bool DialogOpen() const { return confirmItem >= 0; }
+    void CloseDialog() { confirmItem = -1; }
 
 private:
+    int confirmItem = -1;                 // баталгаажуулж буй сайжруулалт (ShopItem), -1 = цонхгүй
+    mutable Rectangle shopCards[8] = {};  // сайжруулалтын мөрүүд (Draw тооцно, Update товшилтыг шалгана)
+    mutable Rectangle confirmYes = {}, confirmNo = {}, confirmPanel = {};
     int selected = 0;
     // Давхар товшилт: сүүлийн товшсон аймаг ба цаг
     int lastClicked = -1;

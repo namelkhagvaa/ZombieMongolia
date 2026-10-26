@@ -62,7 +62,19 @@ public:
     float SurfaceHeightAt(float x, float z, float maxY) const;
 
     // Босоо цилиндр (хөлийн байрлал feetPos) саад руу орсон бол хэвтээ чиглэлд түлхэж гаргана.
-    void ResolveHorizontal(Vector3& feetPos, float radius, float height, float stepHeight) const;
+    // person: явган хүн, зомби (хашаа, зогсож буй унааг тооцно); унаа өөрөө false.
+    void ResolveHorizontal(Vector3& feetPos, float radius, float height, float stepHeight, bool person = true) const;
+
+    // Хашаа давах: feet-ээс dir (нэгж, XZ) чиглэлд reach дотор давж болох хашаа байвал гарцыг out-д бөглөнө
+    // (from = feet, to = хашааны цаад талын чөлөөт газар, top = орой). maxRise: давж чадах дээд өндөр (хөлөөс).
+    bool FindVault(Vector3 feet, Vector2 dir, float reach, float radius, float maxRise, Passage& out) const;
+    // a -> b хэвтээ шугам хашаагаар (walls) хаагдсан эсэх (feetY-ийн өндөрт)
+    bool CrossesWall(Vector2 a, Vector2 b, float feetY) const;
+    // Сум, камер хаадаг налуу хана хүртэлх зай (хотын байшин); байхгүй бол maxDistance
+    float WallRayDistance(Ray ray, float maxDistance) const;
+    // Явган хүмүүсийн мөргөлдөх унаанууд (Game frame бүрд: зогсож буй, удаан явж буй унаа)
+    void SetVehicleBlockers(std::vector<VehicleBlocker> blockers) { vehicleBlockers = std::move(blockers); }
+    const std::vector<WallSegment>& Walls() const { return walls; }
 
     // from цэгээс dir чиглэлд саад, газарт тулахгүй явж болох зай (камерт).
     float ClipDistance(Vector3 from, Vector3 dir, float maxDistance) const;
@@ -92,6 +104,8 @@ public:
     // position-д хамгийн ойр, maxDistance доторх хаалга; -1 = байхгүй.
     int NearestDoor(Vector3 position, float maxDistance) const;
     bool IsDoorOpen(int index) const { return doors[index].open; }
+    bool IsGate(int index) const { return doors[index].gate; }
+    Vector3 DoorCenter(int index) const { return doors[index].Center(); }
     float DoorDistance(int index, Vector3 position) const
     {
         const Vector3 center = doors[index].Center();
@@ -99,6 +113,9 @@ public:
         return std::sqrt(dx * dx + dz * dz);
     }
     void SetDoorOpen(int index, bool open);
+    // Хурдтай явж буй унаа (position, хүрэх зай radius, явах зүг direction) дайрсан хашааны хэсгүүдийг нураана;
+    // нурсан хэсгийн тоо.
+    int BreakFences(Vector3 position, float radius, Vector2 direction, float speed);
     int DoorCount() const { return (int)doors.size(); }
     void CloseAllDoors();
     // Хаалганы эргэх хөдөлгөөнийг шинэчилнэ.
@@ -156,6 +173,13 @@ private:
     std::vector<Door> doors;
     std::vector<Passage> passages;
     size_t staticPassageCount = 0; // эхний хэсэг нь тогтмол (цамхаг), үлдсэн нь суурингийнх
+    std::vector<WallSegment> walls; // хашаа, хотын байшингийн хана
+    size_t staticWallCount = 0;
+    size_t staticInteriorCount = 0, staticDoorCount = 0; // хотын орж болох барилга (суурингийнх араас нь)
+    std::vector<std::vector<int>> interiorGrid, doorGrid; // obstacleGrid-тэй ижил нүд
+    std::vector<std::vector<int>> wallGrid; // obstacleGrid-тэй ижил нүд
+    std::vector<std::vector<int>> panelGrid; // нурдаг хашааны хэсгүүд (дундаж цэгээр)
+    std::vector<VehicleBlocker> vehicleBlockers;
 
     // Саадын тор: нүд бүрд тэр нүдтэй давхцах саадуудын индекс
     int gridSide = 0;
@@ -170,6 +194,14 @@ private:
     std::vector<MeshPiece> settlementStructures;
     std::vector<MeshPiece> settlementShadows;
     std::vector<MeshPiece> settlementGlass;
+    // Нурдаг хашааны хэсгүүд: тусдаа mesh (нурахад гурвалжнуудыг нь цэг болгож нуудаг), тогтмол ба суурингийнх
+    std::vector<FencePanel> panels;
+    size_t staticPanelCount = 0;
+    std::vector<int> brokenPanels;
+    std::vector<MeshPiece> fences;
+    std::vector<MeshPiece> settlementFences;
+    std::vector<MeshPiece> ExtractFences(MeshBuilder& solid, size_t from, bool settlement);
+    void BreakPanel(int index, Vector2 direction);
     size_t staticObstacleCount = 0; // obstacles-ийн эхний хэсэг нь тогтмол, үлдсэн нь суурингийнх
     int settlementVariant = -1;
     int cityProvince = -1;          // идэвхтэй хотын аймаг (-1 = зохиомол хээр тал)

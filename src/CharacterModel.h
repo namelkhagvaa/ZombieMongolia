@@ -25,7 +25,9 @@ constexpr int kCharacterZombieBrute = 7;  // assets\zombie_brute
 constexpr int kCharacterZombieBoss = 8;   // assets\giant_zombie (аварга)
 constexpr int kCharacterModel1 = 9;       // assets\model-1 (1-р дайчны сонгож болох дүр)
 constexpr int kCharacterModel3 = 10;      // assets\model-3 (1-р дайчны сонгож болох дүр)
-constexpr int kCharacterCount = 11;
+constexpr int kCharacterDemon = 11;       // assets\demon (онцгой дүр, Gold-оор)
+constexpr int kCharacterIron = 12;        // assets\iron (онцгой дүр, Gold-оор)
+constexpr int kCharacterCount = 13;
 
 // shader: текстур, гэрэлтүүлэг, манантай дүрийн shader (Environment::CharacterShader).
 void LoadCharacterModels(Shader shader);

@@ -32,6 +32,8 @@ struct StageSave
     }
 };
 
+constexpr int kTutorialDone = 99;
+
 // Даалгавар хооронд хадгалагдах тоглогчийн ахиц.
 struct Progress
 {
@@ -44,10 +46,13 @@ struct Progress
     bool aimAssist = false;      // утсан дээр автомат онилгоо (тохиргоо)
     bool firstPerson = true;     // анхдагч: 1-р этгээд (зөвхөн зэвсэг харагдана)
     bool fullscreen = true;      // компьютер: бүтэн дэлгэцээр тоглох (F11 / цэс)
+    int frameLimit = 0;          // компьютер: FPS хязгаар (Game.cpp kFrameLimits: 0 дэлгэцийн давтамж, 60, 120, 144, хязгааргүй)
     int graphics = 0;            // 0 бага (өгөгдмөл), 1 дунд (сүүдэр), 2 өндөр (хүний сүүдэр, bloom)
+    bool graphicsAuto = true;    // компьютерт: видео картаар сонгоно (цэснээс сольсон, FPS-ээр бууруулсан бол false)
     bool sound = true;           // дуу асаалттай
     int soundLevel = 0;          // 0 = 100%, 1 = 60%, 2 = 30%
     int leaderSkin = 0;          // 1-р дайчны дүр (Team.h: 0 цэрэг, 1 Model-1, 2 Model-3)
+    int tutorial = 0;            // шинэ тоглогчийн заавар: дууссан алхам (kTutorialDone = бүгд)
     int netTag = 0;              // хамтарсан тоглолтод харагдах дугаар (1000..9999)    // камер: 1-р этгээд (зөвхөн гар, буу) эсвэл 3-р этгээд (бүтэн бие)
     std::vector<bool> liberated; // аймаг бүрээр
 

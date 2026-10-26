@@ -390,6 +390,82 @@ std::vector<MeshPiece> MeshBuilder::UploadPartitioned(float cellSize) const
     return pieces;
 }
 
+MeshBuilder MeshBuilder::Extract(const std::vector<std::pair<size_t, size_t>>& ranges)
+{
+    MeshBuilder out;
+    if (ranges.empty()) return out;
+    // Үлдэх гурвалжнуудыг байранд нь урагш шахна (хотын геометрийг хоёр дахин хуулахгүй)
+    size_t write = 0, read = 0;
+    auto keep = [&](size_t until) {
+        if (until > read && write != read)
+        {
+            std::copy(vertices.begin() + (std::ptrdiff_t)(read * 9), vertices.begin() + (std::ptrdiff_t)(until * 9),
+                      vertices.begin() + (std::ptrdiff_t)(write * 9));
+            std::copy(colors.begin() + (std::ptrdiff_t)(read * 12), colors.begin() + (std::ptrdiff_t)(until * 12),
+                      colors.begin() + (std::ptrdiff_t)(write * 12));
+        }
+        if (until > read) write += until - read;
+    };
+    for (const auto& range : ranges)
+    {
+        keep(range.first);
+        out.vertices.insert(out.vertices.end(), vertices.begin() + (std::ptrdiff_t)(range.first * 9),
+                            vertices.begin() + (std::ptrdiff_t)((range.first + range.second) * 9));
+        out.colors.insert(out.colors.end(), colors.begin() + (std::ptrdiff_t)(range.first * 12),
+                          colors.begin() + (std::ptrdiff_t)((range.first + range.second) * 12));
+        read = range.first + range.second;
+    }
+    keep(vertices.size() / 9);
+    vertices.resize(write * 9);
+    colors.resize(write * 12);
+    return out;
+}
+
+std::vector<MeshPiece> MeshBuilder::UploadGroups(float cellSize, const std::vector<std::pair<size_t, size_t>>& groups,
+                                                 std::vector<int>& groupPiece, std::vector<int>& groupStart) const
+{
+    std::map<std::pair<int, int>, std::vector<uint32_t>> buckets;
+    for (size_t g = 0; g < groups.size(); ++g)
+    {
+        if (groups[g].second == 0) continue;
+        const float* v = &vertices[groups[g].first * 9];
+        const float cx = (v[0] + v[3] + v[6]) / 3.0f;
+        const float cz = (v[2] + v[5] + v[8]) / 3.0f;
+        buckets[{ (int)std::floor(cx / cellSize), (int)std::floor(cz / cellSize) }].push_back((uint32_t)g);
+    }
+    groupPiece.assign(groups.size(), -1);
+    groupStart.assign(groups.size(), 0);
+
+    std::vector<MeshPiece> pieces;
+    std::vector<float> p;
+    std::vector<unsigned char> pieceColors;
+    for (const auto& entry : buckets)
+    {
+        p.clear();
+        pieceColors.clear();
+        for (const uint32_t g : entry.second)
+        {
+            groupPiece[g] = (int)pieces.size();
+            groupStart[g] = (int)(p.size() / 3);
+            const size_t first = groups[g].first, count = groups[g].second;
+            p.insert(p.end(), &vertices[first * 9], &vertices[first * 9] + count * 9);
+            pieceColors.insert(pieceColors.end(), &colors[first * 12], &colors[first * 12] + count * 12);
+        }
+        Vector3 low = { p[0], p[1], p[2] }, high = low;
+        for (size_t i = 0; i < p.size(); i += 3)
+        {
+            low = { std::min(low.x, p[i]), std::min(low.y, p[i + 1]), std::min(low.z, p[i + 2]) };
+            high = { std::max(high.x, p[i]), std::max(high.y, p[i + 1]), std::max(high.z, p[i + 2]) };
+        }
+        MeshPiece piece;
+        piece.center = Vector3Scale(Vector3Add(low, high), 0.5f);
+        piece.radius = Vector3Distance(low, high) * 0.5f;
+        piece.mesh = UploadArrays(p, pieceColors);
+        pieces.push_back(piece);
+    }
+    return pieces;
+}
+
 ViewCone ViewCone::From(const Camera3D& camera)
 {
     const float aspect = (float)ViewWidth() / (float)std::max(1, ViewHeight());

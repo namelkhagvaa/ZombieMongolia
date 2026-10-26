@@ -15,9 +15,10 @@ inline bool IsSniperMember(int member) { return member == kSniperMember; }
 const char* TeamMemberName(int member);
 
 // Гишүүн бүр өөр өнгийн дээл, малгайтай: хэнийг удирдаж байгаа нь ялгагдана.
-// leaderSkin: 1-р дайчны (member 0) сонгосон дүр (0 = цэрэг, 1 = Model-1, 2 = Model-3); бусад гишүүдэд нөлөөгүй.
+// leaderSkin: 1-р дайчны (member 0) сонгосон дүр (0 = цэрэг, 1 = Model-1, 2 = Model-3, 3 = Demon, 4 = Iron;
+// 3, 4 нь онцгой: Account::SkinPrice Gold-оор); бусад гишүүдэд нөлөөгүй.
 HumanoidLook TeamMemberLook(int member, int leaderSkin = 0);
 
 // 1-р дайчны сонгож болох дүрүүд (тоглоом эхлэхэд дүр сонгох цонх)
-constexpr int kLeaderSkinCount = 3;
+constexpr int kLeaderSkinCount = 5;
 const char* LeaderSkinName(int skin);

@@ -10,3 +10,12 @@ cmake-build-*/
 !dist/ZombieMongolia_Setup.exe
 build_web/
 tools/data/dem_cache/
+tools/data/copdem_cache/
+tools/data/ms_cache/
+tools/data/ms_links.csv
+tools/data/towns/*.old
+tools/data/compare_*.png
+
+# Android APK (100 MB-аас том: GitHub хүлээж авахгүй) - git-ээр биш тусад нь түгээнэ
+build_android/ZombieMongolia.apk
+build_android/ZombieMongolia.apk.idsig

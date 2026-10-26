@@ -15,7 +15,7 @@ enum class ShopItem
 };
 
 constexpr int kMaxHealthLevel = 5;
-constexpr int kMaxSoldiers = 4;
+constexpr int kMaxSoldiers = 10; // Gold-оор авах цэргийн дээд тоо (тоглолтод үхсэн нь хасагдана)
 constexpr float kHealthPerLevel = 20.0f;
 
 const char* ShopItemName(ShopItem item);

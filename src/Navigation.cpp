@@ -47,6 +47,141 @@ namespace
     }
 }
 
+bool FindLocalPath(const World& world, Vector2 from, Vector2 to, float radius, std::vector<Vector2>& out)
+{
+    out.clear();
+    const float cell = 2.0f, margin = 24.0f;
+    float minX = std::min(from.x, to.x) - margin, maxX = std::max(from.x, to.x) + margin;
+    float minZ = std::min(from.y, to.y) - margin, maxZ = std::max(from.y, to.y) + margin;
+    if (maxX - minX > 200.0f || maxZ - minZ > 200.0f) return false; // хэт хол: шууд явна (тоглогчийг гүйцэх логик)
+    const int w = (int)std::ceil((maxX - minX) / cell), h = (int)std::ceil((maxZ - minZ) / cell);
+    std::vector<char> blocked((size_t)w * h, 0);
+    auto cellOf = [&](Vector2 p, int& x, int& z) {
+        x = std::clamp((int)((p.x - minX) / cell), 0, w - 1);
+        z = std::clamp((int)((p.y - minZ) / cell), 0, h - 1);
+    };
+    auto centerOf = [&](int x, int z) { return Vector2{ minX + ((float)x + 0.5f) * cell, minZ + ((float)z + 0.5f) * cell }; };
+
+    // Хүний өндөрт байгаа саад (хашаа, хана, байшин): radius-аар томруулж нүд бүрийг тэмдэглэнэ
+    const float pad = radius + 0.3f;
+    for (const Obstacle& o : world.Obstacles())
+    {
+        if (o.walkable || o.size.y < 0.7f) continue;
+        if (o.center.x + o.size.x * 0.5f + pad < minX || o.center.x - o.size.x * 0.5f - pad > maxX) continue;
+        if (o.center.z + o.size.z * 0.5f + pad < minZ || o.center.z - o.size.z * 0.5f - pad > maxZ) continue;
+        const float ground = world.GroundHeight(o.center.x, o.center.z);
+        if (o.Top() < ground + 0.6f || o.Bottom() > ground + 1.6f) continue; // газар доорх, дээвэр
+        int x0, z0, x1, z1;
+        cellOf({ o.center.x - o.size.x * 0.5f - pad, o.center.z - o.size.z * 0.5f - pad }, x0, z0);
+        cellOf({ o.center.x + o.size.x * 0.5f + pad, o.center.z + o.size.z * 0.5f + pad }, x1, z1);
+        for (int z = z0; z <= z1; ++z)
+        {
+            for (int x = x0; x <= x1; ++x)
+            {
+                // Нүдний төвөөс саадын хайрцаг хүртэлх зай < pad: (нимгэн хашааг ч алгасахгүй)
+                const Vector2 c = centerOf(x, z);
+                const float dx = std::max(0.0f, std::fabs(c.x - o.center.x) - o.size.x * 0.5f);
+                const float dz = std::max(0.0f, std::fabs(c.y - o.center.z) - o.size.z * 0.5f);
+                if (dx * dx + dz * dz < (pad + cell * 0.5f) * (pad + cell * 0.5f)) blocked[(size_t)z * w + x] = 1;
+            }
+        }
+    }
+    for (int z = 0; z < h; ++z)
+    {
+        for (int x = 0; x < w; ++x)
+        {
+            const Vector2 c = centerOf(x, z);
+            if (!world.InsideBoundary(c.x, c.y) || world.InteriorAt(c.x, c.y) >= 0) blocked[(size_t)z * w + x] = 1;
+        }
+    }
+
+    int sx, sz, gx, gz;
+    cellOf(from, sx, sz);
+    cellOf(to, gx, gz);
+    // Эхлэл, төгсгөл саадын хажууд (томруулсан хэсэгт) байж болно: чөлөөлнө
+    blocked[(size_t)sz * w + sx] = 0;
+    blocked[(size_t)gz * w + gx] = 0;
+
+    const int cells = w * h, start = sz * w + sx, goal = gz * w + gx;
+    std::vector<float> g((size_t)cells, 1e30f);
+    std::vector<int> parent((size_t)cells, -1);
+    std::vector<char> closed((size_t)cells, 0);
+    using Node = std::pair<float, int>;
+    std::priority_queue<Node, std::vector<Node>, std::greater<Node>> open;
+    auto heuristic = [&](int k) {
+        const float dx = (float)(k % w - gx), dz = (float)(k / w - gz);
+        return std::sqrt(dx * dx + dz * dz);
+    };
+    g[(size_t)start] = 0.0f;
+    open.push({ heuristic(start), start });
+    static const int kDx[8] = { 1, -1, 0, 0, 1, 1, -1, -1 }, kDz[8] = { 0, 0, 1, -1, 1, -1, 1, -1 };
+    bool found = false;
+    int expanded = 0;
+    while (!open.empty() && expanded < 12000)
+    {
+        const int k = open.top().second;
+        open.pop();
+        if (closed[(size_t)k]) continue;
+        closed[(size_t)k] = 1;
+        ++expanded;
+        if (k == goal)
+        {
+            found = true;
+            break;
+        }
+        const int x = k % w, z = k / w;
+        for (int d = 0; d < 8; ++d)
+        {
+            const int nx = x + kDx[d], nz = z + kDz[d];
+            if (nx < 0 || nz < 0 || nx >= w || nz >= h) continue;
+            const int n = nz * w + nx;
+            if (blocked[(size_t)n] || closed[(size_t)n]) continue;
+            if (d >= 4 && (blocked[(size_t)(z * w + nx)] || blocked[(size_t)(nz * w + x)])) continue; // булан огтлохгүй
+            const float candidate = g[(size_t)k] + (d >= 4 ? 1.4142f : 1.0f);
+            if (candidate < g[(size_t)n])
+            {
+                g[(size_t)n] = candidate;
+                parent[(size_t)n] = k;
+                open.push({ candidate + heuristic(n), n });
+            }
+        }
+    }
+    if (!found) return false;
+
+    std::vector<int> chain;
+    for (int k = goal; k >= 0; k = parent[(size_t)k]) chain.push_back(k);
+    std::reverse(chain.begin(), chain.end());
+    // Шулуутгах: харагдах (нүд дамжин саадгүй) хамгийн холын цэг рүү шууд
+    auto clear = [&](int a, int b) {
+        const Vector2 pa = centerOf(a % w, a / w), pb = centerOf(b % w, b / w);
+        const float length = Vector2Distance(pa, pb);
+        const int steps = std::max(1, (int)(length / (cell * 0.4f)));
+        for (int i = 1; i < steps; ++i)
+        {
+            int x, z;
+            cellOf(Vector2Lerp(pa, pb, (float)i / (float)steps), x, z);
+            if (blocked[(size_t)z * w + x]) return false;
+        }
+        return true;
+    };
+    size_t at = 0;
+    while (at + 1 < chain.size())
+    {
+        size_t next = at + 1;
+        for (size_t j = chain.size() - 1; j > at + 1; --j)
+        {
+            if (clear(chain[at], chain[j]))
+            {
+                next = j;
+                break;
+            }
+        }
+        out.push_back(next + 1 == chain.size() ? to : centerOf(chain[next] % w, chain[next] / w));
+        at = next;
+    }
+    return !out.empty();
+}
+
 int Navigator::Cell(float v) const
 {
     return std::clamp((int)std::floor((v + half) / kCell), 0, side - 1);
@@ -234,6 +369,7 @@ void Navigator::SetTarget(const World& world, Vector3 from, Vector2 point)
 void Navigator::Clear()
 {
     active = false;
+    shownValid = false;
     route.clear();
 }
 
@@ -289,80 +425,104 @@ void Navigator::Update(const World& world, Vector3 player, float dt)
     if (best >= 6.0f && Vector2Distance(on, p) > 0.1f) route.insert(route.begin() + 1, on); // замруу буцах хэсэг
 }
 
-void Navigator::Draw3D(const World& world, Vector3 player) const
+void Navigator::Draw3D(const Camera3D& view, Vector3 player) const
 {
     if (!active || route.size() < 2) return;
-    // Газар дээрх сумнууд: тоглогчоос 6 м-ээс эхлэн 7 м тутам, 70 м хүртэл
-    const Color color = { 255, 214, 60, 235 };
-    rlDrawRenderBatchActive();
-    rlDisableBackfaceCulling();
-    float travelled = 0.0f, next = 6.0f;
-    for (size_t i = 0; i + 1 < route.size() && next < 70.0f; ++i)
+    // Камерын өмнө 4 м-т, дэлгэцийн дээд хэсэгт (y ~ 210 / 720) хөвнө. Газрын хавтгайд хэвтэж, очих зүг рүү
+    // ертөнцөд чиглэнэ: камер эргэхэд сум эсрэгээр эргэж, налуугаар нь 3D хэлбэр нь харагдана.
+    const Vector3 forward = Vector3Normalize(Vector3Subtract(view.target, view.position));
+    const Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, { 0.0f, 1.0f, 0.0f }));
+    const Vector3 up = Vector3CrossProduct(right, forward);
+    const float depth = 4.0f;
+    const float lift = depth * std::tan(view.fovy * 0.5f * DEG2RAD) * 0.42f;
+    const Vector3 center = Vector3Add(Vector3Add(view.position, Vector3Scale(forward, depth)), Vector3Scale(up, lift));
+
+    // Очих газар аль зүгт байгааг (замаар биш, шулуун). Камерт харьцангуй зүгийг (дэлгэц дээрх эргэлт) ба
+    // хазайлтыг зөөлрүүлнэ: машинтай хурдан явахад камер бага зэрэг чичирхийлдэг (дагах, овон товон), сум тэр
+    // чичирхийллийг дагаж эргэлдэхгүй. Ертөнцийн зүгийг зөөлрүүлбэл камерын чичирхийлэл шууд сумд гардаг байсан.
+    const float cameraYaw = std::atan2(forward.x, forward.z);
+    const float wantRelative = std::remainder(std::atan2(target.x - player.x, target.y - player.z) - cameraYaw, 2.0f * PI);
+    const float wantTilt = std::max(0.0f, 1.0f - std::asin(std::clamp(-forward.y, -1.0f, 1.0f)));
+    const float follow = 1.0f - std::exp(-5.0f * std::min(GetFrameTime(), 0.1f)); // кадрын хугацаа савлахад жигд
+    if (!shownValid)
     {
-        const Vector2 a = route[i], b = route[i + 1];
-        const float length = Vector2Distance(a, b);
-        if (length < 0.01f) continue;
-        const Vector2 dir = Vector2Scale(Vector2Subtract(b, a), 1.0f / length);
-        const Vector2 side = { -dir.y, dir.x };
-        while (next < travelled + length && next < 70.0f)
-        {
-            const Vector2 c = Vector2Add(a, Vector2Scale(dir, next - travelled));
-            auto at = [&](Vector2 offset) {
-                const Vector2 q = Vector2Add(c, offset);
-                return Vector3{ q.x, world.SurfaceHeightAt(q.x, q.y, player.y + 3.0f) + 0.22f, q.y };
-            };
-            // "^" хэлбэрийн өргөн сум (шеврон): орой, хоёр далавч, дотор талын хонхор
-            auto local = [&](float x, float y) { return at(Vector2Add(Vector2Scale(side, x), Vector2Scale(dir, y))); };
-            const Vector3 tip = local(0.0f, 1.4f), notch = local(0.0f, 0.3f);
-            for (float s : { -1.0f, 1.0f })
-            {
-                const Vector3 outer = local(s * 1.9f, -0.6f), inner = local(s * 1.9f, -1.5f);
-                DrawTriangle3D(tip, outer, notch, color);
-                DrawTriangle3D(outer, inner, notch, color);
-            }
-            next += 7.0f;
-        }
-        travelled += length;
+        shownHeading = wantRelative;
+        shownTilt = wantTilt;
+        shownValid = true;
     }
-    rlDrawRenderBatchActive(); // хуримтлагдсан гурвалжнуудыг хоёр талаас нь зурна
+    shownHeading += std::remainder(wantRelative - shownHeading, 2.0f * PI) * follow;
+    shownTilt += (wantTilt - shownTilt) * follow;
+    const float heading = cameraYaw + shownHeading;
+    const Vector3 ahead = { std::sin(heading), 0.0f, std::cos(heading) }, side = { std::cos(heading), 0.0f, -std::sin(heading) };
+    const float size = 0.4f, thick = 0.06f;
+    // Камер бараг хэвтээ харвал хавтгай сум ирмэгээрээ харагдана: камерын баруун тэнхлэгийг тойруулан камер руу
+    // хазайлгана (алсын үзүүр нь дээшилнэ), харин чиглэл нь ертөнцөд хэвээр.
+    const float tilt = shownTilt; // камер руу хазайх (~57 градус хүртэл)
+    auto point = [&](float x, float z, float y) {
+        Vector3 offset = Vector3Add(Vector3Scale(side, x * size), Vector3Add(Vector3Scale(ahead, z * size), { 0.0f, y, 0.0f }));
+        offset = Vector3RotateByAxisAngle(offset, right, tilt);
+        return Vector3Add(center, offset);
+    };
+    // Сумны хүрээ (дээрээс харахад): үзүүр, далавч, иш
+    const Vector2 outline[7] = { { 0.0f, 1.0f }, { 0.75f, 0.1f }, { 0.3f, 0.1f }, { 0.3f, -0.9f },
+                                 { -0.3f, -0.9f }, { -0.3f, 0.1f }, { -0.75f, 0.1f } };
+    const Color top = { 255, 205, 55, 255 }, rim = { 196, 132, 18, 255 }, under = { 120, 78, 10, 255 };
+
+    // Гүний шалгалтгүй зурна (хана, дүрсний цаана ч үргэлж харагдана): гадаргуунуудыг камераас холоос ойр руу
+    // эрэмбэлж зурна. Тогтсон дарааллаар (доод тал, хажуу, дээд тал) зурахад доороос, хажуугаас харах үед арын
+    // хажуу тал урдах дээр гарч сум "нисдэг цаас" шиг эвдэрч харагддаг байсан (утсан дээр).
+    struct Face
+    {
+        Vector3 a, b, c;
+        Color color;
+        float depth;
+    };
+    std::vector<Face> list;
+    list.reserve(20);
+    auto add = [&](Vector3 a, Vector3 b, Vector3 c, Color color) {
+        const Vector3 middle = Vector3Scale(Vector3Add(Vector3Add(a, b), c), 1.0f / 3.0f);
+        list.push_back({ a, b, c, color, Vector3DotProduct(Vector3Subtract(middle, view.position), forward) });
+    };
+    auto faces = [&](float y, Color color) {
+        add(point(0.0f, 1.0f, y), point(0.75f, 0.1f, y), point(-0.75f, 0.1f, y), color);
+        add(point(0.3f, 0.1f, y), point(0.3f, -0.9f, y), point(-0.3f, -0.9f, y), color);
+        add(point(0.3f, 0.1f, y), point(-0.3f, -0.9f, y), point(-0.3f, 0.1f, y), color);
+    };
+    faces(-thick, under);
+    faces(thick, top);
+    // Хажуу талууд: зүг бүрээр гэрэлтүүлэг (камерын тал тод)
+    for (int k = 0; k < 7; ++k)
+    {
+        const Vector2 a = outline[k], b = outline[(k + 1) % 7];
+        const Vector3 a0 = point(a.x, a.y, -thick), b0 = point(b.x, b.y, -thick), a1 = point(a.x, a.y, thick), b1 = point(b.x, b.y, thick);
+        const Vector3 edge = Vector3Subtract(b1, a1);
+        const Vector3 normal = Vector3Normalize({ edge.z, 0.0f, -edge.x });
+        const float light = 0.55f + 0.45f * std::max(0.0f, -Vector3DotProduct(normal, forward));
+        const Color shade = { (unsigned char)(rim.r * light), (unsigned char)(rim.g * light), (unsigned char)(rim.b * light), 255 };
+        add(a0, b0, b1, shade);
+        add(a0, b1, a1, shade);
+    }
+    std::sort(list.begin(), list.end(), [](const Face& x, const Face& y) { return x.depth > y.depth; });
+
+    rlDrawRenderBatchActive();
+    rlDisableDepthTest();
+    rlDisableBackfaceCulling();
+    for (const Face& face : list) DrawTriangle3D(face.a, face.b, face.c, face.color);
+    rlDrawRenderBatchActive();
     rlEnableBackfaceCulling();
+    rlEnableDepthTest();
 }
 
 void Navigator::DrawHud(Vector3 player, float cameraYaw) const
 {
     if (!active || route.size() < 2) return;
-    // Чиглэх цэг: замын дагуу 25 м урагш (эргэлтийг урьдчилан заана)
-    Vector2 aim = route.back();
-    float remaining = 25.0f;
-    for (size_t i = 0; i + 1 < route.size(); ++i)
-    {
-        const float length = Vector2Distance(route[i], route[i + 1]);
-        if (length >= remaining)
-        {
-            aim = Vector2Lerp(route[i], route[i + 1], remaining / std::max(length, 0.01f));
-            break;
-        }
-        remaining -= length;
-    }
-    const float dx = aim.x - player.x, dz = aim.y - player.z;
-    // Газрын зурагтай ижил: дэлгэцийн дээш = камерын харж буй зүг
-    const float right = -dx * std::cos(cameraYaw) + dz * std::sin(cameraYaw);
-    const float up = dx * std::sin(cameraYaw) + dz * std::cos(cameraYaw);
-    const float angle = std::atan2(right, up);
-
-    const Vector2 c = { (float)ViewWidth() * 0.5f, 210.0f }; // мэдэгдлийн зурвасын доор
-    DrawCircleV(c, 25.0f, Fade(BLACK, 0.55f));
-    DrawCircleLinesV(c, 25.0f, { 255, 196, 40, 230 });
-    auto rotate = [&](float x, float y) {
-        return Vector2{ c.x + x * std::cos(angle) - y * std::sin(angle), c.y + x * std::sin(angle) + y * std::cos(angle) };
-    };
+    (void)cameraYaw;
+    // Сум нь 3D (Draw3D): энд зөвхөн очих газар хүртэлх шулуун зай, сумны доор
+    const Vector2 c = { (float)ViewWidth() * 0.5f, 210.0f };
     const Color color = { 255, 196, 40, 255 };
-    DrawTriangleAnyWinding(rotate(0.0f, -18.0f), rotate(-12.0f, 8.0f), rotate(0.0f, 2.0f), color);
-    DrawTriangleAnyWinding(rotate(0.0f, -18.0f), rotate(0.0f, 2.0f), rotate(12.0f, 8.0f), color);
-
-    const float distance = RemainingDistance();
+    const float distance = Vector2Distance({ player.x, player.z }, target);
     const char* text = distance >= 1000.0f ? TextFormat("%.1f км", distance / 1000.0f) : TextFormat("%d м", (int)distance);
     const int width = UiMeasure(text, 18);
-    UiText(text, (int)c.x - width / 2 + 1, (int)c.y + 30, 18, Fade(BLACK, 0.8f));
-    UiText(text, (int)c.x - width / 2, (int)c.y + 29, 18, color);
+    UiText(text, (int)c.x - width / 2 + 1, (int)c.y + 41, 18, Fade(BLACK, 0.8f));
+    UiText(text, (int)c.x - width / 2, (int)c.y + 40, 18, color);
 }

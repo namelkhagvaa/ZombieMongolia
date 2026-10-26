@@ -79,7 +79,9 @@ bool LoadProgress(Progress& progress, int provinceCount)
 
     // Мөр бүр: "түлхүүр утга"
     int format = 1; // "format" мөргүй файл бол хуучин хувилбар
+    bool tutorialSaved = false; // хуучин хадгалалт: тоглож байсан тоглогчид заавар гаргахгүй
     int savedFirstPerson = -1, viewVersion = 1, graphicsVersion = 1, missionsVersion = 1;
+    bool autoSaved = false;
     std::string key;
     while (file >> key)
     {
@@ -160,7 +162,9 @@ bool LoadProgress(Progress& progress, int provinceCount)
         else if (key == "soldiers") progress.soldiers = std::clamp(value, 0, kMaxSoldiers);
         else if (key == "aimAssist") progress.aimAssist = value != 0;
         else if (key == "fullscreen") progress.fullscreen = value != 0;
+        else if (key == "frameLimit") progress.frameLimit = std::clamp(value, 0, 4);
         else if (key == "graphics") progress.graphics = std::clamp(value, 0, 2);
+        else if (key == "graphicsAuto") { progress.graphicsAuto = value != 0; autoSaved = true; }
         else if (key == "firstPerson") savedFirstPerson = value;
         else if (key == "viewVersion") viewVersion = value;
         else if (key == "graphicsVersion") graphicsVersion = value;
@@ -168,14 +172,19 @@ bool LoadProgress(Progress& progress, int provinceCount)
         else if (key == "soundLevel") progress.soundLevel = std::clamp(value, 0, 2);
         else if (key == "netTag") progress.netTag = value;
         else if (key == "leaderSkin") progress.leaderSkin = std::clamp(value, 0, kLeaderSkinCount - 1);
+        else if (key == "tutorial") { progress.tutorial = std::clamp(value, 0, kTutorialDone); tutorialSaved = true; }
         else if (key == "format") format = value;
     }
+
+    if (!tutorialSaved && progress.kills > 0) progress.tutorial = kTutorialDone;
 
     // Камер: 2-р хувилбараас 1-р этгээд анхдагч болсон. Хуучин хадгалалтын 3-р этгээдийн утгыг нэг удаа дарна;
     // үүнээс хойш тоглогчийн сонголт (V товч) хадгалагдана.
     progress.firstPerson = viewVersion >= 2 && savedFirstPerson >= 0 ? savedFirstPerson != 0 : true;
     // Өгөгдмөл график "бага" болсон: хуучин хадгалалтын тохиргоог нэг удаа бууруулна (дараа нь цэснээс өөрчилж болно).
     if (graphicsVersion < 2) progress.graphics = 0;
+    // Автомат сонголтоос өмнөх хадгалалт: анхдагч (бага) хэвээр бол автомат, цэснээс сонгосон бол тэр хэвээр
+    if (!autoSaved) progress.graphicsAuto = progress.graphics == 0;
 
     // Даалгаврууд шинэчлэгдсэн (аймаг бүрд 6-9 холбоотой даалгавар): хуучин дуусаагүй явц таарахгүй тул шинээр эхэлнэ.
     // Чөлөөлсөн аймгууд, зоос, сайжруулалт хэвээр.
@@ -214,11 +223,14 @@ bool SaveProgress(const Progress& progress)
     file << "magazine " << progress.weapon.magazine << '\n';
     file << "health " << progress.healthLevel << '\n';
     file << "soldiers " << progress.soldiers << '\n';
+    file << "tutorial " << progress.tutorial << '\n';
     file << "aimAssist " << (progress.aimAssist ? 1 : 0) << '\n';
     file << "firstPerson " << (progress.firstPerson ? 1 : 0) << '\n';
     file << "viewVersion 2\n";
     file << "fullscreen " << (progress.fullscreen ? 1 : 0) << '\n';
+    file << "frameLimit " << progress.frameLimit << '\n';
     file << "graphics " << progress.graphics << '\n';
+    file << "graphicsAuto " << (progress.graphicsAuto ? 1 : 0) << '\n';
     file << "graphicsVersion 2\n";
     file << "sound " << (progress.sound ? 1 : 0) << '\n';
     file << "soundLevel " << progress.soundLevel << '\n';

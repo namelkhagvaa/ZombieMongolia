@@ -96,6 +96,7 @@
   #rotate { position: fixed; inset: 0; z-index: 4; display: none; flex-direction: column; align-items: center; justify-content: center;
             gap: 22px; padding: 0 24px; text-align: center; font-family: "ZmUi", "Segoe UI", Arial, sans-serif; font-size: 20px;
             color: rgb(242,240,234); background: linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.75)), #000 url("splash.png") center / cover no-repeat; }
+  #rotate small { font-size: 14px; color: rgba(242,240,234,.75); }
   #rotate .icon { width: 44px; height: 76px; border: 4px solid rgb(255,192,64); border-radius: 10px; animation: zm-rotate 2s ease-in-out infinite; }
   @keyframes zm-rotate { 0%, 20% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
   @media (pointer: coarse) {
@@ -129,7 +130,7 @@
 </div>
 <div id="error"><b>Тоглоом зогслоо</b><div id="errorText"></div><button onclick="location.reload()">Дахин ачаалах</button></div>
 <div id="debug"></div>
-<div id="rotate"><div class="icon"></div><div>Утсаа хэвтээ болгож эргүүлнэ үү</div></div>
+<div id="rotate"><div class="icon"></div><div>Утсаа хэвтээ болгож эргүүлнэ үү</div><small id="rotateStatus"></small></div>
 <script>
   var canvas = document.getElementById('canvas');
   var fill = document.getElementById('fill');
@@ -141,6 +142,13 @@
     fill.style.width = pct + '%';
     percentEl.textContent = pct + '%';
     if (text) statusEl.textContent = text;
+    // Босоо үед ачааллын мөр "эргүүлнэ үү" дэлгэцийн ард нуугдана: хувийг тэнд бас харуулна
+    rotateStatus.textContent = pct < 100 ? (text || statusEl.textContent) + ' ' + pct + '%' : '';
+  }
+  var rotateStatus = document.getElementById('rotateStatus');
+  // Android: дэлгэцэнд хүрэхэд бүтэн дэлгэц болж, өөрөө хэвтээ эргэнэ (lockLandscape)
+  if (document.documentElement.requestFullscreen && screen.orientation && screen.orientation.lock) {
+    document.querySelector('#rotate div:nth-child(2)').textContent = 'Дэлгэцэнд хүрч эсвэл утсаа эргүүлж хэвтээ болгоно уу';
   }
   // ?debug: тоглоомын логийг дэлгэцийн буланд харуулна (утсан дээр консол байхгүй үед шалтгааныг олоход).
   // Олон давтагддаг "амжилттай ачааллаа" мөрүүдийг алгасна.
@@ -192,7 +200,17 @@
     showError('График (WebGL) тасарлаа. Төхөөрөмжийн санах ой хүрэлцээгүй байж магадгүй — бусад tab, апп-аа хаагаад дахин оролдоно уу.');
   }, false);
   canvas.addEventListener('mousedown', function () { canvas.focus(); });
-  // Бүтэн дэлгэц. Чиглэлийг түгжихгүй: утас эргэхэд дагаж эргэнэ (босоо үед "хэвтээ болго" дэлгэц гарна).
+  // Бүтэн дэлгэц. Утсан дээр бүтэн дэлгэц болмогц хэвтээ байрлалд түгжинэ (Android Chrome): хэрэглэгч утсаа
+  // эргүүлэх шаардлагагүй, эргэлтийн үеийн хар/гацсан дэлгэц гарахгүй. Түгжиж чадахгүй хөтөч (iPhone Safari)
+  // дээр утас эргэхэд дагаж эргэнэ (босоо үед "хэвтээ болго" дэлгэц гарна).
+  function lockLandscape() {
+    if (!touchDevice) return;
+    try {
+      var o = screen.orientation;
+      if (o && o.lock) o.lock('landscape').catch(function () {});
+    } catch (e) {}
+  }
+  document.addEventListener('fullscreenchange', function () { if (document.fullscreenElement) lockLandscape(); });
   function enterFullscreen() {
     var el = document.getElementById('stage');
     if (document.fullscreenElement || !el.requestFullscreen) return;
@@ -278,7 +296,24 @@
   // Build бүрийн дугаар (tools/build_web.ps1 бичнэ): файлуудыг ?v=... -аар ачаалж, хөтөч хуучин .js-ийг
   // шинэ .wasm-тай хольж ачаалахаас сэргийлнэ (Safari кэшээс хуучин .js өгч "ASM_CONSTS" алдаа гарч байсан).
   var BUILD_ID = '{{{ BUILD_ID }}}';
+  // Утас босоо байхад тоглоомыг эхлүүлэхгүй (файлууд татагдсаар байна): ачааллын хүнд ажил (WebGL, загварууд)
+  // утас эргэх явцтай давхцаж дэлгэц харлаж, гацдаг байсан. Хэвтээ болж, эргэлт дууссаны дараа эхэлнэ.
+  var portraitQuery = window.matchMedia && window.matchMedia('(pointer: coarse) and (orientation: portrait)');
+  function holdWhilePortrait() {
+    if (!portraitQuery || !portraitQuery.matches) return;
+    addRunDependency('zm-landscape');
+    var released = false;
+    var check = function () {
+      if (released || portraitQuery.matches) return;
+      released = true;
+      setTimeout(function () { fitCanvas(); removeRunDependency('zm-landscape'); }, 500); // эргэлтийн хөдөлгөөн дуустал
+    };
+    if (portraitQuery.addEventListener) portraitQuery.addEventListener('change', check);
+    else if (portraitQuery.addListener) portraitQuery.addListener(check);
+    window.addEventListener('resize', check);
+  }
   var Module = {
+    preRun: [holdWhilePortrait],
     locateFile: function (path) { return path + '?v=' + BUILD_ID; },
     // Туршилт: ?args=--join+1234 гэх мэт тоглоомын командын мөрийн сонголтууд (main.cpp)
     arguments: (new URLSearchParams(location.search).get('args') || '').split(' ').filter(Boolean),

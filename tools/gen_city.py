@@ -610,18 +610,70 @@ def origin_latlon(origin):
     return LAT0 + origin[1] / 111320.0, LON0 - origin[0] / (111320.0 * cos0)
 
 
-def dem_grids(origin):
-    """Тоглоомын (0, 0)-ийг төвлөсөн ойрын ба алсын өндрийн тор (0 = (0, 0)-ийн өндөр)."""
+def carve_valleys(values, cell, side, half, rivers):
+    """Гол, горхины дагуух хөндийн ёроолыг (өндрийн торонд голын шугам ёроолдоо биш, налуу дээр таарч болно)
+    ойролцоох хамгийн нам цэгийн түвшинд буулгана: ус налуу дээгүүр урсахгүй. rivers: (kind, halfWidth, points),
+    тоглоомын координатаар (kind 0 гол, 1 горхи). Голын суваг өөрөө (2 м / 1 м) тоглоом дотор ухагдана (Layout.cpp)."""
+    original = list(values)
+    for kind, half_width, pts in rivers:
+        if kind > 1:
+            continue
+        search = 45.0 if kind == 0 else 24.0  # ёроолыг хайх радиус
+        reach = half_width + (28.0 if kind == 0 else 12.0)  # буулгах өргөн (эргээс налуу)
+        for i in range(len(pts) - 1):
+            (ax, az), (bx, bz) = pts[i], pts[i + 1]
+            length = math.hypot(bx - ax, bz - az)
+            steps = max(1, int(length / (cell * 0.5)))
+            for k in range(steps + 1):
+                px, pz = ax + (bx - ax) * k / steps, az + (bz - az) * k / steps
+                cx, cz = (px + half) / cell, (pz + half) / cell
+                if not (-2 <= cx <= side + 1 and -2 <= cz <= side + 1):
+                    continue
+                r = int(math.ceil(max(search, reach) / cell))
+                x0, x1 = max(0, int(cx) - r), min(side - 1, int(cx) + r + 1)
+                z0, z1 = max(0, int(cz) - r), min(side - 1, int(cz) + r + 1)
+                bed = None
+                for iz in range(z0, z1 + 1):
+                    for ix in range(x0, x1 + 1):
+                        if math.hypot(-half + ix * cell - px, -half + iz * cell - pz) <= search:
+                            v = original[iz * side + ix]
+                            bed = v if bed is None else min(bed, v)
+                if bed is None:
+                    continue
+                for iz in range(z0, z1 + 1):
+                    for ix in range(x0, x1 + 1):
+                        d = math.hypot(-half + ix * cell - px, -half + iz * cell - pz)
+                        if d > reach:
+                            continue
+                        t = max(0.0, min(1.0, (d - half_width) / max(1.0, reach - half_width)))
+                        t = t * t * (3.0 - 2.0 * t)
+                        j = iz * side + ix
+                        values[j] = min(values[j], bed + (original[j] - bed) * t)
+
+
+def dem_grids(origin, rivers=()):
+    """Тоглоомын (0, 0)-ийг төвлөсөн ойрын ба алсын өндрийн тор (0 = (0, 0)-ийн өндөр).
+    Эх сурвалж: Copernicus GLO-30 (tools/copdem.py; татаж чадахгүй бол хуучин AWS Terrain Tiles, tools/dem.py).
+    rivers: гол, горхи (тоглоомын координатаар): хөндийн ёроолыг голын дагуу тэгшилнэ."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from dem import Elevation
     lat0, lon0 = origin_latlon(origin)
     k = 111320.0 * math.cos(math.radians(lat0))
+    try:
+        import copdem
+        fine = copdem.Elevation()
+        fine.at(lat0, lon0)
+        sources = (fine, fine)
+        print('  elevation: Copernicus GLO-30', flush=True)
+    except Exception as error:  # сүлжээ: хуучин эх сурвалж
+        from dem import Elevation
+        sources = (Elevation(13), Elevation(11))
+        print('  elevation: AWS Terrain Tiles (Copernicus failed: %s)' % error, flush=True)
     grids = []
-    for zoom, cell, half in ((13, NEAR_CELL, NEAR_HALF), (11, FAR_CELL, FAR_HALF)):
-        source = Elevation(zoom)
+    for source, (cell, half) in zip(sources, ((NEAR_CELL, NEAR_HALF), (FAR_CELL, FAR_HALF))):
         side = int(round(half * 2 / cell)) + 1
         values = [source.at(lat0 + (-half + iz * cell) / 111320.0, lon0 - (-half + ix * cell) / k)
                   for iz in range(side) for ix in range(side)]
+        carve_valleys(values, cell, side, half, rivers)
         grids.append((cell, side, half, values))
     base = grids[0][3][(grids[0][1] // 2) * grids[0][1] + grids[0][1] // 2]
     return base, [(c, s, h, [v - base for v in values]) for c, s, h, values in grids]
@@ -779,10 +831,50 @@ def ulaanbaatar(city_path, poi_path, relation_path, out_path):
             stations.append((ox, oz))
     pois += [(7, ox, oz, '') for ox, oz in stations]
     pois.append((8, -18.0, -342.0, 'Чойжин ламын сүм'))  # хотын төвийн даалгавар
-    base, grids = dem_grids((0.0, 0.0))
     far = far_features(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'towns', '15_water.json.gz'), (0.0, 0.0))
+    base, grids = dem_grids((0.0, 0.0), [l for l in lines if l[0] <= 1] + [(0 if l[1] >= 10.0 else 1, l[1], l[2]) for l in far[0] if l[0] == 0])
     print('Улаанбаатар: elevation %.0f m, far water %d lines, %d areas' % (base, len(far[0]), len(far[1])))
     write(out_path, roads, buildings, areas, lines, pois, (), (grids, far[0], far[1]))
+
+
+def microsoft_buildings(index, osm):
+    """Microsoft-ын барилгын хүрээ (tools/ms_buildings.py): OSM-ийн барилгатай давхцаагүйг л нэмнэ (OSM-д дутуу
+    газрыг нөхнө). Давхцал: хүрээний тэгш өнцөгтүүд 25%-иас илүү огтлолцвол."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'towns', '%02d_ms.json.gz' % index)
+    if not os.path.exists(path):
+        return []
+    def box(e):
+        pts = [project(p) for p in e['geometry']]
+        return min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)
+    cells = {}
+    for e in osm:
+        if 'building' not in e.get('tags', {}) or not e.get('geometry'):
+            continue
+        b = box(e)
+        for cx in range(int(b[0] // 40), int(b[2] // 40) + 1):
+            for cz in range(int(b[1] // 40), int(b[3] // 40) + 1):
+                cells.setdefault((cx, cz), []).append(b)
+    added = []
+    for e in load(path):
+        b = box(e)
+        area = max(1.0, (b[2] - b[0]) * (b[3] - b[1]))
+        overlap = False
+        for cx in range(int(b[0] // 40), int(b[2] // 40) + 1):
+            for cz in range(int(b[1] // 40), int(b[3] // 40) + 1):
+                for o in cells.get((cx, cz), ()):
+                    w = min(b[2], o[2]) - max(b[0], o[0])
+                    h = min(b[3], o[3]) - max(b[1], o[1])
+                    if w > 0 and h > 0 and w * h > 0.25 * area:
+                        overlap = True
+                        break
+                if overlap:
+                    break
+            if overlap:
+                break
+        if not overlap:
+            added.append(e)
+    print('  microsoft: +%d buildings (of %d)' % (len(added), len(load(path))), flush=True)
+    return added
 
 
 def town(index, out_path):
@@ -793,6 +885,7 @@ def town(index, out_path):
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'towns', '%02d.json.gz' % index)
     elements = load(path)
     shapes = [e for e in elements if 'geometry' in e or 'members' in e]
+    shapes += microsoft_buildings(index, shapes)
     roads, buildings, areas, lines = features(with_relations(shapes), aimag=True)
     pois = places([e for e in elements if 'center' in e or e.get('type') == 'node'])
     mountains = []
@@ -802,9 +895,11 @@ def town(index, out_path):
         mountains.append((mname, px, pz, height, west, east, south, north, points))
     origin, sites = choose_sites(roads, buildings, pois, mountains)
     pois += [(k, x, z, '') for k, x, z in sites]
-    base, grids = dem_grids(origin)
     folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'towns')
     far = far_features(os.path.join(folder, '%02d_water.json.gz' % index), origin)
+    ox, oz = origin
+    rivers = [(k, h, [(x - ox, z - oz) for x, z in pts]) for k, h, pts in lines if k <= 1] + [(0 if l[1] >= 10.0 else 1, l[1], l[2]) for l in far[0] if l[0] == 0]
+    base, grids = dem_grids(origin, rivers)
     print('%s: outpost (game origin) at %.0f, %.0f from the town centre, elevation %.0f m, far water %d lines, %d areas'
           % (name, origin[0], origin[1], base, len(far[0]), len(far[1])))
     write(out_path, *shifted(origin, roads, buildings, areas, lines, pois, mountains), terrain=(grids, far[0], far[1]))

@@ -3,6 +3,7 @@
 #include "AirportData.h"
 #include "City.h"
 #include "Procedural.h"
+#include "raymath.h"
 
 #include <algorithm>
 #include <cmath>
@@ -679,8 +680,23 @@ Layout MakeCityLayout(const CityData& data)
     layout.BuildIndex();
     if (layout.HasDem())
     {
-        // Тэгш бүс бүр төвийнхөө жинхэнэ өндөрт тэгшлэгдэнэ
-        for (FlatZone& zone : layout.zones) zone.level = layout.DemHeight(zone.center.x, zone.center.y);
+        // Тэгш бүс бүр өөрийн талбайн дундаж өндөрт тэгшлэгдэнэ (төвийнх биш: газар бага ухагдаж, бага овойно)
+        for (FlatZone& zone : layout.zones)
+        {
+            float sum = layout.DemHeight(zone.center.x, zone.center.y);
+            int count = 1;
+            for (const float ring : { 0.5f, 1.0f })
+            {
+                for (int k = 0; k < 8; ++k)
+                {
+                    const float angle = (float)k * PI * 0.25f + ring;
+                    sum += layout.DemHeight(zone.center.x + std::cos(angle) * zone.radius * ring,
+                                            zone.center.y + std::sin(angle) * zone.radius * ring);
+                    ++count;
+                }
+            }
+            zone.level = sum / (float)count;
+        }
     }
 
     // Барилгаас хэр хол: барилгатай нүднүүдээс эхлэн (8 хөрш, 24 м алхмаар) тархаана
@@ -780,6 +796,55 @@ Layout MakeCityLayout(const CityData& data)
                 }
             }
         }
+    }
+
+    // Булган уулын цогцолбор (Цэцэрлэг): Зуу бурханы хийд = шатны доод үзүүрийн дэргэдэх Заяын хүрээнээс бусад,
+    // суварганаас 300 м дотор хамгийн ойрын сүм хийдийн барилга. Будда хийдийн яг урд (шатны зүгт) дугуй талбайн
+    // голд; хаалга нь түүнээс доош шатны чигээр бэлийн гудамжны дэргэд; амрах талбай шатны дунд.
+    for (Mountain& m : layout.mountains)
+    {
+        if (m.stairs.x > 1e8f || m.stupa.x > 1e8f) continue;
+        float best = 300.0f;
+        const CityBuilding* temple = nullptr;
+        Vector2 templeCenter = {};
+        for (const CityBuilding& b : data.buildings)
+        {
+            if (b.type != CityBuildingType::Religious || b.outline.empty()) continue;
+            Vector2 c = { 0.0f, 0.0f };
+            for (const Vector2& p : b.outline) c = Vector2Add(c, p);
+            c = Vector2Scale(c, 1.0f / (float)b.outline.size());
+            if (Vector2Distance(c, m.stairs) < 150.0f) continue;
+            const float distance = Vector2Distance(c, m.stupa);
+            if (distance < best)
+            {
+                best = distance;
+                temple = &b;
+                templeCenter = c;
+            }
+        }
+        m.buddha = m.stupa;
+        if (temple)
+        {
+            const Vector2 toGate = Vector2Normalize(Vector2Subtract(m.stairs, templeCenter));
+            float extent = 0.0f;
+            for (const Vector2& p : temple->outline) extent = std::max(extent, Vector2DotProduct(Vector2Subtract(p, templeCenter), toGate));
+            m.buddha = Vector2Add(templeCenter, Vector2Scale(toGate, extent + m.buddhaRadius + 1.0f));
+        }
+        const float length = Vector2Distance(m.buddha, m.stairs);
+        const Vector2 down = Vector2Scale(Vector2Subtract(m.stairs, m.buddha), 1.0f / std::max(1.0f, length));
+        m.gate = m.stairs;
+        for (float along = 60.0f; along < length; along += 1.0f)
+        {
+            const Vector2 q = Vector2Add(m.buddha, Vector2Scale(down, along));
+            if (layout.RoadDistance(q.x, q.y) < 9.0f)
+            {
+                m.gate = q;
+                break;
+            }
+        }
+        // Шат: хаалганаас Буддагийн талбайн зах хүртэл; амрах талбай түүний дунд
+        const Vector2 plazaEdge = Vector2Subtract(m.buddha, Vector2Scale(Vector2Normalize(Vector2Subtract(m.buddha, m.gate)), m.buddhaRadius));
+        m.rest = Vector2Lerp(m.gate, plazaEdge, 0.5f);
     }
     return layout;
 }

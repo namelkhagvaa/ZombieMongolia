@@ -64,6 +64,7 @@ int ShopMaxLevel(ShopItem item)
 int ShopCost(const Progress& progress, ShopItem item)
 {
     if (Account::ServerShop()) return Account::UpgradePrice((int)item);
+    if (item == ShopItem::Soldier) return BaseCost(item); // цэрэг бүр ижил үнэтэй
     return BaseCost(item) * (ShopLevel(progress, item) + 1);
 }
 

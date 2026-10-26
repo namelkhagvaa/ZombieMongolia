@@ -92,6 +92,7 @@ namespace Net
             w.U8((uint8_t)a.vehicle); w.V3(a.vehiclePosition); w.F(a.vehicleHeading); w.F(a.vehicleSpeed); w.F(a.vehicleSteer);
             w.F(a.vehicleHealth);
             w.U8(a.leaderSkin);
+            w.F(a.sentAt);
         }
         AvatarState ReadAvatar(Reader& r)
         {
@@ -103,6 +104,7 @@ namespace Net
             a.vehicleSteer = r.F();
             a.vehicleHealth = r.F();
             a.leaderSkin = r.U8();
+            a.sentAt = r.F();
             return a;
         }
 
@@ -833,6 +835,7 @@ namespace Net
                     w.U8((uint8_t)Msg::JoinRequest);
                     w.Str(name);
                     w.U16(kProtocolVersion);
+                    w.U8(joinCoop ? 1 : 0);
                     Send(w.data, true);
                 }
                 break;
@@ -900,6 +903,7 @@ namespace Net
                     w.U8((uint8_t)Msg::JoinRequest);
                     w.Str(name);
                     w.U16(kProtocolVersion);
+                    w.U8(joinCoop ? 1 : 0);
                     Send(w.data, true);
                 }
                 else if (link == Link::None)
@@ -993,6 +997,7 @@ namespace Net
         case Msg::JoinRequest:
             e.text = r.Str();
             e.version = r.at + 2 <= r.size ? r.U16() : 0; // хуучин хувилбар хувилбаргүй илгээдэг
+            e.coop = r.at + 1 <= r.size && r.U8() != 0;
             break;
         case Msg::JoinReply:
             e.accepted = r.U8() != 0;
@@ -1149,6 +1154,24 @@ namespace Net
             e.amount = r.F();
             e.id = r.U8();
             break;
+        case Msg::VehicleHit:
+            e.id = r.U8();
+            e.amount = r.F();
+            break;
+        case Msg::SoldierLost:
+            e.id = r.U8();
+            break;
+        case Msg::WorldEvent:
+            e.province = r.U8(); // төрөл
+            e.id = r.U32();
+            e.position = r.V3();
+            e.amount = r.F();
+            break;
+        case Msg::CrateTaken:
+            e.id = r.U32();
+            break;
+        case Msg::Revive:
+            break;
         case Msg::BattleOver:
             e.id = r.U8();
             break;
@@ -1301,6 +1324,49 @@ namespace Net
         w.U8((uint8_t)Msg::GuestSwitch);
         w.U8((uint8_t)member);
         w.U8(hold ? 1 : 0);
+        Send(w.data, true);
+    }
+
+    void Session::SendVehicleHit(int index, float damage)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::VehicleHit);
+        w.U8((uint8_t)index);
+        w.F(damage);
+        Send(w.data, true);
+    }
+
+    void Session::SendWorldEvent(int kind, int id, Vector3 position, float altitude)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::WorldEvent);
+        w.U8((uint8_t)kind);
+        w.U32((uint32_t)id);
+        w.V3(position);
+        w.F(altitude);
+        Send(w.data, true);
+    }
+
+    void Session::SendRevive()
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::Revive);
+        Send(w.data, true);
+    }
+
+    void Session::SendCrateTaken(int id)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::CrateTaken);
+        w.U32((uint32_t)id);
+        Send(w.data, true);
+    }
+
+    void Session::SendSoldierLost(int count)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::SoldierLost);
+        w.U8((uint8_t)count);
         Send(w.data, true);
     }
 

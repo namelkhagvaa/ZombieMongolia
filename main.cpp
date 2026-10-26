@@ -105,6 +105,18 @@ int main(int argc, char** argv)
         {
             options.useFrame = std::atoi(argv[++i]);
         }
+        else if (std::strcmp(argv[i], "--event") == 0 && i + 1 < argc)
+        {
+            options.eventKind = std::atoi(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--render-scale") == 0 && i + 1 < argc)
+        {
+            options.renderScale = (float)std::atof(argv[++i]);
+        }
+        else if (std::strcmp(argv[i], "--swap-frame") == 0 && i + 1 < argc)
+        {
+            options.swapFrame = std::atoi(argv[++i]);
+        }
         else if (std::strcmp(argv[i], "--move") == 0 && i + 2 < argc)
         {
             options.moveForward = (float)std::atof(argv[++i]);
@@ -167,6 +179,11 @@ int main(int argc, char** argv)
         else if (std::strcmp(argv[i], "--stay-map") == 0)
         {
             options.stayOnMap = true;
+        }
+        else if (std::strcmp(argv[i], "--cashout") == 0)
+        {
+            options.stayOnMap = true;
+            options.cashout = true;
         }
         else if (std::strcmp(argv[i], "--airstrike") == 0)
         {

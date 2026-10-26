@@ -2,14 +2,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Alert, Button, Card, Col, Empty, List, Row, Segmented, Skeleton, Statistic, Tag, Typography, theme } from 'antd';
 import {
+  AppstoreOutlined,
   ClockCircleOutlined,
   DollarOutlined,
+  FireOutlined,
   ReloadOutlined,
   RiseOutlined,
 
   TeamOutlined,
   ThunderboltOutlined,
   UserAddOutlined,
+  WifiOutlined,
 } from '@ant-design/icons';
 import {
   Area,
@@ -41,7 +44,12 @@ interface DashboardData {
     paying_players: number;
     invoices_pending: number;
     blocked: number;
+    online: number;
+    active_1h: number;
+    rooms_open: number;
+    battles_live: number;
   };
+  online_platforms: Record<string, number>;
   series: { day: string; registrations: number; revenue: number; active: number }[];
   provinces: { province: number; unlocked: number; starts: number }[];
   platforms: Record<string, number>;
@@ -130,6 +138,31 @@ export default function DashboardPage() {
         <Skeleton active paragraph={{ rows: 10 }} />
       ) : (
         <>
+          {/* Одоо тоглож буй: тоглоом минут тутам сервер асуудаг (сүүлийн 3 минут) */}
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+            <Col xs={24} sm={12} xl={6}>
+              <StatCard
+                title="Одоо онлайн"
+                value={t!.online ?? 0}
+                icon={<WifiOutlined />}
+                color="#52c41a"
+                footer={
+                  Object.keys(data.online_platforms ?? {}).length
+                    ? Object.entries(data.online_platforms).map(([key, value]) => `${PLATFORM_LABEL[key] ?? key} ${value}`).join(' · ')
+                    : 'Сүүлийн 3 минут'
+                }
+              />
+            </Col>
+            <Col xs={24} sm={12} xl={6}>
+              <StatCard title="Сүүлийн 1 цаг" value={t!.active_1h ?? 0} icon={<ClockCircleOutlined />} color="#3b8fd9" footer="Тоглоомд нэвтэрсэн тоглогч" />
+            </Col>
+            <Col xs={24} sm={12} xl={6}>
+              <StatCard title="Нээлттэй өрөө" value={t!.rooms_open ?? 0} icon={<AppstoreOutlined />} color={GOLD} footer="Хост тоглож буй" />
+            </Col>
+            <Col xs={24} sm={12} xl={6}>
+              <StatCard title="Явагдаж буй тулаан" value={t!.battles_live ?? 0} icon={<FireOutlined />} color="#d8322a" footer="Зочинтой өрөө" />
+            </Col>
+          </Row>
           <Row gutter={[16, 16]}>
             <Col xs={24} sm={12} xl={6}>
               <StatCard title="Нийт тоглогч" value={t!.players} icon={<TeamOutlined />} color="#3b8fd9" footer={<>Өнөөдөр <b>+{t!.players_today}</b> шинэ</>} />

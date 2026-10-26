@@ -21,6 +21,7 @@ void MoveToward(Mover& mover, Vector3 target, float speed, float dt, const World
 
     float dirX = (target.x - mover.position.x) / dist;
     float dirZ = (target.z - mover.position.z) / dist;
+    mover.wishDir = { dirX, dirZ };
 
     const bool detouring = mover.detourTimer > 0.0f;
     if (detouring)
@@ -39,6 +40,8 @@ void MoveToward(Mover& mover, Vector3 target, float speed, float dt, const World
     mover.position.x += dirX * step;
     mover.position.z += dirZ * step;
     world.ResolveHorizontal(mover.position, radius, height, stepHeight);
+    mover.wishStep = step;
+    mover.moved = HorizontalDistance(before, mover.position);
 
     if (!detouring && HorizontalDistance(before, mover.position) < step * 0.35f)
     {

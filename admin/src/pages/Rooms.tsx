@@ -47,7 +47,13 @@ export default function RoomsPage() {
       title: 'Төлөв',
       dataIndex: 'status',
       render: (value, row) =>
-        value === 'open' ? <Tag color="green">Нээлттэй</Tag> : <Tag>{REASON[row.closed_reason] ?? row.closed_reason ?? 'Хаагдсан'}</Tag>,
+        row.phase === 'battle' ? (
+          <Tag color="red">Тулаан</Tag>
+        ) : value === 'open' ? (
+          <Tag color="green">Даалгавар · зочин хүлээж байна</Tag>
+        ) : (
+          <Tag color={row.phase === 'completed' ? 'gold' : undefined}>{REASON[row.closed_reason] ?? row.closed_reason ?? 'Хаагдсан'}</Tag>
+        ),
     },
     { title: 'Хост', dataIndex: 'host', render: (_, row) => person(row.host, row.host_stake) },
     { title: 'Зочин', dataIndex: 'guest', render: (_, row) => person(row.guest, row.guest_stake) },

@@ -63,6 +63,7 @@ struct Vehicle
     float health = 100.0f;
     float fuel = 1.0f;          // 0..1 (сав дүүрэн = 1)
     bool wrecked = false;
+    double wreckedAt = 0.0;   // эвдэрсэн (морь үхсэн) мөч: унах хөдөлгөөнд
     Vector2 knock = { 0.0f, 0.0f }; // мөргүүлж хажуу тийш шидэгдэх хурд (м/с), аажим унтарна
     float spin = 0.0f;              // мөргүүлсний дараах эргэлт (рад/с)
     float hurtTimer = 0.0f;         // сүүлд гэмтсэнээс хойш (HUD анивчих)
@@ -97,6 +98,8 @@ public:
     // Өөрийн жолоодож буй унаанд үйлчлэхгүй.
     void SyncHealth(int index, float health);
     const Vehicle& At(int index) const { return vehicles[index]; }
+    // Хашаа нураахад хурд алдана
+    void Slow(int index, float factor) { vehicles[index].speed *= factor; }
 
     // position-д хамгийн ойр, maxDistance доторх хэрэгсэл; -1 = байхгүй.
     int Nearest(Vector3 position, float maxDistance) const;
@@ -130,6 +133,10 @@ public:
     float Repair(int index, float amount);
     // Гадны хохирол (дэлбэрэлт г.м.). Нөгөө тоглогчийн жолоодож буй (remote) унааг тэр тал өөрөө тооцно.
     void Damage(int index, float amount);
+
+    // Сум: туяа хэрэгслийн биеийн хайрцагт (орон нутгийн тэнхлэгээр эргүүлсэн) тусах эсэх. skipA, skipB: тоглогчийн
+    // өөрийн / багийнх (буудахгүй). Эвдэрсэн хэрэгсэл ч сумыг халхална. -1 = тусаагүй.
+    int Raycast(Ray ray, float minDistance, float maxDistance, int skipA, int skipB, float& distance) const;
 
     // Явган хүнийг зогсож буй хэрэгсэл дундуур гарахаас сэргийлнэ.
     void PushOut(Vector3& position, float radius) const;

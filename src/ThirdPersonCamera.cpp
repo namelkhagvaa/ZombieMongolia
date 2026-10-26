@@ -38,6 +38,10 @@ void ThirdPersonCamera::Update(float dt, const GameConfig& config, const World& 
 {
     // Унах, буухад камер огцом үсрэхгүй, аажим холдож ойртоно.
     rideDistance += (extraDistance - rideDistance) * std::min(1.0f, 4.0f * dt);
+    // Ухралт: хараа аажим буцаж бууна
+    const float settle = kickReturn * std::min(1.0f, 7.0f * dt);
+    pitch += settle;
+    kickReturn -= settle;
 
     // Онилгоо руу зөөлөн шилжинэ.
     const float blendTarget = aiming ? 1.0f : 0.0f;
@@ -126,5 +130,16 @@ void ThirdPersonCamera::Update(float dt, const GameConfig& config, const World& 
         camera.position = Vector3Add(eye, Vector3Scale(forward, 0.3f));
         camera.target = Vector3Add(camera.position, Vector3Scale(forward, 10.0f));
         camera.fovy = config.scopeFovY;
+    }
+
+    // Сэгсрэлт: камер бүхэлдээ (байрлал ба харах цэг хамт) чичирнэ: онилгооны чиглэл өөрчлөгдөхгүй
+    if (shake > 0.001f)
+    {
+        const float t = (float)GetTime();
+        const float amount = shake * shake * (IsScoped() ? 0.04f : 0.22f);
+        const Vector3 offset = { std::sin(t * 47.0f) * amount, std::sin(t * 61.0f + 1.3f) * amount * 0.8f, std::sin(t * 53.0f + 2.1f) * amount };
+        camera.position = Vector3Add(camera.position, offset);
+        camera.target = Vector3Add(camera.target, offset);
+        shake = std::max(0.0f, shake - dt * 2.2f);
     }
 }

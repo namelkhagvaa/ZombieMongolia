@@ -1,3 +1,4 @@
+#include "ViewCull.h"
 #include "Zombie.h"
 
 #include "Audio.h"
@@ -28,7 +29,7 @@ namespace
     const float kSimpleDistance = 70.0f;  // үүнээс хол кодоор үүсгэсэн хамгийн хөнгөн дүрсээр (утас сул)
 #else
     const int kModelBudget = 16;
-    const float kSimpleDistance = 110.0f; // үүнээс хол (манан дунд) кодоор үүсгэсэн хамгийн хөнгөн дүрсээр
+    const float kSimpleDistance = 85.0f;  // үүнээс хол (манан дунд) кодоор үүсгэсэн хамгийн хөнгөн дүрсээр
 #endif
     const float kAggroDistance = 60.0f; // ийм зайд бай орж ирэхэд зомби сэрэмжилж хөөнө
     // Бүх зомбины амийг 300%-иар нэмэгдүүлнэ (4 дахин). Толгойд оносон сум аваргаас бусдыг нэг сумаар устгасан хэвээр.
@@ -112,6 +113,23 @@ namespace
         }
     }
 
+    // Онцлогийн гадаад төрх: бөөн нь хавдсан ногоон, орилогч цонхигор туранхай
+    void ApplyTraitLook(Zombie& zombie)
+    {
+        if (zombie.exploder)
+        {
+            zombie.skin = { 118, 150, 64, 255 };
+            zombie.shirtless = true;
+            zombie.openRibs = false;
+        }
+        else if (zombie.screamer)
+        {
+            zombie.skin = { 214, 206, 196, 255 };
+            zombie.hairStyle = 2;
+            zombie.limp = 0.0f;
+        }
+    }
+
     HumanoidLook LookFor(const Zombie& zombie)
     {
         HumanoidLook look;
@@ -130,7 +148,7 @@ namespace
         look.tornLeg = zombie.tornLeg;
         look.oneEye = zombie.oneEye;
         look.headWound = zombie.headWound;
-        look.bulk = StatsFor(zombie.type).bulk * (zombie.boss ? 1.15f : 1.0f);
+        look.bulk = StatsFor(zombie.type).bulk * (zombie.boss ? 1.15f : zombie.exploder ? 1.4f : zombie.screamer ? 0.88f : 1.0f);
 
         // Гаднаас оруулсан загвар (байвал). Ижил төрлийн зомбинууд нэг загвартай тул өнгийг нь бага зэрэг
         // өөрчилж ялгана; аварга нь улаавтар.
@@ -140,9 +158,11 @@ namespace
         look.modelTint = zombie.boss ? Color{ 255, 255, 255, 255 } // аварга өөрийн загвартай: өнгөө хэвээр
                                      : Color{ (unsigned char)(200 + zombie.skin.r % 56), (unsigned char)(200 + zombie.skin.g % 56),
                                               (unsigned char)(200 + zombie.shirt.b % 56), 255 };
+        if (zombie.exploder) look.modelTint = { 150, 225, 95, 255 };       // хорт ногоон
+        else if (zombie.screamer) look.modelTint = { 255, 246, 236, 255 }; // цонхигор
         if (HasCharacterModel(look.model))
         {
-            look.bulk = 1.0f + (look.bulk - 1.0f) * 0.4f; // загвар өөрөө бүдүүн, нарийн хэлбэртэй
+            look.bulk = 1.0f + (look.bulk - 1.0f) * (zombie.exploder ? 0.8f : 0.4f); // загвар өөрөө бүдүүн, нарийн хэлбэртэй
         }
         return look;
     }
@@ -304,6 +324,7 @@ Vector3 Zombie::Chest() const
 void ZombieHorde::Clear()
 {
     zombies.clear();
+    netClock = netLatest = -1.0f; // (шинэ хост: өөр цаг)
     pendingCoins = 0;
     pendingKills = 0;
     pendingSmallKills = 0;
@@ -438,6 +459,26 @@ void ZombieHorde::Spawn(ZombieType type, Vector3 position, const MissionParams& 
     zombie.scale = stats.scale;
     zombie.reward = stats.reward;
     RandomizeAppearance(zombie);
+    if (type == ZombieType::Walker)
+    {
+        const int roll = GetRandomValue(0, 99);
+        zombie.exploder = roll < 6;
+        zombie.screamer = roll >= 6 && roll < 11;
+        if (zombie.exploder)
+        {
+            zombie.health *= 0.8f;
+            zombie.maxHealth = zombie.health;
+            zombie.damage *= 0.5f; // аюул нь дэлбэрэлт
+            zombie.scale *= 1.08f;
+            zombie.reward += 3;
+        }
+        else if (zombie.screamer)
+        {
+            zombie.speed *= 1.12f;
+            zombie.reward += 2;
+        }
+        ApplyTraitLook(zombie);
+    }
     zombies.push_back(zombie);
 }
 
@@ -559,6 +600,17 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
             continue;
         }
 
+        // Орилогч: бай руугаа хөөж эхэлмэгц (ойрхон бол) хашгирч, холын зомбиудыг дуудна (нэг удаа)
+        zombie.screamTimer = std::max(0.0f, zombie.screamTimer - dt);
+        if (zombie.screamer && !zombie.screamed && zombie.alerted && targetDistance < 35.0f)
+        {
+            zombie.screamed = true;
+            zombie.screamTimer = 1.2f;
+            zombie.stagger = 1.0f; // орилох зуураа зогсоно
+            Audio::Play(Sfx::BossRoar, Vector3Add(pos, { 0.0f, 1.6f, 0.0f }), 1.0f, 1.75f);
+            AlertAround(pos, 140.0f);
+        }
+
         // Сэрэмжлээгүй зомби байрандаа зогсоно; бай нь ойртох эсвэл суманд оногдоход хөөж эхэлнэ.
         if (!zombie.alerted)
         {
@@ -579,11 +631,14 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
             zombie.climbTimer -= dt;
             const float t = 1.0f - std::max(0.0f, zombie.climbTimer) / kClimbTime;
             pos = Vector3Lerp(zombie.climbFrom, zombie.climbTo, t);
-            pos.y += std::sin(t * PI) * 1.15f;
+            const float arc = zombie.climbTop > 0.0f ? std::max(1.15f, zombie.climbTop + 0.1f - std::max(zombie.climbFrom.y, zombie.climbTo.y))
+                                                     : 1.15f;
+            pos.y += std::sin(t * PI) * arc;
             zombie.walkCycle += dt * 8.0f;
             if (zombie.climbTimer <= 0.0f)
             {
                 pos = zombie.climbTo;
+                zombie.climbTop = 0.0f;
             }
             continue;
         }
@@ -675,6 +730,16 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
             const float speed = zombie.speed * speedMultiplier * (zombie.stagger > 0.0f ? 0.2f : 1.0f);
             MoveToward(zombie.mover, moveTarget, speed, dt, world, zombie.Radius(), zombie.Height(), kClimbHeight);
             world.KeepOutOfSafeRooms(pos, zombie.Radius()); // дэлгүүрийн үүдээр орохгүй
+            // Хашаанд тулсан (байдаа хөөж явахад): удаан авирч давна (дундуур нь нэвтрэхгүй)
+            Passage over;
+            if (!zombie.boss && zombie.mover.moved < zombie.mover.wishStep * 0.4f &&
+                world.FindVault(pos, zombie.mover.wishDir, zombie.Radius() + 0.6f, zombie.Radius(), 3.0f, over))
+            {
+                zombie.climbTimer = kClimbTime * 1.4f;
+                zombie.climbFrom = pos;
+                zombie.climbTo = over.to;
+                zombie.climbTop = over.top;
+            }
 
             // Бай нь ойрхон (барилга дотор нуугдсан байж болно) үед дэргэдэх хаалттай хаалгыг нүднэ.
             if (targetDistance < 14.0f)
@@ -697,7 +762,7 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
                         zombie.type == ZombieType::Brute ? 0.8f : 1.0f);
             if (target == kPlayer)
             {
-                player.TakeDamage(zombie.damage);
+                player.TakeDamageFrom(zombie.damage, pos);
             }
             else if (target == kRemote)
             {
@@ -805,6 +870,7 @@ void ZombieHorde::Damage(int index, float amount)
             zombie.health = 0.0f;
             zombie.deathTimer = 0.0f;
             zombie.predicted = 1.5f;
+            if (zombie.exploder) exploderBlasts.push_back(zombie.Chest()); // (зочин: зөвхөн харагдана)
             Audio::Play(Sfx::ZombieDie, Vector3Add(zombie.mover.position, { 0.0f, 1.4f * zombie.scale, 0.0f }), 0.9f,
                         zombie.type == ZombieType::Brute ? 0.8f : 1.0f);
         }
@@ -818,6 +884,7 @@ void ZombieHorde::Damage(int index, float amount)
     {
         zombie.health = 0.0f;
         zombie.deathTimer = 0.0f;
+        if (zombie.exploder) exploderBlasts.push_back(zombie.Chest());
         Audio::Play(zombie.boss ? Sfx::BossRoar : Sfx::ZombieDie, Vector3Add(zombie.mover.position, { 0.0f, 1.4f * zombie.scale, 0.0f }),
                     0.9f, zombie.boss ? 0.7f : zombie.type == ZombieType::Brute ? 0.8f : 1.0f);
         const float top = 1.9f * zombie.scale;
@@ -876,6 +943,15 @@ int ZombieHorde::NearestInFront(Vector3 position, float facing, float reach) con
         }
     }
     return best;
+}
+
+int ZombieHorde::FindId(uint32_t id) const
+{
+    for (int i = 0; i < (int)zombies.size(); ++i)
+    {
+        if (zombies[(size_t)i].id == id && zombies[(size_t)i].IsAlive()) return i;
+    }
+    return -1;
 }
 
 int ZombieHorde::Explode(Vector3 center, float radius, float maxDamage)
@@ -959,7 +1035,7 @@ void ZombieHorde::Draw(Vector3 viewPosition, float maxDistance, bool showCollide
     for (const Zombie& zombie : zombies)
     {
         const float viewDistance = HorizontalDistance(viewPosition, zombie.mover.position);
-        if (viewDistance > maxDistance) continue;
+        if (viewDistance > maxDistance || !ViewCull::Visible(zombie.mover.position, 2.0f * zombie.scale)) continue;
         const bool detailed = viewDistance < kHumanoidDetailDistance;
 
         Vector3 position = zombie.mover.position;
@@ -1047,7 +1123,8 @@ void ZombieHorde::CollectStates(Vector3 around, float radius, std::vector<Net::Z
         const Zombie& zombie = *entry.second;
         Net::ZombieState state;
         state.id = zombie.id;
-        state.type = (uint8_t)zombie.type;
+        state.type = (uint8_t)((uint8_t)zombie.type | (zombie.exploder ? Net::kZombieExploder : 0) |
+                               (zombie.screamer ? Net::kZombieScreamer : 0) | (zombie.screamTimer > 0.0f ? Net::kZombieScreaming : 0));
         state.flags = (uint8_t)((zombie.IsAlive() ? Net::kZombieAlive : 0) | (zombie.boss ? Net::kZombieBoss : 0) |
                                 (zombie.attackAnim > 0.0f ? Net::kZombieAttack : 0) |
                                 (zombie.airborne ? Net::kZombieAirborne : 0));
@@ -1062,7 +1139,7 @@ void ZombieHorde::CollectStates(Vector3 around, float radius, std::vector<Net::Z
     }
 }
 
-void ZombieHorde::ApplySnapshot(const std::vector<Net::ZombieState>& states, const MissionParams& mission)
+void ZombieHorde::ApplySnapshot(const std::vector<Net::ZombieState>& states, const MissionParams& mission, float sentAt)
 {
     for (const Net::ZombieState& state : states)
     {
@@ -1077,14 +1154,27 @@ void ZombieHorde::ApplySnapshot(const std::vector<Net::ZombieState>& states, con
             if (!alive) continue;
             const uint32_t keepNext = nextId;
             if (state.flags & Net::kZombieBoss) SpawnBoss(state.position, mission, 0);
-            else Spawn((ZombieType)state.type, state.position, mission, 0, true);
+            else Spawn((ZombieType)(state.type & 15), state.position, mission, 0, true);
             nextId = keepNext;
             zombie = &zombies.back();
             zombie->id = state.id;
+            // Онцлогийг хостынхоор (энд санамсаргүй сонгогдсоныг дарна)
+            zombie->exploder = (state.type & Net::kZombieExploder) != 0;
+            zombie->screamer = (state.type & Net::kZombieScreamer) != 0;
+            const float keepScale = zombie->scale;
+            RandomizeAppearance(*zombie); // (хост дээрх шиг онцлоггүй гадаад төрхөөс эхэлнэ)
+            zombie->scale = keepScale;
+            ApplyTraitLook(*zombie);
             zombie->mover.facing = state.facing;
         }
         // Хурд: өмнөх snapshot-оос хойш явсан зай (snapshot хоорондын хугацаанд урагш таамаглахад)
-        const float age = zombie->netSeen;
+        // Хугацаа: хостын илгээсэн цагуудын зөрүү (ирэх хугацааны савлагаа нөлөөлөхгүй); хуучин хост бол ирсэн цаг
+        const float age = sentAt > 0.0f && zombie->netSent > 0.0f ? sentAt - zombie->netSent : zombie->netSeen;
+        // Жигд хөдөлгөөн: өмнөх мэдээ (хүрэлцэхгүй хуучин бол буфергүй)
+        zombie->netPrevSent = zombie->netSent > 0.0f && age > 0.0f && age < 0.6f ? zombie->netSent : -1.0f;
+        zombie->netPrevTarget = zombie->netTarget;
+        zombie->netSent = sentAt;
+        if (sentAt > netLatest) netLatest = sentAt;
         if (age > 0.01f && age < 0.5f && alive)
         {
             Vector3 velocity = Vector3Scale(Vector3Subtract(state.position, zombie->netTarget), 1.0f / age);
@@ -1104,6 +1194,13 @@ void ZombieHorde::ApplySnapshot(const std::vector<Net::ZombieState>& states, con
         {
             zombie->health = 0.0f;
             zombie->deathTimer = 0.0f;
+            if (zombie->exploder) exploderBlasts.push_back(zombie->Chest()); // зочин: дэлбэрэлт харагдана (хохирлыг хост)
+        }
+        if ((state.type & Net::kZombieScreaming) && zombie->screamTimer <= 0.0f && !zombie->screamed)
+        {
+            zombie->screamed = true;
+            zombie->screamTimer = 1.2f;
+            Audio::Play(Sfx::BossRoar, Vector3Add(zombie->mover.position, { 0.0f, 1.6f, 0.0f }), 1.0f, 1.75f);
         }
         else if (alive && !zombie->IsAlive() && zombie->predicted <= 0.0f)
         {
@@ -1130,6 +1227,13 @@ void ZombieHorde::ApplySnapshot(const std::vector<Net::ZombieState>& states, con
 
 void ZombieHorde::UpdatePuppets(float dt)
 {
+    // Хостын цаг (0.1 с хоцроосон): мэдээний хооронд жигд шилжүүлэх мөч
+    if (netLatest > 0.0f)
+    {
+        const float wanted = netLatest - 0.1f;
+        if (netClock < 0.0f || std::fabs(netClock - wanted) > 0.5f) netClock = wanted;
+        else netClock += dt + (wanted - netClock) * std::min(1.0f, 1.5f * dt);
+    }
     for (Zombie& zombie : zombies) zombie.predicted = std::max(0.0f, zombie.predicted - dt);
     zombies.erase(std::remove_if(zombies.begin(), zombies.end(),
                                  [](const Zombie& z) {
@@ -1152,8 +1256,24 @@ void ZombieHorde::UpdatePuppets(float dt)
             }
             continue;
         }
-        // Сүүлийн snapshot-оос хойш явсан байх байрлал (хурдаар урагш таамаглана; 0.25 с-ээс илүүг таамаглахгүй)
-        const Vector3 predicted = Vector3Add(zombie.netTarget, Vector3Scale(zombie.netVelocity, std::min(zombie.netSeen, 0.25f)));
+        // Хостын цагаар 0.1 с хоцроосон мөчид хоёр мэдээний хооронд (жигд); хоцорсон бол хурдаар урагш, хуучин хост бол
+        // сүүлийн snapshot-оос хурдаар таамаглана (0.25 с-ээс илүүг таамаглахгүй).
+        Vector3 predicted = Vector3Add(zombie.netTarget, Vector3Scale(zombie.netVelocity, std::min(zombie.netSeen, 0.25f)));
+        if (netClock > 0.0f && zombie.netPrevSent > 0.0f && zombie.netSent > zombie.netPrevSent)
+        {
+            const float t = netClock;
+            if (t <= zombie.netPrevSent) predicted = zombie.netPrevTarget;
+            else if (t <= zombie.netSent)
+            {
+                predicted = Vector3Lerp(zombie.netPrevTarget, zombie.netTarget, (t - zombie.netPrevSent) / (zombie.netSent - zombie.netPrevSent));
+            }
+            else predicted = Vector3Add(zombie.netTarget, Vector3Scale(zombie.netVelocity, std::min(t - zombie.netSent, 0.15f)));
+            pos.x = predicted.x;
+            pos.z = predicted.z;
+            pos.y += (predicted.y - pos.y) * std::min(1.0f, 15.0f * dt);
+            zombie.mover.facing += std::remainder(zombie.netFacing - zombie.mover.facing, 2.0f * PI) * std::min(1.0f, 10.0f * dt);
+            continue;
+        }
         const Vector3 delta = Vector3Subtract(predicted, pos);
         const float distance = Vector3Length(delta);
         if (distance > 6.0f)

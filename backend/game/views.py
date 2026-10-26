@@ -143,7 +143,11 @@ def province_claim(request):
 def province_start(request):
     """Ганцаарчилсан бол {"room": null}; эс бөгөөс нээлттэй өрөө ба relay-ийн тасалбар."""
     player = request.token.player
-    room = logic.start_province(player, request.token.device_id, request.json.get("province"), client_ip(request))
+    try:
+        skin = int(request.json.get("skin") or 0)
+    except (TypeError, ValueError):
+        skin = 0
+    room = logic.start_province(player, request.token.device_id, request.json.get("province"), client_ip(request), skin)
     return ok(room=logic.room_json(room, player) if room else None, account=account(request.token))
 
 
@@ -153,6 +157,14 @@ def province_start(request):
 def room_join(request):
     player = request.token.player
     room = logic.join_room(player, request.token.device_id, client_ip(request))
+    return ok(room=logic.room_json(room, player), account=account(request.token))
+
+
+@api(["POST"])
+def room_coop(request):
+    """{"code": "1234"}: найзын өрөөнд хамт тоглоно (тулаангүй)."""
+    player = request.token.player
+    room = logic.join_coop(player, request.token.device_id, request.json.get("code"), client_ip(request))
     return ok(room=logic.room_json(room, player), account=account(request.token))
 
 
@@ -203,6 +215,41 @@ def shop_buy(request):
     """{"item": "damage"|"fire_rate"|"magazine"|"health"|"soldier", "level": <тоглоомын харж буй одоогийн түвшин>}"""
     player = logic.shop_buy(request.token.player, request.token.device_id, request.json.get("item"),
                             request.json.get("level"), client_ip(request))
+    return ok(account=logic.account_state(player, request.token.device_id))
+
+
+@api(["GET", "POST"])
+def cashouts(request):
+    """GET: сүүлийн хүсэлтүүд. POST {"gold", "bank", "account", "holder"}: татах хүсэлт (Gold шууд хасагдана), дараа нь
+    тоглогч утсаа баталгаажуулна (sms заавар)."""
+    player = request.token.player
+    if request.method == "GET":
+        logic.expire_cashouts(player)
+        return ok(cashouts=[logic.cashout_json(c) for c in player.cashouts.all()[:20]], account=account(request.token))
+    j = request.json
+    cashout, verification, instruction = logic.start_cashout(player, request.token.device_id, j.get("gold"), j.get("bank"),
+                                                             j.get("account"), j.get("holder"), client_ip(request))
+    return ok(cashout=logic.cashout_json(cashout), **verification_json(verification, instruction), account=account(request.token))
+
+
+@api(["GET"])
+def cashout_status(request, cashout_id):
+    """Тоглоом SMS илгээгдтэл хэдэн секунд тутам асууна: verifying -> pending (баталгаажсан) эсвэл expired."""
+    cashout = logic.refresh_cashout(logic.player_cashout(request.token.player, cashout_id))
+    return ok(cashout=logic.cashout_json(cashout), account=account(request.token))
+
+
+@api(["POST"])
+def cashout_cancel(request, cashout_id):
+    cashout = logic.cancel_cashout(request.token.player, cashout_id)
+    return ok(cashout=logic.cashout_json(cashout), account=account(request.token))
+
+
+@api(["POST"])
+def soldiers_lost(request):
+    """{"soldiers": <үлдсэн тоо>}: тоглолтод үхсэн Gold-ийн цэргүүдийг хасна"""
+    player = logic.lose_soldiers(request.token.player, request.token.device_id, request.json.get("soldiers"),
+                                 client_ip(request))
     return ok(account=logic.account_state(player, request.token.device_id))
 
 

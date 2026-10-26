@@ -11,6 +11,7 @@ enum class VehicleModelId
     Truck, // Mercedes Zetros маягийн 6x6
     Suv,       // Nissan X-Trail
     Hatchback, // Toyota Yaris
+    Motorcycle, // хээрийн мотоцикл (assets/cars/motocycle.glb -> moto.vmesh)
     Count
 };
 

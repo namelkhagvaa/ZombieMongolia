@@ -37,6 +37,15 @@ public:
     float AimBlend() const { return aimBlend; } // 0 = ердийн, 1 = бүрэн онилсон
     float Yaw() const { return yaw; }
     float Pitch() const { return pitch; }
+    // Буудах ухралт: хараа дээш (pitch, радиан) ба хажуу тийш (yaw) үсэрч, дээш үсэрсний ихэнх нь аажим буцна.
+    void Kick(float yawDelta, float pitchDelta)
+    {
+        yaw += yawDelta;
+        pitch -= pitchDelta;
+        kickReturn += pitchDelta * 0.7f;
+    }
+    // Сэгсрэлт (дэлбэрэлт, мөргөлдөөн, цохиулах): 0..1, аажим унтарна. Онох чиглэлд нөлөөлөхгүй (камер бүхэлдээ шилжинэ).
+    void Shake(float amount) { shake = std::min(1.0f, shake + amount); }
     // Харах чиглэлийг гаднаас бага зэрэг эргүүлнэ (онилгооны туслах); хязгаарыг Update барина.
     void AddView(float yawDelta, float pitchDelta)
     {
@@ -58,4 +67,6 @@ private:
     bool riding = false;
     bool firstPerson = false;
     float traverseBlend = 0.0f; // 0 = ердийн, 1 = давж буй үеийн ойрын камер
+    float kickReturn = 0.0f;    // ухралтаас буцах үлдсэн pitch
+    float shake = 0.0f;
 };

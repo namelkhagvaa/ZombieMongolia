@@ -205,6 +205,53 @@ namespace
         return s;
     }
 
+    // Оносон: богино өндөр "тик" (буун дууны дээгүүр тод сонсогдоно)
+    std::vector<float> Marker()
+    {
+        auto s = Buffer(0.07f);
+        for (size_t i = 0; i < s.size(); ++i)
+        {
+            const float t = T(i);
+            s[i] = (std::sin(kTau * 2600.0f * t) * 0.7f + std::sin(kTau * 1300.0f * t) * 0.4f) * std::exp(-t / 0.012f);
+        }
+        Normalize(s, 0.55f);
+        return s;
+    }
+
+    // Толгойд онов: төмөрлөг "дин" (хэд хэдэн гармоник, удаан унтарна)
+    std::vector<float> Headshot()
+    {
+        auto s = Buffer(0.4f);
+        const float partials[4] = { 1760.0f, 2650.0f, 3980.0f, 5300.0f };
+        for (size_t i = 0; i < s.size(); ++i)
+        {
+            const float t = T(i);
+            float v = 0.0f;
+            for (int k = 0; k < 4; ++k) v += std::sin(kTau * partials[k] * t) * std::exp(-t / (0.12f - 0.02f * (float)k)) / (1.0f + (float)k);
+            s[i] = v;
+        }
+        Normalize(s, 0.6f);
+        return s;
+    }
+
+    // Зүрхний цохилт: "лүб-дүб" (хоёр гүн цохилт)
+    std::vector<float> Heartbeat()
+    {
+        auto s = Buffer(0.5f);
+        for (const float start : { 0.0f, 0.2f })
+        {
+            const size_t from = (size_t)(start * kRate);
+            const float gain = start > 0.0f ? 0.7f : 1.0f;
+            for (size_t i = from; i < s.size(); ++i)
+            {
+                const float t = T(i - from);
+                s[i] += std::sin(kTau * (48.0f + 30.0f * std::exp(-t / 0.03f)) * t) * std::exp(-t / 0.07f) * gain;
+            }
+        }
+        Normalize(s, 0.8f);
+        return s;
+    }
+
     std::vector<float> Crash(uint32_t seed)
     {
         auto s = Buffer(1.1f);
@@ -498,6 +545,39 @@ namespace
         const float fade = 1.0f - std::pow(distance / maxDistance, 2.0f);
         return fade / (1.0f + (distance / reference) * (distance / reference));
     }
+
+    // ------------------------------------------------------------ Цэргийн яриа
+
+    const char* const kLineCodes[(int)VoiceLine::Count] = {
+        "spot", "enemy", "fire", "reload", "hurt", "downed", "revived", "lost", "follow", "hold",
+        "kill", "exploder", "boss", "swarm", "ammo", "grenade", "vehicle", "crate", "idle",
+    };
+    std::vector<Sound> voiceLines[3][(int)VoiceLine::Count];
+    int lastVariant[3][(int)VoiceLine::Count] = {};
+    Sound* talking = nullptr; // одоо ярьж буй (нэг удаад нэг хүн)
+
+    // voice/bataa/<a|b|c>_<код>_<1..4>.wav|.ogg
+    void LoadVoices()
+    {
+        const std::string folder = SoundFolder() + "voice/bataa/";
+        int total = 0;
+        for (int speaker = 0; speaker < 3; ++speaker)
+        {
+            for (int line = 0; line < (int)VoiceLine::Count; ++line)
+            {
+                for (int k = 1; k <= 4; ++k)
+                {
+                    const std::string base = folder + (char)('a' + speaker) + "_" + kLineCodes[line] + "_" + std::to_string(k);
+                    Sound sound = {};
+                    if (!TryLoad(base + ".wav", sound) && !TryLoad(base + ".ogg", sound)) break;
+                    voiceLines[speaker][line].push_back(sound);
+                    ++total;
+                }
+                lastVariant[speaker][line] = -1;
+            }
+        }
+        TraceLog(LOG_INFO, "AUDIO: %d voice lines", total);
+    }
 }
 
 namespace Audio
@@ -560,6 +640,10 @@ namespace Audio
         if (!LoadFile(Sfx::Thud, "thud")) for (uint32_t k = 0; k < 2; ++k) Add(Sfx::Thud, Thud(171 + k));
         if (!LoadFile(Sfx::Hoof, "hoof")) for (uint32_t k = 0; k < 2; ++k) Add(Sfx::Hoof, Hoof(181 + k, 1.0f + 0.12f * (float)k));
         if (!LoadFile(Sfx::Screech, "screech")) for (uint32_t k = 0; k < 2; ++k) Add(Sfx::Screech, Screech(191 + k));
+        if (!LoadFile(Sfx::Marker, "hit_marker")) Add(Sfx::Marker, Marker());
+        if (!LoadFile(Sfx::Headshot, "headshot")) Add(Sfx::Headshot, Headshot());
+        if (!LoadFile(Sfx::Heartbeat, "heartbeat")) Add(Sfx::Heartbeat, Heartbeat());
+        LoadVoices();
 
         // Сонсогдох зай
         for (Sfx id : { Sfx::Rifle, Sfx::Pistol, Sfx::Shotgun, Sfx::Sniper, Sfx::Launcher }) Range(id, 22.0f, 320.0f);
@@ -577,6 +661,7 @@ namespace Audio
         Range(Sfx::Thud, 6.0f, 40.0f);
         Range(Sfx::Hoof, 5.0f, 40.0f);
         Range(Sfx::Screech, 12.0f, 90.0f);
+        for (Sfx id : { Sfx::Marker, Sfx::Headshot, Sfx::Heartbeat }) Range(id, 50.0f, 200.0f); // тоглогчийн өөрийнх (сонсогчийн байрлалд)
 
         for (Voice3D& voice : bank)
         {
@@ -647,6 +732,15 @@ namespace Audio
             voice.aliases.clear();
             voice.variants.clear();
         }
+        talking = nullptr;
+        for (auto& speaker : voiceLines)
+        {
+            for (std::vector<Sound>& list : speaker)
+            {
+                for (Sound& s : list) UnloadSound(s);
+                list.clear();
+            }
+        }
         CloseAudioDevice();
         ready = false;
     }
@@ -701,6 +795,38 @@ namespace Audio
         SetSoundPitch(*chosen, pitch * (1.0f + 0.04f * (float)GetRandomValue(-100, 100) / 100.0f));
         SetSoundPan(*chosen, pan);
         PlaySound(*chosen);
+    }
+
+    bool HasVoice(int speaker, VoiceLine line)
+    {
+        return ready && speaker >= 0 && speaker < 3 && !voiceLines[speaker][(int)line].empty();
+    }
+
+    bool Say(int speaker, VoiceLine line, Vector3 position, float pitch, bool urgent)
+    {
+        if (!ready || !enabled || !HasVoice(speaker, line)) return false;
+        if (talking && IsSoundPlaying(*talking))
+        {
+            if (!urgent) return false;
+            StopSound(*talking);
+        }
+        float pan = 0.5f;
+        const float gain = Attenuation(position, 14.0f, 90.0f, pan);
+        if (gain < 0.04f) return false;
+        // Хувилбарыг санамсаргүй, өмнөхөө давтахгүй
+        std::vector<Sound>& list = voiceLines[speaker][(int)line];
+        int& last = lastVariant[speaker][(int)line];
+        int variant = GetRandomValue(0, (int)list.size() - 1);
+        if (list.size() > 1 && variant == last) variant = (variant + 1) % (int)list.size();
+        last = variant;
+        Sound& sound = list[(size_t)variant];
+        SetSoundVolume(sound, std::min(1.0f, gain * 1.2f));
+        SetSoundPitch(sound, pitch);
+        SetSoundPan(sound, pan);
+        PlaySound(sound);
+        talking = &sound;
+        TraceLog(LOG_DEBUG, "VOICE: %c_%s_%d", 'a' + speaker, kLineCodes[(int)line], variant + 1);
+        return true;
     }
 
     void SetEngine(int index, EngineSound kind, float rpm, float throttle, Vector3 position)

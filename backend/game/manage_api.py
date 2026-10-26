@@ -6,6 +6,7 @@
 import json
 import secrets
 from datetime import timedelta
+from decimal import Decimal
 from functools import wraps
 
 from django.contrib.auth import authenticate, get_user_model
@@ -19,7 +20,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
 from . import logic
-from .models import AuthToken, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, UnlockedProvince
+from .models import AuthToken, Cashout, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, UnlockedProvince
 
 TOKEN_SALT = "zm-manage"
 TOKEN_AGE = 12 * 3600
@@ -110,6 +111,8 @@ def player_row(player):
         "credits": player.credits,
         "gold": player.gold,
         "gold_locked": player.locked_gold,
+        "gold_won": player.won_gold,
+        "gold_bonus": player.bonus_gold,
         "blocked": player.blocked,
         "created": iso(player.created),
         "provinces": getattr(player, "province_total", None),
@@ -123,6 +126,7 @@ def room_row(room):
         "id": room.pk,
         "province": room.province,
         "status": room.status,
+        "phase": logic.room_phase(room),
         "host": {"id": room.host_id, "name": room.host.name, "phone": room.host.phone},
         "guest": {"id": room.guest_id, "name": room.guest.name, "phone": room.guest.phone} if room.guest_id else None,
         "battle": room.battle,
@@ -154,6 +158,26 @@ def invoice_row(invoice):
     }
 
 
+def cashout_row(cashout):
+    return {
+        "id": cashout.pk,
+        "player": {"id": cashout.player_id, "name": cashout.player.name, "phone": cashout.player.phone,
+                   "won": cashout.player.won_gold},
+        "gold": cashout.gold,
+        "amount": cashout.amount,
+        "rate": float(cashout.rate),
+        "bank": cashout.bank,
+        "account": cashout.account,
+        "holder": cashout.holder,
+        "status": cashout.status,
+        "note": cashout.note,
+        "handled_by": cashout.handled_by,
+        "created": iso(cashout.created),
+        "verified_at": iso(cashout.verified_at),
+        "closed_at": iso(cashout.closed_at),
+    }
+
+
 def event_row(event):
     return {
         "id": event.pk,
@@ -182,12 +206,19 @@ def settings_json(settings):
         "price_magazine": settings.price_magazine,
         "price_health": settings.price_health,
         "price_soldier": settings.price_soldier,
+        "skin_price": settings.skin_price,
+        "skin_price_iron": settings.skin_price_iron,
+        "coop_reward": settings.coop_reward,
+        "coop_daily_limit": settings.coop_daily_limit,
         "room_fee": settings.room_fee,
         "room_stake": settings.room_stake,
         "stage_bonus": settings.stage_bonus,
         "stage_min_minutes": settings.stage_min_minutes,
         "battle_pair_limit": settings.battle_pair_limit,
         "gold_packs": [{"gold": p["gold"], "price": p["price"]} for p in logic.gold_packs()],
+        "cashout_enabled": settings.cashout_enabled,
+        "cashout_min": settings.cashout_min,
+        "cashout_rate": float(settings.cashout_rate),
     }
 
 
@@ -223,6 +254,9 @@ def me(request):
 
 # ---------------------------------------------------------------- Хянах самбар
 
+ONLINE_WINDOW = timedelta(minutes=3)
+
+
 @staff_api(["GET"])
 def dashboard(request):
     now = timezone.now()
@@ -256,6 +290,14 @@ def dashboard(request):
     platforms = {row["platform"] or "?": row["n"] for row in Device.objects.filter(active=True)
                  .values("platform").annotate(n=Count("id"))}
 
+    # Одоо онлайн: нэвтэрсэн тоглоом минут тутам account/ асуудаг (токены last_used шинэчлэгдэнэ). Сүүлийн
+    # ONLINE_WINDOW-д хүсэлт илгээсэн тоглоомын токенууд (вэбийн Gold цэнэглэх хуудасны токен орохгүй).
+    online_tokens = AuthToken.objects.filter(last_used__gte=now - ONLINE_WINDOW, revoked=False).exclude(device_id=logic.WEB_DEVICE)
+    online_devices = list(online_tokens.values_list("device_id", flat=True))
+    online_platforms = {row["platform"] or "?": row["n"] for row in Device.objects.filter(device_id__in=online_devices)
+                        .values("platform").annotate(n=Count("id"))}
+    open_rooms = Room.objects.filter(status=Room.OPEN)
+
     return ok(
         totals={
             "players": Player.objects.count(),
@@ -268,7 +310,13 @@ def dashboard(request):
             "paying_players": paid.values("player").distinct().count(),
             "invoices_pending": Invoice.objects.filter(status=Invoice.PENDING).count(),
             "blocked": Player.objects.filter(blocked=True).count(),
+            "online": online_tokens.values("player").distinct().count(),
+            "active_1h": AuthToken.objects.filter(last_used__gte=now - timedelta(hours=1)).exclude(device_id=logic.WEB_DEVICE)
+            .values("player").distinct().count(),
+            "rooms_open": open_rooms.count(),
+            "battles_live": open_rooms.filter(guest__isnull=False).count(),
         },
+        online_platforms=online_platforms,
         series=series,
         provinces=[{"province": i, "unlocked": provinces.get(i, 0), "starts": starts.get(i, 0)}
                    for i in range(settings.province_count)],
@@ -460,6 +508,55 @@ def invoice_mark_paid(request, invoice_id):
     return ok(invoice=invoice_row(Invoice.objects.select_related("player").get(pk=invoice.pk)))
 
 
+# ---------------------------------------------------------------- Gold татах
+
+@staff_api(["GET"])
+def cashouts(request):
+    logic.expire_cashouts()
+    qs = Cashout.objects.select_related("player")
+    if request.GET.get("status"):
+        qs = qs.filter(status=request.GET["status"])
+    if request.GET.get("player"):
+        qs = qs.filter(player_id=request.GET["player"])
+    search = request.GET.get("q", "").strip()
+    if search:
+        qs = qs.filter(Q(player__name__icontains=search) | Q(player__phone__icontains=search) | Q(account__icontains=search) |
+                       Q(holder__icontains=search))
+    pending = Cashout.objects.filter(status=Cashout.PENDING).aggregate(total=Sum("amount"), count=Count("id"))
+    paid = Cashout.objects.filter(status=Cashout.PAID).aggregate(total=Sum("amount"))
+    data = page_of(request, qs.order_by("-created"), cashout_row)
+    return ok(**data, pending_total=pending["total"] or 0, pending_count=pending["count"], paid_total=paid["total"] or 0)
+
+
+def get_cashout(cashout_id):
+    cashout = Cashout.objects.select_related("player").filter(pk=cashout_id).first()
+    if cashout is None:
+        raise ManageError("Хүсэлт олдсонгүй", 404)
+    return cashout
+
+
+@staff_api(["POST"])
+def cashout_paid(request, cashout_id):
+    """Админ банкаар шилжүүлсний дараа: олгосон гэж тэмдэглэнэ (note: гүйлгээний дугаар г.м.)."""
+    cashout = get_cashout(cashout_id)
+    note = str(request.json.get("note", ""))[:200]
+    logic.admin_pay_cashout(cashout, request.staff.username, note)
+    audit(request, cashout.player, "cashout_paid", {"cashout": cashout.pk, "amount": cashout.amount, "note": note})
+    return ok(cashout=cashout_row(get_cashout(cashout_id)))
+
+
+@staff_api(["POST"])
+def cashout_reject(request, cashout_id):
+    """Татгалзана: Gold тоглогчид буцна. note: шалтгаан (тоглогчид харагдана)."""
+    cashout = get_cashout(cashout_id)
+    note = str(request.json.get("note", "")).strip()[:200]
+    if not note:
+        raise ManageError("Татгалзсан шалтгаанаа бичнэ үү")
+    logic.admin_reject_cashout(cashout, request.staff.username, note)
+    audit(request, cashout.player, "cashout_rejected", {"cashout": cashout.pk, "note": note})
+    return ok(cashout=cashout_row(get_cashout(cashout_id)))
+
+
 # ---------------------------------------------------------------- Лог
 
 @staff_api(["GET"])
@@ -502,7 +599,9 @@ def settings_view(request):
                   "device_change_price": (0, 1_000_000), "max_devices": (1, 5),
                   "capital_price": (0, 1_000_000), "start_gold": (0, 100_000),
                   "price_damage": (0, 100_000), "price_fire_rate": (0, 100_000), "price_magazine": (0, 100_000),
-                  "price_health": (0, 100_000), "price_soldier": (0, 100_000), "room_fee": (0, 10_000),
+                  "price_health": (0, 100_000), "price_soldier": (0, 100_000), "skin_price": (0, 100_000), "skin_price_iron": (0, 100_000),
+                  "coop_reward": (0, 10_000),
+                  "coop_daily_limit": (0, 100), "room_fee": (0, 10_000),
                   "room_stake": (0, 10_000), "stage_bonus": (0, 10_000), "stage_min_minutes": (0, 240),
                   "battle_pair_limit": (0, 100)}
         before = settings_json(settings)
@@ -512,6 +611,20 @@ def settings_view(request):
                 if not isinstance(value, int) or not low <= value <= high:
                     raise ManageError("Утга буруу байна")
                 setattr(settings, field, value)
+        if "cashout_enabled" in request.json:
+            if not isinstance(request.json["cashout_enabled"], bool):
+                raise ManageError("Утга буруу байна")
+            settings.cashout_enabled = request.json["cashout_enabled"]
+        if "cashout_min" in request.json:
+            value = request.json["cashout_min"]
+            if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 10_000_000:
+                raise ManageError("Татах доод хэмжээ буруу байна")
+            settings.cashout_min = value
+        if "cashout_rate" in request.json:
+            value = request.json["cashout_rate"]
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0.01 <= value <= 1000:
+                raise ManageError("Ханш 0.01-1000 ₮ байна")
+            settings.cashout_rate = Decimal(str(round(value, 2)))
         if "gold_packs" in request.json:
             packs = request.json["gold_packs"]
             if not isinstance(packs, list) or not 1 <= len(packs) <= 8:

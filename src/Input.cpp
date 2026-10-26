@@ -87,6 +87,7 @@ namespace
         int uiIcon = -1;  // >= 0 бол бичвэрийн зүүн талд Ui::Icon (бичвэр хоосон бол зөвхөн икон)
         int glyph = kGlyphNone;
         bool opaque = false; // задрах цэсний мөр: бусад товчны дээр тод харагдана
+        int vehicleKind = 0; // kGlyphVehicle: VehicleType
     };
     bool settingsOpen = false; // ⚙ задрах цэс (авто онилгоо, камер, энд бай)
     bool settingsRows = false; // Add() одоо задрах цэсний мөр нэмж байна
@@ -166,6 +167,7 @@ namespace
                 // унаа, бай халхлагдахгүй). Явган ба жолоодох үеийн товчнуудтай давхцахгүй байрлал.
                 Add(Circle(w - 270.0f, h - 440.0f, 34.0f), state.useLabel, Kind::Key, KEY_F, true, true);
                 buttons.back().glyph = kGlyphVehicle;
+                buttons.back().vehicleKind = state.useVehicleKind;
             }
             else if (state.useLabel)
             {
@@ -230,6 +232,14 @@ namespace
                 {
                     // Удирдаж буй гишүүнийг байранд нь үлдээнэ (дараа нь өөр гишүүн рүү шилжинэ).
                     Add({ x, y, panelW, rowH }, "ЭНД БАЙ", Kind::Key, KEY_H, false, state.holdMarked);
+                    y += rowH + rowGap;
+                }
+                if (state.showOrders)
+                {
+                    // Багийн тушаал: бүгд над руу, загалмайн доорх зомби руу бүгд буудах
+                    Add({ x, y, panelW, rowH }, "БҮГД НАДАД ИР", Kind::Key, KEY_G, false);
+                    y += rowH + rowGap;
+                    Add({ x, y, panelW, rowH }, "БАЙГ ОНИЛ", Kind::Key, KEY_B, false);
                 }
                 settingsRows = false;
             }
@@ -253,12 +263,7 @@ namespace
 
         case TouchScreen::CampaignMap:
         {
-            // Дэлгүүрийн 1..5 товч: дэлгэцийн доод ирмэгээр (аймгийг хоёр товшиж эхлүүлнэ)
-            static const char* const numbers[] = { "1", "2", "3", "4", "5" };
-            for (int i = 0; i < 5; ++i)
-            {
-                Add({ 20.0f + (float)i * 78.0f, h - 70.0f, 68.0f, 54.0f }, numbers[i], Kind::Key, KEY_ONE + i, false);
-            }
+            // Сайжруулалтын мөрийг шууд товшино (баталгаажуулах цонх гарна); аймгийг хоёр товшиж эхлүүлнэ
             break;
         }
 
@@ -815,9 +820,51 @@ void InDrawTouch(const TouchState& state)
         }
         else if (button.glyph == kGlyphVehicle)
         {
-            // Унааны дүрс (зураг байхгүй бол шугамаар), товчны доор жижиг бичвэр
+            // Тухайн унааны дүрс (бичвэргүй). VehicleType: 0 жийп, 1 мотоцикл, 2 гурван дугуйт, 3 морь,
+            // 4 ачааны машин, 5-6 суудлын машин
             const float side = button.area.width * 0.62f;
-            if (!Ui::DrawIcon(Ui::Icon::MapVehicle, { center.x - side * 0.5f, center.y - side * 0.5f, side, side }))
+            const int kind = button.vehicleKind;
+            const Color tyre = { 20, 20, 24, 255 };
+            if (kind == 3 && Ui::DrawIcon(Ui::Icon::MapHorse, { center.x - side * 0.5f, center.y - side * 0.5f, side, side }))
+            {
+                // морь (зураг)
+            }
+            else if (kind == 3)
+            {
+                // Морь: бие, хүзүү толгой, дөрвөн хөл
+                const float s = side;
+                DrawRectangleRounded({ center.x - s * 0.32f, center.y - s * 0.08f, s * 0.52f, s * 0.2f }, 0.6f, 6, text);
+                DrawLineEx({ center.x + s * 0.16f, center.y - s * 0.02f }, { center.x + s * 0.3f, center.y - s * 0.28f }, s * 0.1f, text);
+                DrawRectangleRounded({ center.x + s * 0.24f, center.y - s * 0.34f, s * 0.18f, s * 0.1f }, 0.6f, 6, text);
+                for (const float x : { -0.28f, -0.18f, 0.06f, 0.15f })
+                {
+                    DrawLineEx({ center.x + s * x, center.y + s * 0.1f }, { center.x + s * x, center.y + s * 0.32f }, s * 0.06f, text);
+                }
+            }
+            else if (kind == 1 || kind == 2)
+            {
+                // Мотоцикл / гурван дугуйт: хоёр дугуй, их бие, бариул (гурван дугуйт нь тэвштэй)
+                const float s = side, r = s * 0.17f;
+                const Vector2 rear = { center.x - s * 0.3f, center.y + s * 0.14f }, front = { center.x + s * 0.3f, center.y + s * 0.14f };
+                DrawRing(rear, r * 0.55f, r, 0.0f, 360.0f, 20, text);
+                DrawRing(front, r * 0.55f, r, 0.0f, 360.0f, 20, text);
+                DrawLineEx(rear, { center.x, center.y - s * 0.02f }, s * 0.07f, text);
+                DrawLineEx({ center.x, center.y - s * 0.02f }, front, s * 0.07f, text);
+                DrawLineEx({ center.x + s * 0.22f, center.y - s * 0.12f }, front, s * 0.06f, text);
+                DrawLineEx({ center.x + s * 0.14f, center.y - s * 0.16f }, { center.x + s * 0.3f, center.y - s * 0.16f }, s * 0.06f, text);
+                DrawRectangleRounded({ center.x - s * 0.2f, center.y - s * 0.12f, s * 0.28f, s * 0.1f }, 0.6f, 6, text); // суудал
+                if (kind == 2) DrawRectangleRec({ center.x - s * 0.46f, center.y - s * 0.12f, s * 0.24f, s * 0.14f }, text); // тэвш
+            }
+            else if (kind == 4)
+            {
+                // Ачааны машин: бүхээг, урт тэвш, гурван дугуй
+                const float s = side;
+                const Rectangle bed = { center.x - s * 0.44f, center.y - s * 0.18f, s * 0.56f, s * 0.3f };
+                DrawRectangleRounded(bed, 0.2f, 6, text);
+                DrawRectangleRounded({ center.x + s * 0.14f, center.y - s * 0.26f, s * 0.3f, s * 0.38f }, 0.25f, 6, text);
+                for (const float x : { -0.3f, -0.08f, 0.3f }) DrawCircleV({ center.x + s * x, center.y + s * 0.14f }, s * 0.1f, tyre);
+            }
+            else if (!Ui::DrawIcon(Ui::Icon::MapVehicle, { center.x - side * 0.5f, center.y - side * 0.5f, side, side }))
             {
                 const Rectangle body = { center.x - side * 0.4f, center.y - side * 0.12f, side * 0.8f, side * 0.3f };
                 DrawRectangleRounded(body, 0.4f, 6, text);
@@ -825,9 +872,7 @@ void InDrawTouch(const TouchState& state)
                 DrawCircleV({ body.x + side * 0.18f, body.y + body.height }, side * 0.09f, { 20, 20, 24, 255 });
                 DrawCircleV({ body.x + body.width - side * 0.18f, body.y + body.height }, side * 0.09f, { 20, 20, 24, 255 });
             }
-            const int size = 11;
-            Ui::TextShadow(button.label, (int)(center.x - (float)Ui::MeasureBold(button.label, size) * 0.5f),
-                           (int)(button.area.y + button.area.height) + 3, size, text, true);
+            // (зөвхөн дүрс: доор нь бичвэр гаргахгүй)
         }
         else if (button.uiIcon >= 0 && Ui::HasIcon((Ui::Icon)button.uiIcon) && button.label && !button.label[0])
         {

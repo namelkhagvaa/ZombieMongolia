@@ -4,6 +4,7 @@
 #include "Config.h"
 #include "Environment.h"
 #include "Airstrike.h"
+#include "Audio.h"
 #include "FuelBarrels.h"
 #include "MedKits.h"
 #include "Grenades.h"
@@ -22,6 +23,7 @@
 #include "Tracers.h"
 #include "Vehicle.h"
 #include "Weapon.h"
+#include "WorldEvents.h"
 #include "World.h"
 #include "Splash.h"
 #include "Zombie.h"
@@ -65,6 +67,7 @@ struct LaunchOptions
     bool shop = false;        // дэлгүүрийн цэсийг нээлттэй эхлүүлнэ (--shop)
     bool characterSelect = false; // газрын зураг дээр дүр сонгох цонхыг нээнэ (--campaign --select)
     bool stayOnMap = false;       // --campaign --api: нэвтэрсний дараа аймаг эхлүүлэхгүй (дэлгүүр, Gold шалгах)
+    bool cashout = false;         // --campaign --api: нэвтэрсний дараа Gold татах цонхыг нээнэ (--cashout)
     bool airstrike = false;   // бөмбөгдөлтийн киног шууд эхлүүлнэ (--airstrike)
     float dayTime = -1.0f;    // туршилт: өдрийн цагийг 0..1 тогтооно (--daytime t)
     bool pause = false;       // тоглоомын цэсийг нээлттэй эхлүүлнэ (--pause)
@@ -73,6 +76,9 @@ struct LaunchOptions
     float demoMove = 0.0f, demoPhase = 0.0f, demoAim = 0.0f, demoAction = -1.0f;
     float demoDirection = 0.0f, demoReload = -1.0f; // явах зүг (радиан), цэнэглэлтийн явц (--demo-extra D R)
     int useFrame = 0;         // >0 бол энэ дугаартай frame-д F дарсан мэт үйлдэнэ (--use-frame N)
+    int swapFrame = 0;        // >0 бол энэ frame-д Tab дарсан мэт (жолооч <-> буудагч) (--swap-frame N)
+    int eventKind = -1;       // >=0 бол 5-р frame-д тэр гэнэтийн үйл явдлыг эхлүүлнэ (0 ачаа, 1 машин, 2 бөөгнөрөл, 3 аврах) (--event K)
+    float renderScale = 0.0f; // >0 бол 3D-ийн нягтралыг тогтооно (0.5..1), автомат тохируулгагүй (--render-scale X)
     float moveForward = 0.0f, moveRight = 0.0f; // тоглогчийг тогтмол чиглэлд алхуулна (--move F R)
     int quotaSmall = -1, quotaBig = -1; // >= 0 бол үеийн зомбины нөөцийг энэ тоогоор солино (--quota S B)
     bool bindPose = false;    // загваруудыг анхны зогсолтоор нь зурна (--bindpose)
@@ -124,6 +130,8 @@ private:
         int vehicle = -1;
         int door = -1;
         int passage = -1; // шат, цонх
+        bool fence = false; // хашаа давах (vault-д гарц)
+        Passage vault = {};
     };
     Interaction FindInteraction() const;
 
@@ -145,6 +153,16 @@ private:
     bool SwitchMember(int target, bool leaveDead);
     // Тоглогч унаа унасан үед багийн гишүүд ойрын хэрэгсэлд сууж дагана; буухад тэд ч бууна.
     void UpdateTeamRiding(float dt);
+    // Хоёр хүний унаа: тоглогч буудагчийн суудлаас буух (AI жолооч ч бууна).
+    void LeaveGunnerSeat();
+    // Сум унаанд онов: эзэмшигч тал тооцно (хост / зочин). Морь 1.5 дахин эмзэг.
+    void HitVehicle(int index, float damage, Vector3 at, Vector3 direction);
+    // Эвдэрсэн машин дэлбэрнэ; тулаанд эсрэг багийн хүнийг унаагаар дайрвал амийн 30% хасагдана.
+    void UpdateVehicleCombat(float dt);
+    // Gold-оор авсан цэрэг үхвэл серверээс шууд хасна (хост: өөрийнх ба зочных).
+    void TrackSoldierLosses();
+    // Тоглогч буудагч байхад AI жолооч даалгаврын тэмдэг рүү жолоодно.
+    void DriveForGunner(float dt);
     // Мэдрэгчтэй дэлгэц: буудаж / онилж байх үед харааг загалмайд ойр, харагдаж буй зомби руу зөөлөн татна.
     void AimAssist(float dt);
 
@@ -192,6 +210,11 @@ private:
     bool battleActive = false;      // хост: зочин орж ирсэн; зочин: тасалбараар өрөөнд орсон
     bool hostGone = false;          // зочин: хост тасарсан (сервер 60 секунд хүлээгээд зочныг ялсанд тооцно)
     bool guestTeamSpawned = false;  // хост: энэ тулаанд зочны AI дайчдыг нэг л удаа үүсгэнэ
+    // Зочин: тулааны үеэр хост тасарсан, энэ төхөөрөмж хостын багийг AI тулалдуулж буй (TakeOverBattle). Сервер дээр
+    // зочин хэвээр: тулаан дуусахад (эсвэл takeoverTimer дуусахад) үр дүнг мэдэгдэнэ.
+    bool takeoverBattle = false;
+    float takeoverTimer = 0.0f;
+    void TakeOverBattle();
     float takeoverCooldown = 0.0f;  // хост: зочин AI дайчныхаа байранд орсны дараа ялалтыг шалгахгүй хугацаа
     float battleWaitTimer = 0.0f;   // хост: зочин нэгдээд ирэхийг хүлээсэн хугацаа
     float guestHealth = 0.0f;       // хост: зочны сүүлд мэдэгдсэн амь (тасарвал AI дайчин болно)
@@ -219,6 +242,51 @@ private:
     int activeMember = 0;
     int missionFrame = 0;        // даалгаврын шинэчлэлтийн тоолуур (туршилтын командуудад)
     int teamVehicle = -1;        // багийн гишүүдийн сонгосон хэрэгсэл (-1 = байхгүй)
+    // Хоёр хүний унаа (нэг нь жолоодож, нөгөө нь буудна). Нэг багийн хоёр гишүүн суудлаа сольж болно (Tab, карт).
+    int carGunner = -1;          // тоглогчийн жолоодож буй унааны буудагч AI гишүүн (squad индекс)
+    int gunnerVehicle = -1;      // тоглогч буудагчийн суудалд сууж яваа унаа (жолоодохгүй)
+    int carDriver = -1;          // тэр унааг жолоодож буй AI гишүүн (squad индекс)
+    float driverStuck = 0.0f, driverReverse = 0.0f;
+    // Мэдрэмж: оносон тэмдэг, цохиулсан зүг, зүрхний цохилт
+    float hitMarker = 0.0f;
+    int hitMarkerKind = 0;
+    float damageArrow = 0.0f;
+    Vector3 damageFrom = { 0.0f, 0.0f, 0.0f };
+    float heartbeatTimer = 0.0f;
+    float lastDrivenHealth = -1.0f; // жолоодож буй унааны өмнөх frame-ийн бүтэн байдал (мөргөхөд сэгсрэх)
+    void MarkHit(int kind);         // 0 бие, 1 толгой, 2 устгасан
+    void ExploderBlasts();          // үхсэн бөөн зомбины дэлбэрэлт
+    // Гэнэтийн үйл явдал (хост сонгоно): зомбийн бөөгнөрөл, сүйрсэн машин, аврах хүн, нисэх онгоцны ачаа
+    void UpdateWorldEvents(float dt);
+    bool StartWorldEvent(int kind);
+    bool EventSpot(float minDistance, float maxDistance, Vector3& spot) const;
+    void ShowWorldEvent(int kind, Vector3 position);
+    void TakeCrate(int id);
+    // Унасан байдал: тоглогч бие биеэ босгох (хамтарсан тоглолт), AI нөхдийн босголт, HUD
+    void UpdateDowned(float dt);
+    float humanRevive = 0.0f; // энэ тоглогч нөгөө тоглогчийг босгож буй хугацаа
+    WorldEvents events;
+    float eventTimer = 70.0f;
+    int nextEventId = 1;
+    std::vector<int> rescueSoldiers; // squad индекс: аврагдахыг хүлээж буй
+    // Шинэ тоглогчийн заавар (эхний удаа): хөдлөх, буудах, гишүүн солих, унаа, газрын зураг
+    void UpdateTutorial(float dt);
+    const char* TutorialText() const;
+    float tutorialTimer = 0.0f;
+    Vector3 tutorialFrom = { 0.0f, 0.0f, 0.0f };
+    int tutorialShots = 0, tutorialMember = 0;
+    bool tutorialMapSeen = false;
+    void UpdateFeedback(float dt);
+    // Нягтралын автомат тохиргоо: FPS зорилтоос бага бол 3D-г бага нягтралтай текстурт зурна (HUD тод хэвээр)
+    void UpdateRenderScale(float dt);
+    // Даалгаврын эхэнд бүх загвар (унаа, дүр, зэвсэг, морь), shader-ийг жижиг текстурт нэг удаа зурж видео картад
+    // урьдчилан ачаална: тоглож байхад анх харагдахдаа гацахгүй
+    void WarmUpRendering();
+    float renderScale = 1.0f;
+    float scaleTime = 0.0f;
+    int scaleFrames = 0;
+    std::vector<uint8_t> wreckSeen;                   // унаа бүрийн эвдэрснийг мэдсэн эсэх (дэлбэрэлт нэг удаа)
+    std::vector<std::pair<int, double>> rammedAt;     // дайрсан хүн ба цаг (нэг дайралтанд нэг л удаа хасна)
     Navigator navigator;         // газрын зураг дээр тэмдэглэсэн газар руу хөтлөх зам
     // Хамтарсан тоглолт: зочинд сүүлд илгээсэн унааны байрлал, эрүүл мэнд (хөдлөөгүйг дахин илгээхгүй)
     std::vector<Vector3> sentVehiclePosition;
@@ -240,6 +308,41 @@ private:
     float driftTimer = 0.0f;
     float screechTimer = 0.0f;
     bool wasReloading = false;
+    // Цэргийн яриа (UpdateChatter): багийнхны өмнөх кадрын төлөвөөс өөрчлөлтийг (шархдах, унах, бай харах г.м.)
+    // илрүүлж ярина. Үйл явдал бүр өөрийн хүлээлттэй, нэг удаад нэг л хүн ярина.
+    struct ChatterSubject
+    {
+        Vector3 position;
+        int speaker;     // дуу хоолой 0..2
+        float pitch;
+        bool alive, downed, aiming;
+        float health;
+        uint8_t kills;
+    };
+    struct ChatterMemo
+    {
+        bool alive = true, downed = false, aiming = false;
+        float health = 0.0f;
+        uint8_t kills = 0;
+        float calm = 0.0f; // онилоогүй өнгөрсөн хугацаа
+        float spot = 0.0f; // >0: "зомби!" гэж хэлэхийг оролдож буй хугацаа
+    };
+    std::vector<ChatterSubject> chatterSubjects;
+    std::vector<ChatterMemo> chatterMemo;
+    float chatterCooldown[(int)VoiceLine::Count] = {};
+    float chatterGap = 0.0f;   // дараалсан яриа хоорондын завсар
+    float chatterScan = 0.0f;  // зомби тоолох дараагийн шалгалт хүртэл
+    float chatterIdle = 0.0f;  // тулаангүй өнгөрсөн хугацаа
+    bool chatterDriving = false;
+    bool chatterLowAmmo = false;
+    bool chatterPlayerDowned = false;
+    void UpdateChatter(float dt);
+    void ApplyFrameLimit(); // компьютер: цэсний FPS хязгаар (Progress::frameLimit)
+    void UpdateVehicleBlockers(); // явган хүн, зомбид зориулсан унааны мөргөлдөөн (World)
+    bool Chatter(VoiceLine line, int speaker, Vector3 position, float pitch = 1.0f, bool urgent = false);
+    // position-д хамгийн ойр амьд багийн хүн ярина (байхгүй бол тоглогчийн дүр)
+    bool ChatterNearest(VoiceLine line, Vector3 position, bool urgent = false);
+    bool ChatterPlayer(VoiceLine line, bool urgent = false);
     float perfTime = 0.0f;   // график автоматаар бууруулах: хэмжилтийн хугацаа ба frame-ийн тоо
     int perfFrames = 0;
     float fuelCoinDebt = 0.0f;   // шатахуун түгээх газарт хийсэн бензин, засварын төлбөр (бүхэл зоос болтол)
@@ -298,6 +401,17 @@ private:
         Vector3 seatOffset = { 0.0f, 0.0f, 0.0f }; // цэрэг: байрлалаас суудал хүртэл
         Vector3 velocity = { 0.0f, 0.0f, 0.0f };   // хоёр мэдээнээс тооцсон хурд (хоцролтыг нөхөж урагш таамаглана)
         float sinceUpdate = 0.0f;                   // сүүлийн мэдээнээс хойш
+        float sentAt = -1.0f;                       // сүүлийн мэдээг илгээсэн цаг (илгээгчийнх)
+        // Жигд хөдөлгөөн: сүүлийн мэдээнүүд (илгээгчийн цагаар). Дүрийг 0.1 с хоцроож хоёр мэдээний хооронд шилжүүлнэ.
+        struct Sample
+        {
+            float t;
+            Vector3 position;
+            float facing;
+        };
+        Sample samples[8] = {};
+        int sampleCount = 0;
+        float renderTime = -1.0f; // илгээгчийн цагаар харуулж буй мөч
     };
     int guestVehicle = -1;        // хост: зочны жолоодож буй унаа
     int pendingDoor = -1;         // зочин: сая өөрөө нээсэн/хаасан хаалга (хост хүлээн авах хүртэл snapshot-оор дарахгүй)
@@ -312,6 +426,7 @@ private:
     std::vector<ZombieHorde::KillReward> remoteRewardBuffer; // хост: зочны унаа устгасан зомбины зоос
     bool joinRequestPending = false; // хост: хариу өгөөгүй хүсэлт
     std::string joinRequester;
+    bool joinCoop = false;          // хост: нэгдэх хүсэлт найзын кодоор (хамт тоглолт, тулаангүй)
     std::string hostName;           // зочин: нэгдсэн тоглолтын хостын (бүртгэлтэй) нэр
     bool helpedHost = false;        // зочноор хостод тусалж аймгийг давсан (өөрийн аймаг нээгдэхгүй)
     bool remoteActive = false;      // хост: зочин холбогдсон
@@ -324,6 +439,10 @@ private:
     bool characterSelectOpen = false; // даалгавар эхлэхийн өмнө 1-р дайчны дүр сонгох цонх
     int characterChoice = 0;
     int pendingProvince = -1;         // сонгосны дараа эхлэх аймаг
+    bool pendingApproved = false;     // сервер аль хэдийн зөвшөөрсөн (дахин асуухгүй)
+    bool skinPicked = false;          // дүрээ сонгоод серверийн зөвшөөрлийг хүлээж байна
+    int pendingSkin = 0;              // тэр үед сонгосон дүр (зөвшөөрөгдвөл хадгална)
+    void OpenCharacterSelect(int province, bool approved);
     bool codeEntryOpen = false;     // өрөөний код оруулах цонх нээлттэй
     std::string codeEntry;          // оруулсан цифрүүд
     float waitTimer = 0.0f;
@@ -336,7 +455,8 @@ private:
     void UpdateCoopMission(float dt);
     void SendHostSnapshot(float dt);
     void StartCoopGuest(int province);
-    void LeaveCoop();
+    void LeaveCoop(bool leaveRoom = true); // leaveRoom = false: серверт өрөөнөөс гарсан гэж мэдэгдэхгүй (хамт давсан)
+    Rectangle FriendButtonRect() const;
     void UpdateCoopMap();
     void DrawCoopMap() const;
     void DrawCoopOverlay() const;
@@ -351,6 +471,7 @@ private:
     mutable int portraitSkin = -1;
     Rectangle CharacterCardRect(int skin) const;
     Rectangle CharacterStartRect() const;
+    Rectangle CharacterBackRect() const; // газрын зураг руу буцах
     void OpenCodeEntry();
     void UpdateCodeEntry();
     void DrawCodeEntry() const;

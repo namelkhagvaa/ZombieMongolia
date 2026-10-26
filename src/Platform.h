@@ -50,6 +50,11 @@ void WebFieldBlur(); // гарыг хаана
 // Хөтөч: утасны гар нээгдсэн үед дэлгэцийн харагдах хэсэг (0..1, дээрээс). Бусад платформд 1.
 float WebVisibleFraction();
 
+// Видео картын нэр (OpenGL драйвер; хөтөч дээр WebGL-ийн бодит нэр, мэдэгдэхгүй бол хоосон) ба процессорын
+// логик цөмийн тоо: графикийг төхөөрөмжид тааруулж сонгоход (InitWindow-ийн дараа дуудна).
+const char* GpuName();
+int CpuCores();
+
 // Хадгалалтын файлыг хөтчийн localStorage-тэй тааруулна (бусад платформд юу ч хийхгүй).
 void WebRestoreFile(const char* path); // localStorage -> файл (уншихаас өмнө)
 void WebPersistFile(const char* path); // файл -> localStorage (бичсэний дараа)

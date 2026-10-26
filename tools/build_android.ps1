@@ -43,7 +43,7 @@ New-Item -ItemType Directory -Force (Join-Path $staging "assets") | Out-Null
 
 foreach ($abi in $Abis) {
     # Хөрвүүлэлтийн хавтас git-ээс гадуур (.gitignore: cmake-build-*): build_android
-ative-* нь өөр замд тохируулагдсан байсан
+    # \native-* нь өөр замд тохируулагдсан байсан
     $build = Join-Path $root "cmake-build-android-$abi"
     Run "cmake" @("-S", $root, "-B", $build, "-G", "Ninja",
                   "-DCMAKE_TOOLCHAIN_FILE=$ndk\build\cmake\android.toolchain.cmake",

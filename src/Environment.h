@@ -93,7 +93,9 @@ public:
 
     // --- Дэлгэцийн эффект: 3D зургийг тусдаа текстурт зурж, өнгө засаад дэлгэцэнд гаргана ---
     void SetPostEnabled(bool enabled) { postEnabled = enabled; }
-    bool BeginScene(int width, int height); // false бол шууд дэлгэцэнд зурна
+    // false бол шууд дэлгэцэнд зурна. lowRes: эффектгүй ("бага") үед ч бага нягтралтай текстурт зурж (FPS-ийг дээшлүүлэх)
+    // DrawScene дэлгэцийн хэмжээнд сунгана; HUD нь дэлгэцийн нягтралаараа тод үлдэнэ.
+    bool BeginScene(int width, int height, bool lowRes = false);
     void EndScene();
     void DrawScene() const;                 // ViewBegin дотор, HUD-оос өмнө
 
@@ -150,6 +152,7 @@ private:
     RenderTexture2D bloomA = {};
     RenderTexture2D bloomB = {};
     bool sceneActive = false;
+    bool sceneShaded = false; // текстурыг эффектийн shader-ээр гаргана (үгүй бол зөвхөн сунгана)
     int quality = 2;
     bool shadersBroken = false; // видео карт эффектийн shader-ийг хүлээж аваагүй: зөвхөн "бага" график
 };
