@@ -47,6 +47,7 @@
       <tr><td>Төхөөрөмжийн танигч</td><td>Нэвтрэх бүрд</td><td>"Нэг төхөөрөмж — нэг данс" дүрэм, луйвраас хамгаалах. Төхөөрөмжийн жинхэнэ дугаарыг шифрлэж (hash) хадгална</td></tr>
       <tr><td>IP хаяг</td><td>Сервертэй холбогдох бүрд</td><td>Аюулгүй байдал, луйвраас хамгаалах (ижил сүлжээний олон данс)</td></tr>
       <tr><td>Тоглолтын мэдээлэл</td><td>Тоглох явцад</td><td>Ахиц хадгалах, Gold, сайжруулалт, өрөө, тулааны үр дүн, тоглоомын алдаа засах, тоглоомыг сайжруулах</td></tr>
+      <tr><td>Тоглолтын техникийн лог</td><td>Тоглох явцад</td><td>Тулаан, хамтарсан тоглолт, сүлжээний холболтын үйл явц, тоглоомын алдааны мэдээ (төхөөрөмжийн төрөл, тоглоомын хувилбар). Алдаа илрүүлж засахад л ашиглана, 14 хоногийн дараа устгана. Утас, нууц үг ороогүй</td></tr>
       <tr><td>Төлбөрийн мэдээлэл</td><td>Gold худалдаж авахад</td><td>QPay-ийн нэхэмжлэхийн дугаар, дүн, төлөв. <b>Банкны карт, дансны нууц мэдээллийг бид авдаггүй</b> — төлбөрийг QPay болон таны банк хийнэ</td></tr>
       <tr><td>Банк, дансны дугаар, эзэмшигчийн нэр</td><td>Gold татах хүсэлт гаргахад</td><td>Таны данс руу мөнгө шилжүүлэх</td></tr>
     </tbody>
@@ -107,7 +108,8 @@
   <div lang="en">
     <p><b>What we collect:</b> player name; phone number (sign-up; optionally verified via verify.mn); a one-way hashed password;
     a hashed device identifier; IP address; gameplay
-    data (progress, Gold, upgrades, rooms, battle results); payment records from QPay (invoice ID, amount, status — we never
+    data (progress, Gold, upgrades, rooms, battle results); technical game logs (battle, co-op and connection events, errors,
+    device type and game version) used only to find and fix bugs and deleted after 14 days; payment records from QPay (invoice ID, amount, status — we never
     receive card or bank credentials); bank name, account number and holder name when you request a Gold withdrawal. We do
     not access location, contacts, photos, camera or microphone.</p>
     <p><b>Why:</b> to run your account and the game, process payments and withdrawals, prevent fraud and cheating, fix bugs

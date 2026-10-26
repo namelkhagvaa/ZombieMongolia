@@ -65,6 +65,7 @@ set(GAME_SOURCES
     main.cpp
     src/Account.cpp
     src/BuildStamp.cpp
+    src/GameLog.cpp
     src/Profile.cpp
     src/ProvinceMap.cpp
     src/WorldEvents.cpp

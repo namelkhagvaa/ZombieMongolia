@@ -12,7 +12,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
-from . import logic
+from . import gamelog, logic
 from .logic import GameError
 from .models import AuthToken, Invoice
 
@@ -371,6 +371,16 @@ def events(request):
             continue
         logic.log_event(request.token.player, "game_" + kind, data, request.token.device_id, client_ip(request))
         stored += 1
+    return ok(stored=stored)
+
+
+@api(["POST"])
+def logs(request):
+    """Тоглолтын техникийн лог (game/gamelog.py): {"now", "platform", "build", "session", "entries": [...]}"""
+    try:
+        stored = gamelog.store(request.token.player, request.json)
+    except gamelog.LogError as error:
+        raise GameError("too_many_logs" if error.status == 429 else "bad_logs", str(error), error.status)
     return ok(stored=stored)
 
 

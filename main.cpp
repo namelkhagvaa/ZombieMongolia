@@ -1,4 +1,5 @@
 #include "Game.h"
+#include "GameLog.h"
 
 #include <cstdarg>
 #include <cstdio>
@@ -6,49 +7,54 @@
 #include <cstring>
 #include <string>
 
-#if !defined(__ANDROID__)
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
+
 namespace
 {
-    // Тоглоомын лог: %LOCALAPPDATA%\ZombieMongolia\log.txt (сүүлийн ажиллуулалт). Өөр компьютер дээр гарсан
-    // асуудлыг (shader, видео карт, гацалт) оношлоход хэрэгтэй. Консол руу ч бичнэ.
+    // Тоглоомын лог: консол (Android: logcat), компьютер дээр %LOCALAPPDATA%\ZombieMongolia\log.txt (сүүлийн
+    // ажиллуулалт: shader, видео карт, гацалт оношлох). Чухал мөрүүд (тулаан, сүлжээ, алдаа) серверт ч очно (GameLog).
     FILE* logFile = nullptr;
 
-    void LogToFile(int level, const char* text, va_list args)
+    void LogLine(int level, const char* text, va_list args)
     {
         static const char* const names[] = { "ALL", "TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "FATAL", "NONE" };
         const char* name = level >= 0 && level < 8 ? names[level] : "LOG";
-        va_list copy;
-        va_copy(copy, args);
-        std::printf("%s: ", name);
-        std::vprintf(text, args);
-        std::printf("\n");
+        char line[1024];
+        std::vsnprintf(line, sizeof(line), text, args);
+#if defined(__ANDROID__)
+        __android_log_print(level >= LOG_ERROR ? ANDROID_LOG_ERROR : level >= LOG_WARNING ? ANDROID_LOG_WARN : ANDROID_LOG_INFO,
+                            "raylib", "%s: %s", name, line);
+#else
+        std::printf("%s: %s\n", name, line);
+#endif
         if (logFile)
         {
-            std::fprintf(logFile, "%s: ", name);
-            std::vfprintf(logFile, text, copy);
-            std::fprintf(logFile, "\n");
+            std::fprintf(logFile, "%s: %s\n", name, line);
             std::fflush(logFile);
         }
-        va_end(copy);
+        GameLog::Capture(level, line);
     }
 
     void OpenLog()
     {
+#if defined(_WIN32)
         const char* local = std::getenv("LOCALAPPDATA");
-        if (!local || !*local) return;
-        const std::string path = std::string(local) + "\\ZombieMongolia\\log.txt";
-        logFile = std::fopen(path.c_str(), "w");
-        SetTraceLogCallback(LogToFile);
+        if (local && *local)
+        {
+            const std::string path = std::string(local) + "\\ZombieMongolia\\log.txt";
+            logFile = std::fopen(path.c_str(), "w");
+        }
+#endif
+        SetTraceLogCallback(LogLine);
     }
 }
-#endif
 
 // Сонголтгүй ажиллуулбал ердийн тоглоом. Сонголтуудыг Game.h-ийн LaunchOptions-оос үз.
 int main(int argc, char** argv)
 {
-#if !defined(__ANDROID__)
     OpenLog();
-#endif
     LaunchOptions options;
     for (int i = 1; i < argc; ++i)
     {
@@ -281,5 +287,6 @@ int main(int argc, char** argv)
 
     Game game(options);
     game.Run();
+    GameLog::Shutdown(); // (хэвийн хаагдлаа: илгээгээгүй мөрийг хадгална)
     return 0;
 }

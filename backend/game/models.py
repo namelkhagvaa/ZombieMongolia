@@ -429,3 +429,33 @@ class Event(models.Model):
 
     def __str__(self):
         return f"{self.created:%Y-%m-%d %H:%M} {self.kind}"
+
+
+class GameLog(models.Model):
+    """Тоглолтын техникийн лог (алдаа оношлох): тоглоомын илгээсэн мөрүүд (тулаан, сүлжээ, алдаа) ба серверийн
+    алхмууд. Өрөө, тулааны дугаараар хост, зочин, сервер гурвын мөрийг нэг цагийн дарааллаар харна (game/gamelog.py).
+    14 хоногийн дараа устгагдана."""
+
+    HOST, GUEST, SERVER = "h", "g", "s"
+
+    player = models.ForeignKey(Player, verbose_name="Тоглогч", related_name="game_logs", null=True, blank=True,
+                               on_delete=models.SET_NULL)
+    room_id = models.IntegerField("Өрөө", null=True, blank=True, db_index=True)
+    battle = models.PositiveIntegerField("Тулаан", default=0)
+    role = models.CharField("Үүрэг", max_length=1, blank=True)  # h хост, g зочин, s сервер, "" өрөөгүй
+    source = models.CharField("Төхөөрөмж", max_length=8, blank=True)  # windows, android, web, server
+    build = models.CharField("Хувилбар", max_length=20, blank=True)
+    session = models.CharField("Ажиллуулалт", max_length=12, blank=True)
+    level = models.CharField("Түвшин", max_length=1, default="I")  # I, W (анхааруулга), E (алдаа)
+    step = models.CharField("Алхам", max_length=24, blank=True, db_index=True)  # давталтын алхам (STEP:)
+    text = models.CharField("Мөр", max_length=500)
+    at = models.DateTimeField("Цаг", db_index=True)  # тоглоомын цаг (серверийн цагт тааруулсан)
+    created = models.DateTimeField("Хүлээн авсан", auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = "Тоглолтын лог"
+        verbose_name_plural = "Тоглолтын лог"
+        ordering = ["at", "id"]
+
+    def __str__(self):
+        return f"{self.at:%Y-%m-%d %H:%M:%S} {self.role} {self.text[:60]}"

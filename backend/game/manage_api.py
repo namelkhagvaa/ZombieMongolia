@@ -19,7 +19,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
-from . import logic
+from . import gamelog, logic
 from .models import AuthToken, Cashout, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, UnlockedProvince
 
 TOKEN_SALT = "zm-manage"
@@ -588,6 +588,24 @@ def events(request):
         qs = qs.filter(Q(player__name__icontains=search) | Q(player__phone__icontains=search) | Q(device_id__icontains=search) |
                        Q(ip__icontains=search))
     return ok(**page_of(request, qs.order_by("-created", "-id"), event_row))
+
+
+@staff_api(["GET"])
+def game_logs(request):
+    """Тоглолтын лог: ?room=<дугаар> эсвэл ?player=<нэр/утас>, hours (анхдагч 6), steps=1 (зөвхөн алхмууд).
+    Хоосон бол сүүлийн бүх мөр. Мөрүүд ба хуулахад зориулсан нэгтгэсэн текст."""
+    room_text = request.GET.get("room", "").strip()
+    room = int(room_text) if room_text.isdigit() else None
+    player = gamelog.find_player(request.GET.get("player", ""))
+    if request.GET.get("player", "").strip() and not player:
+        raise ManageError("Тоглогч олдсонгүй", 404)
+    try:
+        hours = min(max(float(request.GET.get("hours", "6")), 0.1), 24.0 * gamelog.KEEP_DAYS)
+    except ValueError:
+        hours = 6.0
+    rows = gamelog.query(room=room, player=player, hours=hours, steps_only=request.GET.get("steps") == "1", limit=3000)
+    return ok(rows=[gamelog.row_json(row) for row in rows], text=gamelog.format_lines(rows),
+              player=player.name if player else None)
 
 
 @staff_api(["GET"])

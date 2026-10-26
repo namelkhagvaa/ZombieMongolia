@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button, Card, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { TableProps } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
@@ -41,7 +42,16 @@ export default function RoomsPage() {
     );
 
   const columns: TableProps<RoomRow>['columns'] = [
-    { title: '#', dataIndex: 'id', width: 70 },
+    {
+      title: '#',
+      dataIndex: 'id',
+      width: 70,
+      render: (value) => (
+        <Tooltip title="Тоглолтын лог">
+          <Link to={`/logs?room=${value}&hours=336`}>{value}</Link>
+        </Tooltip>
+      ),
+    },
     { title: 'Аймаг', dataIndex: 'province', render: (value) => provinceName(value) },
     {
       title: 'Төлөв',

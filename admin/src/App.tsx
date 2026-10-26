@@ -7,6 +7,7 @@ import {
   DashboardOutlined,
   FileTextOutlined,
   FireOutlined,
+  ProfileOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -26,6 +27,7 @@ import EventsPage from './pages/Events';
 import SettingsPage from './pages/Settings';
 import RoomsPage from './pages/Rooms';
 import CashoutsPage from './pages/Cashouts';
+import GameLogsPage from './pages/GameLogs';
 
 const { Sider, Header, Content } = Layout;
 const GOLD = '#f0b030';
@@ -46,6 +48,7 @@ const MENU = [
   { key: '/invoices', icon: <WalletOutlined />, label: 'Төлбөр' },
   { key: '/cashouts', icon: <BankOutlined />, label: 'Gold татах' },
   { key: '/rooms', icon: <FireOutlined />, label: 'Өрөө, тулаан' },
+  { key: '/logs', icon: <ProfileOutlined />, label: 'Тоглолтын лог' },
   { key: '/events', icon: <FileTextOutlined />, label: 'Үйлдлийн лог' },
   { key: '/settings', icon: <SettingOutlined />, label: 'Тохиргоо' },
 ];
@@ -140,6 +143,7 @@ function Shell({ user, onLogout, dark, setDark }: { user: StaffUser; onLogout: (
             <Route path="/cashouts" element={<CashoutsPage />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/rooms" element={<RoomsPage />} />
+            <Route path="/logs" element={<GameLogsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

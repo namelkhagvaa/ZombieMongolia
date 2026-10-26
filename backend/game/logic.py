@@ -17,7 +17,7 @@ from django.contrib.auth.hashers import make_password
 from django.db import transaction
 from django.utils import timezone
 
-from . import qpay, sms
+from . import gamelog, qpay, sms
 from .models import (AuthToken, Cashout, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, UnlockedProvince,
                      Verification)
 
@@ -449,6 +449,7 @@ def maybe_expire_rooms():
     _last_expire = now
     with transaction.atomic():
         expire_rooms()
+    gamelog.purge()
 
 
 def disputes_recent(player):
@@ -485,6 +486,8 @@ def start_province(player, device_id, province, ip, skin=0, protocol=0):
             room.host_stake = settings.room_stake
             room.save(update_fields=["host_stake"])
         log_event(locked, "province_start", {"province": province, "room": room.pk, "skin": skin}, device_id, ip)
+        gamelog.server(room, "room_opened", f"{locked.name} аймаг {province + 1} эхлүүлэв ({'тулаантай' if pvp else 'найзын кодоор'}, "
+                                            f"протокол {room.protocol})", locked)
     return room
 
 
@@ -546,6 +549,7 @@ def _close(room, reason):
     room.closed_reason = reason
     room.closed = timezone.now()
     room.save()
+    gamelog.server(room, "room_closed", f"өрөө хаагдав: {reason}")
 
 
 def _reset_battle(room):
@@ -558,6 +562,8 @@ def _reset_battle(room):
 def _drop_guest(room, refund=False):
     """Зочныг гаргаж барьцааг нь суллана. refund: тоглоомоор холбогдож чадаагүй (хувилбар зөрсөн, сүлжээ) тул орох
     төлбөрийг ч буцаана."""
+    if room.guest_id:
+        gamelog.server(room, "guest_removed", f"зочин {room.guest.name} өрөөнөөс гарав" + (" (төлбөр буцсан)" if refund else ""))
     if refund and room.guest_id and room.guest_fee:
         locked = Player.objects.select_for_update().get(pk=room.guest_id)
         change_gold(locked, room.guest_fee, GoldTransaction.ROOM_REFUND, f"refund:{room.pk}:{room.guest_id}:b{room.battle}",
@@ -643,6 +649,7 @@ def join_room(player, device_id, ip, protocol=0):
         _reset_battle(room)
         room.save()
         log_event(locked, "room_joined", {"room": room.pk, "province": room.province}, device_id, ip)
+        gamelog.server(room, "guest_joined", f"{locked.name} тулаанд орох эрх авав (хост {room.host.name})", locked)
     return room
 
 
@@ -682,6 +689,7 @@ def join_coop(player, device_id, code, ip, protocol=0):
         _reset_battle(room)
         room.save()
         log_event(locked, "coop_joined", {"room": room.pk, "province": room.province, "host": room.host_id}, device_id, ip)
+        gamelog.server(room, "guest_joined", f"{locked.name} найзын кодоор орох эрх авав (хост {room.host.name})", locked)
     return room
 
 
@@ -693,6 +701,7 @@ def accept_guest(player, room_id):
             raise GameError("not_host", "Зөвхөн хост", 403)
         if room.guest_id and not room.guest_confirmed:
             room.guest_confirmed = True
+            gamelog.server(room, "guest_arrived", f"хост: зочин {room.guest.name} тоглоомоор ирлээ (тулаан тоологдоно)")
             room.guest_soldiers_start = min(room.guest.soldiers, 32767)
             room.guest_soldiers_lost = 0
             room.save(update_fields=["guest_confirmed", "guest_soldiers_start", "guest_soldiers_lost"])
@@ -802,6 +811,8 @@ def _settle(room, winner_role, device_id, ip):
     take = paid and stake and (not loser.phone_verified or winner.phone_verified)
     give = paid and stake and loser.phone_verified and winner.phone_verified
     room.settle_info = {"winner": winner.pk, "stake": stake, "missed": bool(paid and stake and not winner.phone_verified)}
+    gamelog.server(room, "result", f"ШИЙДЭГДЭВ: ялагч {winner.name} ({'хост' if winner_role == 'host' else 'зочин'}), "
+                                   f"ялагдагч {loser.name}; Gold {'шилжив' if give else 'шатав' if take else 'шилжээгүй'} ({stake})")
     if take:
         amount = min(stake, loser.gold)
         # Ялагдагчийн урамшууллын Gold (эхлэлийн, шагнал) ялагчид урамшуулал хэвээр очно (татагдахгүй)
@@ -842,6 +853,8 @@ def _dispute(room, device_id, ip):
     counted = (room.host_report in ("host", "guest") and room.guest_report in ("host", "guest")
                and not room.host_absent and not room.guest_absent)
     kind = "battle_disputed" if counted else "battle_void"
+    gamelog.server(room, "void", f"ХҮЧИНГҮЙ ({'маргаан' if counted else 'тасарсан/шийдэгдээгүй'}): хост={room.host_report or '-'} "
+                                 f"зочин={room.guest_report or '-'}")
     log_event(room.host, kind, data, device_id, ip)
     if room.guest_id:
         log_event(room.guest, kind, data)
@@ -873,6 +886,8 @@ def report_battle(player, device_id, room_id, battle, winner, ip, absent=False):
             # Аль хэдийн шийдэгдсэн, энэ тоглогч өрөөнд байхгүй (ялагдсан эсвэл хүчингүй)
             raise GameError("battle_over", "Тулаан дууссан", 410)
         role = "host" if room.host_id == player.pk else "guest"
+        gamelog.server(room, "report", f"{'хост' if role == 'host' else 'зочин'} {player.name}: ялагч = {winner}"
+                                       + (" (нөгөө тал тасарсан)" if absent is True else ""), player)
         if role == "host" and not room.host_report:
             room.host_report = winner
             room.host_absent = absent is True
@@ -902,6 +917,7 @@ def leave_room(player, device_id, room_id, ip):
     AI тулалдуулж, үр дүнг хост мэдэгдэнэ. Тулаангүй үед хост гарвал ялагдал: барьцаа нь хэнд ч очихгүй шатна."""
     with transaction.atomic():
         room = _own_room(player, room_id)
+        gamelog.server(room, "left", f"{player.name} өрөөнөөс гарах хүсэлт ({'хост' if room.host_id == player.pk else 'зочин'})", player)
         if room.guest_id and room.guest_coop:
             # Хамт тоглолт: шийтгэлгүй. Зочин гарвал өрөө хэвээр, хост гарвал (барьцаатай бол шатаж) хаагдана.
             if room.guest_id == player.pk:

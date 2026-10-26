@@ -37,6 +37,7 @@ urlpatterns = [
     path("invoices/<int:invoice_id>/", views.invoice_status),
     path("qpay/callback/<int:invoice_id>/<str:key>/", views.qpay_callback),
     path("events/", views.events),
+    path("logs/", views.logs),
     path("progress/", views.progress),
     # Админ самбар (admin/: React)
     path("manage/login/", manage.login),
@@ -54,6 +55,7 @@ urlpatterns = [
     path("manage/events/", manage.events),
     path("manage/rooms/", manage.rooms),
     path("manage/events/kinds/", manage.event_kinds),
+    path("manage/logs/", manage.game_logs),
     path("manage/settings/", manage.settings_view),
     path("manage/cashouts/", manage.cashouts),
     path("manage/cashouts/<int:cashout_id>/paid/", manage.cashout_paid),

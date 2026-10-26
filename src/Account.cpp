@@ -1,4 +1,5 @@
 #include "Account.h"
+#include "GameLog.h"
 
 #include "Input.h"
 #include "Json.h"
@@ -502,7 +503,7 @@ namespace
     }
 
     // Өрөөний хүсэлт (гарах, дуусгах, дохио): цонхыг хаахгүй, даалгаврын үеэр ч (Tick) хариуг авна.
-    Pending roomRequest, roomBeat, roomStageCall, battleCall, roomSearchCall, soldierLossCall, guestLostCall;
+    Pending roomRequest, roomBeat, roomStageCall, battleCall, roomSearchCall, soldierLossCall, guestLostCall, logCall;
     int guestLostTotal = 0, guestLostBattle = 0; // хост: зочны алдсан Gold-ийн цэрэг (энэ тулаанд, нийт)
     bool guestLostDirty = false;
 
@@ -2032,6 +2033,24 @@ void Account::Tick()
     Finish(roomSearchCall);
     Finish(soldierLossCall);
     Finish(guestLostCall);
+    Finish(logCall);
+    // Тоглолтын лог: мөр бүрт одоогийн өрөө, тулаан, үүрэг; 30 секунд тутам (алхам, алдаа гарвал даруй) серверт
+    GameLog::SetRoom(roomId, roomBattle, roomRole == Account::RoomRole::Host ? 'h' : roomRole == Account::RoomRole::Guest ? 'g' : 0);
+    GameLog::Persist(GetTime());
+    if (signedIn && !token.empty() && logCall.id < 0 && GameLog::Ready(GetTime()))
+    {
+        int count = 0;
+        const std::string body = GameLog::TakeBatch(count);
+        if (count > 0)
+        {
+            logCall.id = Online::Send("POST", apiBase + "logs/", body, token);
+            logCall.handler = [count](int status, const Json&) {
+                // 400 (буруу), 429 (хэт олон): дахин илгээхгүй, хаяна
+                if (status == 200 || status == 400 || status == 429) GameLog::Sent(count);
+                else GameLog::Failed(GetTime());
+            };
+        }
+    }
     if (guestConfirmPending && roomBeat.id < 0 && GetTime() >= nextGuestConfirm)
     {
         if (roomId < 0 || roomRole != Account::RoomRole::Host) guestConfirmPending = false;

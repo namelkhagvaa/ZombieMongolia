@@ -909,6 +909,60 @@ class FlowTests(TestCase):
         self.post("login/", {"phone": "99112233", "password": "newpass1", "device_id": "device-aaaa-1111"})
 
 
+    def test_game_logs_merge_both_sides_and_the_server(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from .models import GameLog
+        host, guest, room_id = self.battle()
+        now_ms = int(timezone.now().timestamp() * 1000)
+        # Утасны цаг 1 цаг хоцорсон: сервер "now"-оор тааруулна
+        skew = 3600 * 1000
+        sent = self.post("logs/", {"now": now_ms - skew, "platform": "web", "build": "2026-10-26 21:28", "session": "ab12",
+                                   "entries": [{"t": now_ms - skew - 2000, "room": room_id, "battle": 1, "role": "g", "level": "I",
+                                                "text": "STEP: guest_joined namjilmaa"},
+                                               {"t": now_ms - skew - 1000, "room": room_id, "battle": 1, "role": "g", "level": "E",
+                                                "text": "NET: relay connection lost"},
+                                               {"text": ""}, "bad"]}, guest)
+        self.assertEqual(sent["stored"], 2)
+        self.post("logs/", {"now": now_ms, "platform": "windows", "entries": [
+            {"t": now_ms, "room": room_id, "battle": 1, "role": "h", "level": "I", "text": "STEP: result host team down, guest won"}]}, host)
+        step = GameLog.objects.get(step="guest_joined", role="g")
+        self.assertLess(abs((timezone.now() - step.at).total_seconds()), 10)  # цаг тааруулсан
+        self.assertEqual((step.source, step.build, step.role), ("web", "2026-10-26 21:28", "g"))
+        # Серверийн алхмууд: өрөө нээсэн, зочин орсон, ирсэн
+        steps = set(GameLog.objects.filter(role="s", room_id=room_id).values_list("step", flat=True))
+        self.assertTrue({"room_opened", "guest_joined", "guest_arrived"} <= steps)
+        for token in (host, guest):
+            self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "guest"}, token)
+        self.assertTrue(GameLog.objects.filter(room_id=room_id, step="result", text__contains="ШИЙДЭГДЭВ").exists())
+        out = StringIO()
+        call_command("game_log", room=room_id, stdout=out)
+        text = out.getvalue()
+        self.assertIn(f"== Өрөө {room_id} · аймаг", text)
+        self.assertIn("[тулаан 1]", text)
+        self.assertIn("✗ ЗОЧИН", text)
+        self.assertIn("NET: relay connection lost", text)
+        self.assertLess(text.index("STEP: guest_joined"), text.index("STEP: result"))  # цагийн дараалал
+        out = StringIO()
+        call_command("game_log", player="88112233", steps=True, stdout=out)
+        self.assertNotIn("relay connection lost", out.getvalue())  # зөвхөн алхмууд
+
+    def test_game_logs_are_limited(self):
+        host = self.register()["token"]
+        self.post("logs/", {"entries": [{"text": "x"}] * 201}, host, status=400)
+        from . import gamelog
+        old = gamelog.MAX_PER_MINUTE
+        gamelog.MAX_PER_MINUTE = 3
+        try:
+            self.post("logs/", {"entries": [{"text": "a"}, {"text": "b"}]}, host)
+            self.assertEqual(self.post("logs/", {"entries": [{"text": "c"}, {"text": "d"}]}, host, status=429)["error"],
+                             "too_many_logs")
+        finally:
+            gamelog.MAX_PER_MINUTE = old
+
+
 @override_settings(DEBUG=True, QPAY_MODE="mock", SMS_MODE="console")
 class ManageApiTests(FlowTests.__base__):
     """Админ самбарын API (/api/manage/): staff нэвтрэлт, тоглогч засах, тохиргоо."""
@@ -1010,3 +1064,15 @@ class ManageApiTests(FlowTests.__base__):
         self.call("post", f"invoices/{invoice.pk}/mark-paid/", {}, token=token)
         self.player.refresh_from_db()
         self.assertEqual(self.player.credits, 3)
+
+    def test_game_logs_page(self):
+        from .models import GameLog
+        token = self.login()
+        GameLog.objects.create(player=self.player, room_id=7, battle=1, role="h", source="web", text="STEP: host_start",
+                               step="host_start", at=timezone.now())
+        result = self.call("get", "logs/?room=7", token=token)
+        self.assertEqual(len(result["rows"]), 1)
+        self.assertIn("STEP: host_start", result["text"])
+        self.assertEqual(self.call("get", "logs/?player=Бат", token=token)["player"], "Бат")
+        self.call("get", "logs/?player=байхгүй", token=token, status=404)
+        self.call("get", "logs/", status=401)

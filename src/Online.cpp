@@ -128,6 +128,13 @@ std::string Online::Load(const char* key)
 
 void Online::Store(const char* key, const std::string& value) { JsStore(key, value.c_str()); }
 
+std::string Online::LoadLong(const char* key)
+{
+    std::vector<char> buffer(65536, 0);
+    JsLoad(key, buffer.data(), (int)buffer.size());
+    return buffer.data();
+}
+
 std::string Online::DeviceId()
 {
     std::string id = Load("zm_device"); // хуучин вэб хувилбарын хадгалсан ID-тай нийцнэ
@@ -214,6 +221,8 @@ std::string Online::Load(const char* key)
     std::getline(file, value);
     return value;
 }
+
+std::string Online::LoadLong(const char* key) { return Load(key); } // (файлын нэг мөр: урт хязгааргүй)
 
 void Online::Store(const char* key, const std::string& value)
 {

@@ -8,6 +8,7 @@
 #include "Account.h"
 #include "Audio.h"
 #include "BuildStamp.h"
+#include "GameLog.h"
 #include "Platform.h"
 #include "Input.h"
 
@@ -223,6 +224,7 @@ Game::Game(const LaunchOptions& launchOptions)
     mapScreen.Preload(); // дэвсгэр зураг, аймгуудын дүрс: эхний кадрыг гацаахгүй
     // Данс (нэвтрэх, аймгийн эрх, төлбөр): туршилтын горимд идэвхгүй (--api заасан бол идэвхтэй)
     Account::Init(!options.screenshotPath || options.apiBase, options.apiBase ? options.apiBase : "");
+    GameLog::Init(!options.screenshotPath || options.apiBase); // (туршилт: локал сервертэй үед л)
     Splash::Finish();
 }
 
@@ -921,6 +923,11 @@ void Game::RenderPortraits() const
 
 void Game::ReturnToMap()
 {
+    if (state != GameState::Map)
+    {
+        TraceLog(LOG_INFO, "STEP: left_to_map (%s, %s, battle %d)", coopGuest ? "guest" : remoteActive ? "host with a guest" : "host",
+                 state == GameState::Won ? "won" : state == GameState::Lost ? "lost" : "playing", (int)battleActive);
+    }
     battleActive = hostGone = takeoverBattle = autopilot = autoFire = false;
     idleTimer = 0.0f;
     if (Account::CurrentRoomRole() != Account::RoomRole::None) Account::LeaveRoom();
@@ -1082,6 +1089,11 @@ void Game::StartMission(int index, StageSave* stageOverride)
 
     LockCursor(); // хулганыг цонхонд түгжиж, камерт ашиглана
     state = GameState::Playing;
+    if (Account::CurrentRoomRole() == Account::RoomRole::Host && !stageOverride)
+    {
+        TraceLog(LOG_INFO, "STEP: host_start province %d (%s), room code %s", index + 1,
+                 Account::RoomPvp() ? "open for battles" : "friends only", Account::RoomCode().c_str());
+    }
 }
 
 void Game::ResetSquad(int recruits)
@@ -3599,6 +3611,7 @@ void Game::UpdateAirstrike(float dt)
         airstrike.Stop();
         Save();
         if (Account::CurrentRoomRole() == Account::RoomRole::Host) Account::CompleteRoom(); // шагнал, өрөө хаагдана
+        TraceLog(LOG_INFO, "STEP: stage_complete province %d", provinceIndex + 1);
         if (net.Connected() && remoteActive) net.SendMissionWon(params.reward);
         if (remoteActive && joinCoop && Account::Enabled()) SetNotice(TextFormat("ХАМТ ДАВЛАА! Хоёулаа +%d Gold", Account::CoopReward()), 5.0f);
         state = GameState::Won;
@@ -4952,6 +4965,8 @@ void Game::StartCoopGuest(int province)
     battleActive = (Account::CurrentRoomRole() == Account::RoomRole::Guest && !Account::RoomCoop()) || options.battleTest;
     hostGone = false;
     if (battleActive) TraceLog(LOG_INFO, "BATTLE: joined as guest");
+    TraceLog(LOG_INFO, "STEP: guest_joined province %d, host %s (%s)", province + 1, hostName.c_str(),
+             battleActive ? "battle" : "co-op");
     SetNotice(battleActive ? "ТУЛААН! Хостын үндсэн 3 дайчныг ал"
               : Account::RoomCoop() ? TextFormat("ХАМТ ТОГЛОЛТ: үеийг хамт давбал хоёулаа %d Gold", Account::CoopReward())
                                     : "ХАМТАРСАН ТОГЛОЛТ ЭХЭЛЛЭЭ", 3.5f);
@@ -5088,6 +5103,7 @@ void Game::UpdateNetwork(float dt)
             {
                 TraceLog(LOG_INFO, "COOP: first state from the guest (battle %d, guest team %d)", (int)battleActive,
                          (int)squad.HasGuestMembers());
+                TraceLog(LOG_INFO, "STEP: guest_arrived %s%s", joinRequester.c_str(), guestRejoined ? " (rejoined)" : "");
                 // Сервер: зочин тоглоомоор холбогдож ертөнцөд ирлээ (тулаан тоологдоно; хариунд зочны цэрэг, амь)
                 if (Account::CurrentRoomRole() == Account::RoomRole::Host) Account::ConfirmGuest();
             }
@@ -5191,7 +5207,8 @@ void Game::UpdateNetwork(float dt)
             // Зочин: энэ төхөөрөмж хэт удаан ачаалсан тул хост хүлээхээ болив (сервер төлбөрийг буцаана)
             if (coopGuest)
             {
-                TraceLog(LOG_INFO, "COOP: the host stopped waiting for this guest");
+                TraceLog(LOG_WARNING, "COOP: the host stopped waiting for this guest");
+                TraceLog(LOG_INFO, "STEP: guest_kicked (loading took too long)");
                 LeaveCoop();
                 coopStatus = "Ачаалал хэт удаан байсан тул хост хүлээхээ болив. Орох төлбөр буцна";
                 if (state == GameState::Playing || state == GameState::Airstrike) ReturnToMap();
@@ -5389,6 +5406,7 @@ void Game::UpdateNetwork(float dt)
                 // (2: тэнцээ: хоёр баг зэрэг унасан — өөрийн дэлгэц дээр ч тэгвэл серверт "шийдэгдээгүй")
                 const bool won = event.id == 1, draw = event.id == 2;
                 TraceLog(LOG_INFO, "BATTLE: host says guest %s", draw ? "drew" : won ? "won" : "lost");
+                TraceLog(LOG_INFO, "STEP: result host says guest %s", draw ? "drew" : won ? "won" : "lost");
                 verdictPending = true;
                 verdictHostSaysGuest = won;
                 verdictTimer = 0.0f;
@@ -5440,6 +5458,7 @@ void Game::UpdateNetwork(float dt)
             else if (remoteActive || joinRequestPending)
             {
                 if (battleActive) guestWasAbsent = true; // (үр дүнг "зочин тасарсан" гэж мэдэгдэнэ)
+                TraceLog(LOG_INFO, "STEP: opponent_left guest %s is gone (battle %d)", joinRequester.c_str(), (int)battleActive);
                 if (battleActive && guestFigure.alive)
                 {
                     // Тулааны үеэр зочин гарсан (тасарсан): түүний дүр 1 минут хөдлөхгүй, дараа нь AI тулалдана
@@ -5813,6 +5832,7 @@ void Game::TakeOverBattle()
     takeoverTimer = 300.0f;
     takeoverCooldown = 3.0f;
     TraceLog(LOG_INFO, "BATTLE: host left, guest took over (%d enemies, %d allies)", (int)enemies.size(), (int)allies.size());
+    TraceLog(LOG_INFO, "STEP: opponent_left the host is gone, this guest keeps fighting the host's AI");
     SetNotice("Хост тасарлаа — түүний багийг AI удирдана. Тулааныг үргэлжлүүл!", 5.0f);
 }
 
@@ -5867,6 +5887,8 @@ void Game::MigrateToHost()
     }
     Save();
     SetNotice("ТУЛААНД ЯЛЛАА! Та одоо энэ өрөөний хост — даалгаврыг үргэлжлүүлнэ", 5.0f);
+    TraceLog(LOG_INFO, "STEP: winner_continues as the new host, province %d, stage loaded %d, %d recruits", province + 1,
+             (int)hasStage, recruits);
 }
 
 void Game::UpdateBattle(float dt)
@@ -5888,6 +5910,12 @@ void Game::UpdateBattle(float dt)
 
     // Серверийн шийдвэр
     const Account::BattleResult result = Account::TakeBattleResult();
+    if (result == Account::BattleResult::Won || result == Account::BattleResult::Lost || result == Account::BattleResult::Void)
+    {
+        TraceLog(LOG_INFO, "STEP: server_result %s (this player was the %s)",
+                 result == Account::BattleResult::Won ? "won" : result == Account::BattleResult::Lost ? "lost" : "void",
+                 coopGuest ? "guest" : "host");
+    }
     if (result == Account::BattleResult::Won && coopGuest && Account::CurrentRoomRole() == Account::RoomRole::Host)
     {
         MigrateToHost();
@@ -5966,6 +5994,7 @@ void Game::UpdateBattle(float dt)
         if (battleWaitTimer > 150.0f && !remoteActive)
         {
             TraceLog(LOG_INFO, "BATTLE: guest never arrived, sent away");
+            TraceLog(LOG_INFO, "STEP: guest_kicked %s did not arrive in 150 s", joinRequester.c_str());
             net.SendGuestKick();
             battleActive = false;
             battleWaitTimer = 0.0f;
@@ -5998,6 +6027,7 @@ void Game::UpdateBattle(float dt)
         if (remoteActive) net.SendBattleOver(0);
         Account::ReportBattle(false, !remoteActive || guestWasAbsent);
         TraceLog(LOG_INFO, "BATTLE: host won");
+        TraceLog(LOG_INFO, "STEP: result host won, the host continues%s", guestWasAbsent || !remoteActive ? " (guest was gone)" : "");
         WinBattleAsHost();
     }
     else if (hostStanding == 0 && guestStanding > 0)
@@ -6007,6 +6037,7 @@ void Game::UpdateBattle(float dt)
     else if (battleDrawTimer > 3.0f)
     {
         TraceLog(LOG_INFO, "BATTLE: both teams down, draw");
+        TraceLog(LOG_INFO, "STEP: result draw");
         if (remoteActive) net.SendBattleOver(2);
         Account::ReportBattleUndecided();
         battleActive = false;
@@ -6049,6 +6080,7 @@ void Game::LoseBattleAsHost()
     // relay-ийн хост байраа хэдэн секундын дараа (BattleOver зочинд хүрсний дараа) суллана: эс бөгөөс шинэ хосттой
     // байраа булаалдана.
     TraceLog(LOG_INFO, "BATTLE: host team down, guest won");
+    TraceLog(LOG_INFO, "STEP: result host team down, guest won (connected %d)", (int)net.Connected());
     // Эцсийн байдал (манай баг унасан) зочинд: эс бөгөөс түүний сүүлийн snapshot-д манай дайчин зогсож байгаа тул
     // зочны шалгалт (GuestViewVerdict) "шийдэгдээгүй" гэж үзэж тулаан хүчингүй болно. Lost-д ч 3 с илгээсээр байна.
     coopSendTimer = 0.0f;
@@ -6089,6 +6121,7 @@ void Game::AcceptGuest()
     if ((Account::CurrentRoomRole() == Account::RoomRole::Host && !joinCoop) || options.battleTest)
     {
         TraceLog(LOG_INFO, "BATTLE: guest %s joined, battle started", joinRequester.c_str());
+        TraceLog(LOG_INFO, "STEP: battle_start vs %s", joinRequester.c_str());
         battleActive = true;
         guestTeamSpawned = squad.HasGuestMembers(); // (дахин холбогдсон зочин: баг нь байгаа)
         battleWaitTimer = 0.0f;
@@ -6178,14 +6211,16 @@ void Game::UpdateCoopMission(float dt)
         const int verdict = GuestViewVerdict();
         if (verdict >= 0)
         {
-            if ((verdict == 1) != verdictHostSaysGuest) TraceLog(LOG_INFO, "BATTLE: host's result differs from what this guest sees");
+            if ((verdict == 1) != verdictHostSaysGuest) TraceLog(LOG_WARNING, "BATTLE: host's result differs from what this guest sees");
+            TraceLog(LOG_INFO, "STEP: guest_report guest %s", verdict == 1 ? "won" : "lost");
             Account::ReportBattle(verdict == 1);
             verdictPending = false;
         }
         else if (verdictTimer > 4.0f)
         {
             // Энд хоёр баг амьд байсаар: хостын мэдэгдэлд итгэхгүй (сервер хүчингүй болгоно)
-            TraceLog(LOG_INFO, "BATTLE: undecided on this guest, reporting no winner");
+            TraceLog(LOG_WARNING, "BATTLE: undecided on this guest, reporting no winner");
+            TraceLog(LOG_INFO, "STEP: guest_report undecided (both teams still standing here)");
             Account::ReportBattleUndecided();
             verdictPending = false;
         }

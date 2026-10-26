@@ -23,6 +23,8 @@ namespace Online
     // Жижиг утга хадгалах (нэвтрэх токен): хөтөч localStorage, бусад нь файл.
     std::string Load(const char* key);
     void Store(const char* key, const std::string& value); // хоосон бол устгана
+    // Урт (нэг мөр, 64 KB хүртэл) утга: тоглолтын лог (GameLog). Хөтөч дээр Load 512 байтаар хязгаарлагддаг.
+    std::string LoadLong(const char* key);
 
     // API-ийн анхдагч хаяг: https://zombie-api.apps.mn/api/ (хөтөч дээр өөрийн компьютерээс нээвэл
     // http://localhost:8010/api/, ?api=... параметрээр солино).
