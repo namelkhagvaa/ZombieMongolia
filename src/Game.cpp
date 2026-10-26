@@ -5861,44 +5861,89 @@ void Game::WinBattleAsHost()
 
 void Game::MigrateToHost()
 {
-    // Зочин ялав: өрөөний ахиц, өмнөх хостын цэргүүдийг аваад энэ төхөөрөмж хост болж үргэлжлүүлнэ
-    // (өөрийн баг, тоглолтын зоос, нөөц сум хэвээр; үхсэн дайчид сэргэнэ).
+    // Зочин ялав: энэ төхөөрөмжийн ертөнц (тулалдсан газар, зомби, унаа, хаалга, цаг агаар) тэр чигээрээ үргэлжилнэ:
+    // аймгийг дахин ачаалахгүй. Хост тооцдог байсан зүйлсийг энд шилжүүлнэ: даалгаврын ахиц (хостын StageSync), зомбины
+    // AI, өөрийн баг (сүүлийн snapshot-ын байрлалд; унасан, үхсэн нь сэргэнэ: хост ялах үеийнхтэй ижил), ялагдсан хостын
+    // амьд элсүүлсэн цэргүүд (сервер ч тэднийг ялагчид өгдөг).
     const int province = Account::RoomProvince();
-    if (province < 0 || province >= (int)progress.stages.size())
+    if (province < 0 || province >= (int)progress.stages.size() || province != provinceIndex)
     {
         ReturnToMap();
         return;
     }
-    StageSave stage;
-    const bool hasStage = ParseStageText(Account::RoomStage(), stage);
-    const int coins = progress.coins, ammo = ammoReserve, recruits = Account::RoomRecruits();
-    const Vector3 battlePosition = player.Position(); // ялсан газар: аймгийн эхлэх цэгээс биш эндээс үргэлжлүүлнэ
-    const float battleFacing = player.Facing();
-    LeaveCoop(); // (CurrentRoomRole нь Host болсон тул өрөөнөөс гарахгүй)
-    if (hasStage) progress.stages[(size_t)province] = stage;
-    StartMission(province);
-    progress.coins = coins;
-    ammoReserve = ammo;
-    if (world.InsideBoundary(battlePosition.x, battlePosition.z))
+    struct Body
     {
-        // (ертөнц ижил үүрээр дахин үүссэн тул байрлал хүчинтэй: давхарт байсан бол давхартаа)
-        player.Assume(battlePosition, battleFacing, player.Health(), player.MaxHealth());
-        camera.Snap(battlePosition);
-        world.Stream(battlePosition, true);
-        ResetSquad(progress.soldiers); // багийнхан шинэ байрлалын дэргэд
+        int member;
+        Vector3 position;
+        float facing, health;
+        bool standing, guest;
+    };
+    std::vector<Body> team, recruits;
+    for (const Net::SoldierState& s : guestView.soldiers)
+    {
+        if (s.alive == 0) continue;
+        const Body body = { s.member, s.position, s.facing, s.health, s.alive == 1, s.guest != 0 };
+        if (s.member >= 0)
+        {
+            if (s.guest) team.push_back(body);
+        }
+        else if (s.alive == 1)
+        {
+            recruits.push_back(body); // өөрийн (Gold-ийн, элсүүлсэн) ба ялагдсан хостын цэргүүд
+        }
     }
-    for (int i = 0; i < recruits; ++i)
+    const float zombieSpeed = guestView.zombieSpeed;
+
+    LeaveCoop(); // (CurrentRoomRole нь Host болсон тул өрөөнөөс гарахгүй; зомби хүүхэлдэй биш болно)
+    for (int i = 0; i < garage.Count(); ++i) garage.ClearRemote(i); // хостын хөдөлгөдөг байсан унаа: энгийн, зогсоол
+    hostFigure = RemoteFigure{};
+    hostSoldiers.clear();
+    hostSoldierSide.clear();
+    guestView = Net::Snapshot{};
+    battleActive = hostGone = takeoverBattle = verdictPending = false;
+    horde.SetSpeedMultiplier(std::max(1.0f, zombieSpeed)); // (хостынхтой ижил: "хурдсалаа" гэж дахин мэдэгдэхгүй)
+
+    // Даалгаврын ахиц: хостоос авсан (guestStage) энэ тоглогчийн хадгалалт болно
+    progress.stages[(size_t)province] = guestStage;
+    mission.BindSave(progress.stages[(size_t)province]);
+
+    // Өөрийн баг: тулалдаж байсан байрлалдаа, бүгд амьд
+    if (!player.IsAlive() || player.IsDowned())
     {
-        const float angle = (float)i * 1.1f;
-        Vector3 spot = { player.Position().x + std::sin(angle) * 3.0f, 0.0f, player.Position().z + std::cos(angle) * 3.0f };
-        world.ResolveHorizontal(spot, 0.4f, 1.8f, 0.0f);
-        spot.y = world.GroundHeight(spot.x, spot.z);
-        squad.Add(spot, angle);
+        player.Assume(player.Position(), player.Facing(), player.MaxHealth(), player.MaxHealth());
+    }
+    squad.Reset(0, player.Position(), world);
+    teamVehicle = -1;
+    garage.SetEscort(-1);
+    for (int member = 0; member < kTeamSize; ++member)
+    {
+        if (member == activeMember) continue;
+        const auto body = std::find_if(team.begin(), team.end(), [&](const Body& b) { return b.member == member; });
+        Vector3 position = body != team.end() ? body->position
+                                              : Vector3{ player.Position().x + (member == kSniperMember ? 3.5f : -3.5f),
+                                                         player.Position().y, player.Position().z - 3.0f };
+        if (body == team.end())
+        {
+            world.ResolveHorizontal(position, config.playerRadius, config.playerHeight, 0.0f);
+            position.y = world.GroundHeight(position.x, position.z);
+        }
+        squad.AddMember(member, position, body != team.end() ? body->facing : player.Facing(), player.MaxHealth(), player.MaxHealth());
+        Soldier& soldier = squad.All().back();
+        if (body != team.end() && body->standing) soldier.health = std::clamp(body->health, 1.0f, soldier.maxHealth);
+    }
+    // Цэргүүд: эхний progress.soldiers нь Gold-оор авсан (үхвэл серверээс хасагдана), бусад нь элсүүлсэн
+    int bought = 0;
+    for (const Body& recruit : recruits)
+    {
+        squad.Add(recruit.position, recruit.facing);
+        Soldier& soldier = squad.All().back();
+        soldier.bought = recruit.guest && bought < progress.soldiers;
+        bought += soldier.bought ? 1 : 0;
     }
     Save();
-    SetNotice("ТУЛААНД ЯЛЛАА! Та одоо энэ өрөөний хост — даалгаврыг үргэлжлүүлнэ", 5.0f);
-    TraceLog(LOG_INFO, "STEP: winner_continues as the new host, province %d, stage loaded %d, %d recruits, at (%.0f, %.0f)",
-             province + 1, (int)hasStage, recruits, player.Position().x, player.Position().z);
+    SetNotice("ТУЛААНД ЯЛЛАА! Та одоо энэ өрөөний хост — даалгаврыг эндээс үргэлжлүүлнэ", 5.0f);
+    TraceLog(LOG_INFO, "STEP: winner_continues as the new host in place, province %d, %d team bodies, %d recruits, at (%.0f, %.0f)",
+             province + 1, (int)team.size(), (int)recruits.size(), player.Position().x, player.Position().z);
 }
 
 void Game::UpdateBattle(float dt)

@@ -51,6 +51,8 @@ public:
     // Зочин: хостын (өрөөний) ахицыг авна: биелсэн даалгавар, аврагдсан хүн, дараагийн идэвхтэй даалгавар
     // (журнал, газрын зургийн тэмдэглэгээ хосттой ижил).
     void SyncFrom(const StageSave& host);
+    // Ахицыг өөр хадгалалтад бичнэ (зочин ялж хост болоход: өрөөний ахиц тоглогчийн өөрийн хадгалалт болно)
+    void BindSave(StageSave& stageSave) { save = &stageSave; }
 
     // interactPressed: E товч дарагдсан эсэх. onFoot: тоглогч явган (унаанаас харилцаж болохгүй).
     void Update(float dt, World& world, Player& player, ZombieHorde& horde, SoldierSquad& squad, bool interactPressed,
