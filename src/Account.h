@@ -122,6 +122,8 @@ namespace Account
     // Нэг удаа: шийдэгдсэн үр дүн (Won/Lost: энэ тоглогч; Void: зөрсөн эсвэл өрөө хаагдсан). Ялсан зочин бол
     // CurrentRoomRole() нь Host болсон байна (RoomTicket, RoomStage, RoomRecruits).
     BattleResult TakeBattleResult();
+    // Тулааны үр дүнг мэдэгдсэн, сервер шийдээгүй байна (Pending)
+    bool BattlePending();
 
     // Туршилт: дараагийн Update-д цонхны үндсэн товчийг (Enter) дарсан мэт.
     void TestEnter();

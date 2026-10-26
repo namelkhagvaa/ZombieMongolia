@@ -934,6 +934,7 @@ void Game::ReturnToMap()
     progress.coins = 0; // тоглолтын зоос тоглолт дуусахад алга болно
     if (coopGuest) LeaveCoop();
     else if (net.GetRole() == Net::Role::Host) { net.Stop(); remoteActive = false; joinRequestPending = false; }
+    netStopTimer = -1.0f; // (ялагдсан хостын хойшлуулсан зогсоолт: газрын зураг дээр шинэ тулаан хайх холболтыг таслахгүй)
     Save();
     horde.Clear();
     tracers.Clear();
@@ -5025,7 +5026,7 @@ void Game::UpdateNetwork(float dt)
         }
     }
 
-    if (netStopTimer > 0.0f)
+    if (netStopTimer > 0.0f && state != GameState::Map)
     {
         // Тулаанд ялагдсан хост: BattleOver зочинд хүрсний дараа relay-ийн өрөөг шинэ хостод үлдээнэ
         netStopTimer -= dt;
@@ -5057,8 +5058,16 @@ void Game::UpdateNetwork(float dt)
                 net.AnswerJoin(false, provinceIndex);
                 SetNotice(event.text + ": тоглоомын хувилбар өөр — хоёулаа шинэчилнэ үү", 3.5f);
             }
-            else if (state == GameState::Playing && !coopGuest && !remoteActive)
+            else if (state == GameState::Playing && !coopGuest && (!remoteActive || guestDefeated))
             {
+                // (ялагдсан зочин гарч амжаагүй байхад, эсвэл тэр өөрөө шууд дахин нэгдэж байна: relay үүнийг сүлжээний
+                // дахин холболт гэж үзэж болно, гэвч энэ бол шинэ тулаан)
+                if (remoteActive)
+                {
+                    remoteActive = false;
+                    guestFigure = RemoteFigure{};
+                    horde.SetRemoteTarget(false, {});
+                }
                 joinRequestPending = true;
                 joinRequester = event.text;
                 joinCoop = event.coop;
@@ -5448,6 +5457,14 @@ void Game::UpdateNetwork(float dt)
             {
                 // Тулааны үеэр хост гарсан (тасарсан): энэ төхөөрөмж ертөнцийг үргэлжлүүлж хостын багийг AI тулалдуулна
                 TakeOverBattle();
+            }
+            else if (coopGuest && (verdictPending || Account::BattlePending()))
+            {
+                // Тулаан дууссан, сервер үр дүнг шийдэж байна (ялагдсан хост гарлаа): хүлээнэ. Ялсан бол эндээс хост
+                // болж үргэлжлүүлнэ (MigrateToHost), ялагдсан, хүчингүй бол UpdateBattle газрын зураг руу буцаана.
+                TraceLog(LOG_INFO, "COOP: the host left after the battle, waiting for the server result");
+                hostGone = true;
+                SetNotice("Тулаан дууслаа — үр дүнг баталгаажуулж байна...", 4.0f);
             }
             else if (coopGuest)
             {
@@ -5856,6 +5873,7 @@ void Game::WinBattleAsHost()
     }
     squad.RemoveGuestTeam();
     guestTeamSpawned = true; // ялагдсан зочин гартал (UpdateCoopMission) дахин үүсгэхгүй
+    guestDefeated = true;
     SetNotice("ТУЛААНД ЯЛЛАА! Дайсны баг бүгд унав — дайчид тань сэргэлээ", 4.0f);
 }
 
@@ -5991,6 +6009,14 @@ void Game::UpdateBattle(float dt)
     else if (result == Account::BattleResult::Void)
     {
         SetNotice("Тулааны үр дүн зөрсөн тул хүчингүй боллоо", 4.0f);
+    }
+    if (coopGuest && hostGone && !verdictPending && !Account::BattlePending())
+    {
+        // Хост гарсны дараа хүлээх зүйлгүй боллоо (сервергүй тоглолт г.м.)
+        LeaveCoop();
+        ReturnToMap();
+        coopStatus = "Хост тоглолтоос гарлаа";
+        return;
     }
 
     if (!battleActive)
@@ -6162,6 +6188,7 @@ void Game::AcceptGuest()
     guestBlastTokens = 3.0f;
     guestSetup = PendingGuestSetup{};
     guestWasAbsent = false;
+    guestDefeated = false;
     battleDrawTimer = 0.0f;
     netStopTimer = -1.0f;
     guestBoughtLost = 0;

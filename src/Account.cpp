@@ -2649,6 +2649,8 @@ void Account::ReportBattle(bool guestWon, bool opponentAbsent)
     battleResult = BattleResult::Pending;
 }
 
+bool Account::BattlePending() { return battleResult == BattleResult::Pending; }
+
 Account::BattleResult Account::TakeBattleResult()
 {
     if (battleResult == BattleResult::Pending || battleResult == BattleResult::None) return battleResult;

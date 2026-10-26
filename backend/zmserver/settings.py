@@ -96,10 +96,20 @@ if env("DB_ENGINE", "sqlite") == "mysql":
         }
     }
 else:
+    # SQLite: олон хүсэлт зэрэг бичихэд (тулаан, лог) "database is locked" өгөхгүй: бичигч 20 секунд хүртэл дараалан
+    # хүлээнэ. WAL: уншигч бичигчийг саатуулахгүй. IMMEDIATE (Django 5.1+): гүйлгээ эхлэхдээ бичих түгжээ авна (уншаад
+    # дараа нь бичих гэж түгжээ дээшлүүлэхэд хүлээлгүй шууд алдаа өгдөг байсан). Хуучин Django-д WAL-ийг game/apps.py.
+    import django
+
+    sqlite_options = {"timeout": 20}
+    if django.VERSION >= (5, 1):
+        sqlite_options.update(transaction_mode="IMMEDIATE",
+                              init_command="PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=20000;")
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / env("SQLITE_PATH", "db.sqlite3"),
+            "OPTIONS": sqlite_options,
         }
     }
 

@@ -583,6 +583,20 @@ class FlowTests(TestCase):
         self.assertEqual(self.post("rooms/join/", {"protocol": 13}, guest, status=403)["error"], "disputes")
         self.assertFalse(self.post("provinces/start/", {"province": 3, "protocol": 13}, guest)["room"]["pvp"])
 
+    def test_winning_host_polling_late_keeps_the_room(self):
+        # Хост ялав; ялагдсан зочин шууд дахин нэгдэв (тулаан 2). Хостын тулаан 1-ийн хожуу асуулт: ялсан, өрөө хэвээр
+        host, guest, room_id = self.battle()
+        self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, host)
+        self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, guest)
+        self.post("rooms/join/", {"protocol": 13}, guest)
+        self.assertEqual(Room.objects.get(pk=room_id).battle, 2)
+        late = self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, host)
+        self.assertEqual((late["settled"], late["result"]), (True, "won"))
+        self.assertEqual(late["room"]["battle"], 2)
+        # Ялагдсан (өрөөнд хост биш) тоглогч хуучин тулааныг асуувал: дууссан
+        self.assertEqual(self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, guest, status=410)["error"],
+                         "battle_over")
+
     def test_disconnect_conflicts_are_not_disputes(self):
         # Сүлжээ тасарч хоёр тал хоёулаа нөгөөгийнхөө багийг AI-аар тулалдуулж ялсан: хүчингүй, маргаанд тоологдохгүй
         host, guest, room_id = self.battle()

@@ -870,6 +870,11 @@ def report_battle(player, device_id, room_id, battle, winner, ip, absent=False):
         raise GameError("bad_result", "Буруу хүсэлт")
     with transaction.atomic():
         room = Room.objects.select_for_update().filter(pk=room_id).first() if isinstance(room_id, int) else None
+        if room is not None and room.battle > battle and room.status == Room.OPEN and room.host_id == player.pk:
+            # Энэ тулаан аль хэдийн шийдэгдэж, дараагийн зочин орсон (ялагдсан зочин шууд дахин нэгдсэн ч байж болно):
+            # тоглогч хост хэвээр = ялсан (эсвэл хүчингүй). "Дууссан" (410) гэвэл тоглоом ялагдсан гэж өрөөгөө орхиж,
+            # шинэ зочин холбогдож чаддаггүй байв.
+            return True, None, room
         if room is None or room.battle != battle:
             raise GameError("battle_over", "Тулаан дууссан", 410)
         if room.guest_coop:
