@@ -770,10 +770,10 @@ Layout MakeCityLayout(const CityData& data)
         });
     }
 
-    // Гол, горхи: тэнхлэгээс холдох тусам гүехэн
+    // Гол, горхи: тэнхлэгээс холдох тусам гүехэн (хашаа, хана, төмөр зам ус биш)
     for (const CityLine& line : data.lines)
     {
-        if (line.kind == CityLineKind::Railway) continue;
+        if (line.kind != CityLineKind::River && line.kind != CityLineKind::Stream) continue;
         const float half = line.halfWidth + 3.0f; // эрэг налуу
         for (size_t i = 0; i + 1 < line.points.size(); ++i)
         {

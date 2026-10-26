@@ -73,6 +73,7 @@ struct Soldier
     bool waitingRescue = false; // гэнэтийн үйл явдал: аврагдахыг хүлээж буй хүн (holdPoint дээрээ зогсож буудна)
     // Унасан (багийн гишүүн): амь дууссан ч Player::kDownTime секунд босгохыг хүлээнэ. reviveProgress: босгож буй хугацаа.
     bool downed = false;
+    bool swimming = false;   // гүн усанд сэлж буй: гадаргуу дээр хэвтээ, буудахгүй
     float downTimer = 0.0f;
     float reviveProgress = 0.0f;
     int reviveTarget = -2; // энэ гишүүний босгохоор очиж буй: squad индекс, -1 хостын тоглогч, -3 зочин, -2 = үгүй

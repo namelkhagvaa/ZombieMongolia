@@ -99,6 +99,8 @@ public:
     // Шат, цонх зэрэг гарцыг туулж эхэлнэ: дуустал удирдлага түр зогсоно.
     void StartTraverse(const Passage& passage);
     bool IsTraversing() const { return traversing; }
+    // Бүсэлхийнээс гүн усанд сэлж буй: хэвтээ хөвнө, буу барихгүй, буудахгүй
+    bool IsSwimming() const { return swimming; }
     // Давж буй замын зүг: камер үүний ард байрлана (2 давхраас буухад гадна талаас цонх руу харна).
     float TraverseFacing() const { return traverse.facing; }
 
@@ -158,6 +160,7 @@ private:
     float pronePose = 0.0f;    // 0 = босоо .. 1 = хэвтсэн
     float moveDirection = 0.0f; // явж буй зүг, харж буй зүгтэй харьцангуй
     bool traversing = false;    // шат, цонхоор гарч яваа
+    bool swimming = false;      // гүн усанд сэлж буй
     Passage traverse = {};
     float traverseTime = 0.0f;
     float traverseDuration = 1.0f;

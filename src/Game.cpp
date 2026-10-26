@@ -1799,9 +1799,9 @@ HeldItem Game::HeldFor(WeaponType type) const
 void Game::UpdateShooting()
 {
     if (player.IsDowned()) return; // унасан: буудахгүй
-    if (player.IsTraversing())
+    if (player.IsTraversing() || player.IsSwimming())
     {
-        return; // шат, цонхоор гарч байхдаа буудахгүй
+        return; // шат, цонхоор гарч байхдаа, сэлж байхдаа буудахгүй
     }
 
     // --- Зэвсэг сонгох. Дайчин: 1 хутга, 2 гар буу, 3 автомат, 4 үрлэн буу, 5 гранат.
@@ -3902,7 +3902,7 @@ void Game::DrawMissionScene() const
     particles.DrawPuffs();
     rlDrawRenderBatchActive(); // дүрүүдийг хагас тунгалаг хашаанаас өмнө зурж дуусгана
     world.DrawTransparent(view, material);
-    if (!cinematic && camera.IsFirstPerson() && player.IsAlive())
+    if (!cinematic && camera.IsFirstPerson() && player.IsAlive() && !player.IsSwimming())
     {
         DrawViewModel(view, player.Held(), player.Recoil(), player.WalkPhase(), player.HorizontalSpeed() / config.walkSpeed,
                       player.ReloadProgress(), player.ActionProgress(), camera.AimBlend());
