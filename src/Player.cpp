@@ -180,6 +180,8 @@ void Player::Assume(Vector3 newPosition, float newFacing, float newHealth, float
     traversing = false;
     stance = Stance::Stand;
     crouchPose = pronePose = 0.0f;
+    downed = false; // (шинэ бие: өмнөх бие унасан байсан ч)
+    downTimer = 0.0f;
 }
 
 void Player::Reset(float newMaxHealth)
@@ -198,6 +200,8 @@ void Player::Reset(float newMaxHealth)
     stance = Stance::Stand;
     crouchPose = pronePose = 0.0f;
     rideStyle = RideStyle::None;
+    downed = false; // (өмнөх тоглолтод унасан чигтээ дууссан бол шинэ тоглолтод унасан хэвээр эхэлдэг байв)
+    downTimer = 0.0f;
 }
 
 void Player::Teleport(Vector3 newPosition)

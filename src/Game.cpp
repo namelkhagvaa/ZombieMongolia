@@ -1046,6 +1046,8 @@ void Game::StartMission(int index, StageSave* stageOverride)
     player.SetLook(TeamMemberLook(0, progress.leaderSkin));
     grenades.Clear();
     horde.Clear();
+    horde.SetSpeedMultiplier(1.0f); // (UpdateMission устгасан тоогоор өсгөнө)
+    lastStageKills = 0;
     tracers.Clear();
     particles.Clear();
     fullMap.Close();
@@ -3420,6 +3422,8 @@ void Game::UpdateMission(float dt)
     if (!coopGuest)
     {
         const int stageKills = mission.KilledSmall() + mission.KilledBig();
+        if (stageKills < lastStageKills) TraceLog(LOG_INFO, "MISSION: kill count went down %d -> %d", lastStageKills, stageKills);
+        lastStageKills = stageKills;
         const int level = stageKills / kKillsPerSpeedup;
         const float multiplier = std::min(kMaxZombieSpeedMultiplier, std::pow(kZombieSpeedupStep, (float)level));
         if (multiplier > horde.SpeedMultiplier() + 0.01f && state == GameState::Playing && missionFrame > 2)
@@ -3427,7 +3431,9 @@ void Game::UpdateMission(float dt)
             recruitNotice = multiplier >= kMaxZombieSpeedMultiplier ? "ЗОМБИНУУД ХАМГИЙН ХУРДАН БОЛЛОО!" : "ЗОМБИНУУД ХУРДСАЛАА!";
             recruitNoticeTimer = 2.5f;
         }
-        horde.SetSpeedMultiplier(multiplier);
+        // Нэг тоглолтын дотор зөвхөн өснө (тоо түр буурвал хурд буурч дахин өсөх бүрд мэдэгдэл анивчдаг байв).
+        // Шинэ тоглолтод StartMission 1 болгоно.
+        if (multiplier > horde.SpeedMultiplier()) horde.SetSpeedMultiplier(multiplier);
     }
 
     // "+N" зоос: шинэ устгалтуудыг нэмж, хуучныг (1.4 сек) арилгана
