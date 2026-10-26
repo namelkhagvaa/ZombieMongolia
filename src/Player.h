@@ -134,6 +134,8 @@ public:
     // Дараагийн унахад хүлээх хугацаа (тулаанд kPvpDownTime)
     void SetDownDuration(float seconds) { downDuration = seconds; }
     bool IsDowned() const { return downed; }
+    // Гүн усанд сэлж байна (буудах, суух, хэвтэх, үсрэх боломжгүй; удаан)
+    bool IsSwimming() const { return swimming; }
     float DownTimeLeft() const { return downTimer; }
     void UpdateDowned(float dt);
     void Revive(float fraction); // амийн дээд хэмжээний fraction-тай босно
@@ -189,6 +191,7 @@ private:
     bool downed = false;
     float downTimer = 0.0f;
     float downDuration = kDownTime;
+    bool swimming = false;
     Vector3 hitFrom = { 0.0f, 0.0f, 0.0f };
     bool hitFromKnown = false;
     bool grounded = true;

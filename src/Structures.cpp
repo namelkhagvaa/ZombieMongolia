@@ -6514,7 +6514,8 @@ namespace
         int parked = 0;
         for (size_t i = 0; i < spots.size(); ++i)
         {
-            if (gCityVehicleSpots.size() < vehicleLimit && i % 5 == 0)
+            // (аймгийн төвд унаж болох машин олон: зогссон машин цөөн тул тэдний хоёр тутмын нэг)
+            if (gCityVehicleSpots.size() < vehicleLimit && i % (town ? 2 : 5) == 0)
             {
                 gCityVehicleSpots.push_back(spots[i]);
                 continue;

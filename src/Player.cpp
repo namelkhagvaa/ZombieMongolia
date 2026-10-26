@@ -182,6 +182,7 @@ void Player::Assume(Vector3 newPosition, float newFacing, float newHealth, float
     crouchPose = pronePose = 0.0f;
     downed = false; // (шинэ бие: өмнөх бие унасан байсан ч)
     downTimer = 0.0f;
+    swimming = false;
 }
 
 void Player::Reset(float newMaxHealth)
@@ -202,12 +203,14 @@ void Player::Reset(float newMaxHealth)
     rideStyle = RideStyle::None;
     downed = false; // (өмнөх тоглолтод унасан чигтээ дууссан бол шинэ тоглолтод унасан хэвээр эхэлдэг байв)
     downTimer = 0.0f;
+    swimming = false;
 }
 
 void Player::Teleport(Vector3 newPosition)
 {
     position = newPosition;
     velocity = { 0.0f, 0.0f, 0.0f };
+    swimming = false;
 }
 
 Vector3 Player::GunPivot() const
@@ -461,9 +464,10 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
     }
 
     // --- Биеийн байрлал: C суух / босох, Z хэвтэх / босох, Space босох ---
-    if (InKeyPressed(KEY_C)) stance = stance == Stance::Crouch ? Stance::Stand : Stance::Crouch;
-    if (InKeyPressed(KEY_Z)) stance = stance == Stance::Prone ? Stance::Stand : Stance::Prone;
-    bool jump = InKeyPressed(KEY_SPACE);
+    if (InKeyPressed(KEY_C) && !swimming) stance = stance == Stance::Crouch ? Stance::Stand : Stance::Crouch;
+    if (InKeyPressed(KEY_Z) && !swimming) stance = stance == Stance::Prone ? Stance::Stand : Stance::Prone;
+    bool jump = InKeyPressed(KEY_SPACE) && !swimming;
+    if (swimming) stance = Stance::Stand;
     if (jump && stance != Stance::Stand)
     {
         stance = Stance::Stand; // эхний Space зөвхөн босгоно
@@ -480,6 +484,7 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
     }
     speed *= inputStrength;
     speed *= 1.0f - 0.7f * landing; // буусан даруйд хурдан гүйж чадахгүй
+    if (swimming) speed = config.walkSpeed * 0.45f * inputStrength; // сэлэх: удаан, хурдан гүйхгүй
 
     // --- Хэвтээ хурд: зорилтот хурд руу зөөлөн ойртоно ---
     const float control = grounded ? 1.0f : config.airControl;
@@ -525,6 +530,20 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
     else
     {
         grounded = false;
+    }
+
+    // --- Гүн ус: гадаргуу дээр хөвж сэлнэ (гүүр, байшингийн шал усны дээр бол тэр дээгүүр алхана) ---
+    const float water = world.WaterSurface(position.x, position.z);
+    if (water - floorY >= kSwimDepth && position.y <= water - kSwimSink + 0.05f)
+    {
+        swimming = true;
+        position.y = water - kSwimSink;
+        velocity.y = 0.0f;
+        grounded = true;
+    }
+    else
+    {
+        swimming = false;
     }
 
     // --- Биеэ хөдөлгөөний зүг рүү эргүүлэх (онилж байхгүй үед) ---
@@ -709,6 +728,7 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
         pose.reload = demoReload;
     }
     if (downed) ApplyDownedPose(pose, (float)GetTime()); // унасан: AI дайчин, нөгөө тоглогчийн дэлгэцтэй ижил
+    else if (swimming) ApplySwimPose(pose, (float)GetTime(), HorizontalSpeed());
     DrawHumanoid(position, facing, 1.0f, pose, look);
 
     if (showCollider)

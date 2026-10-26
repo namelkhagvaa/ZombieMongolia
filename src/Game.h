@@ -130,6 +130,7 @@ private:
         int vehicle = -1;
         int door = -1;
         int passage = -1; // шат, цонх
+        int crew = -1;    // нөгөө тоглогчийн газардсан нисдэг тэрэг: буудагчаар суух
         bool fence = false; // хашаа давах (vault-д гарц)
         Passage vault = {};
     };
@@ -153,6 +154,18 @@ private:
     bool SwitchMember(int target, bool leaveDead);
     // Тоглогч унаа унасан үед багийн гишүүд ойрын хэрэгсэлд сууж дагана; буухад тэд ч бууна.
     void UpdateTeamRiding(float dt);
+    // Нисдэг тэрэг (index): тоглогчийн багийн ойрын (40 м) гишүүд газардсан үед сууж хаалганы буудагч болно.
+    // Нисгэгчийн баг суудал 0, 1-д; хамтарсан тоглолтод нөгөө тоглогч буудагчаар (суудал 2) суувал түүний баг 3, 4-т.
+    void BoardHelicopter(int index, int firstSlot);
+    void SeatHelicopterTeam(int index, bool guestSide, int firstSlot);
+    // Хост: зочин нисдэг тэргэнд (нисгэгч эсвэл буудагч) сууж яваа бол түүний баг ч сууна, буувал бууна
+    void UpdateGuestHelicopterCrew();
+    // Нөгөө тоглогчийн нисдэг тэрэгнээс буух (hurt: сүйрсэн, хүнд шарх)
+    void LeaveHelicopterCrew(bool hurt);
+    // Тоглогчийн сууж яваа унаа: жолоодож, буудагчийн суудалд эсвэл нисдэг тэргэнд буудагчаар (-1 = явган)
+    int RideVehicle() const { return garage.IsDriving() ? garage.Driven() : gunnerVehicle >= 0 ? gunnerVehicle : heliPassenger; }
+    // Агаараас унаж сүйрсэн нисдэг тэрэг: дэлбэрэлт, нисгэгч, суусан цэргүүд хүнд шархдана
+    void HelicopterCrashed(int index);
     // Хоёр хүний унаа: тоглогч буудагчийн суудлаас буух (AI жолооч ч бууна).
     void LeaveGunnerSeat();
     // Сум унаанд онов: эзэмшигч тал тооцно (хост / зочин). Морь 1.5 дахин эмзэг.
@@ -220,7 +233,8 @@ private:
     float battleWaitTimer = 0.0f;   // хост: зочин нэгдээд ирэхийг хүлээсэн хугацаа
     float battleDrawTimer = 0.0f;   // хост: хоёр баг хоёулаа зогсох дайчингүй болсноос хойш (тэнцээ)
     int lastStageKills = 0;         // зомбины хурд: өмнөх frame-ийн устгасан тоо (буурвал логт бичнэ)
-    float completeBlockedNotice = 0.0f; // хост: "тулаан дуусмагц аймаг чөлөөлөгдөнө" мэдэгдлийг давтах завсар
+    float completeBlockedNotice = 0.0f;
+    float rotorDust = 0.0f;         // нисдэг тэрэгний сэнсний тоос (давтамж) // хост: "тулаан дуусмагц аймаг чөлөөлөгдөнө" мэдэгдлийг давтах завсар
     bool guestWasAbsent = false;    // хост: тулааны үеэр зочин тасарсан (түүний багийг AI тулалдуулсан)
     int guestBoughtLost = 0;        // хост: энэ зочны Gold-оор авсан цэргээс үхсэн (серверт нийтээр мэдэгдэнэ)
     bool guestRejoined = false;
@@ -281,6 +295,8 @@ private:
     // Хоёр хүний унаа (нэг нь жолоодож, нөгөө нь буудна). Нэг багийн хоёр гишүүн суудлаа сольж болно (Tab, карт).
     int carGunner = -1;          // тоглогчийн жолоодож буй унааны буудагч AI гишүүн (squad индекс)
     int gunnerVehicle = -1;      // тоглогч буудагчийн суудалд сууж яваа унаа (жолоодохгүй)
+    int heliPassenger = -1;      // хамтарсан тоглолт: нөгөө тоглогчийн нисдэг тэргэнд буудагчаар сууж яваа
+    bool heliPassengerAir = false; // тэр тэрэг агаарт гарсан (эвдрээд газар унавал сүйрэл)
     int carDriver = -1;          // тэр унааг жолоодож буй AI гишүүн (squad индекс)
     float driverStuck = 0.0f, driverReverse = 0.0f;
     // Мэдрэмж: оносон тэмдэг, цохиулсан зүг, зүрхний цохилт
@@ -438,6 +454,8 @@ private:
         float recoil = 0.0f;      // 1 = дөнгөж буудсан
         float aimTimer = 0.0f;    // >0 үед буугаа онилсон байрлалтай (буудсаны дараа хэсэг хугацаа)
         bool aiming = false;      // нөгөө тал онилж байна
+        float deadTime = 10.0f;   // үхсэнээс хойш (ApplyDeathPose); анх үхсэн байдлаар ирвэл аль хэдийн хэвтэж буй
+        uint8_t deathStyle = 0;
         int vehicle = -1;         // тоглогч: жолоодож буй унаа (-1 = явган)
         uint8_t seatStyle = 0;    // цэрэг: унаан дээрх суудал (3 = бүхээг, харагдахгүй)
         Vector3 seatOffset = { 0.0f, 0.0f, 0.0f }; // цэрэг: байрлалаас суудал хүртэл

@@ -797,6 +797,127 @@ void ApplyDownedPose(HumanoidPose& pose, float time)
     pose.breath = slow;
 }
 
+void ApplyDeathPose(HumanoidPose& pose, float seconds, int style)
+{
+    pose.walkPhase = 0.0f;
+    pose.moveAmount = 0.0f;
+    pose.speed = 0.0f;
+    pose.recoil = 0.0f;
+    pose.gunKick = 0.0f;
+    pose.aim = 0.0f;
+    pose.actionProgress = -1.0f;
+    pose.reload = -1.0f;
+    pose.bob = 0.0f;
+    pose.breath = 0.0f;
+    pose.dead = true;
+    const float t = std::max(0.0f, seconds);
+    auto clamp01 = [](float x) { return std::clamp(x, 0.0f, 1.0f); };
+    auto smooth = [&](float x) { x = clamp01(x); return x * x * (3.0f - 2.0f * x); };
+    // Унах явц: эхлээд аажим, дараа нь хурдасна (таталцал); газар мөргөөд жаахан ойж тогтоно
+    auto topple = [](float x) {
+        if (x <= 0.0f) return 0.0f;
+        if (x < 1.0f) return x * x;
+        const float a = x - 1.0f;
+        return 1.0f + 0.07f * std::sin(a * 16.0f) * std::exp(-a * 8.0f);
+    };
+    const float jolt = t < 0.16f ? std::sin(t / 0.16f * PI) : 0.0f; // сум тусах агшны цочрол
+    // Гар: эхний агшинд дээш шидэгдэж, дараа нь сул унжина
+    const float limp = smooth((t - 0.1f) / 0.5f);
+    pose.shoulder[0] = Lerp(50.0f + 40.0f * jolt, 12.0f, limp);
+    pose.shoulder[1] = Lerp(35.0f + 50.0f * jolt, 28.0f, limp);
+    pose.shoulderYaw[0] = Lerp(0.0f, -18.0f, limp);
+    pose.shoulderYaw[1] = Lerp(0.0f, 22.0f, limp);
+    pose.elbow[0] = Lerp(30.0f, 12.0f, limp);
+    pose.elbow[1] = Lerp(30.0f, 48.0f, limp);
+    pose.hideItem = false;
+    switch (style)
+    {
+    case 1:
+    {
+        // Нүүрээрээ урагшаа: өвдөг нугарч бөхийн, дараа нь урагш хэвтэнэ
+        const float buckle = smooth(t / 0.28f);
+        pose.crouch = 0.55f * buckle * (1.0f - smooth((t - 0.45f) / 0.3f));
+        pose.lean = 10.0f * jolt + 18.0f * buckle;
+        pose.prone = topple((t - 0.22f) / 0.42f);
+        pose.hip[0] = 8.0f * limp;
+        pose.knee[0] = 20.0f * limp;
+        pose.knee[1] = 6.0f * limp;
+        pose.headRoll = 25.0f * limp;
+        pose.fall = 0.0f;
+        break;
+    }
+    case 2:
+    {
+        // Өвдөг сөхрөөд хажуу тийш хөрвөнө
+        const float kneel = smooth(t / 0.4f);
+        pose.crouch = kneel;
+        pose.knee[0] = pose.knee[1] = 60.0f * kneel * (1.0f - limp * 0.6f);
+        pose.lean = -8.0f * jolt + 12.0f * kneel;
+        const float down = topple((t - 0.42f) / 0.48f);
+        pose.fall = std::min(1.0f, down) * 0.95f + (down > 1.0f ? down - 1.0f : 0.0f);
+        pose.roll = 40.0f * std::min(1.0f, down);
+        pose.headRoll = -20.0f * limp;
+        break;
+    }
+    case 3:
+    {
+        // Унасан байснаас: хэвтсэн хэвээр, сүүлчийн хөдөлгөөн
+        pose.fall = 1.0f;
+        pose.hip[0] = Lerp(38.0f, 10.0f, limp);
+        pose.knee[0] = Lerp(70.0f, 25.0f, limp);
+        pose.headRoll = 15.0f * limp;
+        break;
+    }
+    default:
+    {
+        // Нуруугаараа хойшоо: цочоод өвдөг сулраад хойш унана
+        const float buckle = smooth(t / 0.22f);
+        pose.crouch = 0.3f * buckle * (1.0f - smooth((t - 0.4f) / 0.3f));
+        pose.lean = -14.0f * jolt;
+        pose.fall = topple((t - 0.1f) / 0.48f);
+        pose.hip[0] = 18.0f * buckle * (1.0f - limp * 0.5f);
+        pose.knee[0] = 35.0f * buckle * (1.0f - limp * 0.4f);
+        pose.knee[1] = 12.0f * buckle;
+        pose.headRoll = -18.0f * limp;
+        break;
+    }
+    }
+}
+
+void ApplySwimPose(HumanoidPose& pose, float time, float swimSpeed)
+{
+    pose.walkPhase = 0.0f;
+    pose.moveAmount = 0.0f;
+    pose.speed = 0.0f;
+    pose.recoil = 0.0f;
+    pose.gunKick = 0.0f;
+    pose.aim = 0.0f;
+    pose.actionProgress = -1.0f;
+    pose.reload = -1.0f;
+    pose.crouch = 0.0f;
+    pose.fall = 0.0f;
+    pose.prone = 0.82f; // бараг хэвтээ
+    pose.lean = 0.0f;
+    pose.hideItem = true;
+    pose.swimming = true;
+    pose.seated = true; // (гаднаас оруулсан загвар: алхааны биш, өгөгдсөн гар хөлийн өнцөг)
+    // Явж байвал хурдан сэлүүрдэнэ, зогсоод хөвж байвал аажим (гараа сэлгэж хөвөрнө)
+    const float rate = 2.2f + std::min(1.0f, swimSpeed / 1.6f) * 2.8f;
+    const float phase = time * rate;
+    pose.shoulder[0] = 95.0f + 75.0f * std::sin(phase);
+    pose.shoulder[1] = 95.0f + 75.0f * std::sin(phase + PI);
+    pose.elbow[0] = 25.0f + 30.0f * std::max(0.0f, std::cos(phase));
+    pose.elbow[1] = 25.0f + 30.0f * std::max(0.0f, std::cos(phase + PI));
+    pose.shoulderYaw[0] = pose.shoulderYaw[1] = 10.0f;
+    pose.hip[0] = 12.0f * std::sin(phase * 2.0f);
+    pose.hip[1] = -12.0f * std::sin(phase * 2.0f);
+    pose.knee[0] = 12.0f + 10.0f * std::max(0.0f, std::sin(phase * 2.0f));
+    pose.knee[1] = 12.0f + 10.0f * std::max(0.0f, -std::sin(phase * 2.0f));
+    pose.headPitch = -55.0f; // хүзүүгээ гудайлгаж урагшаа харна (нүүр усан дээр)
+    pose.headRoll = 6.0f * std::sin(phase);
+    pose.bob = 0.04f * std::sin(time * 2.1f);
+}
+
 HumanoidPose MakeSoldierPose(float walkCycle, float moveAmount, bool grounded, float time, float recoil,
                              HeldItem held, float action)
 {
@@ -942,11 +1063,21 @@ void DrawHumanoid(Vector3 feet, float facing, float scale, const HumanoidPose& p
 {
     const Color torso = look.shirtless ? look.skin : look.body;
 
+    // Сэлж байна: буу харагдахгүй, гар хоосон (сэлүүрдэнэ)
+    if (pose.swimming && look.held != HeldItem::None)
+    {
+        HumanoidLook bare = look;
+        bare.held = HeldItem::None;
+        DrawHumanoid(feet, facing, scale, pose, bare, detailed);
+        return;
+    }
+
     // Унах: урт бууг онилсон байрлалаар нь гартаа үлдээвэл нуруугаараа хэвтсэн биеэс тэнгэр рүү босоо гозойдог.
     // Унах явцын хагасаас бие сул гартай, буу нь хажууд нь газар хажуулдаа хэвтэнэ.
     const bool longGun = look.held == HeldItem::Rifle || look.held == HeldItem::Sniper || look.held == HeldItem::Launcher ||
                          look.held == HeldItem::Shotgun;
-    if (longGun && pose.fall > 0.55f)
+    const bool facedown = pose.dead && pose.prone > 0.55f;
+    if (longGun && (pose.fall > 0.55f || facedown))
     {
         HumanoidLook unarmed = look;
         unarmed.held = HeldItem::None;
@@ -955,7 +1086,8 @@ void DrawHumanoid(Vector3 feet, float facing, float scale, const HumanoidPose& p
         rlTranslatef(feet.x, feet.y, feet.z);
         rlRotatef(facing * RAD2DEG, 0.0f, 1.0f, 0.0f);
         rlScalef(scale, scale, scale);
-        rlTranslatef(-0.55f, 0.05f, -0.75f); // биеийн баруун талд, их биеийн хажууд (бие -Z тийш хэвтэнэ)
+        // биеийн баруун талд, их биеийн хажууд (хойшоо унавал бие -Z, урагшаа бол +Z тийш хэвтэнэ)
+        rlTranslatef(facedown ? -0.6f : -0.55f, 0.05f, facedown ? 0.9f : -0.75f);
         rlRotatef(-35.0f, 0.0f, 1.0f, 0.0f);
         rlRotatef(90.0f, 0.0f, 0.0f, 1.0f);  // хажуулдаа
         rlTranslatef(-kHumanoidMuzzle.x, -(kHumanoidMuzzle.y - kHipHeight), -0.45f);

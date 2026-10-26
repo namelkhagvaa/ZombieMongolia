@@ -15,8 +15,15 @@ enum class VehicleType
     Horse,      // морь: зам хамаарахгүй, толгод сайн давна; Shift дарахад давхина
     Truck,      // ачааны машин (ЗИЛ-131): удаан, хүнд, зомбийг бут цохино, багийг тэвшиндээ авч явна
     Suv,        // Nissan X-Trail: жийпээс хөнгөн, хээр талд арай сул
-    Hatchback   // Toyota Yaris: засмал зам дээр хамгийн хурдан, хээр, толгодод муу, эмзэг
+    Hatchback,  // Toyota Yaris: засмал зам дээр хамгийн хурдан, хээр, толгодод муу, эмзэг
+    Helicopter  // Ми-8 (жинхэнэ хэмжээ: их бие 18 м, сэнс 21 м): заставын дэргэд; газрын хэлбэрийг дагаж нам нисэнэ
 };
+
+// Нисдэг тэрэг: "өндөр авах" (Garage::SetLift) дарахад kHeliCruise метрт хөөрч, kHeliControl метрээс дээш гарсны
+// дараа л урагш хойш (throttle), эргэлтээр (steer) удирдана. Газрын хэлбэр, барилгын оройг урдаас нь харж дагана.
+constexpr float kHeliCruise = 14.0f;  // газар (барилгын орой) дээрх нислэгийн өндөр, м
+constexpr float kHeliControl = 6.0f;  // үүнээс өндөр гарсны дараа хөдөлж эхэлнэ
+constexpr int kHeliSeats = 6;         // нисгэгчээс гадна: 2 хаалганы буудагч (баг), 4 бүхээгт (нөгөө тоглогч, түүний баг)
 
 // Бүхээгтэй суудлын машин (жийп, X-Trail, Yaris): жолооч зүүн, зорчигч баруун урд суудалд.
 inline bool IsCar(VehicleType type)
@@ -75,7 +82,16 @@ struct Vehicle
     bool occupied = false;  // нөгөө тал сууж яваа: энэ талын тоглогч, баг сууж болохгүй
     Vector3 netPosition = { 0.0f, 0.0f, 0.0f };
     float netHeading = 0.0f, netSpeed = 0.0f, netSteer = 0.0f;
+    // Нисдэг тэрэг
+    bool lift = false;        // нисгэгч "өндөр авах" гэсэн (false: газардана)
+    float rotorSpeed = 0.0f;  // 0..1: сэнс эргэлт (хөдөлгүүр асаахад аажим эргэж эхэлнэ)
+    float rotor = 0.0f;       // сэнсний далавчны өнцөг, радиан
+    float climb = 0.0f;       // босоо хурд, м/с
+    float altitude = 0.0f;    // доорх газар (барилгын орой) дээрх өндөр, м
+    bool crashed = false;     // агаарт эвдэрч унаад газар мөргөсөн (Game: дэлбэрэлт, суусан хүмүүс)
 };
+
+inline bool IsHelicopter(VehicleType type) { return type == VehicleType::Helicopter; }
 
 // Талбар дээрх бүх тээврийн хэрэгсэл ба тоглогчийн унаж буй нэг.
 class Garage
@@ -106,6 +122,15 @@ public:
 
     void Mount(int index) { driven = index; }
     void Dismount();
+    // Нисдэг тэрэг: өндөр авах (true) эсвэл газардах (false)
+    void SetLift(int index, bool up) { vehicles[(size_t)index].lift = up; }
+    // Агаарт байна (буух, явган хүн дундуур нь гарах боломжгүй)
+    bool Airborne(int index) const { return vehicles[(size_t)index].altitude > 1.0f; }
+    // Нисдэг тэргийн суудал (ташааны ертөнцийн байрлал): 0, 1 хаалганы буудагч (зүүн, баруун), 2..5 бүхээгт.
+    // facing: суусан хүний харах зүг (хаалганы буудагч гадагш)
+    Vector3 HelicopterSeat(int index, int slot, float& facing) const;
+    // Нэг удаа: агаараас унаж газар мөргөсөн нисдэг тэрэг (-1 = байхгүй)
+    int TakeCrash();
     int Driven() const { return driven; } // -1 = явган
     bool IsDriving() const { return driven >= 0; }
 
@@ -153,7 +178,10 @@ public:
 private:
     void Collide(int index, const World& world);
 
+    void UpdateHelicopter(int index, float dt, const World& world, float throttle, float steer);
+
     std::vector<Vehicle> vehicles;
+    int crashed = -1;
     int driven = -1;
     int escort = -1;
     float escortThrottle = 0.0f, escortSteer = 0.0f;

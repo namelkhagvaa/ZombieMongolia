@@ -66,6 +66,7 @@ struct TouchState
     bool showOrders = false;        // багийн тушаал (бүгд над руу, байг онил)
     const char* actLabel = nullptr; // E-ийн үйлдэл (даалгаврын объект); nullptr = гарахгүй
     bool driving = false;           // унаа жолоодож буй: үсрэх товч тоормос болно
+    int helicopter = 0;             // нисдэг тэрэг жолоодож буй: 1 газар дээр (ӨНДӨР АВАХ), 2 агаарт (ГАЗАРДАХ)
     bool sniper = false;            // онилох товч дуран хараа нээнэ
     bool aimAssist = false;         // автомат онилгоо асаалттай (чагттай товч)
     bool firstPerson = false;       // камер 1-р этгээдийн горимд

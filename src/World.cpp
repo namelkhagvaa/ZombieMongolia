@@ -1254,3 +1254,10 @@ void World::DrawColliders(Vector3 viewPosition) const
         DrawBoundingBox(o.Bounds(), o.blocksRays ? LIME : SKYBLUE);
     }
 }
+
+float World::WaterSurface(float x, float z) const
+{
+    const float depth = layout.LakeDepth(x, z);
+    if (depth <= 0.0f) return -1.0e9f;
+    return layout.IsCity() ? terrain.HeightAt(x, z) + depth - 0.45f : kLakeLevel;
+}

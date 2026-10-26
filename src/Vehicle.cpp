@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <map>
+#include <utility>
 
 // Зомбийг мөргөж унагааж алах (агаарт шидэх) хурд, м/с. Жийп хүнд тул ~16 км/ц-аас; морь дэвсэж, мотоцикл
 // мөргөж ~22-25 км/ц-аас дээш хурдтай давхиж ирэхэд зомбийг унагааж ална.
@@ -42,6 +43,8 @@ const VehicleSpec& SpecFor(VehicleType type)
         /* Truck */ { "АЧААНЫ МАШИН", 33.0f, 4.5f, 12.0f, 4.0f, 1.25f, 2.1f, 1.00f, 0.78f, 0.55f, 1.9f, 16.0f, true, { 0.5f, 1.75f, 1.25f }, 7.0f, 1470.0f, 8.0f, 6.0f },
         /* Suv   */ { "X-TRAIL",    46.5f, 9.5f, 20.0f, 7.0f, 1.95f, 1.5f, 1.00f, 0.72f, 0.50f, 1.5f, 8.0f, true,  { 0.0f, 0.95f, 0.0f },  4.0f, 490.0f, 10.0f, 1.45f },
         /* Hatch */ { "YARIS",      52.5f, 10.0f, 21.0f, 7.0f, 2.15f, 1.35f, 1.00f, 0.62f, 0.35f, 2.0f, 6.0f, true, { 0.0f, 0.85f, 0.0f },  3.5f, 370.0f, 12.0f, 1.05f },
+        // Ми-8: нисгэгч (зүүн талын бүхээг) битүү; ~110 км/ц; бензингүй (хөдөлгүүрийн дуу: сэнсний эргэлт)
+        /* Heli  */ { "НИСДЭГ ТЭРЭГ", 31.0f, 4.5f, 6.0f, 8.0f, 0.95f, 4.6f, 1.00f, 1.00f, 1.00f, 0.0f, 0.0f, true, { 0.62f, 1.55f, 5.6f }, 15.0f, 2600.0f, 0.0f, 12.0f },
     };
     return specs[(int)type];
 }
@@ -769,6 +772,143 @@ namespace
 
 namespace
 {
+    // ---------------------------------------------------------------- Ми-8 (кодоор угсарсан, жинхэнэ хэмжээ)
+    // Орон нутаг: +Z урагш (хамар), +X зүүн, Y дээш, гарал үүсэл нь газар дээр сэнсний тэнхлэгийн доор ойролцоо.
+    // Их бие 18.2 м (хамар z +7.2 .. сүүл z -11.0), өргөн 2.5 м; үндсэн сэнс 21.3 м, сүүлний сэнс 3.9 м.
+    const Vector3 kHeliMast = { 0.0f, 4.55f, 0.9f };
+    const Vector3 kHeliTailHub = { 0.42f, 4.0f, -10.85f }; // сүүлний сэнс зүүн талд
+    const Color kHeliGreen = { 86, 96, 60, 255 };
+    const Color kHeliBrown = { 104, 88, 58, 255 };
+    const Color kHeliBelly = { 128, 136, 132, 255 };
+    const Color kHeliGlass = { 52, 70, 86, 255 };
+    const Color kHeliDark = { 36, 38, 36, 255 };
+
+    void HeliRoundel(MeshBuilder& b, float x, float y, float z)
+    {
+        // Монголын агаарын цэргийн тэмдэг (энгийнчилсэн): улаан, цэнхэр, улаан дугуй, голдоо шар
+        const float side = x > 0.0f ? 1.0f : -1.0f;
+        b.Tube({ x, y, z }, { x + side * 0.02f, y, z }, 0.55f, 0.55f, 18, { 200, 40, 36, 255 });
+        b.Tube({ x + side * 0.02f, y, z }, { x + side * 0.03f, y, z }, 0.36f, 0.36f, 18, { 30, 70, 160, 255 });
+        b.Tube({ x + side * 0.03f, y, z }, { x + side * 0.04f, y, z }, 0.16f, 0.16f, 12, { 236, 196, 60, 255 });
+    }
+
+    const MeshBuilder& HelicopterBody()
+    {
+        static MeshBuilder b;
+        if (!b.Empty()) return b;
+        // --- Их бие: доод хэсэг цайвар, дээр нь ногоон, бор толбо ---
+        b.BevelBox({ 0.0f, 1.25f, 1.8f }, { 2.5f, 1.0f, 6.8f }, 0.3f, kHeliBelly);   // доод тал
+        b.BevelBox({ 0.0f, 2.2f, 1.8f }, { 2.5f, 1.3f, 6.8f }, 0.35f, kHeliGreen);   // дээд тал
+        b.BevelBox({ 0.55f, 2.7f, 0.2f }, { 1.5f, 0.42f, 2.2f }, 0.2f, kHeliBrown);  // толбо
+        b.BevelBox({ -0.6f, 2.6f, 3.4f }, { 1.4f, 0.5f, 1.6f }, 0.2f, kHeliBrown);
+        // --- Хамар, бүхээг: бөмбөгөр шил ---
+        b.Ellipsoid({ 0.0f, 1.7f, 5.4f }, { 1.25f, 1.0f, 1.85f }, 10, 16, kHeliGreen);
+        b.Ellipsoid({ 0.0f, 1.25f, 5.6f }, { 1.2f, 0.62f, 1.7f }, 8, 14, kHeliBelly);
+        b.Ellipsoid({ 0.0f, 2.08f, 6.15f }, { 1.02f, 0.62f, 1.1f }, 8, 14, kHeliGlass); // салхины шил
+        b.Ellipsoid({ 0.0f, 1.0f, 6.55f }, { 0.55f, 0.32f, 0.5f }, 6, 10, kHeliGlass);  // доод (хөлийн) цонх
+        b.Box({ 0.0f, 2.1f, 6.9f }, { 0.08f, 0.9f, 0.5f }, kHeliDark);                 // шилний хүрээ
+        // --- Хөдөлгүүрийн бүрээс, агаар оруулах хоолой, яндан ---
+        b.BevelBox({ 0.0f, 3.3f, 1.7f }, { 1.9f, 0.95f, 4.9f }, 0.3f, kHeliGreen);
+        b.BevelBox({ 0.0f, 3.5f, -1.2f }, { 1.4f, 0.7f, 1.6f }, 0.25f, kHeliGreen);   // араа хайрцаг
+        for (float x : { -0.48f, 0.48f })
+        {
+            b.Tube({ x, 3.3f, 4.1f }, { x, 3.3f, 4.25f }, 0.36f, 0.36f, 12, kHeliDark);     // агаар оруулах ам
+            b.Tube({ x * 2.0f, 3.1f, 0.4f }, { x * 2.7f, 2.95f, -0.4f }, 0.24f, 0.28f, 10, kHeliDark); // яндан
+        }
+        // --- Сэнсний тэнхлэг, ступиц ---
+        b.Tube({ kHeliMast.x, 3.75f, kHeliMast.z }, { kHeliMast.x, kHeliMast.y, kHeliMast.z }, 0.22f, 0.22f, 10, kHeliDark);
+        // --- Сүүлний хоолой, далавч, тогтворжуулагч ---
+        b.Tube({ 0.0f, 2.35f, -1.5f }, { 0.0f, 2.85f, -10.3f }, 0.82f, 0.32f, 14, kHeliGreen);
+        b.Tube({ 0.0f, 2.85f, -10.3f }, { 0.0f, 3.9f, -11.0f }, 0.32f, 0.22f, 10, kHeliGreen); // сүүлний тулгуур (дээш)
+        b.BevelBox({ 0.0f, 3.55f, -10.85f }, { 0.22f, 1.6f, 1.0f }, 0.05f, kHeliGreen);           // босоо далавч
+        b.BevelBox({ 0.0f, 2.75f, -8.6f }, { 2.7f, 0.08f, 0.75f }, 0.03f, kHeliGreen);           // хэвтээ тогтворжуулагч
+        b.Tube({ 0.0f, 2.0f, -10.2f }, { 0.0f, 1.05f, -10.6f }, 0.07f, 0.07f, 6, kHeliDark);      // сүүлний хамгаалалт
+        HeliRoundel(b, 0.6f, 2.75f, -4.6f);
+        HeliRoundel(b, -0.6f, 2.75f, -4.6f);
+        // --- Хажуу: түлшний гадна сав, цонх, хаалга ---
+        b.Tube({ -1.45f, 1.05f, 2.6f }, { -1.45f, 1.05f, -0.6f }, 0.46f, 0.46f, 14, kHeliGreen);  // баруун сав (урт)
+        b.Tube({ 1.45f, 1.05f, 2.2f }, { 1.45f, 1.05f, -0.6f }, 0.46f, 0.46f, 14, kHeliGreen);    // зүүн сав (хаалганы ард)
+        for (float side : { -1.0f, 1.0f })
+        {
+            for (int i = 0; i < 7; ++i)
+            {
+                const float z = -1.1f + 0.68f * (float)i;
+                if (side > 0.0f && z > 2.4f) continue; // зүүн хаалга
+                b.Tube({ side * 1.255f, 2.15f, z }, { side * 1.27f, 2.15f, z }, 0.2f, 0.2f, 10, kHeliGlass);
+            }
+            b.Box({ side * 1.26f, 1.85f, -1.55f }, { 0.03f, 1.8f, 0.04f }, kHeliDark); // арын хаалганы заадас
+        }
+        b.Box({ 1.262f, 1.62f, 3.25f }, { 0.02f, 1.55f, 1.25f }, kHeliDark);                // нээлттэй зүүн хаалга (харанхуй)
+        b.Box({ 1.3f, 1.62f, 2.45f }, { 0.08f, 1.6f, 0.06f }, kHeliGreen);                  // хаалганы хүрээ
+        b.Box({ 1.3f, 2.47f, 3.25f }, { 0.08f, 0.06f, 1.35f }, kHeliGreen);
+        // --- Буух дугуй ---
+        for (float x : { -0.3f, 0.3f })
+        {
+            b.Tube({ x, 0.36f, 5.3f }, { x * 1.4f, 0.36f, 5.3f }, 0.36f, 0.36f, 12, kTire);  // хамрын дугуй
+        }
+        b.Tube({ 0.0f, 0.36f, 5.3f }, { 0.0f, 1.0f, 5.2f }, 0.07f, 0.07f, 6, kDark);
+        for (float side : { -1.0f, 1.0f })
+        {
+            b.Tube({ side * 1.75f, 0.55f, -0.35f }, { side * 2.05f, 0.55f, -0.35f }, 0.55f, 0.55f, 14, kTire); // гол дугуй
+            b.Tube({ side * 1.9f, 0.6f, -0.35f }, { side * 1.1f, 1.05f, 0.1f }, 0.08f, 0.08f, 6, kDark);    // тулгуур
+            b.Tube({ side * 1.9f, 0.6f, -0.35f }, { side * 1.1f, 2.0f, -0.4f }, 0.07f, 0.07f, 6, kDark);
+        }
+        return b;
+    }
+
+    const MeshBuilder& HelicopterBlade()
+    {
+        // Үндсэн сэнсний нэг далавч (+Z тэнхлэгийн дагуу, ступицаас 10.6 м)
+        static MeshBuilder b;
+        if (!b.Empty()) return b;
+        b.Box({ 0.0f, 0.0f, 5.45f }, { 0.52f, 0.06f, 10.3f }, { 44, 46, 44, 255 });
+        b.Box({ 0.0f, 0.0f, 10.55f }, { 0.52f, 0.07f, 0.12f }, { 210, 200, 70, 255 }); // үзүүрийн шар зураас
+        b.Cylinder({ 0.0f, -0.1f, 0.0f }, 0.45f, 0.4f, 0.22f, 10, kHeliDark);           // ступиц
+        return b;
+    }
+
+    const MeshBuilder& HelicopterTailBlade()
+    {
+        static MeshBuilder b;
+        if (!b.Empty()) return b;
+        b.Box({ 0.0f, 0.97f, 0.0f }, { 0.04f, 1.9f, 0.24f }, { 44, 46, 44, 255 });
+        return b;
+    }
+
+    void DrawHelicopter(const Vehicle& v)
+    {
+        DrawProp(HelicopterBody());
+        // Үндсэн сэнс: 5 далавч (зогссон үед бага зэрэг унжина)
+        const float droop = (1.0f - v.rotorSpeed) * 2.5f;
+        rlPushMatrix();
+        rlTranslatef(kHeliMast.x, kHeliMast.y, kHeliMast.z);
+        rlRotatef(-v.rotor * RAD2DEG, 0.0f, 1.0f, 0.0f);
+        for (int k = 0; k < 5; ++k)
+        {
+            rlPushMatrix();
+            rlRotatef(72.0f * (float)k, 0.0f, 1.0f, 0.0f);
+            rlRotatef(droop, 1.0f, 0.0f, 0.0f);
+            DrawProp(HelicopterBlade());
+            rlPopMatrix();
+        }
+        rlPopMatrix();
+        // Сүүлний сэнс: 3 далавч, X тэнхлэгийг тойрон (хурдан)
+        rlPushMatrix();
+        rlTranslatef(kHeliTailHub.x, kHeliTailHub.y, kHeliTailHub.z);
+        rlRotatef(v.rotor * 5.0f * RAD2DEG, 1.0f, 0.0f, 0.0f);
+        for (int k = 0; k < 3; ++k)
+        {
+            rlPushMatrix();
+            rlRotatef(120.0f * (float)k, 1.0f, 0.0f, 0.0f);
+            DrawProp(HelicopterTailBlade());
+            rlPopMatrix();
+        }
+        rlPopMatrix();
+    }
+}
+
+namespace
+{
     // Гэмтлийг үржүүлэх коэффициент: ачааны машин бат бөх, мотоцикл, морь эмзэг
     float ArmorFactor(VehicleType type)
     {
@@ -781,6 +921,7 @@ namespace
         case VehicleType::Horse: return 1.2f;
         case VehicleType::Suv: return 1.05f;
         case VehicleType::Hatchback: return 1.25f;
+        case VehicleType::Helicopter: return 0.6f;
         }
         return 1.0f;
     }
@@ -797,6 +938,7 @@ namespace
         case VehicleType::Horse: return { 0.85f, 0.42f };
         case VehicleType::Suv: return { 1.45f, 0.9f };       // 4.69 м урт
         case VehicleType::Hatchback: return { 1.15f, 0.85f }; // 3.94 м урт
+        case VehicleType::Helicopter: return { 4.2f, 1.45f }; // их бие (сүүлгүй)
         }
         return { 1.0f, 0.8f };
     }
@@ -828,6 +970,7 @@ void Garage::Collide(int index, const World& world)
     {
         if (j == index) continue;
         Vehicle& b = vehicles[(size_t)j];
+        if (a.altitude > 1.0f || b.altitude > 1.0f) continue; // агаарт байгаа нисдэг тэрэг
         const VehicleSpec& sb = SpecFor(b.type);
         const float far = sa.radius + sb.radius + 4.0f;
         if (std::fabs(b.position.x - a.position.x) > far || std::fabs(b.position.z - a.position.z) > far) continue;
@@ -966,6 +1109,7 @@ int Garage::Raycast(Ray ray, float minDistance, float maxDistance, int skipA, in
         case VehicleType::Truck: halfWidth = 1.25f; halfLength = 3.4f; height = 2.9f; break;
         case VehicleType::Suv: halfWidth = 0.95f; halfLength = 2.2f; height = 1.8f; break;
         case VehicleType::Hatchback: halfWidth = 0.85f; halfLength = 1.9f; height = 1.5f; break;
+        case VehicleType::Helicopter: halfWidth = 1.35f; halfLength = 7.6f; height = 4.6f; break; // их бие + сүүлний эхлэл
         default: break;
         }
         // Туяаг хэрэгслийн орон нутгийн тэнхлэгт (урагш +Z) шилжүүлнэ: зай өөрчлөгдөхгүй.
@@ -1100,6 +1244,7 @@ Vector3 Garage::SeatWorld(int index, bool passenger) const
         case VehicleType::Truck: seat = { -0.5f, 1.75f, -1.6f }; break;       // тэвшин дээр
         case VehicleType::Suv:
         case VehicleType::Hatchback: seat.x = -0.45f; break;                   // жолоочийн эсрэг талын суудал
+        case VehicleType::Helicopter: seat = { -0.62f, 1.55f, 5.6f }; break;   // туслах нисгэгчийн суудал
         }
     }
     else if (IsCar(vehicle.type))
@@ -1169,6 +1314,20 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
             vehicle.position.z += (vehicle.netPosition.z - vehicle.position.z) * follow;
             vehicle.position.y = world.GroundHeight(vehicle.position.x, vehicle.position.z);
             vehicle.heading += std::remainder(vehicle.netHeading - vehicle.heading, 2.0f * PI) * follow;
+            if (IsHelicopter(vehicle.type))
+            {
+                // Нисдэг тэрэг: өндөр ч сүлжээнээс; сэнс нисгэгчтэй үед эргэнэ, хазайлтыг хурд, жолооноос
+                const float ground = world.SurfaceHeightAt(vehicle.position.x, vehicle.position.z, vehicle.netPosition.y + 0.5f);
+                vehicle.position.y = std::max(ground, vehicle.netPosition.y);
+                vehicle.altitude = vehicle.position.y - ground;
+                vehicle.rotorSpeed += ((vehicle.occupied || vehicle.altitude > 0.5f ? 1.0f : 0.0f) - vehicle.rotorSpeed) * std::min(1.0f, 0.5f * dt);
+                vehicle.rotor += vehicle.rotorSpeed * 30.0f * dt;
+                vehicle.speed = vehicle.netSpeed;
+                vehicle.steer += (vehicle.netSteer - vehicle.steer) * follow;
+                vehicle.pitch += (-0.16f * vehicle.speed / SpecFor(vehicle.type).topSpeed - vehicle.pitch) * std::min(1.0f, 3.0f * dt);
+                vehicle.roll += (vehicle.steer * 0.2f * std::min(1.0f, std::fabs(vehicle.speed) / 8.0f) - vehicle.roll) * std::min(1.0f, 3.0f * dt);
+                continue;
+            }
             {
                 // Налууг дагана (сүлжээгээр ирдэггүй тул энд тооцно)
                 const float reach = remoteSpec.radius + 0.6f;
@@ -1191,6 +1350,12 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
                 horde.Ram(vehicle.position, remoteSpec.radius + 0.5f, impact * dt * 6.0f, speed >= RamLaunchSpeed(vehicle.type), push);
                 horde.SetCreditRemote(false);
             }
+            continue;
+        }
+        if (IsHelicopter(vehicle.type))
+        {
+            vehicle.hurtTimer += dt;
+            UpdateHelicopter(i, dt, world, byPlayer ? throttle : 0.0f, byPlayer ? steer : 0.0f);
             continue;
         }
         const bool controlled = (byPlayer || i == escort) && !vehicle.wrecked; // тоглогч эсвэл баг жолоодож байгаа
@@ -1468,6 +1633,7 @@ void Garage::PushOut(Vector3& position, float radius) const
         if (i == driven) continue;
 
         const Vehicle& vehicle = vehicles[i];
+        if (vehicle.altitude > 1.0f || std::fabs(position.y - vehicle.position.y) > 3.0f) continue; // агаарт (доогуур нь гарна)
         const float minDistance = SpecFor(vehicle.type).radius * 0.8f + radius;
         const float dx = position.x - vehicle.position.x;
         const float dz = position.z - vehicle.position.z;
@@ -1493,7 +1659,13 @@ void Garage::Draw(Vector3 viewPosition, float maxDistance, const Material* mater
         if (!shadowPass && !ViewCull::Visible(vehicle.position, SpecFor(vehicle.type).radius + 2.0f)) continue; // камерын ард
         horseView = viewPosition;
 
-        DrawBlobShadow(vehicle.position, SpecFor(vehicle.type).radius * 1.15f);
+        if (IsHelicopter(vehicle.type))
+        {
+            // Сүүдэр газар дээр (өндөр гарах тусам цайна)
+            const Vector3 below = { vehicle.position.x, vehicle.position.y - vehicle.altitude, vehicle.position.z };
+            if (vehicle.altitude < 40.0f) DrawBlobShadow(below, 5.5f);
+        }
+        else DrawBlobShadow(vehicle.position, SpecFor(vehicle.type).radius * 1.15f);
 
         // Морины загвар зурсны дараа culling дахин асдаг: машин бүрийн өмнө унтраана
         // (эс бөгөөс эсрэг эргэлттэй талууд алга болж машин нэвт харагдана).
@@ -1532,10 +1704,132 @@ void Garage::Draw(Vector3 viewPosition, float maxDistance, const Material* mater
         case VehicleType::Truck: DrawTruck(vehicle); break;
         case VehicleType::Suv:
         case VehicleType::Hatchback: DrawJeep(vehicle); break;
+        case VehicleType::Helicopter: DrawHelicopter(vehicle); break;
         }
         if (tintable) tintable->maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
         rlPopMatrix();
     }
     rlDrawRenderBatchActive();
     rlEnableBackfaceCulling();
+}
+
+Vector3 Garage::HelicopterSeat(int index, int slot, float& facing) const
+{
+    // Ми-8-ийн их бие (local: +Z урагш, +X зүүн): зүүн урд том хаалга, баруун талд цонх. Хаалганы буудагчид
+    // хаалганы хүрээн дээр гадагш харж сууна (хөл нь гадна унжина), бусад нь бүхээгийн сандал дээр.
+    const Vehicle& vehicle = vehicles[(size_t)index];
+    // 0, 1: нисгэгчийн баг; 2: нөгөө тоглогч (буудагч), 3, 4: түүний баг; 5: бүхээгт
+    static const Vector3 seats[kHeliSeats] = {
+        { 1.05f, 1.45f, 3.0f },   // зүүн хаалга
+        { -1.05f, 1.45f, 1.2f },  // баруун хажуугийн цонх (хаалт)
+        { -1.05f, 1.45f, 2.9f },  // баруун урд цонх
+        { 1.05f, 1.45f, 1.4f },   // зүүн хаалганы ард
+        { -1.05f, 1.45f, -0.5f }, // баруун хойд цонх
+        { 0.0f, 1.45f, 0.4f },    // бүхээгийн төв
+    };
+    const int k = std::clamp(slot, 0, kHeliSeats - 1);
+    facing = vehicle.heading + (k == 5 ? 0.0f : seats[k].x > 0.0f ? PI * 0.5f : -PI * 0.5f);
+    return HumanoidLocalToWorld(vehicle.position, vehicle.heading, PitchLocal(vehicle, seats[k]));
+}
+
+int Garage::TakeCrash()
+{
+    return std::exchange(crashed, -1);
+}
+
+void Garage::UpdateHelicopter(int index, float dt, const World& world, float throttle, float steer)
+{
+    Vehicle& v = vehicles[(size_t)index];
+    const VehicleSpec& spec = SpecFor(v.type);
+    const bool piloted = index == driven && !v.wrecked;
+
+    // Сэнс: нисгэгч суувал аажим эргэж эхэлнэ (~2.5 с бүтэн хурдад), буувал аажим (~5 с) зогсоно
+    const float spinTarget = piloted || (v.altitude > 0.5f && !v.wrecked) ? 1.0f : 0.0f;
+    const float spinRate = (spinTarget > v.rotorSpeed ? 0.4f : 0.2f) * dt;
+    v.rotorSpeed += std::clamp(spinTarget - v.rotorSpeed, -spinRate, spinRate);
+    v.rotor += v.rotorSpeed * 30.0f * dt;
+
+    const float forwardX = std::sin(v.heading), forwardZ = std::cos(v.heading);
+    // Доорх газар (барилгын орой, мод ч орно): шууд доор нь
+    auto groundAt = [&](float x, float z) { return world.SurfaceHeightAt(x, z, 1.0e5f); };
+    const float below = groundAt(v.position.x, v.position.z);
+
+    if (v.wrecked)
+    {
+        // Эвдэрсэн: агаараас таталцлаар унана, газар мөргөвөл сүйрнэ
+        if (v.position.y > below + 0.05f)
+        {
+            v.climb -= 9.8f * dt;
+            v.position.y += v.climb * dt;
+            v.position.x += forwardX * v.speed * dt;
+            v.position.z += forwardZ * v.speed * dt;
+            v.speed *= std::exp(-0.6f * dt);
+            v.roll += 0.9f * dt;
+            v.heading += 1.4f * dt; // сүүлний сэнсгүй эргэлдэнэ
+            if (v.position.y <= below)
+            {
+                v.position.y = below;
+                if (v.climb < -4.0f && !v.crashed)
+                {
+                    v.crashed = true;
+                    crashed = index;
+                    Audio::Play(Sfx::Explosion, v.position, 1.0f, 0.75f);
+                }
+                v.climb = 0.0f;
+                v.speed = 0.0f;
+            }
+        }
+        v.altitude = std::max(0.0f, v.position.y - below);
+        return;
+    }
+
+    // Нислэгийн өндөр: доор болон урд талын (хурдаас хамааран 15-45 м) газрын хамгийн өндөр цэгээс kHeliCruise
+    const float look = 15.0f + std::max(0.0f, v.speed) * 1.0f;
+    float terrain = below;
+    for (float k : { 0.35f, 0.7f, 1.0f })
+    {
+        terrain = std::max(terrain, groundAt(v.position.x + forwardX * look * k, v.position.z + forwardZ * look * k));
+    }
+    const bool flying = v.lift && v.rotorSpeed > 0.9f && piloted;
+    float targetY = flying ? terrain + kHeliCruise : below;
+    // Гарын босоо хурд: өгсөх 6, буух 4 м/с хүртэл (газарт ойртох тусам зөөлөн)
+    const float wanted = std::clamp((targetY - v.position.y) * 1.4f, -4.0f, 6.0f);
+    v.climb += (wanted - v.climb) * std::min(1.0f, 2.5f * dt);
+    v.position.y += v.climb * dt;
+    if (v.position.y < below)
+    {
+        v.position.y = below; // газардсан (эсвэл газар өгссөн)
+        v.climb = std::max(0.0f, v.climb);
+    }
+    v.altitude = v.position.y - below;
+
+    // Хэвтээ удирдлага: зөвхөн kHeliControl-оос өндөрт (газар дээр хөдлөхгүй)
+    const float top = spec.topSpeed;
+    const bool control = piloted && v.altitude > kHeliControl;
+    const float targetSpeed = control ? (throttle >= 0.0f ? throttle * top : throttle * spec.reverseSpeed) : 0.0f;
+    const float rate = (std::fabs(targetSpeed) > std::fabs(v.speed) ? spec.acceleration : spec.braking) * dt;
+    v.speed += std::clamp(targetSpeed - v.speed, -rate, rate);
+    if (v.altitude < 0.3f) v.speed = 0.0f;
+    if (control && steer != 0.0f) v.heading -= steer * spec.turnRate * dt; // D = баруун
+    v.steer += ((control ? steer : 0.0f) - v.steer) * std::min(1.0f, 4.0f * dt);
+
+    const Vector3 before = v.position;
+    v.position.x += forwardX * v.speed * dt;
+    v.position.z += forwardZ * v.speed * dt;
+    if (!world.InsideBoundary(v.position.x, v.position.z))
+    {
+        v.position.x = before.x; // аймгийн хил: цааш нисэхгүй
+        v.position.z = before.z;
+        v.speed = 0.0f;
+    }
+
+    // Хазайлт: хурдлахад хошуу доош, эргэхэд хажуу тийш (харагдах төдий)
+    v.pitch += (-0.16f * v.speed / top - v.pitch) * std::min(1.0f, 3.0f * dt);
+    v.roll += (v.steer * 0.2f * std::min(1.0f, std::fabs(v.speed) / 8.0f) - v.roll) * std::min(1.0f, 3.0f * dt);
+    if (piloted)
+    {
+        drivenSurface = Surface::Asphalt;
+        drivenMaxSpeed = top;
+    }
+    if (v.altitude < 1.0f) Collide(index, world);
 }

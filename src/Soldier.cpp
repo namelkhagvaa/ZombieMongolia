@@ -51,7 +51,6 @@ namespace
         return (float)GetRandomValue(0, 1000) / 1000.0f;
     }
 
-    const float kFallTime = 0.6f;
     const float kStuckTime = 4.0f; // ийм удаан ахицгүй байвал тойрох зүгээ сольж оролдоно
 
     // Хурдыг гэнэт солихгүй: алхаа / гүйлт / хурдан гүйлтийн босгон дээр (жишээ нь тоглогч 9.6 м/с гүйхэд
@@ -220,6 +219,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
     {
         Soldier& soldier = soldiers[i];
         soldier.sinceHit += dt;
+        const Vector3 frameStart = soldier.mover.position; // (сэлэх үед энэ frame-ийн шилжилтийг багасгана)
         // Дагах удирдагч: хостын тоглогч, эсвэл зочны багийнхны хувьд зочин
         const bool followGuest = soldier.guestTeam && guestLeaderActive;
         const Vector3 playerPosition = followGuest ? guestLeader : hostPosition;
@@ -227,6 +227,10 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
         if (!soldier.alive)
         {
             soldier.deathTimer += dt;
+            // (нисдэг тэргэнд, өндөрт үхсэн бол газар унана)
+            Vector3& body = soldier.mover.position;
+            const float floor = world.SurfaceHeightAt(body.x, body.z, body.y + 0.3f);
+            if (body.y > floor + 0.05f) body.y = std::max(floor, body.y - (4.0f + 9.8f * soldier.deathTimer) * dt);
             continue;
         }
 
@@ -241,13 +245,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
             // Унасан: хэвтэнэ, хугацаа дуусвал үхнэ
             soldier.moving = false;
             soldier.downTimer -= dt;
-            if (soldier.downTimer <= 0.0f)
-            {
-                soldier.downed = false;
-                soldier.health = 0.0f;
-                soldier.alive = false;
-                soldier.deathTimer = kFallTime; // аль хэдийн хэвтэж байна
-            }
+            if (soldier.downTimer <= 0.0f) Die(soldier); // (аль хэдийн хэвтэж байна)
             continue;
         }
         // Хашаа давж буй: гараа тавьж, орой дээгүүр нум зурж цаад талдаа буна
@@ -654,7 +652,23 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
         // Газрын гадаргууг дагана
         if (soldier.riding < 0)
         {
-            pos.y = world.SurfaceHeightAt(pos.x, pos.z, pos.y + 0.5f);
+            const float floor = world.SurfaceHeightAt(pos.x, pos.z, pos.y + 0.5f);
+            const float water = world.WaterSurface(pos.x, pos.z);
+            if (water - floor >= kSwimDepth)
+            {
+                // Гүн ус: гадаргуу дээр хөвж сэлнэ (явган хүний хагас хурдаар), буудахгүй
+                if (soldier.swimming)
+                {
+                    pos.x = frameStart.x + (pos.x - frameStart.x) * 0.5f;
+                    pos.z = frameStart.z + (pos.z - frameStart.z) * 0.5f;
+                }
+                soldier.swimming = true;
+                pos.y = water - kSwimSink;
+                soldier.aimPose = std::max(0.0f, soldier.aimPose - dt * 4.0f);
+                continue;
+            }
+            soldier.swimming = false;
+            pos.y = floor;
         }
         else if (soldier.seatStyle == 3)
         {
@@ -772,12 +786,7 @@ void SoldierSquad::Damage(int index, float amount)
     if (soldier.downed)
     {
         soldier.downTimer -= amount * 0.12f; // унасан хүнийг цохивол хурдан үхнэ
-        if (soldier.downTimer <= 0.0f)
-        {
-            soldier.downed = false;
-            soldier.health = 0.0f;
-            soldier.alive = false;
-        }
+        if (soldier.downTimer <= 0.0f) Die(soldier);
         return;
     }
     // Элсүүлсэн жирийн цэрэг багийн гишүүдээс сул: хохирлыг 1.5 дахин авна.
@@ -797,8 +806,19 @@ void SoldierSquad::Damage(int index, float amount)
             soldier.path.clear();
             return;
         }
-        soldier.alive = false;
+        Die(soldier);
     }
+}
+
+void SoldierSquad::Die(Soldier& soldier)
+{
+    // Унасан байсан бол хэвтсэн хэвээр, эс бөгөөс санамсаргүйгээр хойш, урагш, хажуу тийш унана
+    soldier.deathStyle = soldier.downed ? 3 : (uint8_t)GetRandomValue(0, kDeathStyles - 1);
+    soldier.downed = false;
+    soldier.health = 0.0f;
+    soldier.alive = false;
+    soldier.deathTimer = 0.0f;
+    soldier.swimming = false;
 }
 
 void SoldierSquad::UpdateRevives(float dt, Vector3 hostPosition)
@@ -944,6 +964,13 @@ void SoldierSquad::Draw(Vector3 viewPosition, bool showColliders) const
             continue;
         }
 
+        if (soldier.alive && soldier.swimming && soldier.riding < 0 && !soldier.downed)
+        {
+            // Гүн усанд сэлж байна
+            ApplySwimPose(pose, (float)GetTime() + soldier.walkCycle, soldier.moving ? soldier.moveAmount * kWalkSpeed * 0.5f : 0.0f);
+            DrawHumanoid(soldier.mover.position, soldier.mover.facing, 1.0f, pose, look, detailed);
+            continue;
+        }
         if (soldier.alive && soldier.downed)
         {
             // Унасан (босгохыг хүлээж буй): нуруугаараа хэвтэж, бага зэрэг хөдөлнө
@@ -953,10 +980,8 @@ void SoldierSquad::Draw(Vector3 viewPosition, bool showColliders) const
         }
         if (!soldier.alive)
         {
-            // Унасан цэрэг даалгавар дуустал газар хэвтэнэ.
-            const float t = std::min(1.0f, soldier.deathTimer / kFallTime);
-            pose.fall = t * t;
-            pose.knee[0] = 30.0f * std::sin(t * PI) + 10.0f * t;
+            // Унасан цэрэг даалгавар дуустал газар хэвтэнэ (үхэх хөдөлгөөн: ApplyDeathPose).
+            ApplyDeathPose(pose, soldier.deathTimer, soldier.deathStyle);
             DrawHumanoid(soldier.mover.position, soldier.mover.facing, 1.0f, pose, look, detailed);
             continue;
         }

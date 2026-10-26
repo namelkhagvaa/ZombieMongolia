@@ -77,6 +77,8 @@ struct HumanoidPose
     float breath = 0.0f;    // -1..1: амьсгалын үе; цээж тэлж, мөр өргөгдөнө
     float gunKick = 0.0f;   // бууны ухралт, метр
     bool hideItem = false;  // гарт барьсан зүйлийг зурахгүй (гранат шидэгдсэний дараа)
+    bool swimming = false;  // сэлж байна (ApplySwimPose): гар хоосон, гар хөл өгөгдсөн өнцгөөр (алхааны савлалт биш)
+    bool dead = false;      // үхсэн (ApplyDeathPose): унасны дараа урт буу гараас мултарч хажууд нь газар хэвтэнэ
     // Гараар ямар нэг зүйлээс барих (цонхны тавцан, хүрээ): grip > 0 үед гар shoulder/elbow-ийн өнцгөөс
     // gripPoint руу (хөлийн орон зайд, метрээр; [0] баруун, [1] зүүн) шилжинэ. Гар хоосон, seated үед.
     float grip = 0.0f;
@@ -125,6 +127,18 @@ HumanoidPose MakeSoldierPose(float walkCycle, float moveAmount, bool grounded, f
 // Алхах, онилох, суух, хэвтэх (prone) байрлалыг арилгана (тэдгээртэй хольж хагас унасан мэт харагдахгүй).
 // Тоглогч, AI дайчин, нөгөө тоглогчийн дүр бүгд үүнийг хэрэглэнэ.
 void ApplyDownedPose(HumanoidPose& pose, float time);
+
+// Гүн усанд сэлэх: хэвтээ биетэй (prone), гараа ээлжлэн сэлүүрдэж, хөлөө жийнэ; толгой усан дээр, барьсан зүйл
+// харагдахгүй. swimSpeed: явах хурд (м/с; 0 бол хөвж зогсоно). Хөлийн цэг (feet) нь гадаргуугаас kSwimSink доор.
+constexpr float kSwimDepth = 1.15f; // хөл доорх гадаргуугаас усны гадаргуу хүртэл ийм гүн бол сэлнэ
+constexpr float kSwimSink = 0.95f;  // сэлэх үед хөлийн цэг (биеийн суурь) усны гадаргуугаас доош
+void ApplySwimPose(HumanoidPose& pose, float time, float swimSpeed);
+
+// Үхэх хөдөлгөөн (seconds: үхсэнээс хойш). Сум тусахад бие цочиж, өвдөг сулраад унана, газар мөргөөд бага зэрэг
+// ойж тогтоно, гар сул. style: 0 нуруугаараа хойшоо, 1 нүүрээрээ урагшаа, 2 өвдөг сөхрөөд хажуу тийш хөрвөнө,
+// 3 (унасан байснаас) хэвтсэн хэвээр.
+constexpr int kDeathStyles = 3;
+void ApplyDeathPose(HumanoidPose& pose, float seconds, int style);
 
 // Хурдаас хамаарах алхааны хэлбэр (хүний алхаа, гүйлтийн хэмжилтэд ойртуулсан).
 struct HumanoidGait

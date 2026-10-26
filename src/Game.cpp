@@ -1157,6 +1157,11 @@ bool Game::SwitchMember(int target, bool leaveDead)
         garage.Dismount();
         player.StopRiding(player.Position());
     }
+    else if (heliPassenger >= 0)
+    {
+        if (!leaveDead) return false;
+        LeaveHelicopterCrew(false);
+    }
 
     // Тоглогчийн бие ба AI гишүүний бие байр, амь, дугаараа солилцоно.
     Soldier& body = squad.All()[(size_t)index];
@@ -1580,7 +1585,7 @@ void Game::UpdateFeedback(float dt)
         Audio::Play(Sfx::Heartbeat, camera.Get().position, 0.75f * (1.0f - ratio * 2.0f), 1.0f);
     }
     // Унаа мөргөхөд (бүтэн байдал огцом буурвал) сэгсэрнэ
-    const int ride = garage.IsDriving() ? garage.Driven() : gunnerVehicle;
+    const int ride = RideVehicle();
     const float health = ride >= 0 ? garage.At(ride).health : -1.0f;
     if (ride >= 0 && lastDrivenHealth > 0.0f && lastDrivenHealth - health > 4.0f)
     {
@@ -1821,7 +1826,7 @@ HeldItem Game::HeldFor(WeaponType type) const
 
 void Game::UpdateShooting()
 {
-    if (player.IsDowned()) return; // унасан: буудахгүй
+    if (player.IsDowned() || player.IsSwimming()) return; // унасан, сэлж байгаа: буудахгүй
     if (player.IsTraversing())
     {
         return; // шат, цонхоор гарч байхдаа буудахгүй
@@ -1990,7 +1995,7 @@ void Game::FireGun(Ray aim, float cameraDistance)
 
         // Унаа (машин, морь) зомби, хананаас өмнө байвал сум түүнд тусна. Өөрийн болон багийн унааг буудахгүй.
         float vehicleDistance = 0.0f;
-        const int ownVehicle = garage.IsDriving() ? garage.Driven() : gunnerVehicle;
+        const int ownVehicle = RideVehicle();
         const int vehicle = garage.Raycast(ray, cameraDistance * 0.9f, hit.index >= 0 ? hit.distance : wallDistance, ownVehicle,
                                            teamVehicle, vehicleDistance);
 
@@ -2153,6 +2158,32 @@ void Game::SpawnVehicles()
     place(VehicleType::Hatchback, -12.0f, -7.0f, 90.0f); // Yaris: жийпийн ард
     place(VehicleType::Suv, -19.0f, -7.0f, 90.0f);       // X-Trail
 
+    // Нисдэг тэрэг (Ми-8): заставын (-48, 17) дэргэд 35-80 м-т, их бие (18 м) багтах чөлөөт газар (барилга, хашаа,
+    // модгүй 8 м радиус); заставаас холдох зүг рүү харна
+    {
+        const Vector2 post = { -48.0f, 17.0f };
+        bool parked = false;
+        for (float ring : { 35.0f, 50.0f, 65.0f, 80.0f })
+        {
+            for (int k = 0; k < 8 && !parked; ++k)
+            {
+                const float angle = (float)k * PI * 0.25f + 0.3f;
+                const float px = post.x + std::sin(angle) * ring, pz = post.y + std::cos(angle) * ring;
+                if (!world.InsideBoundary(px, pz) || world.InteriorAt(px, pz) >= 0) continue;
+                Vector3 probe = { px, 0.0f, pz };
+                world.ResolveHorizontal(probe, 8.0f, 4.0f, 0.3f);
+                if (HorizontalDistance(probe, { px, 0.0f, pz }) > 0.05f) continue;
+                const float ground = world.GroundHeight(px, pz);
+                if (world.SurfaceHeightAt(px, pz, ground + 30.0f) > ground + 0.3f) continue; // дээвэр, саадын орой
+                garage.Add(VehicleType::Helicopter, { px, ground, pz }, angle);
+                TraceLog(LOG_INFO, "VEHICLES: helicopter at (%.0f, %.0f)", px, pz);
+                parked = true;
+            }
+            if (parked) break;
+        }
+        if (!parked) place(VehicleType::Helicopter, post.x + 40.0f, post.y + 30.0f, 0.0f);
+    }
+
     // Талбараар тархсан нэмэлт унаа: суурин, шатахуун түгээх газар, цэргийн пост, малчдын отор
     place(VehicleType::Trike, 37.0f, -8.6f, -90.0f);
     place(VehicleType::Jeep, -40.0f, -13.0f, 0.0f);
@@ -2198,12 +2229,62 @@ void Game::SpawnVehicles()
         place(kHamletVehicles[index % 4], hamlet.x - 30.0f, hamlet.y - 5.0f, 180.0f);
         ++index;
     }
+
+    // Замуудын дагуу (хот, хээр тал): 260-420 м тутамд замын хажууд санамсаргүй төрлийн унаа (аймаг бүрд ижил
+    // байрлал: хамтарсан тоглолтод хост, зочин хоёрт таарна). 70 хүртэл (хотын гудамж нягт), нийт 200-аас хэтрэхгүй
+    // (snapshot-ын унааны дугаар 8 бит).
+    {
+        const int limit = std::min(200, garage.Count() + 70);
+        static const VehicleType kRoadVehicles[] = { VehicleType::Jeep, VehicleType::Truck, VehicleType::Suv, VehicleType::Motorcycle,
+                                                     VehicleType::Hatchback, VehicleType::Trike, VehicleType::Jeep, VehicleType::Suv };
+        uint32_t seed = (uint32_t)(provinceIndex + 1) * 2654435761u;
+        auto random = [&]() {
+            seed = seed * 1664525u + 1013904223u;
+            return (float)(seed >> 8) / 16777216.0f;
+        };
+        for (const Road& road : world.GetLayout().roads)
+        {
+            float along = 60.0f + random() * 200.0f;
+            for (size_t k = 1; k < road.points.size() && garage.Count() < limit; ++k)
+            {
+                const Vector2 a = road.points[k - 1], b = road.points[k];
+                const float length = Vector2Distance(a, b);
+                if (length < 0.1f) continue;
+                const Vector2 dir = Vector2Scale(Vector2Subtract(b, a), 1.0f / length);
+                while (along < length && garage.Count() < limit)
+                {
+                    const float side = random() < 0.5f ? 1.0f : -1.0f;
+                    const float offset = (road.halfWidth + 2.4f) * side;
+                    const Vector2 at = Vector2Add(a, Vector2Scale(dir, along));
+                    const float heading = std::atan2(dir.x, dir.y) * RAD2DEG + (side > 0.0f ? 180.0f : 0.0f);
+                    place(kRoadVehicles[(size_t)(random() * 8.0f) % 8], at.x - dir.y * offset, at.y + dir.x * offset, heading);
+                    along += 260.0f + random() * 160.0f;
+                }
+                along -= length;
+            }
+        }
+    }
+    TraceLog(LOG_INFO, "VEHICLES: %d in the province", garage.Count());
 }
 
 Game::Interaction Game::FindInteraction() const
 {
     Interaction result;
     const Vector3 position = player.Position();
+
+    // Хамтарсан тоглолт: нөгөө тоглогчийн газардсан нисдэг тэргэнд буудагчаар сууж болно (тулаанд биш)
+    if (!battleActive && (coopGuest || remoteActive) && RideVehicle() < 0 && player.IsAlive() && !player.IsTraversing())
+    {
+        const RemoteFigure& pilot = coopGuest ? hostFigure : guestFigure;
+        const int heli = pilot.vehicle;
+        if (pilot.alive && heli >= 0 && heli < garage.Count() && !(pilot.flags & Net::kPassenger) &&
+            IsHelicopter(garage.At(heli).type) && !garage.At(heli).wrecked && !garage.Airborne(heli) &&
+            HorizontalDistance(position, garage.At(heli).position) < 9.0f)
+        {
+            result.crew = heli;
+            return result;
+        }
+    }
 
     int vehicle = garage.Nearest(position, kMountDistance);
     if (vehicle >= 0 && garage.At(vehicle).occupied) vehicle = -1; // нөгөө тоглогч (эсвэл түүний баг) сууж яваа
@@ -2273,6 +2354,7 @@ void Game::UpdateSounds(float dt, float throttle)
 
     // Хөдөлгүүр: 0 = тоглогчийн унаа, 1 = ойрын бусад хөдөлж буй (багийн) унаа
     auto engineOf = [](const Vehicle& v) {
+        if (IsHelicopter(v.type)) return !v.wrecked && v.rotorSpeed > 0.05f ? EngineSound::Truck : EngineSound::Off; // сэнс
         if (v.wrecked || SpecFor(v.type).fuelRange <= 0.0f || v.fuel <= 0.0f) return EngineSound::Off;
         switch (v.type)
         {
@@ -2284,6 +2366,7 @@ void Game::UpdateSounds(float dt, float throttle)
     };
     auto rpmOf = [](const Vehicle& v, float pedal) {
         // Хурдлахад эргэлт жигд өснө (араа солихдоо огцом унахгүй: тасархай "дүх дүх" дуу гаргахгүй)
+        if (IsHelicopter(v.type)) return std::clamp(0.15f + 0.6f * v.rotorSpeed + 0.15f * pedal, 0.0f, 1.0f);
         const float ratio = std::clamp(std::fabs(v.speed) / SpecFor(v.type).topSpeed, 0.0f, 1.0f);
         return std::clamp(0.08f + 0.8f * std::pow(ratio, 0.7f) + 0.12f * pedal, 0.0f, 1.0f);
     };
@@ -2512,12 +2595,17 @@ void Game::UpdateVehicles(float dt)
     const bool testUse = options.screenshotPath && options.useFrame > 0 && missionFrame == options.useFrame;
     if (InKeyPressed(KEY_F) || testUse)
     {
-        if (garage.IsDriving())
+        if (garage.IsDriving() && garage.Airborne(garage.Driven()))
         {
-            // Унааны зүүн талд бууна.
+            SetNotice(InTouchMode() ? "Эхлээд ГАЗАРДАХ товчоор газардана уу" : "Эхлээд газардана уу (Space)", 2.5f);
+        }
+        else if (garage.IsDriving())
+        {
+            // Унааны зүүн талд бууна (нисдэг тэргэнд: зүүн урд хаалганаас).
             const Vehicle& vehicle = garage.At(garage.Driven());
             const float side = SpecFor(vehicle.type).radius + config.playerRadius + 0.3f;
-            Vector3 exit = HumanoidLocalToWorld(vehicle.position, vehicle.heading, { side, 0.0f, 0.0f });
+            Vector3 exit = HumanoidLocalToWorld(vehicle.position, vehicle.heading,
+                                                IsHelicopter(vehicle.type) ? Vector3{ 2.7f, 0.0f, 3.2f } : Vector3{ side, 0.0f, 0.0f });
             world.ResolveHorizontal(exit, config.playerRadius, config.playerHeight, config.stepHeight);
             exit.y = world.GroundHeight(exit.x, exit.z);
             garage.Dismount();
@@ -2527,14 +2615,31 @@ void Game::UpdateVehicles(float dt)
         {
             LeaveGunnerSeat();
         }
+        else if (heliPassenger >= 0)
+        {
+            if (garage.Airborne(heliPassenger)) SetNotice("Нисгэгч газардтал хүлээнэ үү", 2.0f);
+            else LeaveHelicopterCrew(false);
+        }
         else
         {
             // Унаа, хаалга хоёулаа ойр байвал ойрынх нь сонгогдоно.
             const Interaction target = FindInteraction();
-            if (target.vehicle >= 0)
+            if (target.crew >= 0)
+            {
+                heliPassenger = target.crew;
+                heliPassengerAir = false;
+                SetNotice("Нисдэг тэргэнд буудагчаар суулаа — нисгэгчийг дагана", 3.0f);
+            }
+            else if (target.vehicle >= 0)
             {
                 garage.ClearRemote(target.vehicle); // одооноос өөрөө жолоодно (сүлжээний байрлалыг дагахгүй)
                 garage.Mount(target.vehicle);
+                if (IsHelicopter(garage.At(target.vehicle).type))
+                {
+                    garage.SetLift(target.vehicle, false);
+                    SetNotice(InTouchMode() ? "НИСДЭГ ТЭРЭГ: ӨНДӨР АВАХ товч, дараа нь хүрдээр жолоодно"
+                                            : "НИСДЭГ ТЭРЭГ: Space — өндөр авах / газардах, W S урагш хойш, A D эргэх", 5.0f);
+                }
             }
             else if (target.door >= 0)
             {
@@ -2566,6 +2671,12 @@ void Game::UpdateVehicles(float dt)
         throttle = axis.y;
         steer = axis.x;
         handbrake = InKeyDown(KEY_SPACE);
+        if (IsHelicopter(garage.At(garage.Driven()).type))
+        {
+            // Нисдэг тэрэг: Space өндөр авах / газардах (гар тоормос биш)
+            handbrake = false;
+            if (InKeyPressed(KEY_SPACE)) garage.SetLift(garage.Driven(), !garage.At(garage.Driven()).lift);
+        }
         if (autoDrive) throttle = 1.0f;
         if (autoDrive && options.driftFrame != 0 && missionFrame >= std::abs(options.driftFrame))
         {
@@ -2589,6 +2700,24 @@ void Game::UpdateVehicles(float dt)
         Audio::Play(Sfx::Crash, vehicle.position, std::min(1.0f, speed / 10.0f), 0.8f);
     }
     garage.Update(dt, world, horde, throttle, steer, handbrake, garage.IsDriving() && (InSprint() || autoDrive));
+    if (const int crash = garage.TakeCrash(); crash >= 0) HelicopterCrashed(crash);
+    // Нисдэг тэрэг нам нисэх, хөөрөх үед сэнсний салхинд газраас тоос босно
+    rotorDust -= dt;
+    if (rotorDust <= 0.0f)
+    {
+        rotorDust = 0.14f;
+        for (int i = 0; i < garage.Count(); ++i)
+        {
+            const Vehicle& v = garage.At(i);
+            if (!IsHelicopter(v.type) || v.rotorSpeed < 0.8f || v.altitude > 10.0f || v.wrecked) continue;
+            if (Vector3Distance(v.position, camera.Get().position) > 140.0f) continue;
+            const float angle = (float)GetRandomValue(0, 359) * DEG2RAD, reach = 3.0f + (float)GetRandomValue(0, 70) * 0.1f;
+            const float x = v.position.x + std::sin(angle) * reach, z = v.position.z + std::cos(angle) * reach;
+            const float strength = 1.0f - v.altitude / 10.0f;
+            const Vector3 out = { std::sin(angle) * 6.0f * strength, 0.0f, std::cos(angle) * 6.0f * strength };
+            particles.Kickup({ x, world.GroundHeight(x, z) + 0.3f, z }, out, Color{ 182, 162, 128, 140 });
+        }
+    }
     for (int i = 0; i < garage.Count(); ++i)
     {
         const Vehicle& vehicle = garage.At(i);
@@ -2637,7 +2766,12 @@ void Game::UpdateVehicles(float dt)
     if (garage.IsDriving())
     {
         const Vehicle& vehicle = garage.At(garage.Driven());
-        if (vehicle.wrecked)
+        if (vehicle.wrecked && IsHelicopter(vehicle.type) && !vehicle.crashed && (vehicle.altitude > 0.3f || vehicle.climb < -0.5f))
+        {
+            // Агаарт оногдсон нисдэг тэрэг: газар мөргөтөл дотор нь (сүйрвэл HelicopterCrashed буулгана)
+            SetNotice("НИСДЭГ ТЭРЭГ ОНОГДЛОО — унаж байна!", 0.5f);
+        }
+        else if (vehicle.wrecked)
         {
             const float side = SpecFor(vehicle.type).radius + config.playerRadius + 0.3f;
             Vector3 exit = HumanoidLocalToWorld(vehicle.position, vehicle.heading, { side, 0.0f, 0.0f });
@@ -2717,8 +2851,9 @@ void Game::UpdateVehicles(float dt)
             const float condition = vehicle.health / SpecFor(vehicle.type).maxHealth;
             if (condition > 0.35f || Vector3Distance(vehicle.position, camera.Get().position) > 150.0f) continue;
             const Vector3 engine = HumanoidLocalToWorld(vehicle.position, vehicle.heading,
-                                                        { 0.0f, vehicle.type == VehicleType::Truck ? 2.0f : 1.2f,
-                                                          vehicle.type == VehicleType::Truck ? 2.6f : 1.0f });
+                                                        IsHelicopter(vehicle.type) ? Vector3{ 0.0f, 3.7f, 0.6f }
+                                                        : Vector3{ 0.0f, vehicle.type == VehicleType::Truck ? 2.0f : 1.2f,
+                                                                   vehicle.type == VehicleType::Truck ? 2.6f : 1.0f });
             const Vector2 wind = environment.Wind();
             const unsigned char grey = vehicle.wrecked ? 40 : (unsigned char)(70 + condition * 200.0f);
             particles.Kickup(engine, { wind.x * 0.8f, 1.6f, wind.y * 0.8f }, { grey, grey, grey, 255 });
@@ -2742,6 +2877,7 @@ void Game::UpdateVehicles(float dt)
                 const Vehicle& vehicle = garage.At(i);
                 const float speed = std::fabs(vehicle.speed);
                 if (speed < 4.0f || Vector3Distance(vehicle.position, camera.Get().position) > 120.0f) continue;
+                if (IsHelicopter(vehicle.type)) continue; // (сэнсний тоос тусдаа)
                 if (world.SurfaceAt(vehicle.position.x, vehicle.position.z) == Surface::Asphalt) continue;
                 const float back = vehicle.speed > 0.0f ? -1.0f : 1.0f;
                 const Vector3 at = { vehicle.position.x + std::sin(vehicle.heading) * back * 1.4f,
@@ -2763,6 +2899,24 @@ void Game::UpdateVehicles(float dt)
         bool reins = false;
         const Vector3 rein = garage.ReinWorld(garage.Driven(), reins);
         player.Ride(dt, vehicle.position, garage.SeatPosition(), vehicle.heading, style, rein, reins);
+    }
+    else if (heliPassenger >= 0)
+    {
+        // Нөгөө тоглогчийн нисдэг тэрэгт буудагч: нисгэгч газардаад буувал, тэрэг сүйрвэл бууна
+        const Vehicle& vehicle = garage.At(heliPassenger);
+        const RemoteFigure& pilot = coopGuest ? hostFigure : guestFigure;
+        const bool piloted = (coopGuest || remoteActive) && pilot.alive && pilot.vehicle == heliPassenger &&
+                             !(pilot.flags & Net::kPassenger);
+        const bool airborne = garage.Airborne(heliPassenger);
+        if (airborne && !vehicle.wrecked) heliPassengerAir = true;
+        if (vehicle.wrecked && !airborne) LeaveHelicopterCrew(heliPassengerAir);
+        else if (!airborne && (!piloted || battleActive)) LeaveHelicopterCrew(false);
+        else
+        {
+            if (!airborne && !vehicle.wrecked) heliPassengerAir = false;
+            float facing = vehicle.heading;
+            player.Ride(dt, vehicle.position, garage.HelicopterSeat(heliPassenger, 2, facing), vehicle.heading, RideStyle::Bike);
+        }
     }
     else if (gunnerVehicle >= 0)
     {
@@ -2790,6 +2944,167 @@ void Game::UpdateVehicles(float dt)
     }
 }
 
+void Game::LeaveHelicopterCrew(bool hurt)
+{
+    if (heliPassenger < 0) return;
+    const int index = heliPassenger;
+    const Vehicle& heli = garage.At(index);
+    heliPassenger = -1;
+    heliPassengerAir = false;
+    // Баруун хойд талаас бууна (нисгэгч зүүн урд хаалгаар)
+    Vector3 exit = HumanoidLocalToWorld(heli.position, heli.heading, { -3.0f, 0.0f, 0.5f });
+    world.ResolveHorizontal(exit, config.playerRadius, config.playerHeight, config.stepHeight);
+    exit.y = world.GroundHeight(exit.x, exit.z);
+    player.StopRiding(exit);
+    if (hurt)
+    {
+        particles.Explosion(heli.position);
+        SetNotice("НИСДЭГ ТЭРЭГ СҮЙРЛЭЭ!", 3.5f);
+        player.TakeDamage(player.MaxHealth() * kTeamToughness * 0.85f);
+    }
+    // Хамт суусан багийн гишүүд (суудал 3, 4) ч бууна
+    std::vector<Soldier>& all = squad.All();
+    int out = 0;
+    for (int i = 0; i < (int)all.size(); ++i)
+    {
+        Soldier& soldier = all[(size_t)i];
+        if (soldier.riding != index || soldier.guestTeam) continue;
+        Vector3 at = HumanoidLocalToWorld(heli.position, heli.heading, { -3.4f, 0.0f, -1.2f - 1.8f * (float)out++ });
+        world.ResolveHorizontal(at, config.playerRadius, config.playerHeight, config.stepHeight);
+        at.y = world.GroundHeight(at.x, at.z);
+        soldier.mover.position = at;
+        soldier.riding = -1;
+        soldier.boarding = false;
+        soldier.seatStyle = 0;
+        if (hurt && soldier.alive) squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.85f);
+    }
+}
+
+void Game::UpdateGuestHelicopterCrew()
+{
+    if (coopGuest) return;
+    int heli = -1, first = 0;
+    if (remoteActive && !battleActive && guestFigure.alive && guestFigure.vehicle >= 0 && guestFigure.vehicle < garage.Count() &&
+        IsHelicopter(garage.At(guestFigure.vehicle).type))
+    {
+        heli = guestFigure.vehicle;
+        first = (guestFigure.flags & Net::kPassenger) ? 3 : 0; // зочин нисгэгч бол түүний баг хаалганд
+    }
+    std::vector<Soldier>& all = squad.All();
+    int out = 0;
+    for (int i = 0; i < (int)all.size(); ++i)
+    {
+        Soldier& soldier = all[(size_t)i];
+        if (!soldier.guestTeam || soldier.riding < 0 || soldier.riding == heli) continue;
+        // Зочин нисдэг тэрэгнээс буусан (эсвэл тэрэг сүйрсэн): гишүүд нь хажууд нь бууна
+        const Vehicle& vehicle = garage.At(soldier.riding);
+        if (garage.Airborne(soldier.riding) && !vehicle.wrecked && heli < 0 && guestFigure.alive) continue; // газардтал
+        Vector3 at = HumanoidLocalToWorld(vehicle.position, vehicle.heading, { 3.4f, 0.0f, 1.0f - 1.8f * (float)out++ });
+        world.ResolveHorizontal(at, config.playerRadius, config.playerHeight, config.stepHeight);
+        at.y = world.GroundHeight(at.x, at.z);
+        soldier.mover.position = at;
+        soldier.riding = -1;
+        soldier.boarding = false;
+        soldier.seatStyle = 0;
+        if (vehicle.wrecked && soldier.alive) squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.85f);
+    }
+    if (heli >= 0 && !garage.At(heli).wrecked) SeatHelicopterTeam(heli, true, first);
+}
+
+void Game::BoardHelicopter(int index, int firstSlot)
+{
+    std::vector<Soldier>& all = squad.All();
+    carGunner = -1;
+    if (teamVehicle >= 0 && teamVehicle != index)
+    {
+        // Өөр унаанд сууж явсан гишүүд: бууна (доор нь сууж болно)
+        for (Soldier& soldier : all)
+        {
+            if (soldier.riding != teamVehicle) continue;
+            Vector3 exit = HumanoidLocalToWorld(garage.At(teamVehicle).position, garage.At(teamVehicle).heading,
+                                                { SpecFor(garage.At(teamVehicle).type).radius + 0.9f, 0.0f, 0.0f });
+            world.ResolveHorizontal(exit, config.playerRadius, config.playerHeight, 0.0f);
+            exit.y = world.GroundHeight(exit.x, exit.z);
+            soldier.mover.position = exit;
+            soldier.riding = -1;
+            soldier.seatStyle = 0;
+        }
+    }
+    teamVehicle = -1;
+    garage.SetEscort(-1);
+    if (!garage.At(index).wrecked) SeatHelicopterTeam(index, false, firstSlot);
+}
+
+void Game::SeatHelicopterTeam(int index, bool guestSide, int firstSlot)
+{
+    std::vector<Soldier>& all = squad.All();
+    const Vehicle& heli = garage.At(index);
+    const bool grounded = !garage.Airborne(index);
+    int slot = 0;
+    for (Soldier& soldier : all)
+    {
+        if (!soldier.alive || soldier.member < 0 || soldier.guestTeam != guestSide) continue;
+        if (soldier.riding != index)
+        {
+            // Газардсан тэргэнд ойрын гишүүд сууна (холын нь, унасан, "энд бай" тушаалтай нь газар үлдэнэ)
+            if (!grounded || soldier.downed || soldier.holding || soldier.riding >= 0 || slot >= 2 ||
+                HorizontalDistance(soldier.mover.position, heli.position) > 40.0f)
+            {
+                continue;
+            }
+            soldier.riding = index;
+        }
+        if (slot >= 2) continue;
+        float facing = heli.heading;
+        const Vector3 seat = garage.HelicopterSeat(index, firstSlot + slot++, facing);
+        soldier.boarding = false;
+        soldier.seat = seat;
+        soldier.seatHeading = facing;
+        soldier.mover.position = { seat.x, seat.y - 0.9f, seat.z };
+        if (soldier.aimHold <= 0.0f) soldier.mover.facing = facing;
+        soldier.hasRein = false;
+        soldier.seatStyle = 1; // хаалган дээр сууж харагдана, буудна
+    }
+}
+
+void Game::HelicopterCrashed(int index)
+{
+    const Vehicle& heli = garage.At(index);
+    const Vector3 at = heli.position;
+    particles.Explosion(at);
+    particles.Explosion(Vector3Add(at, { 0.0f, 2.0f, 2.0f }));
+    horde.Explode(at, 9.0f, 900.0f);
+    barrels.Blast(at, 9.0f);
+    SetNotice("НИСДЭГ ТЭРЭГ СҮЙРЛЭЭ!", 3.5f);
+    TraceLog(LOG_INFO, "VEHICLES: helicopter %d crashed at (%.0f, %.0f) driven %d", index, at.x, at.z, garage.Driven());
+    if (garage.Driven() == index)
+    {
+        Vector3 exit = HumanoidLocalToWorld(at, heli.heading, { 2.7f, 0.0f, 3.2f });
+        world.ResolveHorizontal(exit, config.playerRadius, config.playerHeight, config.stepHeight);
+        exit.y = world.GroundHeight(exit.x, exit.z);
+        garage.Dismount();
+        player.StopRiding(exit);
+        player.TakeDamage(player.MaxHealth() * kTeamToughness * 0.85f); // хүнд шарх (унаж болно)
+    }
+    std::vector<Soldier>& all = squad.All();
+    int thrown = 0;
+    for (int i = 0; i < (int)all.size(); ++i)
+    {
+        Soldier& soldier = all[(size_t)i];
+        if (soldier.riding != index) continue;
+        // Их биеэс хоёр тийш шидэгдэнэ (сүйрсэн тэрэг дээр зогсохгүй)
+        const float side = thrown % 2 == 0 ? 3.4f : -3.4f;
+        Vector3 out = HumanoidLocalToWorld(at, heli.heading, { side, 0.0f, 1.5f - 2.0f * (float)(thrown / 2) });
+        ++thrown;
+        world.ResolveHorizontal(out, config.playerRadius, config.playerHeight, config.stepHeight);
+        out.y = world.GroundHeight(out.x, out.z);
+        soldier.mover.position = out;
+        soldier.riding = -1;
+        soldier.seatStyle = 0;
+        squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.85f);
+    }
+}
+
 void Game::UpdateTeamRiding(float dt)
 {
     std::vector<Soldier>& all = squad.All();
@@ -2803,6 +3118,19 @@ void Game::UpdateTeamRiding(float dt)
             soldier.boarding = false;
             soldier.seatStyle = 0;
         }
+    }
+
+    // Нисдэг тэрэг: баг бүхэлдээ нэг тэргэнд (хаалганы буудагч), дагах өөр унаагүй
+    UpdateGuestHelicopterCrew();
+    if (garage.IsDriving() && IsHelicopter(garage.At(garage.Driven()).type))
+    {
+        BoardHelicopter(garage.Driven(), 0);
+        return;
+    }
+    if (heliPassenger >= 0)
+    {
+        BoardHelicopter(heliPassenger, 3); // нөгөө тоглогчийн тэргэнд: арын суудлууд
+        return;
     }
 
     // Тоглогч буудагчийн суудалд: AI жолооч жолоодно, бусад гишүүд бууж явганаар дагана (дагах унаа ганцхан).
@@ -2904,6 +3232,7 @@ void Game::UpdateTeamRiding(float dt)
         int slot = 0;
         for (Soldier& soldier : all)
         {
+            if (soldier.guestTeam) continue; // (зочны багийг UpdateGuestHelicopterCrew)
             if (soldier.riding >= 0)
             {
                 const Vehicle& vehicle = garage.At(soldier.riding);
@@ -3234,11 +3563,12 @@ void Game::UpdateMission(float dt)
     }
 
     const bool enclosed = garage.IsDriving() && SpecFor(garage.At(garage.Driven()).type).enclosed;
-    const float cameraExtra = garage.IsDriving() ? SpecFor(garage.At(garage.Driven()).type).cameraExtra : 0.0f;
+    const float cameraExtra = garage.IsDriving() ? SpecFor(garage.At(garage.Driven()).type).cameraExtra
+                            : heliPassenger >= 0 ? SpecFor(garage.At(heliPassenger).type).cameraExtra : 0.0f;
     // Зочин: өөрийн AI гишүүд рүү шилжих, "энд бай" (хост тооцоолдог тул хүсэлт илгээнэ)
     if (coopGuest) GuestTeamInput();
     // H: "Энд бай" — удирдаж буй гишүүнийг тэмдэглэнэ; өөр гишүүн рүү (Tab) шилжихэд тэр байрандаа үлдэж байлдана.
-    if (InKeyPressed(KEY_H) && !coopGuest && !garage.IsDriving() && gunnerVehicle < 0)
+    if (InKeyPressed(KEY_H) && !coopGuest && RideVehicle() < 0)
     {
         holdMark[activeMember] = !holdMark[activeMember];
         if (holdMark[activeMember]) ChatterPlayer(VoiceLine::Hold, true);
@@ -3331,7 +3661,7 @@ void Game::UpdateMission(float dt)
         recruitNoticeTimer = 1.4f;
         Save();
     }
-    camera.SetFirstPerson(progress.firstPerson && !garage.IsDriving() && gunnerVehicle < 0 && !player.IsTraversing());
+    camera.SetFirstPerson(progress.firstPerson && RideVehicle() < 0 && !player.IsTraversing());
     camera.SetTraversing(player.IsTraversing());
     if (player.IsTraversing())
     {
@@ -3340,9 +3670,9 @@ void Game::UpdateMission(float dt)
     // Жолоодож байхад камер унааны төвийг, унааны өндөрт тааруулж харна (суудлыг тойрвол урт машины дотор орно)
     Vector3 cameraFocus = player.Position();
     float cameraDrop = player.CameraDrop();
-    if (garage.IsDriving() || gunnerVehicle >= 0)
+    if (RideVehicle() >= 0)
     {
-        const Vehicle& vehicle = garage.At(garage.IsDriving() ? garage.Driven() : gunnerVehicle);
+        const Vehicle& vehicle = garage.At(RideVehicle());
         float height = 2.0f;
         switch (vehicle.type)
         {
@@ -3350,6 +3680,7 @@ void Game::UpdateMission(float dt)
         case VehicleType::Jeep: height = 2.3f; break;
         case VehicleType::Suv: height = 2.2f; break;
         case VehicleType::Horse: height = 2.4f; break;
+        case VehicleType::Helicopter: height = 4.6f; break;
         default: height = 1.9f; break;
         }
         cameraFocus = vehicle.position;
@@ -3405,7 +3736,7 @@ void Game::UpdateMission(float dt)
         barrels.Ram(remote.position, SpecFor(remote.type).radius, std::fabs(remote.speed));
     }
     barrels.Update(dt, horde, player, squad, particles);
-    if (!garage.IsDriving() && gunnerVehicle < 0)
+    if (RideVehicle() < 0)
     {
         Vector3 position = player.Position();
         barrels.PushOut(position, config.playerRadius);
@@ -3536,7 +3867,7 @@ void Game::UpdateMission(float dt)
     const bool autoStopped = options.autoPlay && options.stopAfter > 0 && mission.CompletedCount() >= options.stopAfter;
     if (!autoStopped)
     {
-        mission.Update(dt, world, player, horde, squad, interact, !garage.IsDriving() && gunnerVehicle < 0);
+        mission.Update(dt, world, player, horde, squad, interact, RideVehicle() < 0);
     }
 
     mission.TakeReward(); // даалгаврын зоосны шагнал байхгүй (Gold зөвхөн серверийн дүрмээр)
@@ -3937,7 +4268,7 @@ void Game::DrawMissionScene() const
     particles.DrawPuffs();
     rlDrawRenderBatchActive(); // дүрүүдийг хагас тунгалаг хашаанаас өмнө зурж дуусгана
     world.DrawTransparent(view, material);
-    if (!cinematic && camera.IsFirstPerson() && player.IsAlive())
+    if (!cinematic && camera.IsFirstPerson() && player.IsAlive() && !player.IsSwimming())
     {
         DrawViewModel(view, player.Held(), player.Recoil(), player.WalkPhase(), player.HorizontalSpeed() / config.walkSpeed,
                       player.ReloadProgress(), player.ActionProgress(), camera.AimBlend());
@@ -4164,6 +4495,13 @@ void Game::DrawMission() const
                                     : "%s  %d км/ц  %s   %s%s     F — буух",
                       SpecFor(vehicle.type).name, (int)(std::sqrt(vehicle.speed * vehicle.speed + vehicle.slip * vehicle.slip) * 3.6f), surface, status,
                       horse ? (InTouchMode() ? "     Жойстикийг бүрэн түлхэж давхина" : "     Shift — давхих") : "");
+        if (IsHelicopter(vehicle.type))
+        {
+            // Нисдэг тэрэг: газрын гадаргуу, бензингүй; өндөр ба өндөр авах / газардах санамж
+            const char* hint = InTouchMode() ? "" : vehicle.lift ? "     Space — газардах" : "     Space — өндөр авах   F — буух";
+            std::snprintf(rideText, sizeof(rideText), "%s  %d км/ц  Өндөр %d м   Бүтэн %d%%%s", SpecFor(vehicle.type).name,
+                          (int)(std::fabs(vehicle.speed) * 3.6f), (int)vehicle.altitude, condition, hint);
+        }
         info.rideText = rideText;
     }
     else if (gunnerVehicle >= 0)
@@ -4174,10 +4512,22 @@ void Game::DrawMission() const
                       SpecFor(vehicle.type).name, condition);
         info.rideText = rideText;
     }
+    else if (heliPassenger >= 0)
+    {
+        const Vehicle& vehicle = garage.At(heliPassenger);
+        const int condition = (int)std::ceil(100.0f * vehicle.health / SpecFor(vehicle.type).maxHealth);
+        std::snprintf(rideText, sizeof(rideText), InTouchMode() ? "%s  буудагч   Өндөр %d м   Бүтэн %d%%" : "%s  буудагч   Өндөр %d м   Бүтэн %d%%     F — буух (газардсан үед)",
+                      SpecFor(vehicle.type).name, (int)vehicle.altitude, condition);
+        info.rideText = rideText;
+    }
     else if (state == GameState::Playing && !InTouchMode())
     {
         const Interaction target = FindInteraction();
-        if (target.vehicle >= 0)
+        if (target.crew >= 0)
+        {
+            info.rideText = "F — нисдэг тэргэнд буудагчаар суух";
+        }
+        else if (target.vehicle >= 0)
         {
             std::snprintf(rideText, sizeof(rideText), "F — унах: %s", SpecFor(garage.At(target.vehicle).type).name);
             info.rideText = rideText;
@@ -4534,10 +4884,12 @@ TouchState Game::MakeTouchState() const
     for (int i = 0; i < touch.weaponCount && i < 8; ++i) touch.weaponTypes[i] = (int)arsenal.SlotWeapon(i);
     touch.sniper = arsenal.Current() == WeaponType::Sniper;
     touch.driving = garage.IsDriving();
+    touch.helicopter = garage.IsDriving() && IsHelicopter(garage.At(garage.Driven()).type)
+                           ? (garage.At(garage.Driven()).lift ? 2 : 1) : 0;
     touch.aimAssist = config.touchAimAssist;
     touch.firstPerson = progress.firstPerson;
     touch.joinRequest = joinRequestPending && !coopGuest;
-    touch.showHold = !garage.IsDriving() && gunnerVehicle < 0;
+    touch.showHold = RideVehicle() < 0;
     touch.showOrders = !coopGuest;
     touch.holdMarked = holdMark[activeMember];
     touch.stance = player.GetStance() == Stance::Crouch ? 1 : player.GetStance() == Stance::Prone ? 2 : 0;
@@ -4562,17 +4914,23 @@ TouchState Game::MakeTouchState() const
     }
 
     // Нөхцөлт үйлдлүүд: унаа / хаалга (F), даалгаврын объект (E)
-    if (garage.IsDriving() || gunnerVehicle >= 0)
+    if (RideVehicle() >= 0)
     {
-        touch.useLabel = garage.At(garage.IsDriving() ? garage.Driven() : gunnerVehicle).type == VehicleType::Horse ? "МОРИНООС БУУХ"
-                                                                                                                  : "УНААНААС БУУХ";
+        touch.useLabel = garage.At(RideVehicle()).type == VehicleType::Horse ? "МОРИНООС БУУХ"
+                       : IsHelicopter(garage.At(RideVehicle()).type) ? "ТЭРГЭНЭЭС БУУХ" : "УНААНААС БУУХ";
         touch.useVehicle = true;
-        touch.useVehicleKind = (int)garage.At(garage.IsDriving() ? garage.Driven() : gunnerVehicle).type;
+        touch.useVehicleKind = (int)garage.At(RideVehicle()).type;
     }
     else
     {
         const Interaction interaction = FindInteraction();
-        if (interaction.vehicle >= 0)
+        if (interaction.crew >= 0)
+        {
+            touch.useLabel = "БУУДАГЧААР СУУХ";
+            touch.useVehicle = true;
+            touch.useVehicleKind = (int)VehicleType::Helicopter;
+        }
+        else if (interaction.vehicle >= 0)
         {
             const VehicleType type = garage.At(interaction.vehicle).type;
             touch.useLabel = type == VehicleType::Horse ? "МОРЬ УНАХ" : "УНААНД СУУХ";
@@ -4745,8 +5103,15 @@ void Game::UpdateRemoteFigure(RemoteFigure& figure, const Net::AvatarState& stat
     figure.held = state.held;
     figure.member = state.member;
     figure.skin = state.leaderSkin;
+    const bool wasAlive = figure.alive, wasDowned = (figure.flags & Net::kDowned) != 0;
     figure.flags = state.flags;
     figure.alive = (state.flags & Net::kAlive) != 0;
+    if (wasAlive && !figure.alive)
+    {
+        // Яг одоо үхэв: үхэх хөдөлгөөн (унасан байсан бол хэвтсэн хэвээр)
+        figure.deadTime = 0.0f;
+        figure.deathStyle = wasDowned ? 3 : (uint8_t)GetRandomValue(0, kDeathStyles - 1);
+    }
     figure.aiming = (state.flags & Net::kAiming) != 0;
     figure.vehicle = (state.flags & Net::kRiding) ? state.vehicle : -1;
     if (snap || Vector3Distance(figure.position, figure.target) > 6.0f)
@@ -4790,6 +5155,7 @@ void Game::ShowRemoteShots(RemoteFigure& figure, uint8_t shots, Vector3 shotEnd)
 void Game::AdvanceRemoteFigure(RemoteFigure& figure, float dt) const
 {
     figure.sinceUpdate += dt;
+    if (!figure.alive) figure.deadTime += dt;
     const int n = figure.sampleCount;
     if (n >= 2)
     {
@@ -4856,10 +5222,15 @@ void Game::DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& base
         seatStyle = SpecFor(vehicle.type).enclosed ? 3 : vehicle.type == VehicleType::Horse ? 2 : 1;
         seat = garage.SeatWorld(figure.vehicle, (figure.flags & Net::kPassenger) != 0);
         seatHeading = vehicle.heading;
-        // Онилж буудаж байвал бие тэр зүг рүү (±120 градус), үгүй бол унааны зүгт.
+        if (IsHelicopter(vehicle.type) && (figure.flags & Net::kPassenger))
+        {
+            seatStyle = 1; // нисдэг тэрэгний буудагч: хажуугийн хаалганд харагдана
+            seat = garage.HelicopterSeat(figure.vehicle, 2, seatHeading);
+        }
+        // Онилж буудаж байвал бие тэр зүг рүү (±120 градус), үгүй бол суудлын зүгт.
         const bool aiming = figure.aiming || figure.aimTimer > 0.0f;
-        facing = aiming ? vehicle.heading + std::clamp(std::remainder(figure.facing - vehicle.heading, 2.0f * PI), -2.1f, 2.1f)
-                        : vehicle.heading;
+        facing = aiming ? seatHeading + std::clamp(std::remainder(figure.facing - seatHeading, 2.0f * PI), -2.1f, 2.1f)
+                        : seatHeading;
     }
     if (figure.alive && seatStyle > 0)
     {
@@ -4893,7 +5264,7 @@ void Game::DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& base
     if (!figure.alive)
     {
         pose = MakeSoldierPose(0.0f, 0.0f, true, (float)GetTime(), 0.0f, look.held);
-        pose.fall = 1.0f;
+        ApplyDeathPose(pose, figure.deadTime, figure.deathStyle);
     }
     else
     {
@@ -4905,6 +5276,16 @@ void Game::DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& base
         pose.prone = (figure.flags & Net::kProne) ? 1.0f : 0.0f;
         // Унасан: (унасан тоглогч prone байдалтай ч) нуруугаараа хэвтэнэ, алхах/онилох хөдөлгөөнгүй
         if (figure.flags & Net::kDowned) ApplyDownedPose(pose, (float)GetTime());
+        else
+        {
+            // Сэлж байна: сүлжээгээр дамжуулахгүй, байрлалын усны гүнээс (тоглогч, цэрэг өөрсдөө ижил дүрмээр хөвнө)
+            const float water = world.WaterSurface(figure.position.x, figure.position.z);
+            const float floor = world.SurfaceHeightAt(figure.position.x, figure.position.z, figure.position.y + 0.3f);
+            if (water - floor >= kSwimDepth && figure.position.y < water - kSwimSink + 0.3f)
+            {
+                ApplySwimPose(pose, (float)GetTime(), figure.speed);
+            }
+        }
     }
     DrawBlobShadow(figure.position, 0.5f);
     DrawHumanoid(figure.position, figure.facing, 1.0f, pose, look, true);
@@ -4942,6 +5323,11 @@ Net::AvatarState Game::LocalAvatar() const
     else if (gunnerVehicle >= 0)
     {
         state.vehicle = (int8_t)gunnerVehicle; // унааг AI жолооч жолоодно (хост тооцно): зөвхөн суудал
+        state.flags |= Net::kPassenger;
+    }
+    else if (heliPassenger >= 0)
+    {
+        state.vehicle = (int8_t)heliPassenger; // нөгөө тоглогчийн нисдэг тэргэнд буудагч (суудал 2)
         state.flags |= Net::kPassenger;
     }
     return state;
@@ -5831,6 +6217,7 @@ void Game::TakeOverBattle()
         {
             soldier.alive = false;
             soldier.health = 0.0f;
+            soldier.deathTimer = 10.0f; // (аль хэдийн хэвтэж байна)
             continue;
         }
         soldier.mover.position = ally->position;

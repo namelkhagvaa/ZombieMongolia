@@ -72,6 +72,8 @@ struct Soldier
     Vector3 lastLeader = { 0.0f, 0.0f, 0.0f };
     float leaderSpeed = 0.0f;
     float regroupTimer = 0.0f; // >0: "бүгд надад ир" (байлдахгүй, дагана)
+    bool swimming = false;      // гүн усанд сэлж байна (удаан, буудахгүй)
+    uint8_t deathStyle = 0;     // үхэх хөдөлгөөн (ApplyDeathPose): унасан байснаас 3, эс бөгөөс санамсаргүй
     bool waitingRescue = false; // гэнэтийн үйл явдал: аврагдахыг хүлээж буй хүн (holdPoint дээрээ зогсож буудна)
     // Унасан (багийн гишүүн): амь дууссан ч Player::kDownTime секунд босгохыг хүлээнэ. reviveProgress: босгож буй хугацаа.
     bool downed = false;
@@ -118,6 +120,8 @@ public:
     void AddMember(int member, Vector3 position, float facing, float health, float maxHealth);
     // Багийн гишүүний индекс; -1 = байхгүй (тоглогч өөрөө удирдаж байгаа). Зочны багийнхныг тооцохгүй.
     int FindMember(int member) const;
+    // Цэрэг үхэв (амь, унасан төлөв, үхэх хөдөлгөөн)
+    void Die(Soldier& soldier);
     // Тогтвортой дугаараар (Soldier::id) индекс; -1 = байхгүй
     int FindById(uint16_t id) const;
     // Хамтарсан тоглолт: зочны удирдаагүй хоёр дайчин (зочныг дагаж байлдана)

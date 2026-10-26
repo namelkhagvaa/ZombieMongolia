@@ -153,7 +153,16 @@ namespace
                 // Жолоодох үед: хий (БУУДАХ-ын байранд), тоормос, цэнэглэх
                 Add(Circle(w - 132.0f, h - 166.0f, 73.0f), "", Kind::Fire, 0);
                 Add(Circle(w - 280.0f, h - 96.0f, 52.0f), state.sniper ? "ДУРАН" : "ОНИЛОХ", Kind::Aim, 0, true, aimLatched);
-                Add(Circle(w - 82.0f, h - 326.0f, 50.0f), "ТООРМОС", Kind::Hold, KEY_SPACE);
+                if (state.helicopter > 0)
+                {
+                    // Нисдэг тэрэг: өндөр авах / газардах (Space); дараа нь хүрдээр (joystick) удирдана
+                    Add(Circle(w - 82.0f, h - 326.0f, 56.0f), state.helicopter == 1 ? "ӨНДӨР АВАХ" : "ГАЗАРДАХ", Kind::Key, KEY_SPACE,
+                        true, state.helicopter == 1);
+                }
+                else
+                {
+                    Add(Circle(w - 82.0f, h - 326.0f, 50.0f), "ТООРМОС", Kind::Hold, KEY_SPACE);
+                }
                 Add(Circle(w - 262.0f, h - 240.0f, 45.0f), "ЦЭНЭГЛЭХ", Kind::Key, KEY_R);
             }
 
@@ -863,6 +872,17 @@ void InDrawTouch(const TouchState& state)
                 DrawRectangleRounded(bed, 0.2f, 6, text);
                 DrawRectangleRounded({ center.x + s * 0.14f, center.y - s * 0.26f, s * 0.3f, s * 0.38f }, 0.25f, 6, text);
                 for (const float x : { -0.3f, -0.08f, 0.3f }) DrawCircleV({ center.x + s * x, center.y + s * 0.14f }, s * 0.1f, tyre);
+            }
+            else if (kind == 7)
+            {
+                // Нисдэг тэрэг: их бие, сүүл, сэнс
+                const float s = side;
+                DrawEllipse((int)(center.x + s * 0.08f), (int)(center.y + s * 0.06f), s * 0.26f, s * 0.15f, text);
+                DrawLineEx({ center.x - s * 0.14f, center.y + s * 0.02f }, { center.x - s * 0.46f, center.y - s * 0.04f }, s * 0.07f, text);
+                DrawLineEx({ center.x - s * 0.44f, center.y - s * 0.14f }, { center.x - s * 0.44f, center.y + s * 0.04f }, s * 0.05f, text);
+                DrawLineEx({ center.x + s * 0.08f, center.y - s * 0.08f }, { center.x + s * 0.08f, center.y - s * 0.2f }, s * 0.05f, text);
+                DrawLineEx({ center.x - s * 0.38f, center.y - s * 0.21f }, { center.x + s * 0.48f, center.y - s * 0.21f }, s * 0.05f, text);
+                DrawLineEx({ center.x - s * 0.1f, center.y + s * 0.3f }, { center.x + s * 0.3f, center.y + s * 0.3f }, s * 0.04f, text);
             }
             else if (!Ui::DrawIcon(Ui::Icon::MapVehicle, { center.x - side * 0.5f, center.y - side * 0.5f, side, side }))
             {
