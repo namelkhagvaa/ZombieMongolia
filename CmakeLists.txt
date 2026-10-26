@@ -64,6 +64,7 @@ FetchContent_MakeAvailable(enet)
 set(GAME_SOURCES
     main.cpp
     src/Account.cpp
+    src/BuildStamp.cpp
     src/Profile.cpp
     src/ProvinceMap.cpp
     src/WorldEvents.cpp
@@ -130,7 +131,14 @@ else()
     endif()
     add_executable(ZombieMongolia ${GAME_SOURCES})
 endif()
-target_include_directories(ZombieMongolia PRIVATE src ${enet_SOURCE_DIR}/include)
+target_include_directories(ZombieMongolia PRIVATE src ${enet_SOURCE_DIR}/include ${CMAKE_BINARY_DIR}/generated)
+# Хувилбарын цаг (src/BuildStamp.cpp): build бүрд шинэчилнэ
+set(BUILD_STAMP_VALUE ${CMAKE_BINARY_DIR}/generated/BuildStampValue.h)
+add_custom_target(build_stamp
+    COMMAND ${CMAKE_COMMAND} -DOUT=${BUILD_STAMP_VALUE} -P ${CMAKE_SOURCE_DIR}/cmake/BuildStamp.cmake
+    BYPRODUCTS ${BUILD_STAMP_VALUE}
+    VERBATIM)
+add_dependencies(ZombieMongolia build_stamp)
 target_link_libraries(ZombieMongolia PRIVATE raylib enet)
 if(WIN32)
     target_link_libraries(ZombieMongolia PRIVATE ws2_32 winmm winhttp)

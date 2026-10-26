@@ -25,6 +25,7 @@ urlpatterns = [
     path("rooms/coop/", views.room_coop),
     path("rooms/<int:room_id>/beat/", views.room_beat),
     path("rooms/<int:room_id>/accept/", views.room_accept),
+    path("rooms/<int:room_id>/guest-lost/", views.room_guest_lost),
     path("rooms/<int:room_id>/stage/", views.room_stage),
     path("rooms/<int:room_id>/result/", views.room_result),
     path("web/login/", views.web_login),

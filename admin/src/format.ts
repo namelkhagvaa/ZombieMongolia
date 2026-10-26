@@ -70,6 +70,7 @@ export const EVENT_LABEL: Record<string, { text: string; color: string }> = {
   login_failed: { text: 'Нэвтрэлт амжилтгүй', color: 'red' },
   device_bound: { text: 'Төхөөрөмж бүртгэсэн', color: 'geekblue' },
   battle_disputed: { text: 'Тулааны үр дүн зөрсөн', color: 'red' },
+  battle_void: { text: 'Тулаан хүчингүй (тасарсан, тэнцсэн)', color: 'orange' },
   room_join_failed: { text: 'Өрөөнд холбогдож чадаагүй', color: 'orange' },
   coop_join_failed: { text: 'Найзын код буруу', color: 'orange' },
   phone_verified: { text: 'Утас баталгаажуулсан', color: 'green' },

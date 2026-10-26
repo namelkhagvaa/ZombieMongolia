@@ -136,6 +136,10 @@ SMS_MODE = env("SMS_MODE", "console")
 
 # Нээлттэй өрөөний тасалбар: relay сервер (server/relay.js) ижил нууц үгээр гарын үсгийг шалгана
 RELAY_SECRET = env("RELAY_SECRET") or ("dev-only-relay-secret" if DEBUG else "")
+# Тоглогчийн бодит IP-г агуулах толгой (proxy/CDN-ийн ард): жишээ нь Cloudflare-ийн ард "HTTP_CF_CONNECTING_IP".
+# Хоосон бол X-Forwarded-For (nginx), эс бөгөөс REMOTE_ADDR. Зөвхөн сервер тэр proxy-ээр л хүрэх боломжтой үед тохируулна
+# (эс бөгөөс толгойг хуурамчаар тавьж IP-ийн хязгаарыг тойрно).
+CLIENT_IP_HEADER = env("CLIENT_IP_HEADER", "")
 VERIFYMN_API_URL = env("VERIFYMN_API_URL")
 VERIFYMN_API_KEY = env("VERIFYMN_API_KEY")
 

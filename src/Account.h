@@ -65,6 +65,9 @@ namespace Account
     void BuyUpgrade(int item);
     // Тоглолтод Gold-оор авсан count цэрэг үхэв: шууд хасна (серверт ард нь илгээнэ, тасарвал дахин оролдоно)
     void LoseSoldiers(int count);
+    // Хост: энэ тулаанд зочны Gold-оор авсан хэдэн цэрэг үхсэн (нийт): сервер зочноос хасна (зочин тасарсан ч).
+    // Зочин ч өөрөө мэдэгдэнэ (SoldierLost): хоёулаа "хамгийн ихдээ ийм олон үлдэнэ" тул давхар хасагдахгүй.
+    void ReportGuestSoldiersLost(int total);
 
     // Нээлттэй өрөө. Аймаг эхлэхэд (RequestStart) Gold хүрэлцвэл (RoomEntry: 20 + 50) сервер заавал өрөө нээж
     // Host болгоно; эс бөгөөс ганцаарчилсан (None): хэн ч орж ирэхгүй, Gold өөрчлөгдөхгүй. Зочин JoinRoom-оор
@@ -111,7 +114,8 @@ namespace Account
     const std::string& RoomStage();
     int RoomRecruits();
     // Тулааны үр дүнг мэдэгдэнэ (guestWon: зочин ялсан). Шийдэгдтэл давтан асууна (Tick).
-    void ReportBattle(bool guestWon);
+    // opponentAbsent: нөгөө тал тасарсан (түүний багийг AI тулалдуулсан): зөрвөл сүлжээний асуудал, маргаанд тоологдохгүй
+    void ReportBattle(bool guestWon, bool opponentAbsent = false);
     // Энэ тоглоомд тулаан шийдэгдээгүй (нөгөө тал ялагч мэдэгдсэн ч энд хоёр баг амьд): хүчингүй болгоно
     void ReportBattleUndecided();
     enum class BattleResult { None, Pending, Won, Lost, Void };

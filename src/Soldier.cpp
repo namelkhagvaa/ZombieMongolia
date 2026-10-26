@@ -123,6 +123,7 @@ void SoldierSquad::Reset(int count, Vector3 around, const World& world)
     for (int i = 0; i < count; ++i)
     {
         Soldier& soldier = soldiers[i];
+        soldier.id = NewId();
         soldier.health = kMaxHealth;
         soldier.bought = true; // даалгаврын эхний цэргүүд = Gold-оор авсан
         soldier.mover.position = SlotPosition(i, around, kFollowDistance);
@@ -135,6 +136,7 @@ void SoldierSquad::Reset(int count, Vector3 around, const World& world)
 void SoldierSquad::Add(Vector3 position, float facing)
 {
     Soldier soldier;
+    soldier.id = NewId();
     soldier.health = kMaxHealth;
     soldier.mover.position = position;
     soldier.mover.facing = facing;
@@ -162,7 +164,9 @@ int SoldierSquad::FindMember(int member) const
 
 void SoldierSquad::AddGuestTeam(int controlledMember, Vector3 around, const World& world, float health)
 {
-    RemoveGuestTeam();
+    // Зөвхөн үндсэн гишүүдийг солино: зочны Gold-оор авсан, элсүүлсэн цэргүүд (member < 0) хэвээр
+    soldiers.erase(std::remove_if(soldiers.begin(), soldiers.end(), [](const Soldier& s) { return s.guestTeam && s.member >= 0; }),
+                   soldiers.end());
     for (int member = 0; member < kTeamSize; ++member)
     {
         if (member == controlledMember) continue;
@@ -183,9 +187,24 @@ void SoldierSquad::RemoveGuestTeam()
     guestLeaderActive = false;
 }
 
+int SoldierSquad::FindById(uint16_t id) const
+{
+    if (id == 0) return -1;
+    for (int i = 0; i < Total(); ++i)
+    {
+        if (soldiers[i].id == id) return i;
+    }
+    return -1;
+}
+
 bool SoldierSquad::HasGuestTeam() const
 {
     return std::any_of(soldiers.begin(), soldiers.end(), [](const Soldier& s) { return s.guestTeam; });
+}
+
+bool SoldierSquad::HasGuestMembers() const
+{
+    return std::any_of(soldiers.begin(), soldiers.end(), [](const Soldier& s) { return s.guestTeam && s.member >= 0; });
 }
 
 void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHorde& horde,
@@ -200,6 +219,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
     for (int i = 0; i < Total(); ++i)
     {
         Soldier& soldier = soldiers[i];
+        soldier.sinceHit += dt;
         // Дагах удирдагч: хостын тоглогч, эсвэл зочны багийнхны хувьд зочин
         const bool followGuest = soldier.guestTeam && guestLeaderActive;
         const Vector3 playerPosition = followGuest ? guestLeader : hostPosition;
@@ -748,6 +768,7 @@ void SoldierSquad::Damage(int index, float amount)
 {
     Soldier& soldier = soldiers[index];
     if (!soldier.alive) return;
+    soldier.sinceHit = 0.0f;
     if (soldier.downed)
     {
         soldier.downTimer -= amount * 0.12f; // унасан хүнийг цохивол хурдан үхнэ
@@ -768,7 +789,7 @@ void SoldierSquad::Damage(int index, float amount)
         {
             // Багийн гишүүн: үхэхийн оронд унана (нөхөд нь босгож болно)
             soldier.downed = true;
-            soldier.downTimer = Player::kDownTime;
+            soldier.downTimer = battle ? kPvpDownTime : Player::kDownTime;
             soldier.reviveProgress = 0.0f;
             soldier.health = 1.0f;
             soldier.moving = false;
@@ -818,10 +839,15 @@ void SoldierSquad::UpdateRevives(float dt, Vector3 hostPosition)
         Soldier& helper = soldiers[(size_t)best];
         helper.reviveTarget = need.id;
         if (bestDistance > 1.5f) continue; // очиж байна (Update хөдөлгөнө)
-        // Дэргэд нь: 3 секундэд босгоно
+        // Дэргэд нь: 3 секундэд (тулаанд 5) босгоно. Тулаанд босгогч буудуулбал дахин эхэлнэ.
         float& progress = need.id == -1 ? hostRevive : need.id == -3 ? guestRevive : soldiers[(size_t)need.id].reviveProgress;
+        if (battle && helper.sinceHit < 0.6f)
+        {
+            progress = 0.0f;
+            continue;
+        }
         progress += dt;
-        if (progress < 3.0f) continue;
+        if (progress < (battle ? kPvpReviveTime : 3.0f)) continue;
         progress = 0.0f;
         if (need.id == -1) hostRevived = true;
         else if (need.id == -3) guestRevived = true;
@@ -855,6 +881,7 @@ void SoldierSquad::DamageFraction(int index, float fraction)
 void SoldierSquad::AddGuestFighter(int member, Vector3 position, float facing, float health, float frozen)
 {
     Soldier soldier;
+    soldier.id = NewId();
     soldier.mover.position = position;
     soldier.mover.facing = facing;
     soldier.member = member;
@@ -919,9 +946,8 @@ void SoldierSquad::Draw(Vector3 viewPosition, bool showColliders) const
 
         if (soldier.alive && soldier.downed)
         {
-            // Унасан (босгохыг хүлээж буй): хажуулдаа хэвтэж, бага зэрэг хөдөлнө
-            pose.fall = 0.8f;
-            pose.knee[0] = 25.0f + 8.0f * std::sin((float)GetTime() * 2.0f);
+            // Унасан (босгохыг хүлээж буй): нуруугаараа хэвтэж, бага зэрэг хөдөлнө
+            ApplyDownedPose(pose, (float)GetTime() + soldier.walkCycle);
             DrawHumanoid(soldier.mover.position, soldier.mover.facing, 1.0f, pose, look, detailed);
             continue;
         }

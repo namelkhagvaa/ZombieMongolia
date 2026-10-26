@@ -5,6 +5,7 @@
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import re
 import secrets
@@ -19,6 +20,24 @@ from django.utils import timezone
 from . import qpay, sms
 from .models import (AuthToken, Cashout, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, UnlockedProvince,
                      Verification)
+
+def request_ip(request):
+    """Тоглогчийн IP: CLIENT_IP_HEADER (CDN-ийн ард, жишээ нь Cloudflare), эсвэл X-Forwarded-For (nginx), REMOTE_ADDR.
+    Буруу хэлбэртэй утгыг хаяна (GenericIPAddressField алдаа өгөхгүй)."""
+    candidates = []
+    header = getattr(django_settings, "CLIENT_IP_HEADER", "")
+    if header:
+        candidates.append(request.META.get(header, ""))
+    candidates.append(request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0])
+    candidates.append(request.META.get("REMOTE_ADDR", ""))
+    for value in candidates:
+        value = (value or "").strip()
+        try:
+            return str(ipaddress.ip_address(value))
+        except ValueError:
+            continue
+    return None
+
 
 VERIFICATION_TTL = timedelta(minutes=5)  # verify.mn-ийн сесс 5 минут
 SMS_PER_HOUR = 5             # нэг дугаарт цагт эхлүүлэх баталгаажуулалтын дээд тоо
@@ -193,7 +212,7 @@ def _take_verified(verification_id, purpose):
 
 # ---------------------------------------------------------------- Бүртгэл, нэвтрэлт
 
-MIN_PROTOCOL = 12  # тоглоомын сүлжээний хамгийн бага хувилбар: хуучин нь тулааныг серверт баталгаажуулдаггүй
+MIN_PROTOCOL = 13  # тоглоомын сүлжээний хамгийн бага хувилбар (13: цэргийн дугаар, тэнцээ, зочныг хүлээх хугацаа)
 
 
 def register(name, phone_raw, password, device_id, platform, ip):
@@ -417,8 +436,24 @@ def skin_price(settings, skin):
     return getattr(settings, field) if field else 0
 
 
+_last_expire = 0.0
+
+
+def maybe_expire_rooms():
+    """expire_rooms-ийг (хуучирсан өрөө хаах, түгжигдсэн барьцаа суллах) 30 секундэд нэгээс олонгүй: тулаан хайх үеэс
+    гадна дохио, аймаг эхлүүлэх, дансны хүсэлтээр ч ажиллана (эс бөгөөс орхигдсон өрөөний барьцаа удаан түгжигдэнэ)."""
+    global _last_expire
+    now = time.monotonic()
+    if now - _last_expire < 30.0:
+        return
+    _last_expire = now
+    with transaction.atomic():
+        expire_rooms()
+
+
 def disputes_recent(player):
-    """Сүүлийн 7 хоногийн маргаантай (хоёр тал өөр ялагч мэдэгдсэн) тулааны тоо."""
+    """Сүүлийн 7 хоногийн маргаантай (хоёр тал өөр ялагч мэдэгдсэн) тулааны тоо. Сүлжээ тасарсан, шийдэгдээгүй (тэнцээ,
+    хоёр дэлгэц зөрсөн) хүчингүй тулаан (battle_void) тоологдохгүй."""
     return Event.objects.filter(player=player, kind="battle_disputed", created__gte=timezone.now() - DISPUTE_WINDOW).count()
 
 
@@ -515,6 +550,7 @@ def _close(room, reason):
 
 def _reset_battle(room):
     room.host_report = room.guest_report = ""
+    room.host_absent = room.guest_absent = False
     room.report_at = None
     room.guest_left = False
 
@@ -657,7 +693,37 @@ def accept_guest(player, room_id):
             raise GameError("not_host", "Зөвхөн хост", 403)
         if room.guest_id and not room.guest_confirmed:
             room.guest_confirmed = True
-            room.save(update_fields=["guest_confirmed"])
+            room.guest_soldiers_start = min(room.guest.soldiers, 32767)
+            room.guest_soldiers_lost = 0
+            room.save(update_fields=["guest_confirmed", "guest_soldiers_start", "guest_soldiers_lost"])
+    return room
+
+
+def guest_soldiers_lost(player, room_id, battle, lost):
+    """Хост: энэ тулаанд (холбогдсоноос хойш) зочны Gold-оор авсан хэдэн цэрэг үхсэн (нийт). Зочин тасарсан ч хасагдана.
+    Нийтээр нь (давтан илгээхэд дахин хасахгүй), зочны өөрийн мэдэгдэлтэй (lose_soldiers, үлдсэн тоо) зөрчилдөхгүй:
+    хоёулаа "хамгийн ихдээ ийм олон үлдэнэ" гэсэн утгатай."""
+    for value in (battle, lost):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise GameError("bad_request", "Буруу хүсэлт")
+    with transaction.atomic():
+        room = _own_room(player, room_id)
+        if room.host_id != player.pk:
+            raise GameError("not_host", "Зөвхөн хост", 403)
+        if not room.guest_id or room.battle != battle or room.guest_soldiers_start is None:
+            return room  # (зочин гарсан, шинэ зочин: хуучин мэдэгдэл)
+        lost = min(lost, room.guest_soldiers_start)
+        if lost <= room.guest_soldiers_lost:
+            return room
+        guest = Player.objects.select_for_update().get(pk=room.guest_id)
+        target = room.guest_soldiers_start - lost
+        if guest.soldiers > target:
+            guest.soldiers_lost += guest.soldiers - target
+            log_event(guest, "soldier_lost", {"lost": guest.soldiers - target, "left": target, "room": room.pk, "by_host": True})
+            guest.soldiers = target
+            guest.save(update_fields=["soldiers", "soldiers_lost"])
+        room.guest_soldiers_lost = lost
+        room.save(update_fields=["guest_soldiers_lost"])
     return room
 
 
@@ -767,16 +833,22 @@ def _settle(room, winner_role, device_id, ip):
 
 
 def _dispute(room, device_id, ip):
-    """Хоёр тал өөр ялагч мэдэгдсэн: хүчингүй (зочин гарна, барьцаа суллагдана). Хоёуланд нь маргаан бичнэ: олон
-    маргаантай (тоглоомоо өөрчилж үр дүн хуурамчаар мэдэгддэг байж болзошгүй) тоглогч тулаант өрөөнд түр орохгүй."""
-    data = {"room": room.pk, "battle": room.battle, "host": room.host_report, "guest": room.guest_report}
-    log_event(room.host, "battle_disputed", data, device_id, ip)
+    """Хүчингүй (зочин гарна, барьцаа суллагдана). Хоёр тал өөр ялагч мэдэгдсэн бол хоёуланд нь маргаан бичнэ: олон
+    маргаантай (тоглоомоо өөрчилж үр дүн хуурамчаар мэдэгддэг байж болзошгүй) тоглогч тулаант өрөөнд түр орохгүй.
+    Нэг тал тасарсан (хоёулаа нөгөөгийнхөө багийг AI-аар тулалдуулж ялсан), эсвэл тулаан шийдэгдээгүй ("none": тэнцээ,
+    дэлгэцүүд зөрсөн) бол маргаан биш: battle_void (тоологдохгүй)."""
+    data = {"room": room.pk, "battle": room.battle, "host": room.host_report, "guest": room.guest_report,
+            "host_absent": room.host_absent, "guest_absent": room.guest_absent}
+    counted = (room.host_report in ("host", "guest") and room.guest_report in ("host", "guest")
+               and not room.host_absent and not room.guest_absent)
+    kind = "battle_disputed" if counted else "battle_void"
+    log_event(room.host, kind, data, device_id, ip)
     if room.guest_id:
-        log_event(room.guest, "battle_disputed", data)
+        log_event(room.guest, kind, data)
     _drop_guest(room)
 
 
-def report_battle(player, device_id, room_id, battle, winner, ip):
+def report_battle(player, device_id, room_id, battle, winner, ip, absent=False):
     """Тулаанд оролцогч бүр үр дүнг (ялагч: host|guest) мэдэгдэнэ. Хоёулаа ижил бол шийдэгдэнэ; зөрвөл хүчингүй
     (зочин гарна, барьцаа нь суллагдана). Нэг л тал мэдэгдсэн бол BATTLE_WAIT-ийн дараа (давтан мэдэгдэхэд)
     тэр үр дүнгээр. Буцаах: (шийдэгдсэн эсэх, ялагч, өрөө)."""
@@ -803,8 +875,10 @@ def report_battle(player, device_id, room_id, battle, winner, ip):
         role = "host" if room.host_id == player.pk else "guest"
         if role == "host" and not room.host_report:
             room.host_report = winner
+            room.host_absent = absent is True
         elif role == "guest" and not room.guest_report:
             room.guest_report = winner
+            room.guest_absent = absent is True
         room.report_at = room.report_at or timezone.now()
         room.save()
         if room.host_report and room.guest_report:
@@ -873,6 +947,11 @@ def complete_room(player, device_id, room_id, ip):
         room = _own_room(player, room_id)
         if room.host_id != player.pk:
             raise GameError("not_host", "Зөвхөн хост үе шатыг дуусгана", 403)
+        if room.guest_id and not room.guest_coop:
+            if room.guest_confirmed:
+                # Тулаан шийдэгдээгүй: үе дуусгаж өрөөг хаавал тулаан хүчингүй болно (ялагдах гэж буй хост зугтана)
+                raise GameError("battle_active", "Тулаан дуусаагүй байна", 409)
+            _drop_guest(room, refund=True)  # (зочин тоглоомоор ирээгүй: төлбөр нь буцна)
         if timezone.now() - room.created < timedelta(minutes=settings.stage_min_minutes):
             raise GameError("too_fast", "Үе шат хэт хурдан дууслаа", 409)
         locked = Player.objects.select_for_update().get(pk=player.pk)

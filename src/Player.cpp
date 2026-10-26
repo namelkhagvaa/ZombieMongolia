@@ -334,7 +334,7 @@ void Player::TakeDamage(float amount)
     if (health <= 0.0f && rideStyle == RideStyle::None)
     {
         downed = true; // үхэхийн оронд унана: багийнхан босгох боломжтой
-        downTimer = kDownTime;
+        downTimer = downDuration;
         health = 1.0f;
         stance = Stance::Prone;
     }
@@ -704,6 +704,7 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
         pose.moveDirection = demoDirection;
         pose.reload = demoReload;
     }
+    if (downed) ApplyDownedPose(pose, (float)GetTime()); // унасан: AI дайчин, нөгөө тоглогчийн дэлгэцтэй ижил
     DrawHumanoid(position, facing, 1.0f, pose, look);
 
     if (showCollider)

@@ -26,7 +26,8 @@ namespace Net
     constexpr uint16_t kDiscoveryPort = 47811;
     // Сүлжээний мессежийн хувилбар: мессежийн бүтэц өөрчлөгдөх бүрд нэмэгдүүлнэ. Хост ба зочин ижил хувилбартай
     // байж л нэгдэнэ (эс бөгөөс өгөгдөл буруу уншигдаж, жишээ нь цэргүүд "үхсэн" мэт харагдана).
-    constexpr uint16_t kProtocolVersion = 12; // 12: шахсан snapshot, хайрцгийг хост олгоно, дахин холбогдох; 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris; 6: 1-р дайчны дүр;
+    constexpr uint16_t kProtocolVersion = 13; // 13: цэргийн тогтвортой дугаар, зочныг хүлээх хугацаа дуусав (GuestKick);
+                                             // 12: шахсан snapshot, хайрцгийг хост олгоно, дахин холбогдох; 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris; 6: 1-р дайчны дүр;
                                              // 7: тулаан (тоглогч хооронд); 8: зочин хосттой адил (гишүүн солих г.м.);
                                              // 9: унааг буудах, Gold-ийн цэрэг алдах; 10: илгээсэн цаг (жигд хөдөлгөөн)
 
@@ -64,9 +65,10 @@ namespace Net
         WorldEvent,      // хост -> зочин: гэнэтийн үйл явдал (төрөл, дугаар, байрлал, өндөр)
         CrateTaken,      // аль аль нь: ачааны хайрцгийг авлаа (дугаар)
         Revive,          // аль аль нь: нөгөө талын унасан тоглогчийг босголоо
-        CrateGrant       // хост -> зочин: зочны авахыг хүссэн хайрцаг түүнийх (давхар авахаас сэргийлж хост шийднэ)
+        CrateGrant,      // хост -> зочин: зочны авахыг хүссэн хайрцаг түүнийх (давхар авахаас сэргийлж хост шийднэ)
+        GuestKick        // хост -> зочин: зочин ертөнцөд хэт удаан ирээгүй тул хост хүлээхээ болив (зочин гарна)
     };
-    constexpr uint32_t kHostPlayer = 0xFFFF; // GuestHitHuman: хостын удирдаж буй тоглогч
+    constexpr uint32_t kHostPlayer = 0xFFFF; // GuestHitHuman: хостын удирдаж буй тоглогч (бусад нь Soldier::id)
 
     // Хоёр талын дүрийн байдал (буудлага, хөдөлгөөн)
     struct AvatarState
@@ -115,6 +117,7 @@ namespace Net
         Vector3 position = { 0.0f, 0.0f, 0.0f };
         float facing = 0.0f;
         float speed = 0.0f;
+        uint16_t id = 0;     // Soldier::id (GuestHitHuman-д)
         int8_t member = -1;
         uint8_t alive = 1;
         uint8_t aiming = 0;  // буугаа онилсон (тулааны үед)
@@ -257,7 +260,7 @@ namespace Net
         void SendProjectile(int kind, Vector3 from, Vector3 velocity); // kind: 0 гранат, 1 пуужин
         void SendAirstrike(Vector3 center, float heading);
         void SendHitHuman(uint32_t target, float damage);
-        void SendBattleOver(bool guestWon);
+        void SendBattleOver(int result); // 0 хост ялав, 1 зочин ялав, 2 тэнцэв (хоёр баг бүгд унасан)
         void SendTakeover(Vector3 position, float health, int member);
         void SendStageSync(const std::string& stage);
         void SendGuestSwitch(int member, bool hold);
@@ -270,6 +273,7 @@ namespace Net
         void SendCrateTaken(int id);
         void SendRevive();
         void SendCrateGrant(int id);
+        void SendGuestKick();
 
         // Хүлээн авсан сүүлийн snapshot (зочин)
         bool TakeSnapshot(Snapshot& out);

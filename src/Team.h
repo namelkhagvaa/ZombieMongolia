@@ -8,6 +8,11 @@ constexpr int kTeamSize = 3;
 constexpr int kSniperMember = 2;
 // Багийн гишүүд хохирлыг ийм дахин бага авна: амь 100% хэвээр ч 5 дахин удаан үхнэ.
 constexpr float kTeamToughness = 5.0f;
+// Тулаан (тоглогч хооронд, нээлттэй өрөө): хүн хүнд учруулах хохирлыг энэ дахин өсгөнө, тэгэхээр багийн бат бөхөөр
+// хуваахад үр дүндээ 1.5-д хуваагдана (5-д биш): автомат ~7-8 сумаар унагаана. Зомбины хохирол өөрчлөгдөхгүй.
+constexpr float kPvpDamageScale = kTeamToughness / 1.5f;
+constexpr float kPvpDownTime = 8.0f;   // тулаанд унасан хүн босгохыг хүлээх хугацаа (энгийн үед Player::kDownTime)
+constexpr float kPvpReviveTime = 5.0f; // тулаанд AI нөхөр босгох хугацаа (энгийн үед 3 с); босгогч буудуулбал тасарна
 
 inline bool IsSniperMember(int member) { return member == kSniperMember; }
 

@@ -6,6 +6,7 @@
 #include "World.h"
 #include "raylib.h"
 
+#include <cstdint>
 #include <utility>
 #include <vector>
 
@@ -14,6 +15,7 @@ class ZombieHorde;
 struct Soldier
 {
     Mover mover;
+    uint16_t id = 0;         // тогтвортой дугаар (жагсаалтын индекс өөрчлөгдсөн ч): тулаанд зочин оносон цэргийг илгээнэ
     int member = -1;         // багийн гишүүний дугаар (0..2); -1 = элсүүлсэн жирийн цэрэг
     bool guestTeam = false;  // хамтарсан тоглолт: зочны багийн гишүүн (зочныг дагана, хостын F1-F3-т орохгүй)
     float health = 0.0f;
@@ -75,6 +77,7 @@ struct Soldier
     bool downed = false;
     float downTimer = 0.0f;
     float reviveProgress = 0.0f;
+    float sinceHit = 99.0f; // сүүлд хохирол авснаас хойш (тулаанд босгож буй нөхрийг буудвал босголт тасарна)
     int reviveTarget = -2; // энэ гишүүний босгохоор очиж буй: squad индекс, -1 хостын тоглогч, -3 зочин, -2 = үгүй
     // Тойрох зам (FindLocalPath): зорилт руу шууд шугам байшин, хашаанд хаагдвал эсвэл гацвал
     std::vector<Vector2> path;
@@ -115,10 +118,13 @@ public:
     void AddMember(int member, Vector3 position, float facing, float health, float maxHealth);
     // Багийн гишүүний индекс; -1 = байхгүй (тоглогч өөрөө удирдаж байгаа). Зочны багийнхныг тооцохгүй.
     int FindMember(int member) const;
+    // Тогтвортой дугаараар (Soldier::id) индекс; -1 = байхгүй
+    int FindById(uint16_t id) const;
     // Хамтарсан тоглолт: зочны удирдаагүй хоёр дайчин (зочныг дагаж байлдана)
     void AddGuestTeam(int controlledMember, Vector3 around, const World& world, float health = 100.0f);
     void RemoveGuestTeam();
-    bool HasGuestTeam() const;
+    bool HasGuestTeam() const;    // зочны аль ч цэрэг (Gold-оор авсан, элсүүлсэн цэрэг ч орно)
+    bool HasGuestMembers() const; // зочны үндсэн хоёр дайчин (member >= 0)
     // Зочны багийнхны дагах байрлал (зочин холбогдсон үед)
     void SetGuestLeader(bool active, Vector3 position) { guestLeaderActive = active; guestLeader = position; }
     // Унасан тоглогчид (хост, зочин): AI нөхөд нь гүйж очиж босгоно. Босгосон бол дараагийн Take*-д true.
@@ -183,6 +189,9 @@ private:
     void ChooseGuardPost(int index, Vector3 playerPosition, const World& world);
 
     std::vector<Soldier> soldiers;
+    uint16_t nextId = 1;
+    // Шинэ тогтвортой дугаар: 1..0xFFFE (0 = дугааргүй, 0xFFFF = Net::kHostPlayer)
+    uint16_t NewId() { const uint16_t id = nextId; nextId = nextId >= 0xFFFE ? 1 : (uint16_t)(nextId + 1); return id; }
     bool battle = false;
     std::vector<HumanTarget> hostTargets, guestTargets;
     std::vector<HumanHit> humanHits;

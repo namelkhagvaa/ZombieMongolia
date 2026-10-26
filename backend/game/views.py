@@ -21,8 +21,7 @@ MAX_EVENTS = 50
 
 
 def client_ip(request):
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    return forwarded.split(",")[0].strip() if forwarded else request.META.get("REMOTE_ADDR")
+    return logic.request_ip(request)
 
 
 def api(methods, auth=True):
@@ -153,6 +152,7 @@ def password_reset_confirm(request):
 
 @api(["GET"])
 def account_view(request):
+    logic.maybe_expire_rooms()  # (тоглогч бүр минут тутам: орхигдсон өрөөний түгжигдсэн барьцаа суллагдана)
     return ok(account=account(request.token))
 
 
@@ -203,8 +203,16 @@ def room_accept(request, room_id):
 
 @api(["POST"])
 def room_beat(request, room_id):
+    logic.maybe_expire_rooms()
     room = logic.room_beat(request.token.player, room_id)
     return ok(**logic.room_state(room))
+
+
+@api(["POST"])
+def room_guest_lost(request, room_id):
+    """Хост: {"battle": n, "lost": <энэ тулаанд үхсэн зочны Gold-ийн цэрэг, нийт>}"""
+    logic.guest_soldiers_lost(request.token.player, room_id, request.json.get("battle"), request.json.get("lost"))
+    return ok()
 
 
 @api(["POST"])
@@ -218,7 +226,8 @@ def room_result(request, room_id):
     """{"battle": n, "winner": "host"|"guest"|"none"}. Шийдэгдээгүй бол {"settled": false}: хэдэн секунд тутам давтана."""
     player = request.token.player
     settled, winner, room = logic.report_battle(player, request.token.device_id, room_id, request.json.get("battle"),
-                                                request.json.get("winner"), client_ip(request))
+                                                request.json.get("winner"), client_ip(request),
+                                                absent=request.json.get("absent") is True)
     data = {"settled": settled, "winner": winner, "account": account(request.token)}
     if settled:
         # Энэ тоглогчийн хувьд: хүчингүй (зөрсөн), ялсан (өрөөний хост: хэвээр эсвэл зочноос шинэ), ялагдсан

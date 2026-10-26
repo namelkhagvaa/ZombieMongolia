@@ -375,6 +375,12 @@ class Room(models.Model):
     guest_report = models.CharField("Зочны мэдэгдсэн ялагч", max_length=8, blank=True)
     report_at = models.DateTimeField("Анхны мэдэгдэл", null=True, blank=True)
     guest_left = models.BooleanField("Зочин тулааны үеэр гарсан (AI тулалдана)", default=False)
+    # Мэдэгдэл илгээхэд нөгөө тал тасарсан байсан (түүний багийг AI тулалдуулсан): зөрвөл сүлжээний асуудал, маргаан биш
+    host_absent = models.BooleanField("Хостын мэдэгдэлд зочин тасарсан", default=False)
+    guest_absent = models.BooleanField("Зочны мэдэгдэлд хост тасарсан", default=False)
+    # Зочны Gold-оор авсан цэрэг: холбогдох үеийн тоо ба хостын мэдэгдсэн алдагдал (зочин тасарсан ч хасагдана)
+    guest_soldiers_start = models.PositiveSmallIntegerField("Зочны цэрэг (холбогдох үед)", null=True, blank=True)
+    guest_soldiers_lost = models.PositiveSmallIntegerField("Зочны алдсан цэрэг (хостын мэдэгдэл)", default=0)
     # Найзын код (6 орон): энэ кодоор орсон зочин хамт тоглоно (тулаангүй, төлбөргүй). pvp: Gold хүрэлцсэн тул өөр
     # тоглогч урилгагүй орж тулалдана (эс бөгөөс зөвхөн найз кодоор).
     code = models.CharField("Найзын код", max_length=6, blank=True, db_index=True)

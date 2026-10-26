@@ -131,6 +131,8 @@ public:
     // Унасан: амь дууссан ч kDownTime секунд босгохыг хүлээнэ (хөдлөх, буудах боломжгүй, хэвтэнэ). Энэ хооронд
     // цохиулбал хугацаа хурдан дуусна. Хугацаа дуусвал үхнэ (health = 0).
     static constexpr float kDownTime = 20.0f;
+    // Дараагийн унахад хүлээх хугацаа (тулаанд kPvpDownTime)
+    void SetDownDuration(float seconds) { downDuration = seconds; }
     bool IsDowned() const { return downed; }
     float DownTimeLeft() const { return downTimer; }
     void UpdateDowned(float dt);
@@ -186,6 +188,7 @@ private:
     float timeSinceHit = 10.0f;
     bool downed = false;
     float downTimer = 0.0f;
+    float downDuration = kDownTime;
     Vector3 hitFrom = { 0.0f, 0.0f, 0.0f };
     bool hitFromKnown = false;
     bool grounded = true;

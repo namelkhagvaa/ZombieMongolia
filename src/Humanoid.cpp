@@ -767,6 +767,36 @@ Vector3 HumanoidMuzzleFor(HeldItem held)
     }
 }
 
+void ApplyDownedPose(HumanoidPose& pose, float time)
+{
+    pose.walkPhase = 0.0f;
+    pose.moveAmount = 0.0f;
+    pose.speed = 0.0f;
+    pose.recoil = 0.0f;
+    pose.gunKick = 0.0f;
+    pose.aim = 0.0f;
+    pose.actionProgress = -1.0f;
+    pose.reload = -1.0f;
+    pose.crouch = 0.0f;
+    pose.prone = 0.0f;
+    pose.lean = 0.0f;
+    pose.bob = 0.0f;
+    pose.fall = 1.0f;
+    // Баруун өвдөг өргөгдсөн, зүүн гар шарх руугаа (цээж) тулна; амьсгал, бага зэрэг хөдөлгөөн
+    const float slow = std::sin(time * 1.4f), slower = std::sin(time * 0.9f + 1.3f);
+    pose.hip[0] = 38.0f + 6.0f * slow;
+    pose.knee[0] = 70.0f + 10.0f * slow;
+    pose.hip[1] = 6.0f;
+    pose.knee[1] = 10.0f;
+    pose.shoulder[0] = 10.0f;
+    pose.elbow[0] = 20.0f;
+    pose.shoulder[1] = 45.0f + 10.0f * slower;
+    pose.elbow[1] = 95.0f;
+    pose.shoulderYaw[1] = 30.0f;
+    pose.headRoll = 12.0f * slower;
+    pose.breath = slow;
+}
+
 HumanoidPose MakeSoldierPose(float walkCycle, float moveAmount, bool grounded, float time, float recoil,
                              HeldItem held, float action)
 {

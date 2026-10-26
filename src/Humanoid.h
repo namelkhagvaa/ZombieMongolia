@@ -121,6 +121,11 @@ struct HumanoidPose
 HumanoidPose MakeSoldierPose(float walkCycle, float moveAmount, bool grounded, float time, float recoil,
                              HeldItem held = HeldItem::Rifle, float action = 0.0f);
 
+// Унасан (шархадсан, босгохыг хүлээж буй) дүр: нуруугаараа бүрэн хэвтэж, нэг өвдгөө өргөн, гараа аажим хөдөлгөнө.
+// Алхах, онилох, суух, хэвтэх (prone) байрлалыг арилгана (тэдгээртэй хольж хагас унасан мэт харагдахгүй).
+// Тоглогч, AI дайчин, нөгөө тоглогчийн дүр бүгд үүнийг хэрэглэнэ.
+void ApplyDownedPose(HumanoidPose& pose, float time);
+
 // Хурдаас хамаарах алхааны хэлбэр (хүний алхаа, гүйлтийн хэмжилтэд ойртуулсан).
 struct HumanoidGait
 {

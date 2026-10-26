@@ -1156,6 +1156,7 @@ namespace Net
             for (int i = 0; i < soldiers && r.ok; ++i)
             {
                 SoldierState so;
+                so.id = r.U16();
                 so.position = r.V3();
                 so.facing = r.F();
                 so.speed = r.F();
@@ -1300,6 +1301,8 @@ namespace Net
         case Msg::CrateGrant:
             e.id = r.U16();
             break;
+        case Msg::GuestKick:
+            break;
         case Msg::Revive:
             break;
         case Msg::BattleOver:
@@ -1368,6 +1371,7 @@ namespace Net
         w.U16((uint16_t)s.soldiers.size());
         for (const SoldierState& so : s.soldiers)
         {
+            w.U16(so.id);
             w.V3(so.position); w.F(so.facing); w.F(so.speed); w.U8((uint8_t)so.member); w.U8(so.alive);
             w.U8(so.aiming); w.U8(so.shots); w.V3(so.shotEnd);
             w.U8((uint8_t)so.vehicle); w.U8(so.seatStyle); w.V3(so.seat);
@@ -1409,6 +1413,13 @@ namespace Net
         Writer w;
         w.U8((uint8_t)Msg::CrateGrant);
         w.U16((uint16_t)id);
+        Send(w.data, true);
+    }
+
+    void Session::SendGuestKick()
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::GuestKick);
         Send(w.data, true);
     }
 
@@ -1540,11 +1551,11 @@ namespace Net
         Send(w.data, true);
     }
 
-    void Session::SendBattleOver(bool guestWon)
+    void Session::SendBattleOver(int result)
     {
         Writer w;
         w.U8((uint8_t)Msg::BattleOver);
-        w.U8(guestWon ? 1 : 0);
+        w.U8((uint8_t)result);
         Send(w.data, true);
     }
 

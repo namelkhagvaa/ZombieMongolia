@@ -36,8 +36,7 @@ class ManageError(Exception):
 
 
 def client_ip(request):
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    return forwarded.split(",")[0].strip() if forwarded else request.META.get("REMOTE_ADDR")
+    return logic.request_ip(request)
 
 
 def staff_api(methods, auth=True):

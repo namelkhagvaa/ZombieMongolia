@@ -104,7 +104,7 @@ function attach(peer, hello) {
     return;
   }
   if (params.has('host')) {
-    if (ticket) { hostTicketRoom(peer, `room:${ticket.r}`, ticket.r); return; }
+    if (ticket) { hostTicketRoom(peer, `room:${ticket.r}`, ticket.r, ticket); return; }
     // Тасалбаргүй (дотоод сүлжээ, хуучин хувилбар): санамсаргүй код
     const code = rooms.size < MAX_ROOMS && (roomsByIp.get(peer.ip) || 0) < MAX_ROOMS_PER_IP ? newCode() : 0;
     if (!code) { peer.control({ type: 'error', reason: 'full' }); peer.close(); return; }
@@ -122,8 +122,15 @@ function attach(peer, hello) {
 }
 
 // Тасалбартай хост: дахин холбогдвол хуучин холболтыг орлож, өрөө (ба холбогдсон зочин) хэвээр үргэлжилнэ.
-function hostTicketRoom(peer, code, id) {
+// Өөр тоглогч (тулаанд ялж шинэ хост болсон) зөвхөн илүү шинэ тасалбараар орлоно: ялагдсан хостын хуучин (хүчинтэй хэвээр)
+// тасалбар шинэ хостыг гаргахгүй (эс бөгөөс хоёулаа ээлжлэн бие биеэ гаргаж, шинэ зочин орж чадахгүй).
+function hostTicketRoom(peer, code, id, ticket) {
   let room = rooms.get(code);
+  if (room && room.hostPlayer !== ticket.p && ticket.exp < room.hostExp) {
+    peer.control({ type: 'error', reason: 'replaced' });
+    peer.close();
+    return;
+  }
   if (room) {
     clearTimeout(room.hostGone);
     room.hostGone = null;
@@ -135,6 +142,8 @@ function hostTicketRoom(peer, code, id) {
     room = { host: peer, guest: null, guestPlayer: null, ticket: true, ip: null, hostGone: null };
     rooms.set(code, room);
   }
+  room.hostPlayer = ticket.p;
+  room.hostExp = ticket.exp;
   peer.control({ type: 'room', code: id });
   bindHost(peer, room, code);
   if (room.guest) {
