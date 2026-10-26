@@ -5872,11 +5872,21 @@ void Game::MigrateToHost()
     StageSave stage;
     const bool hasStage = ParseStageText(Account::RoomStage(), stage);
     const int coins = progress.coins, ammo = ammoReserve, recruits = Account::RoomRecruits();
+    const Vector3 battlePosition = player.Position(); // ялсан газар: аймгийн эхлэх цэгээс биш эндээс үргэлжлүүлнэ
+    const float battleFacing = player.Facing();
     LeaveCoop(); // (CurrentRoomRole нь Host болсон тул өрөөнөөс гарахгүй)
     if (hasStage) progress.stages[(size_t)province] = stage;
     StartMission(province);
     progress.coins = coins;
     ammoReserve = ammo;
+    if (world.InsideBoundary(battlePosition.x, battlePosition.z))
+    {
+        // (ертөнц ижил үүрээр дахин үүссэн тул байрлал хүчинтэй: давхарт байсан бол давхартаа)
+        player.Assume(battlePosition, battleFacing, player.Health(), player.MaxHealth());
+        camera.Snap(battlePosition);
+        world.Stream(battlePosition, true);
+        ResetSquad(progress.soldiers); // багийнхан шинэ байрлалын дэргэд
+    }
     for (int i = 0; i < recruits; ++i)
     {
         const float angle = (float)i * 1.1f;
@@ -5887,8 +5897,8 @@ void Game::MigrateToHost()
     }
     Save();
     SetNotice("ТУЛААНД ЯЛЛАА! Та одоо энэ өрөөний хост — даалгаврыг үргэлжлүүлнэ", 5.0f);
-    TraceLog(LOG_INFO, "STEP: winner_continues as the new host, province %d, stage loaded %d, %d recruits", province + 1,
-             (int)hasStage, recruits);
+    TraceLog(LOG_INFO, "STEP: winner_continues as the new host, province %d, stage loaded %d, %d recruits, at (%.0f, %.0f)",
+             province + 1, (int)hasStage, recruits, player.Position().x, player.Position().z);
 }
 
 void Game::UpdateBattle(float dt)
