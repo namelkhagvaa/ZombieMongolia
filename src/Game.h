@@ -227,6 +227,26 @@ private:
     float guestSwitchTimer = 0.0f;  // зочин: шилжих хүсэлт илгээсний дараа давхар илгээхгүй
     float stageSyncTimer = 0.0f;    // хост: өрөөний ахицыг зочинд илгээх
     float guestMemberHealth = 100.0f; // хост: зочны гишүүдийн амийн дээд хэмжээ (GuestSetup)
+    // ---- Хамтарсан тоглолтын хамгаалалт (хост зочны мэдэгдэлд шууд итгэхгүй) ----
+    float guestShadow = -1.0f;        // хост, тулаан: зочны амийг хост өөрөө давхар тооцно (-1 = дараагийн мэдээгээр)
+    bool guestForcedDown = false;     // хост: хостын тооцоогоор зочин унасан (амьд гэж мэдэгдсэн ч) — тулаанд тооцогдохгүй
+    int guestSuspicion = 0;           // хост: зочин хостын тооцооноос илүү амьтай гэж дараалан мэдэгдсэн удаа
+    float guestHitTokens = 16.0f;     // хост: зочны оносон мэдэгдэл (буудах хурдаар хязгаарлагдана)
+    float guestBlastTokens = 3.0f;    // хост: зочны дэлбэрэлт
+    float guestRecruitCooldown = 0.0f, guestHealCooldown = 0.0f;
+    struct PendingGuestSetup
+    {
+        bool pending = false;
+        float health = 0.0f;
+        int soldiers = 0;
+        float waited = 0.0f;
+    };
+    PendingGuestSetup guestSetup;     // хост: серверээс зочны мэдээлэл ирэх хүртэл хүлээнэ
+    bool verdictPending = false;      // зочин: хост тулаан дууслаа гэлээ; өөрийн харж буйгаар шалгаж мэдэгдэнэ
+    bool verdictHostSaysGuest = false;
+    float verdictTimer = 0.0f;
+    std::vector<int> requestedCrates; // зочин: авахыг хүссэн хайрцгууд (хост олгоно)
+    uint32_t snapshotCount = 0;       // хост: хол зомбиг хоёр snapshot тутамд нэг удаа илгээнэ
     bool guestSetupSent = false;    // зочин: нэгдсэний дараа тохиргоогоо илгээсэн
     void GuestTakeOver(int index, bool leaveDead, bool hold); // хост: зочныг index дахь AI гишүүний байранд
     void GuestTeamInput();          // зочин: Tab / F1-F3 / "энд бай"
@@ -262,6 +282,12 @@ private:
     bool EventSpot(float minDistance, float maxDistance, Vector3& spot) const;
     void ShowWorldEvent(int kind, Vector3 position);
     void TakeCrate(int id);
+    int CodeLength() const;
+    void GiveCrateReward();
+    void DamageGuest(float amount);   // хост: зочныг гэмтээнэ (илгээж, амийг нь давхар тооцно)
+    bool AllowGuestHit(float& amount, float cap); // хост: зочны оноолтыг хязгаарлана; хэтэрсэн бол false
+    void ApplyGuestSetup();
+    int GuestViewVerdict() const;     // зочин: өөрийн харж буй тулааны үр дүн (-1 шийдэгдээгүй, 0 хост, 1 зочин ялсан)
     // Унасан байдал: тоглогч бие биеэ босгох (хамтарсан тоглолт), AI нөхдийн босголт, HUD
     void UpdateDowned(float dt);
     float humanRevive = 0.0f; // энэ тоглогч нөгөө тоглогчийг босгож буй хугацаа

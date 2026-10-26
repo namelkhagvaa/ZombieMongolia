@@ -24,7 +24,7 @@ public:
 
     // Хамтарсан тоглолт: зочин хостын жагсаалтыг авна; хост зочны авсан хайрцгийг арилгана.
     void Replace(const std::vector<Vector3>& positions) { kits = positions; }
-    void RemoveNear(Vector3 position, float radius);
+    bool RemoveNear(Vector3 position, float radius); // олдсон (өөр хүн түрүүлж аваагүй) бол true
 
     const std::vector<Vector3>& Positions() const { return kits; }
 

@@ -99,6 +99,7 @@ export default function PlayerDrawer({ playerId, onClose, onChanged }: { playerI
           <Space>
             {player.name}
             {player.blocked && <Tag color="red">Хаагдсан</Tag>}
+            {player.verified ? <Tag color="green">Утас баталгаажсан</Tag> : <Tag color="orange">Утас баталгаажаагүй</Tag>}
           </Space>
         ) : (
           'Тоглогч'

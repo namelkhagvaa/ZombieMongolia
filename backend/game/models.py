@@ -49,6 +49,12 @@ class GameSettings(models.Model):
     coop_daily_limit = models.PositiveSmallIntegerField("Хамт давсны шагнал өдөрт (удаа)", default=5)
     stage_min_minutes = models.PositiveSmallIntegerField("Шагнал авах хамгийн бага хугацаа (минут)", default=5)
     battle_pair_limit = models.PositiveSmallIntegerField("Нэг хосын хоногийн төлбөртэй тулаан", default=3)
+    stage_daily_limit = models.PositiveSmallIntegerField("Үе шатны шагнал хоногт (тоглогч бүрд)", default=10)
+    verify_bonus = models.PositiveIntegerField("Утас баталгаажуулсны урамшуулал (Gold)", default=100)
+    # Утасны операторууд олон хэрэглэгчийг нэг IP-аар гаргадаг (CGNAT): хэт бага бол жинхэнэ хэрэглэгч бүртгүүлж чадахгүй
+    register_per_ip_day = models.PositiveSmallIntegerField("Нэг IP-ээс хоногт нээх данс (SMS-гүй бүртгэл)", default=20)
+    block_same_ip = models.BooleanField("Ижил IP-тай тоглогчдын тулаанд Gold шилжүүлэхгүй (олон дансаар)",
+                                        default=True)
     # Вэбээр Gold худалдах багцууд: [[Gold, үнэ ₮], ...]
     gold_packs = models.JSONField("Gold-ийн багцууд", default=list, blank=True)
     # Сайжруулалтын үнэ: дараагийн түвшин = үнэ x (одоогийн түвшин + 1) Gold
@@ -84,7 +90,11 @@ class GameSettings(models.Model):
 
 class Player(models.Model):
     name = models.CharField("Нэр", max_length=60)
-    phone = models.CharField("Утас", max_length=16, unique=True)  # +976XXXXXXXX
+    # +976XXXXXXXX. Бүртгүүлэхэд баталгаажуулахгүй; дугаарын жинхэнэ эзэн SMS-ээр баталгаажуулбал дугаар түүнийх болж
+    # өмнө нь эзэлсэн (баталгаажаагүй) данс утасгүй (null) үлдэнэ.
+    phone = models.CharField("Утас", max_length=16, unique=True, null=True, blank=True)
+    # Утсаа SMS-ээр баталгаажуулсан: Gold нэмэгдэх бүх зүйл (шагнал, тулааны хожил, татах) зөвхөн үүнд
+    phone_verified = models.BooleanField("Утас баталгаажсан", default=False)
     password = models.CharField("Нууц үг (hash)", max_length=128)
     free_used = models.PositiveSmallIntegerField("Ашигласан үнэгүй эрх", default=0)
     credits = models.PositiveIntegerField("Үлдсэн худалдаж авсан эрх", default=0)
@@ -114,7 +124,14 @@ class Player(models.Model):
         verbose_name_plural = "Тоглогчид"
 
     def __str__(self):
-        return f"{self.name} ({self.phone})"
+        return f"{self.name} ({self.contact})"
+
+    @property
+    def contact(self):
+        """Админд харуулах: утас (баталгаажаагүй бол тэмдэглэнэ)."""
+        if not self.phone:
+            return "утасгүй"
+        return self.phone if self.phone_verified else f"{self.phone} (баталгаажаагүй)"
 
     def set_password(self, raw):
         self.password = make_password(raw)
@@ -164,8 +181,8 @@ class UnlockedProvince(models.Model):
 class Verification(models.Model):
     """SMS кодоор утас баталгаажуулах оролдлого (бүртгэл, нууц үг сэргээх)."""
 
-    REGISTER, RESET, CASHOUT = "register", "reset", "cashout"
-    PURPOSES = [(REGISTER, "Бүртгэл"), (RESET, "Нууц үг сэргээх"), (CASHOUT, "Gold татах")]
+    REGISTER, RESET, CASHOUT, VERIFY = "register", "reset", "cashout", "verify"
+    PURPOSES = [(REGISTER, "Бүртгэл"), (RESET, "Нууц үг сэргээх"), (CASHOUT, "Gold татах"), (VERIFY, "Утас баталгаажуулах")]
 
     phone = models.CharField(max_length=16, db_index=True)
     purpose = models.CharField(max_length=10, choices=PURPOSES)
@@ -243,16 +260,21 @@ class GoldTransaction(models.Model):
     CASHOUT, CASHOUT_REFUND = "cashout", "cashout_refund"
     SKIN = "skin"
     COOP_WIN = "coop_win"
+    ROOM_REFUND = "room_refund"
+    VERIFY_BONUS = "verify_bonus"
     REASONS = [(SIGNUP, "Эхлэл"), (SHOP, "Дэлгүүр"), (ADMIN, "Админ"), (ROOM_FEE, "Өрөөнд орсон"),
                (ROOM_LEAVE, "Өрөөнөөс гарсан (барьцаа шатсан)"), (STAGE_COMPLETE, "Үе шат дуусгасан"),
                (BATTLE_WIN, "Тулаанд ялсан"), (BATTLE_LOSS, "Тулаанд ялагдсан"), (PURCHASE, "Худалдаж авсан"),
                (CASHOUT, "Gold татсан"), (CASHOUT_REFUND, "Татах хүсэлт буцсан"), (SKIN, "Онцгой дүрээр тоглосон"),
-               (COOP_WIN, "Найзтайгаа хамт давсан")]
+               (COOP_WIN, "Найзтайгаа хамт давсан"), (ROOM_REFUND, "Өрөөнд холбогдож чадаагүй (төлбөр буцсан)"),
+               (VERIFY_BONUS, "Утас баталгаажуулсан")]
     # Хожсон Gold (Player.won_gold) нэмэгдэх шалтгаан; урамшууллын Gold (Player.bonus_gold) нэмэгдэх шалтгаан.
     # Бусад орлого (худалдан авалт) цэнэглэсэн Gold. Үе шатны шагналыг хожсонд тооцохгүй: тоглоомгүйгээр (API-гаар)
     # өрөө нээж 5 минут хүлээгээд "дууслаа" гэж олборлож болдог байсан.
     WON_GAIN = (BATTLE_WIN, CASHOUT_REFUND)
-    BONUS_GAIN = (SIGNUP, STAGE_COMPLETE, ADMIN, COOP_WIN)
+    BONUS_GAIN = (SIGNUP, STAGE_COMPLETE, ADMIN, COOP_WIN, ROOM_REFUND, VERIFY_BONUS)
+    # Утсаа баталгаажуулаагүй тоглогчид нэмэгдэхгүй (шагнал, хожил). Эхлэлийн Gold, худалдан авалт, буцаалт, админ хамаарахгүй.
+    REWARDS = (STAGE_COMPLETE, COOP_WIN, BATTLE_WIN)
 
     @classmethod
     def split_gold(cls, gold, won, bonus, amount, reason, bonus_part=0):
@@ -353,15 +375,24 @@ class Room(models.Model):
     guest_report = models.CharField("Зочны мэдэгдсэн ялагч", max_length=8, blank=True)
     report_at = models.DateTimeField("Анхны мэдэгдэл", null=True, blank=True)
     guest_left = models.BooleanField("Зочин тулааны үеэр гарсан (AI тулалдана)", default=False)
-    # Найзын код (4 орон): энэ кодоор орсон зочин хамт тоглоно (тулаангүй, төлбөргүй). pvp: Gold хүрэлцсэн тул өөр
+    # Найзын код (6 орон): энэ кодоор орсон зочин хамт тоглоно (тулаангүй, төлбөргүй). pvp: Gold хүрэлцсэн тул өөр
     # тоглогч урилгагүй орж тулалдана (эс бөгөөс зөвхөн найз кодоор).
-    code = models.CharField("Найзын код", max_length=4, blank=True, db_index=True)
+    code = models.CharField("Найзын код", max_length=6, blank=True, db_index=True)
     pvp = models.BooleanField("Нээлттэй (тулаан)", default=True)
     guest_coop = models.BooleanField("Зочин кодоор орсон найз", default=False)
     # Өрөөний даалгаврын ахиц: хост илгээнэ (тоглоомын StageSave-ийн мөр), шинэ хост үргэлжлүүлнэ
     stage_state = models.TextField("Даалгаврын ахиц", blank=True)
+    stage_updates = models.PositiveIntegerField("Ахиц өөрчлөгдсөн удаа", default=0)  # үе шатны шагналын шалгалт
     recruits = models.PositiveSmallIntegerField("Хостын элсүүлсэн цэрэг", default=0)
     closed_reason = models.CharField("Хаагдсан шалтгаан", max_length=16, blank=True)
+    # Тоглоомын сүлжээний протокол (Net::kProtocolVersion): зөвхөн ижил хувилбартай тоглогчдыг тааруулна
+    protocol = models.PositiveSmallIntegerField("Протокол", default=0)
+    host_ip = models.GenericIPAddressField("Хостын IP", null=True, blank=True)
+    guest_ip = models.GenericIPAddressField("Зочны IP", null=True, blank=True)
+    # Зочин тоглоомоор (relay) холбогдсоныг хост баталгаажуулсан: түүнээс өмнө гарвал төлбөр буцна, тулаан тоологдохгүй
+    guest_confirmed = models.BooleanField("Зочин холбогдсон", default=False)
+    guest_joined = models.DateTimeField("Зочин орсон", null=True, blank=True)
+    guest_fee = models.PositiveIntegerField("Зочны төлсөн орох төлбөр", default=0)
     created = models.DateTimeField("Нээсэн", auto_now_add=True)
     closed = models.DateTimeField("Хаагдсан", null=True, blank=True)
 

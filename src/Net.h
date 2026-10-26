@@ -26,7 +26,7 @@ namespace Net
     constexpr uint16_t kDiscoveryPort = 47811;
     // Сүлжээний мессежийн хувилбар: мессежийн бүтэц өөрчлөгдөх бүрд нэмэгдүүлнэ. Хост ба зочин ижил хувилбартай
     // байж л нэгдэнэ (эс бөгөөс өгөгдөл буруу уншигдаж, жишээ нь цэргүүд "үхсэн" мэт харагдана).
-    constexpr uint16_t kProtocolVersion = 11; // 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris; 6: 1-р дайчны дүр;
+    constexpr uint16_t kProtocolVersion = 12; // 12: шахсан snapshot, хайрцгийг хост олгоно, дахин холбогдох; 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris; 6: 1-р дайчны дүр;
                                              // 7: тулаан (тоглогч хооронд); 8: зочин хосттой адил (гишүүн солих г.м.);
                                              // 9: унааг буудах, Gold-ийн цэрэг алдах; 10: илгээсэн цаг (жигд хөдөлгөөн)
 
@@ -63,7 +63,8 @@ namespace Net
         SoldierLost,     // хост -> зочин: зочны Gold-оор авсан цэрэг үхэв (тоо): серверээс шууд хасна
         WorldEvent,      // хост -> зочин: гэнэтийн үйл явдал (төрөл, дугаар, байрлал, өндөр)
         CrateTaken,      // аль аль нь: ачааны хайрцгийг авлаа (дугаар)
-        Revive           // аль аль нь: нөгөө талын унасан тоглогчийг босголоо
+        Revive,          // аль аль нь: нөгөө талын унасан тоглогчийг босголоо
+        CrateGrant       // хост -> зочин: зочны авахыг хүссэн хайрцаг түүнийх (давхар авахаас сэргийлж хост шийднэ)
     };
     constexpr uint32_t kHostPlayer = 0xFFFF; // GuestHitHuman: хостын удирдаж буй тоглогч
 
@@ -139,6 +140,7 @@ namespace Net
 
     struct Snapshot
     {
+        Vector3 origin = { 0.0f, 0.0f, 0.0f }; // зомбины байрлалыг үүнээс (зочны байрлал) см-ээр шахаж илгээнэ
         AvatarState host;
         std::vector<SoldierState> soldiers;
         std::vector<ZombieState> zombies;
@@ -202,7 +204,14 @@ namespace Net
         // Компьютер, Android: relay серверийн хаяг (хоосон бол интернэтээр тоглохгүй). Хөтөч дээр үйлчлэхгүй.
         void SetRelayServer(const std::string& hostName, uint16_t port);
         Role GetRole() const { return role; }
-        bool Connected() const { return connected && ((link == Link::Lan && peer) || (link == Link::Relay && partner)); }
+        // Relay: нөгөө тал түр тасарсан (дахин холбогдохыг хүлээж буй) үед ч холбогдсон гэж тооцно
+        bool Connected() const
+        {
+            return connected && ((link == Link::Lan && peer) || (link == Link::Relay && (partner || lostAt > 0.0)));
+        }
+        // Нөгөө тал тасарсан эсвэл чимээгүй болсон: дахин холбогдохыг хүлээж байна (kResumeGrace секунд хүртэл)
+        bool Reconnecting() const { return lostAt > 0.0; }
+        int ReconnectSecondsLeft() const;
         // Хостын өрөөний код (0 = хараахан аваагүй эсвэл сервер хүрэхгүй).
         int RoomCode() const { return roomCode; }
         const std::string& LocalName() const { return name; }
@@ -260,6 +269,7 @@ namespace Net
         void SendWorldEvent(int kind, int id, Vector3 position, float altitude);
         void SendCrateTaken(int id);
         void SendRevive();
+        void SendCrateGrant(int id);
 
         // Хүлээн авсан сүүлийн snapshot (зочин)
         bool TakeSnapshot(Snapshot& out);
@@ -269,6 +279,10 @@ namespace Net
         void HandleDiscovery();
         void HandlePacket(const uint8_t* data, size_t size, std::vector<Event>& events);
         void PollRelay(std::vector<Event>& events);
+        // Тасалбартай өрөөнд (хост, зочин) холболт тасарвал дахин холбогдоно; хугацаа дуусвал Leave
+        bool CanResume() const;
+        void UpdateResume(std::vector<Event>& events);
+        void GiveUp(std::vector<Event>& events);
 
         // Нэгдсэн зочин аль замаар холбогдсон (хост нэг л зочин хүлээн авна)
         enum class Link { None, Lan, Relay };
@@ -278,6 +292,10 @@ namespace Net
         Link link = Link::None;
         bool relayOpen = false;    // relay сервертэй холболт нээлттэй (эсвэл нээгдэж байна)
         std::string ticket;        // нээлттэй өрөөний тасалбар (хост)
+        std::string joinTicket;    // зочны тасалбар (дахин холбогдоход)
+        double lostAt = 0.0;       // нөгөө тал тасарсан / чимээгүй болсон цаг (0 = холбоотой)
+        double lastHeard = 0.0;    // нөгөө талаас сүүлд мессеж ирсэн цаг
+        double reconnectAt = 0.0;  // relay руу дахин холбогдох оролдлого
         double lanRetryAt = 0.0;   // ENet-ийн порт эзлэгдсэн бол дахин оролдох цаг
         Role role = Role::None;
         std::string name;

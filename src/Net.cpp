@@ -21,6 +21,7 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
@@ -191,6 +192,9 @@ namespace Net
         // Ирсэн мессежийн төрөл
         enum RelayKind { kRelayNone = 0, kRelayOpen, kRelayRoom, kRelayPaired, kRelayLeft, kRelayError, kRelayClosed, kRelayData };
         const double kRelayRetryWeb = 5.0;     // хост сервер хүрэхгүй бол ийм завсартай дахин оролдоно
+        const double kResumeGrace = 45.0;      // тасарсан нөгөө талыг (relay-ийн тасалбартай өрөө) хүлээх хугацаа
+        const double kSilenceLimit = 8.0;      // нөгөө талаас мессеж ирэхгүй ийм удсан бол тасарсанд тооцно
+        const double kResumeEvery = 3.0;       // өөрийн relay холболт тасарсан бол дахин оролдох завсар
         const double kRelayRetryNative = 30.0; // (компьютер: интернэтгүй, дотоод сүлжээгээр тоглож буй байж болно)
 
 #if defined(__EMSCRIPTEN__)
@@ -232,9 +236,14 @@ namespace Net
         EM_JS(void, WebSend, (const uint8_t* data, int size, int reliable), {
             var ws = Module.zmWs;
             if (!ws || ws.readyState !== 1) return;
-            // Тасралтгүй мессежүүдийг (snapshot, байдал) сүлжээ удаан үед хаяна: хоцрогдол хуримтлагдахгүй.
-            if (!reliable && ws.bufferedAmount > 262144) return;
-            ws.send(HEAPU8.slice(data, data + size));
+            if (reliable) { ws.send(HEAPU8.slice(data, data + size)); return; }
+            // Тасралтгүй мессежүүдийг (snapshot, байдал) сүлжээ удаан үед хаяна: хоцрогдол хуримтлагдахгүй. 0xFF: relay
+            // ч хүлээн авагчийн сүлжээ удаан бол хаяж болно (хасаад дамжуулна).
+            if (ws.bufferedAmount > 24576) return;
+            var out = new Uint8Array(size + 1);
+            out[0] = 255;
+            out.set(HEAPU8.subarray(data, data + size), 1);
+            ws.send(out);
         });
 
         // Дараалал дахь эхний мессежийн төрөл, утга; өгөгдлийн хэмжээг буцаана (авахгүй).
@@ -312,8 +321,8 @@ namespace Net
             void Send(const uint8_t* data, size_t size, bool reliable)
             {
                 if (socket == ENET_SOCKET_NULL) return;
-                if (!reliable && out.size() > 262144) return; // сүлжээ удаан: тасралтгүй мессежийг хаяна
-                Frame(2, data, size);
+                if (!reliable && out.size() > 24576) return; // сүлжээ удаан: тасралтгүй мессежийг хаяна (хоцролт хуримтлагдахгүй)
+                Frame(reliable ? 2 : 5, data, size);          // 5: relay ч дүүрсэн үед хаяж болно
             }
 
             void Pump()
@@ -342,8 +351,8 @@ namespace Net
                     }
                 }
 
-                // Амьд байгааг мэдэгдэнэ (сервер 2 минут чимээгүй холболтыг хаадаг)
-                if (GetTime() - lastSent > 20.0) Frame(3, nullptr, 0);
+                // Амьд байгааг мэдэгдэнэ (сервер 45 секунд чимээгүй холболтыг хаадаг)
+                if (GetTime() - lastSent > 10.0) Frame(3, nullptr, 0);
 
                 while (!out.empty())
                 {
@@ -612,6 +621,8 @@ namespace Net
         roomCode = 0;
         link = Link::None;
         role = Role::None;
+        lostAt = lastHeard = 0.0;
+        joinTicket.clear();
     }
 
     void Session::AnswerJoin(bool accept, int province)
@@ -627,6 +638,8 @@ namespace Net
         if (accept)
         {
             connected = true;
+            lastHeard = GetTime();
+            lostAt = 0.0;
             return;
         }
 #if !defined(__EMSCRIPTEN__)
@@ -678,6 +691,7 @@ namespace Net
         Stop();
         RelayOpen(("?ticket=" + value).c_str());
         relayOpen = true;
+        joinTicket = value;
         link = Link::Relay;
         role = Role::Guest;
         joinPending = true;
@@ -868,6 +882,69 @@ namespace Net
         }
 #endif
         PollRelay(events);
+        UpdateResume(events);
+    }
+
+    bool Session::CanResume() const
+    {
+        // Зөвхөн тасалбартай өрөө (relay өрөөг хадгалж, ижил тоглогч буцаж орно) ба тоглолт эхэлсэн үед
+        return link == Link::Relay && connected && (role == Role::Host ? !ticket.empty() : !joinTicket.empty());
+    }
+
+    int Session::ReconnectSecondsLeft() const
+    {
+        return lostAt > 0.0 ? std::max(0, (int)std::ceil(kResumeGrace - (GetTime() - lostAt))) : 0;
+    }
+
+    void Session::GiveUp(std::vector<Event>& events)
+    {
+        TraceLog(LOG_INFO, "NET: partner did not come back in %.0f s", kResumeGrace);
+        lostAt = 0.0;
+        partner = false;
+        connected = false;
+        joinPending = false;
+        link = Link::None;
+        if (role == Role::Guest)
+        {
+            if (relayOpen) RelayClose();
+            relayOpen = false;
+            role = Role::None;
+            joinTicket.clear();
+        }
+        else if (!relayOpen)
+        {
+            retryAt = 0.0; // хост: дараагийн зочинд өрөөгөө дахин нээнэ (StartHosting)
+        }
+        Event e;
+        e.type = Msg::Leave;
+        events.push_back(e);
+    }
+
+    void Session::UpdateResume(std::vector<Event>& events)
+    {
+        if (link != Link::Relay || !connected) return;
+        const double now = GetTime();
+        // Нөгөө тал чимээгүй (апп нуугдсан, утас сүлжээ сольсон г.м.): холболт нээлттэй ч тасарсанд тооцно
+        if (lostAt <= 0.0 && partner && lastHeard > 0.0 && now - lastHeard > kSilenceLimit)
+        {
+            lostAt = now;
+            TraceLog(LOG_INFO, "NET: partner silent for %.0f s, waiting for them", now - lastHeard);
+        }
+        if (lostAt <= 0.0) return;
+        if (now - lostAt > kResumeGrace)
+        {
+            GiveUp(events);
+            return;
+        }
+        // Өөрийн relay холболт тасарсан: ижил тасалбараар дахин холбогдоно
+        if (!relayOpen && now >= reconnectAt)
+        {
+            reconnectAt = now + kResumeEvery;
+            const std::string query = role == Role::Host ? "?host&ticket=" + ticket : "?ticket=" + joinTicket;
+            RelayOpen(query.c_str());
+            relayOpen = true;
+            TraceLog(LOG_INFO, "NET: reconnecting to the relay");
+        }
     }
 
     void Session::PollRelay(std::vector<Event>& events)
@@ -884,7 +961,16 @@ namespace Net
             {
                 buffer.resize((size_t)std::max(size, 1));
                 RelayPop(buffer.data());
-                if (link == Link::Relay) HandlePacket(buffer.data(), (size_t)size, events);
+                if (link == Link::Relay)
+                {
+                    lastHeard = GetTime();
+                    if (lostAt > 0.0 && partner)
+                    {
+                        lostAt = 0.0; // чимээгүй байсан тал дахин илгээж эхэллээ
+                        TraceLog(LOG_INFO, "NET: partner is back");
+                    }
+                    HandlePacket(buffer.data(), (size_t)size, events);
+                }
                 continue;
             }
             RelayPop(nullptr);
@@ -895,7 +981,15 @@ namespace Net
                 TraceLog(LOG_INFO, "NET: hosting province %d, room %d", hostedProvince, roomCode);
                 break;
             case kRelayPaired:
-                if (role == Role::Guest)
+                if (link == Link::Relay && connected)
+                {
+                    // Тасарсан тал (эсвэл бид) буцаж холбогдлоо: тоглолт үргэлжилнэ (дахин нэгдэх хүсэлтгүй)
+                    partner = true;
+                    lostAt = 0.0;
+                    lastHeard = GetTime();
+                    TraceLog(LOG_INFO, "NET: reconnected, game continues");
+                }
+                else if (role == Role::Guest)
                 {
                     // ENet-ийн CONNECT-тэй адил: хостод нэгдэх хүсэлт илгээнэ.
                     partner = true;
@@ -923,7 +1017,14 @@ namespace Net
                 }
                 break;
             case kRelayLeft:
-                if (link == Link::Relay)
+                if (CanResume())
+                {
+                    // Нөгөө тал тасарсан: буцаж орохыг хүлээнэ (kResumeGrace), тоглолт хэвээр
+                    partner = false;
+                    if (lostAt <= 0.0) lostAt = GetTime();
+                    TraceLog(LOG_INFO, "NET: partner disconnected, waiting up to %.0f s", kResumeGrace);
+                }
+                else if (link == Link::Relay)
                 {
                     const bool wasActive = connected || joinPending || role == Role::Guest || partner;
                     partner = false;
@@ -941,6 +1042,26 @@ namespace Net
             case kRelayError:
             case kRelayClosed:
             {
+                if (kind == kRelayClosed && CanResume())
+                {
+                    // Өөрийн холболт тасарсан (сүлжээ сольсон г.м.): тоглолт хэвээр, UpdateResume дахин холбогдоно
+                    RelayClose();
+                    relayOpen = false;
+                    partner = false;
+                    if (lostAt <= 0.0) lostAt = GetTime();
+                    reconnectAt = GetTime() + 1.0;
+                    retryAt = GetTime() + kResumeGrace; // (StartHosting өөрөө шинэ өрөө нээхгүй)
+                    TraceLog(LOG_INFO, "NET: relay connection lost, reconnecting");
+                    return;
+                }
+                if (kind == kRelayError && lostAt > 0.0 && connected)
+                {
+                    // Дахин холбогдоход өрөө алга болсон (нөгөө тал удаан эзгүй): тоглолт дууслаа
+                    RelayClose();
+                    relayOpen = false;
+                    GiveUp(events);
+                    return;
+                }
                 // Сервер хүрэхгүй, өрөө олдсонгүй, эсвэл холболт тасарсан.
                 const bool ours = link == Link::Relay;
                 const bool wasActive = ours && (connected || joinPending || role == Role::Guest || partner);
@@ -1006,6 +1127,8 @@ namespace Net
             e.text = r.at + 2 <= r.size ? r.Str() : std::string(); // хостын нэр (хуучин хувилбар илгээдэггүй)
             joinPending = false;
             connected = e.accepted;
+            lastHeard = GetTime();
+            lostAt = 0.0;
             break;
         case Msg::GuestState:
             e.avatar = ReadAvatar(r);
@@ -1027,6 +1150,7 @@ namespace Net
         case Msg::Snapshot:
         {
             Snapshot s;
+            s.origin = r.V3();
             s.host = ReadAvatar(r);
             const int soldiers = r.U16();
             for (int i = 0; i < soldiers && r.ok; ++i)
@@ -1050,12 +1174,15 @@ namespace Net
             const int zombies = r.U16();
             for (int i = 0; i < zombies && r.ok; ++i)
             {
+                // Шахсан: байрлал origin-оос см-ээр (int16, ±327 м), чиглэл 256 хуваарь
                 ZombieState z;
                 z.id = r.U32();
                 z.type = r.U8();
                 z.flags = r.U8();
-                z.position = r.V3();
-                z.facing = r.F();
+                const float dx = (float)(int16_t)r.U16() * 0.01f, dy = (float)(int16_t)r.U16() * 0.01f,
+                            dz = (float)(int16_t)r.U16() * 0.01f;
+                z.position = { s.origin.x + dx, s.origin.y + dy, s.origin.z + dz };
+                z.facing = (float)r.U8() * (2.0f * PI / 256.0f);
                 s.zombies.push_back(z);
             }
             const int vehicles = r.U16();
@@ -1170,6 +1297,9 @@ namespace Net
         case Msg::CrateTaken:
             e.id = r.U32();
             break;
+        case Msg::CrateGrant:
+            e.id = r.U16();
+            break;
         case Msg::Revive:
             break;
         case Msg::BattleOver:
@@ -1233,6 +1363,7 @@ namespace Net
     {
         Writer w;
         w.U8((uint8_t)Msg::Snapshot);
+        w.V3(s.origin);
         WriteAvatar(w, s.host);
         w.U16((uint16_t)s.soldiers.size());
         for (const SoldierState& so : s.soldiers)
@@ -1245,7 +1376,14 @@ namespace Net
         w.U16((uint16_t)s.zombies.size());
         for (const ZombieState& z : s.zombies)
         {
-            w.U32(z.id); w.U8(z.type); w.U8(z.flags); w.V3(z.position); w.F(z.facing);
+            // 13 байт (өмнө нь 22): ойрын зомбинууд (kCoopViewRadius) тул origin-оос ±327 м-т багтана
+            auto centimeters = [](float meters) { return (uint16_t)(int16_t)std::clamp(std::lround(meters * 100.0f), -32767l, 32767l); };
+            w.U32(z.id); w.U8(z.type); w.U8(z.flags);
+            w.U16(centimeters(z.position.x - s.origin.x));
+            w.U16(centimeters(z.position.y - s.origin.y));
+            w.U16(centimeters(z.position.z - s.origin.z));
+            const float turn = z.facing / (2.0f * PI) - std::floor(z.facing / (2.0f * PI));
+            w.U8((uint8_t)((int)std::lround(turn * 256.0f) & 255));
         }
         w.U16((uint16_t)s.vehicles.size());
         for (const VehicleState& v : s.vehicles)
@@ -1264,6 +1402,14 @@ namespace Net
         w.F(s.dayClock);
         w.U8((uint8_t)std::max(0, s.weather));
         Send(w.data, false);
+    }
+
+    void Session::SendCrateGrant(int id)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::CrateGrant);
+        w.U16((uint16_t)id);
+        Send(w.data, true);
     }
 
     void Session::SendGuestDamage(float amount)

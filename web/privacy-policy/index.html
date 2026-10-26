@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Нууцлалын бодлого — Zombie Mongolia</title>
+<meta name="description" content="Zombie Mongolia тоглоомын нууцлалын бодлого: ямар мэдээлэл цуглуулж, хэрхэн ашиглаж, хамгаалдаг вэ.">
+<style>
+  :root { --bg: #0d1015; --panel: #151a22; --text: #e9e6df; --dim: #a9adb5; --gold: #f0b030; --line: #262d39; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.65 "Segoe UI", Roboto, Arial, sans-serif; }
+  header { border-bottom: 1px solid var(--line); padding: 18px 16px; }
+  header a { color: var(--text); text-decoration: none; font-weight: 700; letter-spacing: .5px; }
+  header span { color: var(--gold); }
+  main { max-width: 820px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 30px; margin: 8px 0 4px; }
+  h2 { font-size: 20px; margin: 34px 0 8px; color: var(--gold); }
+  p, li { color: var(--text); }
+  .dim { color: var(--dim); font-size: 14px; }
+  ul { padding-left: 22px; }
+  a { color: var(--gold); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin: 16px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 600; }
+  footer { border-top: 1px solid var(--line); padding: 18px 16px; text-align: center; color: var(--dim); font-size: 14px; }
+  @media (max-width: 600px) { table, thead, tbody, tr, th, td { display: block; } thead { display: none; } td { border: 0; padding: 4px 0; } tr { border-bottom: 1px solid var(--line); padding: 8px 0; } }
+</style>
+</head>
+<body>
+<header><a href="/">ZOMBIE <span>MONGOLIA</span></a></header>
+<main>
+  <h1>Нууцлалын бодлого</h1>
+  <p class="dim">Сүүлд шинэчилсэн: 2026 оны 10 сарын 26</p>
+
+  <p>Энэхүү бодлого нь Zombie Mongolia тоглоом (Windows, Android, вэб хувилбар; цаашид "Тоглоом") болон түүний сервер
+  (zombie-api.apps.mn) таны ямар мэдээллийг цуглуулж, юунд ашиглаж, хэрхэн хамгаалдгийг тайлбарлана. Тоглоомд
+  бүртгүүлж, нэвтэрснээр та энэ бодлогыг хүлээн зөвшөөрнө.</p>
+
+  <h2>1. Бидний цуглуулдаг мэдээлэл</h2>
+  <table>
+    <thead><tr><th>Мэдээлэл</th><th>Хэзээ</th><th>Зорилго</th></tr></thead>
+    <tbody>
+      <tr><td>Нэр (тоглогчийн нэр)</td><td>Бүртгүүлэхэд</td><td>Тоглоомд, хамтарсан тоглолтод харагдана</td></tr>
+      <tr><td>Утасны дугаар</td><td>Бүртгүүлэхэд</td><td>Нэвтрэх, утсаа баталгаажуулах (verify.mn), нууц үг сэргээх, Gold татахыг баталгаажуулах</td></tr>
+      <tr><td>Нууц үг</td><td>Утсаар бүртгүүлэхэд</td><td>Нэвтрэх. Зөвхөн нэг талын шифрлэлтээр (hash) хадгална, бид таны нууц үгийг харах боломжгүй</td></tr>
+      <tr><td>Төхөөрөмжийн танигч</td><td>Нэвтрэх бүрд</td><td>"Нэг төхөөрөмж — нэг данс" дүрэм, луйвраас хамгаалах. Төхөөрөмжийн жинхэнэ дугаарыг шифрлэж (hash) хадгална</td></tr>
+      <tr><td>IP хаяг</td><td>Сервертэй холбогдох бүрд</td><td>Аюулгүй байдал, луйвраас хамгаалах (ижил сүлжээний олон данс)</td></tr>
+      <tr><td>Тоглолтын мэдээлэл</td><td>Тоглох явцад</td><td>Ахиц хадгалах, Gold, сайжруулалт, өрөө, тулааны үр дүн, тоглоомын алдаа засах, тоглоомыг сайжруулах</td></tr>
+      <tr><td>Төлбөрийн мэдээлэл</td><td>Gold худалдаж авахад</td><td>QPay-ийн нэхэмжлэхийн дугаар, дүн, төлөв. <b>Банкны карт, дансны нууц мэдээллийг бид авдаггүй</b> — төлбөрийг QPay болон таны банк хийнэ</td></tr>
+      <tr><td>Банк, дансны дугаар, эзэмшигчийн нэр</td><td>Gold татах хүсэлт гаргахад</td><td>Таны данс руу мөнгө шилжүүлэх</td></tr>
+    </tbody>
+  </table>
+  <p>Бид таны байршил (GPS), харилцагчийн жагсаалт, зураг, микрофон, камерт хандахгүй.</p>
+
+  <h2>2. Мэдээллийг хэрхэн ашигладаг вэ</h2>
+  <ul>
+    <li>Данс үүсгэх, нэвтрүүлэх, тоглоомын ахиц, Gold-ийг хадгалах;</li>
+    <li>Төлбөр хүлээн авах, Gold татах хүсэлтийг шийдвэрлэх;</li>
+    <li>Луйвар, хууран мэхлэлт (олон данс, тоглоомыг өөрчилж ашиг олох) илрүүлж, тоглогчдыг хамгаалах;</li>
+    <li>Тоглоомын алдаа засах, тоглоомыг сайжруулах;</li>
+    <li>Хууль хүчин төгөлдөр шаардлагыг биелүүлэх.</li>
+  </ul>
+  <p>Бид таны мэдээллийг зар сурталчилгааны зорилгоор зарахгүй, гуравдагч этгээдэд худалдахгүй.</p>
+
+  <h2>3. Гуравдагч талын үйлчилгээ</h2>
+  <p>Тоглоом дараах үйлчилгээг ашигладаг бөгөөд тэдгээр нь зөвхөн тухайн ажилд шаардлагатай мэдээллийг авна:</p>
+  <ul>
+    <li><b>verify.mn</b> — утасны дугаарыг баталгаажуулах (утасны дугаар);</li>
+    <li><b>QPay</b> — төлбөр хүлээн авах (нэхэмжлэхийн дүн, тайлбар);</li>
+    <li>Сервер байршуулах үйлчилгээ — мэдээллийг Монгол Улсад байрлах серверт хадгална.</li>
+  </ul>
+  <p>Хамтарсан тоглолтод бусад тоглогчид таны тоглогчийн нэрийг харна. Утасны дугаар бусад тоглогчид харагдахгүй.</p>
+
+  <h2>4. Хадгалах хугацаа</h2>
+  <p>Мэдээллийг таны данс идэвхтэй байх хугацаанд хадгална. Дансаа устгуулахад нэр, утас,
+  нууц үг, төхөөрөмж, тоглоомын хадгалалтыг устгана. Gold, төлбөр, Gold татсан гүйлгээний бүртгэлийг санхүү,
+  татварын хууль тогтоомжийн дагуу хувийн мэдээлэлгүйгээр (нэргүй) хадгална.</p>
+
+  <h2>5. Мэдээллээ устгуулах</h2>
+  <div class="card">
+    <p><a href="mailto:{{{ CONTACT_EMAIL }}}">{{{ CONTACT_EMAIL }}}</a> руу бүртгэлтэй утасны дугаараа бичиж "Данс устгах"
+    гэж илгээнэ үү. Хүсэлт таных гэдгийг утсаар баталгаажуулж, 30 хоногийн дотор устгана.</p>
+  </div>
+
+  <h2>6. Хамгаалалт</h2>
+  <p>Сервертэй холболт бүр HTTPS-ээр шифрлэгдэнэ. Нууц үгийг нэг талын шифрлэлтээр хадгална. Мэдээлэлд зөвхөн эрх бүхий
+  ажилтан хандана, админы үйлдэл бүр бүртгэгдэнэ.</p>
+
+  <h2>7. Хүүхэд</h2>
+  <p>Тоглоом 13-аас доош насны хүүхдэд зориулагдаагүй. Gold худалдаж авах, татах нь 18 нас хүрсэн, эсвэл эцэг эх, асран
+  хамгаалагчийн зөвшөөрөлтэй хэрэглэгчид зориулагдсан. 13-аас доош насны хүүхдийн мэдээлэл цуглуулсныг мэдвэл устгана.</p>
+
+  <h2>8. Таны эрх</h2>
+  <p>Та өөрийн мэдээллийг харах, засуулах, устгуулах, мэдээллээ хэрхэн ашиглаж байгааг асуух эрхтэй. Хүсэлтээ доорх
+  хаягаар илгээнэ үү.</p>
+
+  <h2>9. Өөрчлөлт</h2>
+  <p>Бодлогыг өөрчилбөл энэ хуудсанд шинэчилж, огноог өөрчилнө. Томоохон өөрчлөлтийг тоглоом дотор мэдэгдэнэ.</p>
+
+  <h2>10. Холбоо барих</h2>
+  <p>Имэйл: <a href="mailto:{{{ CONTACT_EMAIL }}}">{{{ CONTACT_EMAIL }}}</a></p>
+
+  <hr style="border:0;border-top:1px solid var(--line);margin:40px 0">
+
+  <h2 lang="en">Privacy Policy (English summary)</h2>
+  <div lang="en">
+    <p><b>What we collect:</b> player name; phone number (sign-up; optionally verified via verify.mn); a one-way hashed password;
+    a hashed device identifier; IP address; gameplay
+    data (progress, Gold, upgrades, rooms, battle results); payment records from QPay (invoice ID, amount, status — we never
+    receive card or bank credentials); bank name, account number and holder name when you request a Gold withdrawal. We do
+    not access location, contacts, photos, camera or microphone.</p>
+    <p><b>Why:</b> to run your account and the game, process payments and withdrawals, prevent fraud and cheating, fix bugs
+    and comply with the law. We do not sell your data or use it for advertising.</p>
+    <p><b>Sharing:</b> only with verify.mn (phone verification), QPay (payments) and our hosting provider. Other players see only your player name.</p>
+    <p><b>Retention and deletion:</b> data is kept while your account is active. On deletion we remove your name, phone,
+    password, devices and saved game; financial records are kept anonymized as required by law. To delete your account,
+    email <a href="mailto:{{{ CONTACT_EMAIL }}}">{{{ CONTACT_EMAIL }}}</a> with your registered phone number.</p>
+    <p><b>Children:</b> the game is not directed to children under 13. Purchases and withdrawals require age 18 or parental consent.</p>
+    <p><b>Contact:</b> <a href="mailto:{{{ CONTACT_EMAIL }}}">{{{ CONTACT_EMAIL }}}</a></p>
+  </div>
+</main>
+<footer><a href="/terms-of-service/">Үйлчилгээний нөхцөл</a> · <a href="/privacy-policy/">Нууцлалын бодлого</a> · © 2026 Zombie Mongolia</footer>
+</body>
+</html>

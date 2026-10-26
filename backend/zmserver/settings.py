@@ -139,6 +139,7 @@ RELAY_SECRET = env("RELAY_SECRET") or ("dev-only-relay-secret" if DEBUG else "")
 VERIFYMN_API_URL = env("VERIFYMN_API_URL")
 VERIFYMN_API_KEY = env("VERIFYMN_API_KEY")
 
+
 # Бодит ажиллагаа (DEBUG=0): туршилтын төлбөр, SMS горимыг хориглоно
 if not DEBUG and (QPAY_MODE == "mock" or SMS_MODE == "console"):
     raise RuntimeError("Серверт QPAY_MODE=production, SMS_MODE=verifymn байх ёстой (backend/.env)")

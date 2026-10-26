@@ -78,6 +78,7 @@ export interface PlayerRow {
   id: number;
   name: string;
   phone: string;
+  verified: boolean;
   free_used: number;
   credits: number;
   gold: number;
@@ -160,6 +161,10 @@ export interface Settings {
   stage_bonus: number;
   stage_min_minutes: number;
   battle_pair_limit: number;
+  stage_daily_limit: number;
+  verify_bonus: number;
+  register_per_ip_day: number;
+  block_same_ip: boolean;
   gold_packs: { gold: number; price: number }[];
   cashout_enabled: boolean;
   cashout_min: number;

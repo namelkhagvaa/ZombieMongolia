@@ -33,6 +33,7 @@ export default function PlayersPage() {
         <Space direction="vertical" size={0}>
           <Typography.Text strong>
             {row.name} {row.blocked && <Tag color="red">Хаагдсан</Tag>}
+            {!row.verified && <Tag color="orange">Утас баталгаажаагүй</Tag>}
           </Typography.Text>
           <Typography.Text type="secondary" className="mono">
             {row.phone}
@@ -100,6 +101,8 @@ export default function PlayersPage() {
               { value: '', label: 'Бүх тоглогч' },
               { value: 'paying', label: 'Төлбөр төлсөн' },
               { value: 'blocked', label: 'Хаагдсан' },
+              { value: 'verified', label: 'Утас баталгаажсан' },
+              { value: 'unverified', label: 'Утас баталгаажаагүй' },
             ]}
           />
         </Space>

@@ -11,6 +11,8 @@ param(
     [string]$Emsdk = "C:\emsdk",
     # Байршуулсан сайтын бүтэн хаяг (/ -ээр төгсөнө): холбоос хуваалцахад гарах зураг (og:image) үүнээс
     [string]$SiteUrl = "https://play-zombie.apps.mn/",
+    # Нууцлалын бодлого, үйлчилгээний нөхцлийн хуудсанд харагдах холбоо барих имэйл
+    [string]$ContactEmail = "",
     [switch]$Serve
 )
 if (-not $SiteUrl.EndsWith("/")) { $SiteUrl += "/" }
@@ -52,6 +54,15 @@ Copy-Item (Join-Path $root "assets\splash.png") $site -Force
 Copy-Item (Join-Path $root "android\ui_font.ttf") $site -Force
 # Холбоос хуваалцахад гарах зураг (1200x630, web/shell.html-ийн og:image)
 Copy-Item (Join-Path $root "web\share.jpg") $site -Force
+# Нууцлалын бодлого, үйлчилгээний нөхцөл (Google, Facebook нэвтрэлтэд шаардлагатай): /privacy-policy/, /terms-of-service/
+if (-not $ContactEmail) { Write-Warning "ContactEmail тохируулаагүй: хуудсанд холбоо барих имэйлийн оронд {{{ CONTACT_EMAIL }}} үлдэнэ (-ContactEmail <имэйл>)" }
+foreach ($legal in "privacy-policy", "terms-of-service") {
+    $folder = Join-Path $site $legal
+    New-Item -ItemType Directory -Force $folder | Out-Null
+    $text = [System.IO.File]::ReadAllText((Join-Path $root "web\$legal\index.html"))
+    if ($ContactEmail) { $text = $text.Replace("{{{ CONTACT_EMAIL }}}", $ContactEmail) }
+    [System.IO.File]::WriteAllText((Join-Path $folder "index.html"), $text, (New-Object System.Text.UTF8Encoding $false))
+}
 # Вэб апп (нүүр дэлгэцэд нэмэх): бүтэн дэлгэцээр, хэвтээ нээгдэнэ
 Copy-Item (Join-Path $root "android\res\mipmap-xxxhdpi\ic_launcher.png") (Join-Path $site "icon-192.png") -Force
 $manifest = '{ "name": "Zombie Mongolia", "short_name": "Zombie MN", "start_url": ".", "display": "fullscreen", ' +

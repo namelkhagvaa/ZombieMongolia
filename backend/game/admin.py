@@ -114,3 +114,4 @@ class AuthTokenAdmin(admin.ModelAdmin):
     list_display = ["player", "device_id", "created", "last_used", "revoked"]
     search_fields = ["player__phone", "device_id"]
     exclude = ["key"]
+

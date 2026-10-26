@@ -4,10 +4,13 @@ from . import manage_api as manage
 from . import views
 
 urlpatterns = [
+    path("register/", views.register),
     path("register/start/", views.register_start),
     path("register/confirm/", views.register_confirm),
     path("login/", views.login),
     path("logout/", views.logout),
+    path("phone/verify/start/", views.phone_verify_start),
+    path("phone/verify/confirm/", views.phone_verify_confirm),
     path("password/reset/start/", views.password_reset_start),
     path("password/reset/confirm/", views.password_reset_confirm),
     path("account/", views.account_view),
@@ -21,6 +24,7 @@ urlpatterns = [
     path("rooms/join/", views.room_join),
     path("rooms/coop/", views.room_coop),
     path("rooms/<int:room_id>/beat/", views.room_beat),
+    path("rooms/<int:room_id>/accept/", views.room_accept),
     path("rooms/<int:room_id>/stage/", views.room_stage),
     path("rooms/<int:room_id>/result/", views.room_result),
     path("web/login/", views.web_login),

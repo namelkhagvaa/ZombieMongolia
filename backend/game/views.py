@@ -83,7 +83,17 @@ def verification_json(verification, instruction):
 
 
 @api(["POST"], auth=False)
+def register(request):
+    """{name, phone, password, device_id, platform} -> token, account: SMS баталгаажуулалтгүй шууд данс."""
+    j = request.json
+    player, token = logic.register(j.get("name"), j.get("phone"), j.get("password"), j.get("device_id"), j.get("platform"),
+                                   client_ip(request))
+    return ok(token=token.key, account=logic.account_state(player, token.device_id))
+
+
+@api(["POST"], auth=False)
 def register_start(request):
+    """(Хуучин хувилбарын тоглоомд: SMS-ээр баталгаажуулж бүртгэх.)"""
     j = request.json
     verification, instruction = logic.start_registration(j.get("name"), j.get("phone"), j.get("password"), j.get("device_id"),
                                                          j.get("platform"), client_ip(request))
@@ -102,6 +112,20 @@ def login(request):
     j = request.json
     player, token = logic.login(j.get("phone"), j.get("password"), j.get("device_id"), j.get("platform"), client_ip(request))
     return ok(token=token.key, account=logic.account_state(player, token.device_id))
+
+
+@api(["POST"])
+def phone_verify_start(request):
+    """Нэвтэрсэн тоглогч утсаа баталгаажуулна: 144773 руу мессеж илгээх заавар (бүртгэлийнхтэй ижил)."""
+    verification, instruction = logic.start_phone_verify(request.token.player, request.token.device_id, client_ip(request))
+    return ok(**verification_json(verification, instruction))
+
+
+@api(["POST"])
+def phone_verify_confirm(request):
+    """{verification_id}: мессеж ирээгүй бол 409 not_verified (тоглоом давтан асууна)."""
+    player = logic.confirm_phone_verify(request.token.player, request.json.get("verification_id"), client_ip(request))
+    return ok(account=logic.account_state(player, request.token.device_id))
 
 
 @api(["POST"])
@@ -147,7 +171,8 @@ def province_start(request):
         skin = int(request.json.get("skin") or 0)
     except (TypeError, ValueError):
         skin = 0
-    room = logic.start_province(player, request.token.device_id, request.json.get("province"), client_ip(request), skin)
+    room = logic.start_province(player, request.token.device_id, request.json.get("province"), client_ip(request), skin,
+                                request.json.get("protocol", 0))
     return ok(room=logic.room_json(room, player) if room else None, account=account(request.token))
 
 
@@ -156,7 +181,7 @@ def province_start(request):
 @api(["POST"])
 def room_join(request):
     player = request.token.player
-    room = logic.join_room(player, request.token.device_id, client_ip(request))
+    room = logic.join_room(player, request.token.device_id, client_ip(request), request.json.get("protocol", 0))
     return ok(room=logic.room_json(room, player), account=account(request.token))
 
 
@@ -164,8 +189,16 @@ def room_join(request):
 def room_coop(request):
     """{"code": "1234"}: найзын өрөөнд хамт тоглоно (тулаангүй)."""
     player = request.token.player
-    room = logic.join_coop(player, request.token.device_id, request.json.get("code"), client_ip(request))
+    room = logic.join_coop(player, request.token.device_id, request.json.get("code"), client_ip(request),
+                           request.json.get("protocol", 0))
     return ok(room=logic.room_json(room, player), account=account(request.token))
+
+
+@api(["POST"])
+def room_accept(request, room_id):
+    """Хост: зочин тоглоомоор холбогдлоо (тулаан тоологдож эхэлнэ)."""
+    room = logic.accept_guest(request.token.player, room_id)
+    return ok(**logic.room_state(room))
 
 
 @api(["POST"])
@@ -182,7 +215,7 @@ def room_stage(request, room_id):
 
 @api(["POST"])
 def room_result(request, room_id):
-    """{"battle": n, "winner": "host"|"guest"}. Шийдэгдээгүй бол {"settled": false}: хэдэн секунд тутам давтана."""
+    """{"battle": n, "winner": "host"|"guest"|"none"}. Шийдэгдээгүй бол {"settled": false}: хэдэн секунд тутам давтана."""
     player = request.token.player
     settled, winner, room = logic.report_battle(player, request.token.device_id, room_id, request.json.get("battle"),
                                                 request.json.get("winner"), client_ip(request))
@@ -191,6 +224,9 @@ def room_result(request, room_id):
         # Энэ тоглогчийн хувьд: хүчингүй (зөрсөн), ялсан (өрөөний хост: хэвээр эсвэл зочноос шинэ), ялагдсан
         own = room.status == room.OPEN and room.host_id == player.pk
         data["result"] = "void" if winner == "void" else "won" if own else "lost"
+        info = getattr(room, "settle_info", None)
+        if info and info["winner"] == player.pk and info["missed"]:
+            data["missed"] = info["stake"]  # утсаа баталгаажуулаагүй тул хожил олгоогүй
         if own:
             data["room"] = logic.room_json(room, player)  # (зочин ялсан бол: шинэ хостын тасалбар, ахиц, цэргүүд)
     return ok(**data)
@@ -204,8 +240,8 @@ def room_leave(request, room_id):
 
 @api(["POST"])
 def room_complete(request, room_id):
-    logic.complete_room(request.token.player, request.token.device_id, room_id, client_ip(request))
-    return ok(account=account(request.token))
+    missed = logic.complete_room(request.token.player, request.token.device_id, room_id, client_ip(request))
+    return ok(account=account(request.token), missed=missed)
 
 
 # ---------------------------------------------------------------- Дэлгүүр (Gold)

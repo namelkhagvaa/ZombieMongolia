@@ -59,6 +59,8 @@ export const GOLD_REASON: Record<string, string> = {
   battle_win: 'Тулаанд ялсан',
   battle_loss: 'Тулаанд ялагдсан',
   purchase: 'Худалдаж авсан',
+  room_refund: 'Өрөөний төлбөр буцсан',
+  verify_bonus: 'Утас баталгаажуулсан',
 };
 
 // Лог: үйлдлийн нэр ба өнгө
@@ -67,6 +69,12 @@ export const EVENT_LABEL: Record<string, { text: string; color: string }> = {
   login: { text: 'Нэвтэрсэн', color: 'blue' },
   login_failed: { text: 'Нэвтрэлт амжилтгүй', color: 'red' },
   device_bound: { text: 'Төхөөрөмж бүртгэсэн', color: 'geekblue' },
+  battle_disputed: { text: 'Тулааны үр дүн зөрсөн', color: 'red' },
+  room_join_failed: { text: 'Өрөөнд холбогдож чадаагүй', color: 'orange' },
+  coop_join_failed: { text: 'Найзын код буруу', color: 'orange' },
+  phone_verified: { text: 'Утас баталгаажуулсан', color: 'green' },
+  phone_released: { text: 'Дугаарыг жинхэнэ эзэн авсан', color: 'orange' },
+  reward_skipped: { text: 'Шагнал олгоогүй (баталгаажаагүй)', color: 'orange' },
   logout: { text: 'Гарсан', color: 'default' },
   password_reset: { text: 'Нууц үг сэргээсэн', color: 'orange' },
   province_unlocked: { text: 'Аймаг нээсэн', color: 'gold' },

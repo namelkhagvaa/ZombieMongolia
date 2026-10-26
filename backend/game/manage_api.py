@@ -106,7 +106,8 @@ def player_row(player):
     return {
         "id": player.pk,
         "name": player.name,
-        "phone": player.phone,
+        "phone": player.contact,
+        "verified": player.phone_verified,
         "free_used": player.free_used,
         "credits": player.credits,
         "gold": player.gold,
@@ -127,8 +128,8 @@ def room_row(room):
         "province": room.province,
         "status": room.status,
         "phase": logic.room_phase(room),
-        "host": {"id": room.host_id, "name": room.host.name, "phone": room.host.phone},
-        "guest": {"id": room.guest_id, "name": room.guest.name, "phone": room.guest.phone} if room.guest_id else None,
+        "host": {"id": room.host_id, "name": room.host.name, "phone": room.host.contact},
+        "guest": {"id": room.guest_id, "name": room.guest.name, "phone": room.guest.contact} if room.guest_id else None,
         "battle": room.battle,
         "host_stake": room.host_stake,
         "guest_stake": room.guest_stake,
@@ -143,7 +144,7 @@ def room_row(room):
 def invoice_row(invoice):
     return {
         "id": invoice.pk,
-        "player": {"id": invoice.player_id, "name": invoice.player.name, "phone": invoice.player.phone},
+        "player": {"id": invoice.player_id, "name": invoice.player.name, "phone": invoice.player.contact},
         "kind": invoice.kind,
         "amount": invoice.amount,
         "credits": invoice.credits,
@@ -161,7 +162,7 @@ def invoice_row(invoice):
 def cashout_row(cashout):
     return {
         "id": cashout.pk,
-        "player": {"id": cashout.player_id, "name": cashout.player.name, "phone": cashout.player.phone,
+        "player": {"id": cashout.player_id, "name": cashout.player.name, "phone": cashout.player.contact,
                    "won": cashout.player.won_gold},
         "gold": cashout.gold,
         "amount": cashout.amount,
@@ -181,7 +182,7 @@ def cashout_row(cashout):
 def event_row(event):
     return {
         "id": event.pk,
-        "player": {"id": event.player_id, "name": event.player.name, "phone": event.player.phone} if event.player_id else None,
+        "player": {"id": event.player_id, "name": event.player.name, "phone": event.player.contact} if event.player_id else None,
         "kind": event.kind,
         "data": event.data,
         "device_id": event.device_id,
@@ -215,6 +216,10 @@ def settings_json(settings):
         "stage_bonus": settings.stage_bonus,
         "stage_min_minutes": settings.stage_min_minutes,
         "battle_pair_limit": settings.battle_pair_limit,
+        "stage_daily_limit": settings.stage_daily_limit,
+        "verify_bonus": settings.verify_bonus,
+        "register_per_ip_day": settings.register_per_ip_day,
+        "block_same_ip": settings.block_same_ip,
         "gold_packs": [{"gold": p["gold"], "price": p["price"]} for p in logic.gold_packs()],
         "cashout_enabled": settings.cashout_enabled,
         "cashout_min": settings.cashout_min,
@@ -336,6 +341,10 @@ def players(request):
     status = request.GET.get("status")
     if status == "blocked":
         qs = qs.filter(blocked=True)
+    elif status == "verified":
+        qs = qs.filter(phone_verified=True)
+    elif status == "unverified":
+        qs = qs.filter(phone_verified=False)
     elif status == "paying":
         qs = qs.filter(invoices__status=Invoice.PAID).distinct()
     ordering = {"created": "created", "-created": "-created", "credits": "credits", "-credits": "-credits",
@@ -603,7 +612,8 @@ def settings_view(request):
                   "coop_reward": (0, 10_000),
                   "coop_daily_limit": (0, 100), "room_fee": (0, 10_000),
                   "room_stake": (0, 10_000), "stage_bonus": (0, 10_000), "stage_min_minutes": (0, 240),
-                  "battle_pair_limit": (0, 100)}
+                  "battle_pair_limit": (0, 100), "stage_daily_limit": (0, 100),
+                  "verify_bonus": (0, 100_000), "register_per_ip_day": (1, 1000)}
         before = settings_json(settings)
         for field, (low, high) in limits.items():
             if field in request.json:
@@ -611,6 +621,10 @@ def settings_view(request):
                 if not isinstance(value, int) or not low <= value <= high:
                     raise ManageError("Утга буруу байна")
                 setattr(settings, field, value)
+        if "block_same_ip" in request.json:
+            if not isinstance(request.json["block_same_ip"], bool):
+                raise ManageError("Утга буруу байна")
+            settings.block_same_ip = request.json["block_same_ip"]
         if "cashout_enabled" in request.json:
             if not isinstance(request.json["cashout_enabled"], bool):
                 raise ManageError("Утга буруу байна")

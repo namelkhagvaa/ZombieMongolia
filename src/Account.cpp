@@ -2,6 +2,7 @@
 
 #include "Input.h"
 #include "Json.h"
+#include "Net.h"
 #include "Online.h"
 #include "Platform.h"
 #include "UiStyle.h"
@@ -103,6 +104,7 @@ namespace
     std::string roomSearchNote;
     // Нээлттэй өрөө (сервер нээсэн / орсон)
     int roomId = -1, roomProvince = -1, roomBattle = 0, roomRecruits = 0;
+    int roomGuestSoldiers = -1, roomGuestHealthLevel = -1; // хост: серверийн мэдэх зочны цэрэг, амийн түвшин (-1 = мэдэхгүй)
     std::string roomStage, roomCode;
     bool roomPvp = false, roomCoop = false;
     // Тулааны мэдэгдэл: ялагч (host/guest), шийдэгдтэл давтана
@@ -124,6 +126,11 @@ namespace
     Screen screen = Screen::None;
     Message message;
     Pending request, poll; // request: цонхыг түр хаадаг ("түр хүлээнэ үү"), poll: ард нь (SMS, төлбөр шалгах)
+    // Утас баталгаажсан эсэх (баталгаажаагүй бол Gold нэмэгдэхгүй), баталгаажуулсны урамшуулал
+    bool verified = true;
+    int verifyBonus = 0;
+    bool smsVerify = false;  // SMS цонх: нэвтэрсэн тоглогч утсаа баталгаажуулж буй
+    std::string pendingNote; // тоглоомд нэг удаа харуулах мэдэгдэл (алдсан шагнал)
     Pending beat;          // нэвтрэлт хүчинтэй эсэхийг үе үе шалгана (өөр төхөөрөмж дээр нэвтэрвэл энд гарна)
     double nextBeat = 0.0;
     bool kicked = false;
@@ -398,6 +405,8 @@ namespace
         packPrice = prices["pack"].Int(packPrice);
         packSize = prices["pack_size"].Int(packSize);
         devicePrice = prices["device_change"].Int(devicePrice);
+        verified = account.Has("verified") ? account["verified"].Bool() : true; // (хуучин сервер: бүгд баталгаажсан)
+        verifyBonus = account["verify_bonus"].Int(0);
         capitalPrice = prices["capital"].Int(capitalPrice);
         maxDevices = account["max_devices"].Int(maxDevices);
         gold = account["gold"].Int(gold);
@@ -498,6 +507,8 @@ namespace
         {
             roomBattle = reply["battle"].Int(roomBattle);
             roomCoop = reply["coop"].Bool();
+            roomGuestSoldiers = reply["guest_soldiers"].Int(-1);
+            roomGuestHealthLevel = reply["guest_health_level"].Int(-1);
         }
     }
 
@@ -510,6 +521,10 @@ namespace
             if (status == 200 && reply["settled"].Bool())
             {
                 ReadAccount(reply["account"]);
+                if (reply["missed"].Int(0) > 0)
+                {
+                    pendingNote = "Тулаанд яллаа! Утсаа баталгаажуулсан бол +" + std::to_string(reply["missed"].Int(0)) + " Gold авах байсан";
+                }
                 const std::string result = reply["result"].Str();
                 // Ялагч өрөөтэй (зочин ялсан бол шинэ хостын тасалбар), ялагдагч өрөөгүй
                 if (result == "won") SetRoom(reply["room"]);
@@ -538,7 +553,12 @@ namespace
         if (roomId < 0) return;
         roomRequest.id = Online::Send("POST", apiBase + "rooms/" + std::to_string(roomId) + "/" + action + "/", "{}", token);
         roomRequest.handler = [](int status, const Json& reply) {
-            if (status == 200) ReadAccount(reply["account"]);
+            if (status != 200) return;
+            ReadAccount(reply["account"]);
+            if (reply["missed"].Int(0) > 0)
+            {
+                pendingNote = "Утсаа баталгаажуулсан бол +" + std::to_string(reply["missed"].Int(0)) + " Gold авах байсан";
+            }
         };
         roomId = -1; // орон нутагт шууд гарсан (хариу ирэхэд Gold шинэчлэгдэнэ)
         roomRole = Account::RoomRole::None;
@@ -658,9 +678,10 @@ namespace
              "Нэвтэрч байна...");
     }
 
-    void StartSms(const Json& reply, bool reset, bool cashout = false)
+    void StartSms(const Json& reply, bool reset, bool cashout = false, bool verify = false)
     {
         smsCashout = cashout;
+        smsVerify = verify;
         verificationId = reply["verification_id"].Int();
         const Json& sms = reply["sms"];
         smsNumber = sms["shortcode"].Str();
@@ -672,9 +693,9 @@ namespace
         Open(Screen::Sms);
     }
 
-    void Register()
+    // Дугаарыг өөр хүн баталгаажуулалгүй бүртгүүлсэн: эзэн нь мессежээр баталгаажуулж бүртгүүлнэ (тэр данс дугааргүй болно)
+    void RegisterWithSms()
     {
-        if (!CheckFields(true, true)) return;
         Call("POST", "register/start/",
              Obj({ { "name", JsonQuote(fields[kName]) }, { "phone", JsonQuote(fields[kPhone]) },
                    { "password", JsonQuote(fields[kPassword]) }, { "device_id", JsonQuote(deviceId) },
@@ -684,6 +705,58 @@ namespace
                  else Fail(status, reply);
              },
              "Илгээж байна...");
+    }
+
+    void OfferClaim()
+    {
+        message = {};
+        message.title = "Дугаар бүртгэлтэй";
+        message.text = "Энэ дугаараар өөр хүн баталгаажуулалгүй бүртгүүлсэн байна. Дугаар таных бол утаснаасаа мессеж илгээж "
+                       "баталгаажуулаад бүртгүүлнэ үү (тэр данс дугааргүй болно).";
+        message.primary = "МЕССЕЖЭЭР БАТАЛГААЖУУЛАХ";
+        message.onPrimary = [] { RegisterWithSms(); };
+        message.secondary = "Буцах";
+        message.onSecondary = [] { Open(Screen::Register); };
+        Open(Screen::Message);
+    }
+
+    void StartVerify()
+    {
+        Call("POST", "phone/verify/start/", "{}", [](int status, const Json& reply) {
+            if (status == 200) StartSms(reply, false, false, true);
+            else Fail(status, reply);
+        }, "Илгээж байна...");
+    }
+
+    // Баталгаажаагүй тоглогчид: юу авахыг тайлбарлаж баталгаажуулахыг санал болгоно
+    void OfferVerify()
+    {
+        message = {};
+        message.title = "Утсаа баталгаажуулах";
+        message.text = (verifyBonus > 0 ? "+" + std::to_string(verifyBonus) + " Gold урамшуулал авна. " : std::string()) +
+                       "Үе шат дуусгах, найзтайгаа хамт давах шагнал, тулааны хожил, Gold татах нээгдэнэ. "
+                       "Баталгаажуулахгүй бол тоглож болох ч Gold нэмэгдэхгүй (зөвхөн хасагдана).";
+        message.primary = "БАТАЛГААЖУУЛАХ";
+        message.onPrimary = [] { StartVerify(); };
+        message.secondary = "Дараа";
+        message.onSecondary = [] { Open(Screen::None); };
+        Open(Screen::Message);
+    }
+
+    void Register()
+    {
+        if (!CheckFields(true, true)) return;
+        // SMS баталгаажуулалтгүй: данс шууд нээгдэж нэвтэрнэ (утсыг нууц үг сэргээх, Gold татахад баталгаажуулна)
+        Call("POST", "register/",
+             Obj({ { "name", JsonQuote(fields[kName]) }, { "phone", JsonQuote(fields[kPhone]) },
+                   { "password", JsonQuote(fields[kPassword]) }, { "device_id", JsonQuote(deviceId) },
+                   { "platform", JsonQuote(Platform()) } }),
+             [](int status, const Json& reply) {
+                 if (status == 200) SignIn(reply);
+                 else if (status == 409 && reply["error"].Str() == "phone_claimable") OfferClaim();
+                 else Fail(status, reply);
+             },
+             "Бүртгэж байна...");
     }
 
     void Reset()
@@ -794,6 +867,26 @@ namespace
             return;
         }
         const std::string id = std::to_string(verificationId);
+        if (smsVerify)
+        {
+            // Нэвтэрсэн тоглогч утсаа баталгаажуулж байна
+            Background("POST", "phone/verify/confirm/", Obj({ { "verification_id", id } }), [](int status, const Json& reply) {
+                nextPoll = GetTime() + 3.0;
+                if (screen != Screen::Sms || status == 409 || status == 0) return;
+                if (status == 200)
+                {
+                    ReadAccount(reply["account"]);
+                    ShowMessage("Утас баталгаажлаа",
+                                verifyBonus > 0 ? "Баярлалаа! +" + std::to_string(verifyBonus) +
+                                                      " Gold урамшуулал авлаа. Одоо шагнал, тулааны хожил, Gold татах бүгд нээлттэй."
+                                                : "Баярлалаа! Одоо шагнал, тулааны хожил, Gold татах бүгд нээлттэй.",
+                                Screen::None);
+                }
+                else if (status == 410) ShowMessage("Хугацаа дууссан", "Мессеж ирээгүй тул хугацаа дууссан. Дахин оролдоно уу.", Screen::None);
+                else Fail(status, reply);
+            });
+            return;
+        }
         const std::string path = smsReset ? "password/reset/confirm/" : "register/confirm/";
         const std::string body = smsReset ? Obj({ { "verification_id", id }, { "password", JsonQuote(fields[kPassword]) } })
                                           : Obj({ { "verification_id", id } });
@@ -826,7 +919,9 @@ namespace
 
     void StartProvince()
     {
-        Call("POST", "provinces/start/", Obj({ { "province", std::to_string(province) }, { "skin", std::to_string(startSkin) } }),
+        // protocol: сервер зөвхөн ижил хувилбартай тоглогчдыг нэг өрөөнд тааруулна
+        Call("POST", "provinces/start/", Obj({ { "province", std::to_string(province) }, { "skin", std::to_string(startSkin) },
+                                               { "protocol", std::to_string(Net::kProtocolVersion) } }),
              [](int status, const Json& reply) {
             if (status == 200)
             {
@@ -1332,7 +1427,7 @@ namespace
         y += 38.0f;
         if (drawPass)
         {
-            Ui::Text(reset ? "Утсаа мессежээр баталгаажуулж шинэ нууц үг тавина" : "Утсаа мессежээр баталгаажуулна", (int)x,
+            Ui::Text(reset ? "Утсаа мессежээр баталгаажуулж шинэ нууц үг тавина" : "Нэр, утас, нууц үгээрээ бүртгүүлнэ", (int)x,
                      (int)y, 15, Ui::kTextDim);
         }
         y += 30.0f;
@@ -1360,6 +1455,7 @@ namespace
         const std::vector<std::string> lines =
             Wrap(smsCashout ? "Gold татах хүсэлтээ баталгаажуулахын тулд бүртгэлтэй утаснаасаа доорх мессежийг илгээнэ үү. "
                               "Баталгаажсаны дараа мөнгийг таны данс руу шилжүүлнэ."
+                 : smsVerify ? std::string("Дансандаа бүртгэлтэй утаснаасаа доорх мессежийг илгээнэ үү. Мессеж ирмэгц утас тань баталгаажна.")
                             : "Утасны дугаараа баталгаажуулахын тулд " + fields[kPhone] + " дугаартай утаснаасаа доорх мессежийг илгээнэ үү.",
                  16, inner);
         const bool touch = InTouchMode();
@@ -1401,7 +1497,7 @@ namespace
         if (Button({ x, y, inner, 30.0f }, "Цуцлах", Style::Link))
         {
             if (smsCashout) CancelCashout(cashoutId);
-            else Open(smsReset ? Screen::Reset : Screen::Register);
+            else Open(smsVerify ? Screen::None : smsReset ? Screen::Reset : Screen::Register);
         }
     }
 
@@ -1833,7 +1929,8 @@ void Account::Tick()
         else
         {
             nextRoomSearch = GetTime() + 3.0;
-            roomSearchCall.id = Online::Send("POST", apiBase + "rooms/join/", "{}", token);
+            roomSearchCall.id = Online::Send("POST", apiBase + "rooms/join/",
+                                             Obj({ { "protocol", std::to_string(Net::kProtocolVersion) } }), token);
             roomSearchCall.handler = [](int status, const Json& reply) {
                 if (!roomSearching) return; // цуцалсан (сервер өрөөнд оруулсан бол дохиогүй тул 10 минутад гаргана)
                 if (status == 200)
@@ -1901,7 +1998,10 @@ bool Account::Update()
         if (screen == Screen::Sms)
         {
             // Gold татах: хугацаа дууссаныг сервер шийдэж Gold-ийг буцаана (асуусаар байна)
-            if (GetTime() > smsExpires + 5.0 && !smsCashout) ShowMessage("Хугацаа дууссан", "Дахин оролдоно уу.", smsReset ? Screen::Reset : Screen::Register);
+            if (GetTime() > smsExpires + 5.0 && !smsCashout)
+            {
+                ShowMessage("Хугацаа дууссан", "Дахин оролдоно уу.", smsVerify ? Screen::None : smsReset ? Screen::Reset : Screen::Register);
+            }
             else PollSms();
         }
         else if (screen == Screen::Pay)
@@ -1922,7 +2022,11 @@ bool Account::Update()
     {
         if (Hit(badge)) ConfirmLogout();
         if (Hit(topupBadge)) Open(Screen::Gold); // тоглоом дотроос QPay
-        if (Hit(cashoutBadge)) OpenCashout();
+        if (Hit(cashoutBadge))
+        {
+            if (verified) OpenCashout();
+            else OfferVerify();
+        }
         return Blocking();
     }
 
@@ -2011,7 +2115,7 @@ bool Account::Back()
     case Screen::Reset: Open(Screen::Login); return true;
     case Screen::Sms:
         if (smsCashout) CancelCashout(cashoutId);
-        else Open(smsReset ? Screen::Reset : Screen::Register);
+        else Open(smsVerify ? Screen::None : smsReset ? Screen::Reset : Screen::Register);
         return true;
     case Screen::Cashout: Open(Screen::Gold); return true;
     case Screen::Offer: province = -1; Open(Screen::None); return true;
@@ -2107,7 +2211,8 @@ int Account::DrawBadge(int x, int y, bool alignRight)
     {
         // Нийт өргөн (баруун ирмэгт тэгшлэхэд), ард нь нэг шилэн самбар
         const int chipW = Ui::Measure(playerName.c_str(), 15) + Ui::MeasureBold(Thousands(gold).c_str(), 17) + 76;
-        const int total = chipW + 8 + Ui::MeasureBold("Gold авах", 15) + 56 + 8 + Ui::MeasureBold("Gold татах", 15) + 54 + 8 + (int)h;
+        const int total = chipW + 8 + Ui::MeasureBold("Gold авах", 15) + 56 + 8 +
+                          Ui::MeasureBold(verified ? "Gold татах" : "Баталгаажуулах", 15) + 54 + 8 + (int)h;
         if (alignRight) x -= total;
         const Rectangle bar = { (float)x - 7.0f, (float)y - 7.0f, (float)total + 14.0f, h + 14.0f };
         Ui::Panel(bar, { 8, 10, 14, 175 }, bar.height * 0.5f);
@@ -2142,7 +2247,23 @@ int Account::DrawBadge(int x, int y, bool alignRight)
         Ui::TextBold(label, (int)topupBadge.x + 38, (int)cy - 10, 15, ink);
         width += 8 + (int)topupBadge.width;
     }
+    // Утас баталгаажаагүй: улбар шар "Баталгаажуулах" (Gold нэмэгдэх бүх зүйл, татах нь баталгаажуулалтын дараа)
+    if (!verified)
+    {
+        const char* label = "Баталгаажуулах";
+        cashoutBadge = { (float)(x + width + 8), (float)y, (float)Ui::MeasureBold(label, 15) + 54.0f, h };
+        const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), cashoutBadge);
+        const float pulse = 0.5f + 0.5f * std::sin((float)GetTime() * 3.0f);
+        DrawRectangleRounded(cashoutBadge, 0.5f, 10, hover ? Color{ 255, 150, 70, 255 } : Color{ 232, 118, 40, 255 });
+        Ui::Outline(cashoutBadge, Fade(WHITE, 0.25f + 0.35f * pulse), 1.5f, h * 0.5f);
+        const Vector2 icon = { cashoutBadge.x + 20.0f, cy };
+        DrawCircleV(icon, 10.0f, WHITE);
+        Ui::TextBold("!", (int)icon.x - 2, (int)cy - 11, 18, Color{ 200, 90, 20, 255 });
+        Ui::TextBold(label, (int)cashoutBadge.x + 36, (int)cy - 10, 15, WHITE);
+        width += 8 + (int)cashoutBadge.width;
+    }
     // Gold татах: бараан, алтан хүрээтэй, "доош сум тавиур руу" дүрс
+    else
     {
         const char* label = "Gold татах";
         cashoutBadge = { (float)(x + width + 8), (float)y, (float)Ui::MeasureBold(label, 15) + 54.0f, h };
@@ -2177,6 +2298,17 @@ int Account::DrawBadge(int x, int y, bool alignRight)
 }
 
 bool Account::ServerShop() { return enabled && signedIn; }
+bool Account::Verified() { return !enabled || !signedIn || verified; }
+void Account::OpenVerify()
+{
+    if (ServerShop() && !verified) OfferVerify();
+}
+bool Account::TakeNotice(std::string& text)
+{
+    if (pendingNote.empty()) return false;
+    text = std::exchange(pendingNote, std::string());
+    return true;
+}
 int Account::Gold() { return gold; }
 int Account::UpgradeLevel(int item) { return item >= 0 && item < kUpgradeCount ? upgradeLevels[item] : 0; }
 
@@ -2225,7 +2357,9 @@ void Account::JoinCoop(const std::string& code)
     if (!ServerShop() || roomSearchCall.id >= 0) return;
     roomSearching = false;
     roomSearchNote.clear();
-    roomSearchCall.id = Online::Send("POST", apiBase + "rooms/coop/", Obj({ { "code", JsonQuote(code) } }), token);
+    roomSearchCall.id = Online::Send("POST", apiBase + "rooms/coop/",
+                                     Obj({ { "code", JsonQuote(code) }, { "protocol", std::to_string(Net::kProtocolVersion) } }),
+                                     token);
     roomSearchCall.handler = [](int status, const Json& reply) {
         if (status == 200)
         {
@@ -2281,6 +2415,18 @@ bool Account::TakeJoinedRoom() { return std::exchange(roomJoined, false); }
 void Account::LeaveRoom() { RoomCall("leave"); }
 void Account::CompleteRoom() { RoomCall("complete"); }
 
+void Account::ConfirmGuest()
+{
+    if (roomId < 0 || roomRole != RoomRole::Host) return;
+    roomGuestSoldiers = roomGuestHealthLevel = -1;
+    // (roomBeat-тэй ижил хариу: тулааны дугаар, зочны серверийн цэрэг, амийн түвшин)
+    roomBeat.id = Online::Send("POST", apiBase + "rooms/" + std::to_string(roomId) + "/accept/", "{}", token);
+    roomBeat.handler = BeatHandler;
+}
+
+int Account::RoomGuestSoldiers() { return roomGuestSoldiers; }
+int Account::RoomGuestHealthLevel() { return roomGuestHealthLevel; }
+
 void Account::RefreshRoom()
 {
     if (roomId < 0 || roomBeat.id >= 0) return;
@@ -2299,6 +2445,16 @@ void Account::UploadStage(const std::string& stage, int recruits)
     roomStageCall.id = Online::Send("POST", apiBase + "rooms/" + std::to_string(roomId) + "/stage/",
                                     Obj({ { "stage", JsonQuote(stage) }, { "recruits", std::to_string(recruits) } }), token);
     roomStageCall.handler = [](int, const Json&) {};
+}
+
+void Account::ReportBattleUndecided()
+{
+    if (roomId < 0 || !battleReport.empty()) return;
+    battleReport = "none"; // энэ тоглоомд тулаан шийдэгдээгүй: нөгөө талын мэдэгдэлтэй зөрж хүчингүй болно
+    battleReportFor = roomBattle;
+    battleReportDeadline = GetTime() + 180.0;
+    nextBattlePoll = 0.0;
+    battleResult = BattleResult::Pending;
 }
 
 void Account::ReportBattle(bool guestWon)

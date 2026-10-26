@@ -1,9 +1,9 @@
 ﻿# Zombie Mongolia-г Android APK болгон бүтээнэ.
 #
-# Шаардлага (C:\Android дотор; өөр газар бол -AndroidRoot заана):
-#   jdk\                      Java 17 (keytool, apksigner-т)
-#   sdk\build-tools\34.0.0    aapt, zipalign, apksigner
-#   sdk\platforms\android-34  android.jar
+# Шаардлага (C:\Android дотор; байхгүй бол Android Studio-ийн SDK ба jbr-ийг хэрэглэнэ):
+#   jdk\                      Java 17+ (keytool, apksigner-т)
+#   sdk\build-tools\<хувилбар> aapt, zipalign, apksigner (хамгийн шинийг сонгоно)
+#   sdk\platforms\android-<N>  android.jar (хамгийн шинийг сонгоно)
 #   sdk\ndk\26.3.11579264     C++ хөрвүүлэгч
 #
 # Хэрэглээ:  powershell -ExecutionPolicy Bypass -File tools\build_android.ps1
@@ -12,19 +12,29 @@ param(
     [string]$AndroidRoot = "C:\Android",
     [string[]]$Abis = @("arm64-v8a", "armeabi-v7a"),
     [string]$NdkVersion = "26.3.11579264",
-    [string]$BuildTools = "34.0.0",
-    [string]$Platform = "android-34"
+    [string]$BuildTools = "",  # хоосон: хамгийн шинэ
+    [string]$Platform = "",    # хоосон: хамгийн шинэ
+    [string]$Sdk = "",         # хоосон: C:\Android\sdk, байхгүй бол Android Studio-ийнх (%LOCALAPPDATA%\Android\Sdk)
+    [string]$Jdk = ""          # хоосон: C:\Android\jdk, байхгүй бол Android Studio-ийн jbr
 )
 
 # Continue: PowerShell 5.1 нь гаралтыг дамжуулахад cmake-ийн stderr мөрийг алдаа гэж үздэг; алдааг Run шалгана.
 $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $out = Join-Path $root "build_android"
-$sdk = Join-Path $AndroidRoot "sdk"
+$sdk = if ($Sdk) { $Sdk } elseif (Test-Path (Join-Path $AndroidRoot "sdk")) { Join-Path $AndroidRoot "sdk" } else { Join-Path $env:LOCALAPPDATA "Android\Sdk" }
+$jdk = if ($Jdk) { $Jdk } elseif (Test-Path (Join-Path $AndroidRoot "jdk")) { Join-Path $AndroidRoot "jdk" } else { "C:\Program Files\Android\Android Studio\jbr" }
+if (-not $BuildTools) {
+    $BuildTools = (Get-ChildItem (Join-Path $sdk "build-tools") -Directory | Sort-Object { [version]($_.Name -replace '[^0-9.]', '') } | Select-Object -Last 1).Name
+}
+if (-not $Platform) {
+    $Platform = (Get-ChildItem (Join-Path $sdk "platforms") -Directory | Sort-Object { [double](($_.Name -replace 'android-', '') -replace '[^0-9.]', '') } | Select-Object -Last 1).Name
+}
 $ndk = Join-Path $sdk "ndk\$NdkVersion"
 $tools = Join-Path $sdk "build-tools\$BuildTools"
 $androidJar = Join-Path $sdk "platforms\$Platform\android.jar"
-$env:JAVA_HOME = Join-Path $AndroidRoot "jdk"
+$env:JAVA_HOME = $jdk
+"SDK: $sdk (build-tools $BuildTools, $Platform), NDK $NdkVersion, Java: $jdk"
 $env:PATH = "$env:JAVA_HOME\bin;C:\msys64\ucrt64\bin;$env:PATH"
 
 foreach ($path in $ndk, $tools, $androidJar, $env:JAVA_HOME) {

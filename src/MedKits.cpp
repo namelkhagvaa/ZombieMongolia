@@ -24,16 +24,17 @@ void MedKits::Drop(const World& world, Vector3 position)
     kits.push_back(position);
 }
 
-void MedKits::RemoveNear(Vector3 position, float radius)
+bool MedKits::RemoveNear(Vector3 position, float radius)
 {
     for (size_t i = 0; i < kits.size(); ++i)
     {
         if (HorizontalDistance(kits[i], position) < radius)
         {
             kits.erase(kits.begin() + (long)i);
-            return;
+            return true;
         }
     }
+    return false;
 }
 
 bool MedKits::Update(float dt, Player& player, SoldierSquad& squad, Vector3* pickedAt)

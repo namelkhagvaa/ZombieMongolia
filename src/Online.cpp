@@ -64,8 +64,20 @@ namespace
     });
     EM_JS(void, JsOpen, (const char* url), {
         var u = UTF8ToString(url);
-        if (u.indexOf('http') === 0) window.open(u, '_blank');
-        else window.location.href = u;
+        if (u.indexOf('http') !== 0) { window.location.href = u; return; }
+        // Тоглоомын товч хөтчийн "товшилт" биш (frame дотор) тул попап хаагдаж болно: тэгвэл дараагийн товшилтоор нээнэ
+        var opened = null;
+        try { opened = window.open(u, '_blank'); } catch (e) {}
+        if (opened) return;
+        Module.zmPendingOpen = u;
+        if (Module.zmPendingListener) return;
+        Module.zmPendingListener = function() {
+            var pending = Module.zmPendingOpen;
+            Module.zmPendingOpen = null;
+            if (pending) window.open(pending, '_blank');
+        };
+        window.addEventListener('pointerup', Module.zmPendingListener, true);
+        window.addEventListener('keyup', Module.zmPendingListener, true);
     });
     EM_JS(void, JsLoad, (const char* key, char* out, int size), {
         var v = "";
