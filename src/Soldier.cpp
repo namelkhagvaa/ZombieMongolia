@@ -127,6 +127,99 @@ namespace
         soldier.swimming = pos.y < bed + 0.2f && depth > World::kSwimDepth;
         if (soldier.swimming) pos.y = bed + depth - kSwimSink; // (ApplySwimPose-ийн хөлийн цэг)
     }
+
+    // pos-оос goal хүрэхэд (2.5 м-ээс илүү өндөр зөрүү: дээвэр) хэрэгтэй шат, олс: pos-ын түвшнээс эхэлж goal-ын
+    // дээвэр (эсвэл газар) дээр хүрэх, нийт замаар хамгийн ойр нь. Хэрэггүй эсвэл олдохгүй бол -1.
+    int LevelPassage(const World& world, Vector3 pos, Vector3 goal)
+    {
+        const float dy = goal.y - pos.y;
+        if (std::fabs(dy) < 2.5f) return -1;
+        const PassageKind kind = dy > 0.0f ? PassageKind::LadderUp : PassageKind::LadderDown;
+        int best = -1;
+        float bestCost = 150.0f;
+        for (int i = 0; i < world.PassageCount(); ++i)
+        {
+            const Passage& p = world.GetPassage(i);
+            if (p.kind != kind || std::fabs(p.to.y - goal.y) > 2.5f) continue;
+            // Эхлэх цэг нь цэргийн түвшинд: ижил өндөр, эсвэл хоёулаа газар дээр (налуу газар)
+            const bool sameLevel = std::fabs(p.from.y - pos.y) < 2.0f ||
+                                   (pos.y < world.GroundHeight(pos.x, pos.z) + 0.6f && p.from.y < world.GroundHeight(p.from.x, p.from.z) + 0.6f);
+            if (!sameLevel) continue;
+            const float cost = HorizontalDistance(pos, p.from) + HorizontalDistance(p.to, goal);
+            if (cost >= bestCost) continue;
+            // Дээвэр дээрх үзүүр нь яг тэр дээвэр (хажуугийн ижил өндөр байшин биш)
+            if (dy > 0.0f ? !world.SameRoof(p.to, goal) : !world.SameRoof(pos, p.from)) continue;
+            best = i;
+            bestCost = cost;
+        }
+        return best;
+    }
+
+    // Гадаа target руу шууд шугам хана, байшингаар хаагдвал (эсвэл гацвал) нарийн торон дээр тойрох зам хайж,
+    // target-ийг дараагийн цэг болгоно (суух хэрэгсэл, олс руу явахад)
+    void SteerAround(Soldier& soldier, const World& world, float dt, int index, Vector3& target)
+    {
+        const Vector3 pos = soldier.mover.position;
+        soldier.pathCheck -= dt;
+        soldier.pathAge += dt;
+        if (!soldier.path.empty() && (soldier.pathAge > 20.0f || Vector2Distance(soldier.path.back(), { target.x, target.z }) > 2.0f))
+        {
+            soldier.path.clear();
+        }
+        const float length = HorizontalDistance(pos, target);
+        if (soldier.path.empty() && soldier.pathCheck <= 0.0f && length > 1.0f)
+        {
+            soldier.pathCheck = 1.0f + 0.3f * (float)(index % 4);
+            const Ray ray = { { pos.x, pos.y + 0.5f, pos.z }, { (target.x - pos.x) / length, 0.0f, (target.z - pos.z) / length } };
+            const bool blocked = world.RayDistance(ray, length) < length - 0.3f || soldier.mover.moved < soldier.mover.wishStep * 0.4f;
+            std::vector<Vector2> points;
+            if (blocked && FindLocalPath(world, { pos.x, pos.z }, { target.x, target.z }, kRadius, points))
+            {
+                soldier.path = points;
+                soldier.pathIndex = 0;
+                soldier.pathAge = 0.0f;
+            }
+        }
+        if (soldier.path.empty()) return;
+        while (soldier.pathIndex + 1 < soldier.path.size() &&
+               HorizontalDistance(pos, { soldier.path[soldier.pathIndex].x, pos.y, soldier.path[soldier.pathIndex].y }) < 1.0f)
+        {
+            ++soldier.pathIndex;
+        }
+        const Vector2 waypoint = soldier.path[soldier.pathIndex];
+        if (soldier.pathIndex + 1 == soldier.path.size() && HorizontalDistance(pos, { waypoint.x, pos.y, waypoint.y }) < 0.8f)
+        {
+            soldier.path.clear();
+            return;
+        }
+        target = { waypoint.x, pos.y, waypoint.y };
+    }
+
+    // levelPassage (байвал) рүү явах: эхлэх цэгтээ хүрвэл авирч эхэлнэ (true). target-ийг эхлэх цэг болгоно.
+    bool FollowLevelPassage(Soldier& soldier, const World& world, Vector3 goal, float dt, int index, Vector3& target, bool& using_)
+    {
+        Vector3& pos = soldier.mover.position;
+        soldier.levelCheck -= dt;
+        if (soldier.levelCheck <= 0.0f)
+        {
+            soldier.levelCheck = 1.0f + 0.2f * (float)(index % 5); // (цэргүүд нэг кадрт бөөнөөрөө хайхгүй)
+            soldier.levelPassage = LevelPassage(world, pos, goal);
+        }
+        using_ = false;
+        if (soldier.levelPassage < 0 || soldier.levelPassage >= world.PassageCount()) return false;
+        const Passage& passage = world.GetPassage(soldier.levelPassage);
+        if (passage.kind != PassageKind::LadderUp && passage.kind != PassageKind::LadderDown) return false;
+        using_ = true;
+        target = { passage.from.x, pos.y, passage.from.z };
+        if (HorizontalDistance(pos, passage.from) > 0.7f || std::fabs(pos.y - passage.from.y) > 2.0f) return false;
+        soldier.climb = passage;
+        soldier.climbTime = 0.0f;
+        soldier.climbDuration = std::max(1.9f, std::fabs(passage.to.y - passage.from.y) / 3.0f); // (тоглогчтой ижил)
+        soldier.levelPassage = -1;
+        soldier.levelCheck = 0.0f;
+        soldier.path.clear();
+        return true;
+    }
 }
 
 void SoldierSquad::Reset(int count, Vector3 around, const World& world)
@@ -281,6 +374,30 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
             }
             continue;
         }
+        // Шат, олсоор: эхлэх цэгээс олс (шат) руу алхаж, түүгээр босоо, дараа нь хүрэх цэг рүү. Олс (шат) нь
+        // доод цэгээс харах зүгийн дагуу wall метрт.
+        if (soldier.climbTime >= 0.0f)
+        {
+            soldier.climbTime += dt;
+            const Passage& c = soldier.climb;
+            const float t = std::min(1.0f, soldier.climbTime / soldier.climbDuration);
+            const Vector3 bottom = c.to.y > c.from.y ? c.from : c.to;
+            const float ropeX = bottom.x + std::sin(c.facing) * c.wall, ropeZ = bottom.z + std::cos(c.facing) * c.wall;
+            const Vector3 p1 = { ropeX, c.from.y, ropeZ }, p2 = { ropeX, c.to.y, ropeZ };
+            soldier.mover.position = t < 0.1f   ? Vector3Lerp(c.from, p1, t / 0.1f)
+                                   : t < 0.9f ? Vector3Lerp(p1, p2, (t - 0.1f) / 0.8f)
+                                              : Vector3Lerp(p2, c.to, (t - 0.9f) / 0.1f);
+            soldier.mover.facing = c.facing;
+            soldier.moving = true;
+            soldier.moveAmount = 0.5f;
+            soldier.walkCycle += dt * 4.0f;
+            if (t >= 1.0f)
+            {
+                soldier.climbTime = -1.0f;
+                soldier.mover.position = c.to;
+            }
+            continue;
+        }
         // Өмнөх кадрт хашаанд тулсан (явах ёстойгоосоо хамаагүй бага явсан): тэр зүгт давж болох хашаа байвал давна
         if (soldier.riding < 0 && soldier.mover.wishStep > 0.02f && soldier.mover.moved < soldier.mover.wishStep * 0.4f)
         {
@@ -329,6 +446,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
         soldier.aimHold -= dt;
         soldier.aimPose += ((soldier.aimHold > 0.0f ? 1.0f : 0.0f) - soldier.aimPose) * std::min(1.0f, 8.0f * dt);
         Vector3& pos = soldier.mover.position;
+        const Vector3 start = pos; // (дээврийн ирмэгээс унахгүй: доор)
 
         const bool teammate = soldier.member >= 0;
         const bool sniper = IsSniperMember(soldier.member);
@@ -381,9 +499,13 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
         }
         else if (soldier.boarding)
         {
-            // Суух хэрэгсэл рүүгээ гүйнэ.
+            // Суух хэрэгсэл рүүгээ гүйнэ (дээвэр дээрх нисдэг тэрэг рүү олсоор авирна).
+            Vector3 target = soldier.boardPoint;
+            bool viaPassage = false;
+            if (FollowLevelPassage(soldier, world, soldier.boardPoint, dt, i, target, viaPassage)) continue;
+            if (ownRoom < 0) SteerAround(soldier, world, dt, i, target);
             const float eased = EaseSpeed(soldier, kCatchUpSpeed, dt);
-            MoveToward(soldier.mover, soldier.boardPoint, eased, dt, world, kRadius, kHeight, 0.0f);
+            MoveToward(soldier.mover, target, eased, dt, world, kRadius, kHeight, 0.0f);
             soldier.walkCycle += dt * HumanoidGaitRate(eased);
             soldier.moveAmount = eased / kWalkSpeed;
             soldier.moving = true;
@@ -528,11 +650,16 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
                 soldier.routeFrom = soldier.routeTo = -2; // зам дуусав
             }
 
+            // Удирдагч өөр өндөрт (дээвэр дээр гарсан, эсвэл дээврээс буусан): шат, олсоор дагана
+            bool viaPassage = false;
+            if (FollowLevelPassage(soldier, world, playerPosition, dt, i, target, viaPassage)) continue;
+            if (viaPassage && ownRoom < 0) SteerAround(soldier, world, dt, i, target);
+
             // Гадаа: зорилт руу шууд шугам байшин, ханаар хаагдвал нарийн торон дээр зам хайж тойрно
             soldier.pathCheck -= dt;
             soldier.pathAge += dt;
-            const bool outdoors = ownRoom < 0 && playerRoom < 0;
-            if (!soldier.path.empty() &&
+            const bool outdoors = ownRoom < 0 && playerRoom < 0 && !viaPassage; // (олс руу: SteerAround)
+            if (!viaPassage && !soldier.path.empty() &&
                 (!outdoors || soldier.pathAge > 20.0f || Vector2Distance(soldier.path.back(), { target.x, target.z }) > 8.0f))
             {
                 soldier.path.clear(); // зорилт холдсон, хуучирсан: дахин шалгана
@@ -578,7 +705,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
             }
 
             const float toSlot = HorizontalDistance(pos, slot);
-            const bool onRoute = ownRoom != playerRoom;
+            const bool onRoute = ownRoom != playerRoom || viaPassage;
             const float startDistance = teammate && playerRoom < 0 && !soldier.moving ? kTeamStartFollow
                                       : guarding && !soldier.moving                    ? 1.5f
                                                                                        : guarding ? 0.5f : 1.2f;
@@ -662,9 +789,16 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
             }
         }
 
-        // Газрын гадаргууг дагана
+        // Газрын гадаргууг дагана. Дээвэр дээрээс ирмэгээр унахгүй (шат, олсоор л буух): өмнөх байрандаа үлдэнэ.
         if (soldier.riding < 0)
         {
+            const float floor = world.SurfaceHeightAt(pos.x, pos.z, pos.y + 0.5f);
+            if (floor < pos.y - 2.0f && floor < world.SurfaceHeightAt(start.x, start.z, start.y + 0.5f) - 2.0f)
+            {
+                pos.x = start.x;
+                pos.z = start.z;
+                soldier.mover.detourTimer = 0.0f;
+            }
             pos.y = world.SurfaceHeightAt(pos.x, pos.z, pos.y + 0.5f);
             FloatInWater(soldier, world);
             if (soldier.swimming) continue; // сэлж байхад буудахгүй

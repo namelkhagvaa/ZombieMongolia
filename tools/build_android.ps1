@@ -88,11 +88,20 @@ Copy-Item (Join-Path $root "assets\cars\*_color.png") (Join-Path $staging "asset
 New-Item -ItemType Directory -Force (Join-Path $staging "assets\buu") | Out-Null
 Copy-Item (Join-Path $root "assets\buu\*.vmesh") (Join-Path $staging "assets\buu")
 Copy-Item (Join-Path $root "assets\buu\*_color.png") (Join-Path $staging "assets\buu")
+# Мод, торх (ойрын зайд): бэлтгэсэн .vmesh ба текстур л
+foreach ($sub in @("trees", "pooshig")) {
+    New-Item -ItemType Directory -Force (Join-Path $staging "assets\$sub") | Out-Null
+    Copy-Item (Join-Path $root "assets\$sub\*.vmesh") (Join-Path $staging "assets\$sub")
+    Copy-Item (Join-Path $root "assets\$sub\*_color.png") (Join-Path $staging "assets\$sub")
+    Copy-Item (Join-Path $root "assets\$sub\*_far.bin") (Join-Path $staging "assets\$sub") -ErrorAction SilentlyContinue
+}
 # Улаанбаатарын төвийн газрын зураг (OpenStreetMap)
 New-Item -ItemType Directory -Force (Join-Path $staging "assets\city") | Out-Null
 Copy-Item (Join-Path $root "assets\city\*.bin") (Join-Path $staging "assets\city")
 New-Item -ItemType Directory -Force (Join-Path $staging "assets\sounds") | Out-Null
 Copy-Item (Join-Path $root "assets\sounds\*.wav") (Join-Path $staging "assets\sounds")
+New-Item -ItemType Directory -Force (Join-Path $staging "assets\sounds\soldiers") | Out-Null
+Copy-Item (Join-Path $root "assets\sounds\soldiers\*.wav") (Join-Path $staging "assets\sounds\soldiers")
 
 # --- 3. APK: багцлах, native санг нэмэх, зэрэгцүүлэх, гарын үсэг зурах ---
 $unsigned = Join-Path $out "unsigned.apk"

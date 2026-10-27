@@ -12,6 +12,9 @@ enum class VehicleModelId
     Suv,       // Nissan X-Trail
     Hatchback, // Toyota Yaris
     Motorcycle, // хээрийн мотоцикл (assets/cars/motocycle.glb -> moto.vmesh)
+    Trike,      // гурван дугуйт ачааны мотоцикл (3duguit.glb -> trike.vmesh): урд нэг, хойд хоёр дугуй
+    Helicopter, // унадаг Ми-8 (unadag_helicopter.glb -> heli.vmesh): сэнс тусдаа хэсэг (kind 3, 4)
+    DropHelicopter, // ачаа буулгадаг нисдэг тэрэг (drop_buulgadag_helicopter.glb -> dropheli.vmesh)
     Count
 };
 
@@ -19,10 +22,13 @@ void LoadVehicleModels(Shader shader);
 void UnloadVehicleModels();
 bool HasVehicleModel(VehicleModelId id);
 
-// Одоогийн rlgl хувиргалтаар (унааны төв, газрын түвшинд) зурна. spin нь дугуйн эргэлт (радиан),
+// Одоогийн rlgl хувиргалтаар (унааны төв, газрын түвшинд) зурна. distance нь явсан зай (дугуйн эргэлт),
 // steer -1..1. depth != nullptr бол сүүдрийн зурагт тэр материалаар зурна. tint нь эвдрэлийн бараан өнгө.
-void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Material* depth, Color tint);
+// rotor: нисдэг тэрэгний сэнсний эргэлт (радиан; сүүлний сэнс 5 дахин хурдан).
+void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Material* depth, Color tint, float rotor = 0.0f);
 float VehicleModelWheelRadius(VehicleModelId id);
+// kind төрлийн эхний хэсгийн эргэх төв (м; байхгүй бол 0): 3 үндсэн сэнсний тэнхлэг, 4 сүүлний сэнс
+Vector3 VehicleModelPivot(VehicleModelId id, unsigned int kind);
 
 // Унаагүй, нэг хэсэгтэй текстуртай загварууд (assets/buu/<name>.vmesh + <name>_color.png; vehicleprep prop бэлтгэнэ).
 // Байрлал нь загварын орон зайд: урт тэнхлэг +Z, эх нь z = 0 дээр (tools/prop_align.py).
@@ -36,6 +42,25 @@ enum class PropModelId
     Knife,   // хутга: толгой z = 0, үзүүр z = 0.44, ирний нуруу +Y, ир нь YZ хавтгайд
     Count
 };
+
+// Байгалийн зүйлс (assets/trees, assets/pooshig: <name>.vmesh + <name>_color.png; VPREP_HEIGHT=1 vehicleprep prop бэлтгэнэ).
+// Загвар нь ёроол y = 0, өндөр 1 м, төв нь x = z = 0: зурахдаа өндрөөр нь масштаблана.
+enum class SceneryModelId
+{
+    Larch,      // шинэс (trees/larch)
+    Birch,      // хус (trees/birch)
+    Elm,        // хайлаас, хотын мод (trees/elm)
+    Saxaul,     // заг (trees/saxaul)
+    OldBarrel,  // зэвэрсэн хоосон торх (pooshig/barrel_old)
+    FuelBarrel, // бензинтэй улаан торх (pooshig/barrel_fuel)
+    Count
+};
+
+void LoadSceneryModels(Shader shader);
+void UnloadSceneryModels();
+bool HasSceneryModel(SceneryModelId id);
+// Одоогийн rlgl хувиргалтаар зурна. depth != nullptr бол сүүдрийн зурагт тэр материалаар.
+void DrawSceneryModel(SceneryModelId id, const Material* depth = nullptr);
 
 void LoadPropModels(Shader shader);
 void UnloadPropModels();

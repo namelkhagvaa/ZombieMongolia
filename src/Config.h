@@ -33,7 +33,7 @@ struct GameConfig
     float cameraMaxDistance = 16.0f;
     float cameraFollowSpeed = 18.0f; // их байх тусам камер тоглогчийг чанга дагана
     float cameraZoomStep = 0.8f;
-    float cameraMinPitch = -0.35f;   // радиан
+    float cameraMinPitch = -1.0f;    // радиан (дээш ~57°: өндөр байшингийн орой руу онилно)
     float cameraMaxPitch = 1.35f;
     float cameraTargetHeight = 1.6f; // тоглогчийн хөлөөс дээш харах цэг
     float cameraShoulderOffset = 0.8f; // харах цэгийг баруун тийш шилжүүлнэ (онилгоо дүрээр халхлагдахгүй)

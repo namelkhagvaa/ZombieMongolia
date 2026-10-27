@@ -1,5 +1,7 @@
 #include "HorseModel.h"
 
+#include "Platform.h"
+
 #include "raymath.h"
 #include "rlgl.h"
 
@@ -96,7 +98,7 @@ bool LoadHorseModel(Shader shader)
     for (const std::string& folder : { std::string("assets/"), application + "assets/", application + "../assets/" })
     {
         meshPath = folder + "horse_mesh.glb";
-        texturePath = folder + "horse_color.png";
+        texturePath = ImageFile(folder + "horse_color.png"); // (хөтөч: .jpg)
         if (FileExists(meshPath.c_str()) && FileExists(texturePath.c_str())) break;
     }
     if (!FileExists(meshPath.c_str()) || !FileExists(texturePath.c_str()))

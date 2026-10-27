@@ -107,7 +107,7 @@ namespace
             input.type = 'text';
             input.inputMode = kind === 1 || kind === 3 ? 'numeric' : 'text';
             input.name = 'zm-field-' + slot;
-            input.maxLength = kind === 1 ? 8 : kind === 3 ? 20 : kind === 2 ? 32 : 30; // 3: дансны дугаар, дүн
+            input.maxLength = kind === 1 ? 8 : kind === 3 ? 20 : kind === 2 ? 32 : kind === 4 ? 120 : 30; // 3: дансны дугаар, дүн; 4: чат
         }
         input.zmNext = next;
         input.enterKeyHint = next >= 0 ? 'next' : 'done';
@@ -194,11 +194,14 @@ namespace
 
     // Урьдчилан ачаалсан файлууд нь нэг том татсан buffer-ийн хэсгүүд: бүгдийг нь устгавал buffer бүхэлдээ
     // чөлөөлөгдөнө. Үлдэх файлуудыг тусдаа хуулбар болгож бичнэ.
-    EM_JS(void, ReleaseLoadedAssets, (), {
+    EM_JS(void, ReleaseLoadedAssets, (int world), {
         // (EM_JS дотор "\" тэмдэгт алга болдог тул regex биш, мөр харьцуулалт)
         function keep(path) {
-            return path.indexOf('/assets/huds/') === 0 || path.indexOf('/assets/icons/') === 0 || path === '/assets/home_back.png' ||
-                   path.indexOf('/assets/city/') === 0;
+            return path.indexOf('/assets/huds/') === 0 || path.indexOf('/assets/icons/') === 0 || path === '/assets/home_back.png' || path === '/assets/home_back.jpg' ||
+                   path === '/assets/splash.jpg' || path.slice(-8) === '_far.bin' || // (холын мод: газар нутаг бүрд уншина)
+                   path.indexOf('/assets/city/') === 0 ||
+                   (!world && (path.indexOf('/assets/cars/') === 0 || path.indexOf('/assets/trees/') === 0 ||
+                               path.indexOf('/assets/pooshig/') === 0));
         }
         var removed = 0, kept = 0;
         function walk(dir) {
@@ -226,6 +229,11 @@ namespace
         }
     });
 
+    // web/shell.html-ийн багц татагч (zmPacks): эхлүүлээд явцыг асууна
+    EM_JS(int, PackStatus, (const char* name), {
+        return typeof Module.zmPackStatus === 'function' ? Module.zmPackStatus(UTF8ToString(name)) : 1000;
+    });
+
     EM_JS(void, LoadingFinished, (), {
         if (typeof Module.zmLoadingFinished === 'function') Module.zmLoadingFinished();
     });
@@ -237,6 +245,22 @@ namespace
             if (text !== null) FS.writeFile(name, text);
         } catch (e) {}
     });
+
+    EM_JS(void, SessionStore, (const char* key, const char* value), {
+        try {
+            var k = 'ZombieMongolia:' + UTF8ToString(key), v = UTF8ToString(value);
+            if (v) window.sessionStorage.setItem(k, v);
+            else window.sessionStorage.removeItem(k);
+        } catch (e) {}
+    });
+
+    EM_JS(void, SessionLoad, (const char* key, char* out, int capacity), {
+        var v = '';
+        try { v = window.sessionStorage.getItem('ZombieMongolia:' + UTF8ToString(key)) || ''; } catch (e) {}
+        stringToUTF8(v, out, capacity);
+    });
+
+    EM_JS(double, NowMs, (), { return Date.now(); });
 
     EM_JS(void, PersistToStorage, (const char* path), {
         try {
@@ -291,11 +315,20 @@ void WebFieldBlur() { FieldBlur(); }
 float WebVisibleFraction() { return VisibleFraction(); }
 void WebHideLoader() { HideLoader(); }
 void WebLoadingFinished() { LoadingFinished(); }
-void WebReleaseLoadedAssets() { ReleaseLoadedAssets(); }
+void WebReleaseLoadedAssets(bool world) { ReleaseLoadedAssets(world ? 1 : 0); }
+int WebPackStatus(const char* name) { return PackStatus(name); }
 int WebHeapMegabytes() { return (int)(emscripten_get_heap_size() / (1024 * 1024)); }
 bool WebPointerLockLost() { return TakePointerLockLost() != 0; }
 void WebRestoreFile(const char* path) { RestoreFromStorage(path); }
 void WebPersistFile(const char* path) { PersistToStorage(path); }
+void WebSessionStore(const char* key, const char* value) { SessionStore(key, value); }
+std::string WebSessionLoad(const char* key)
+{
+    char buffer[1024] = {};
+    SessionLoad(key, buffer, (int)sizeof(buffer));
+    return buffer;
+}
+double WebNowMs() { return NowMs(); }
 
 #else
 
@@ -335,10 +368,26 @@ void WebFieldBlur() {}
 float WebVisibleFraction() { return 1.0f; }
 void WebHideLoader() {}
 void WebLoadingFinished() {}
-void WebReleaseLoadedAssets() {}
+void WebReleaseLoadedAssets(bool) {}
+int WebPackStatus(const char*) { return 1000; }
 int WebHeapMegabytes() { return 0; }
 bool WebPointerLockLost() { return false; }
 void WebRestoreFile(const char*) {}
 void WebPersistFile(const char*) {}
+void WebSessionStore(const char*, const char*) {}
+std::string WebSessionLoad(const char*) { return std::string(); }
+double WebNowMs() { return 0.0; }
 
 #endif
+
+std::string ImageFile(const std::string& pngPath)
+{
+#if defined(__ANDROID__)
+    return pngPath; // APK-д PNG хэвээр (FileExists нь APK-ийн assets-ийг хардаггүй)
+#else
+    const size_t n = pngPath.size();
+    if (n < 4 || pngPath.compare(n - 4, 4, ".png") != 0 || FileExists(pngPath.c_str())) return pngPath;
+    const std::string jpg = pngPath.substr(0, n - 4) + ".jpg";
+    return FileExists(jpg.c_str()) ? jpg : pngPath;
+#endif
+}

@@ -119,6 +119,8 @@ struct CityData
 // Тухайн аймгийн (аяны дугаар) хотын өгөгдөл. Сүүлд уншсанаа л хадгална; файл байхгүй бол хоосон
 // (аймаг хуучин, зохиомол хэлбэрээрээ үлдэнэ).
 const CityData& CityFor(int province);
+// Хотын өгөгдлийн файл assets доторх замаар ("city/ub.bin", "city/p05.bin")
+std::string CityFile(int province);
 // Сүүлд CityFor-оор уншсан хот (World хотын горимд шилжихдээ уншина).
 const CityData& CurrentCity();
 

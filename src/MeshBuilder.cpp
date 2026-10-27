@@ -23,6 +23,12 @@ void MeshBuilder::ResetTransform()
     hasTransform = false;
 }
 
+Vector3 MeshBuilder::Placed(Vector3 local) const
+{
+    if (hasTransform) local = Vector3Transform(local, transform);
+    return Vector3Add(local, offset);
+}
+
 void MeshBuilder::Vertex(Vector3 position, Color color)
 {
     if (hasTransform)

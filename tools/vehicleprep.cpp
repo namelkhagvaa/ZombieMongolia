@@ -16,6 +16,22 @@
 //   хэсэг бүр: f32 pivot[3] (дугуйн төв; их биеийнх 0), u32 kind (0 их бие, 1 урд дугуй, 2 хойд дугуй),
 //              u32 vertexCount, u32 indexCount, f32 position[3*vc], f32 normal[3*vc], f32 uv[2*vc], u16 index[ic]
 //   Байрлалууд нь хэсгийн pivot-оос хамааралтай (дугуй эргэхэд төвөө тойрно).
+//   kind 3: нисдэг тэрэгний үндсэн сэнс (Y тэнхлэгийг тойрно), 4: сүүлний сэнс (X тэнхлэгийг тойрно).
+//
+// Нэмэлт хэсгүүд (сэнс): <in>.labels (гурвалжин бүрд u8: 0 бол их бие эсвэл дугуй, n > 0 бол <in>.pivots-ийн n дэх мөр)
+// ба <in>.pivots (мөр бүр "kind x y z", эх загварын координатаар) байвал тэдгээр гурвалжнууд тусдаа хэсэг болно.
+// Нисдэг тэрэг (сэнсийг tools/heli_rotors.py шошголно, урд = +Z болгож эргүүлнэ):
+//   python tools/glb_extract.py assets/cars/unadag_helicopter.glb tmp/heli
+//   python tools/heli_rotors.py tmp/heli 0 label 0.355 0.05 -0.29 -0.40 0.28 -1 0
+//   vehicleprep build tmp/heli_r assets/cars/heli.vmesh 30000 18.6 1 0 0
+//   python tools/glb_extract.py assets/cars/drop_buulgadag_helicopter.glb tmp/drop
+//   python tools/heli_rotors.py tmp/drop 90 label 0.29 0.05 -0.30 -0.38 0.16 0.034 1
+//   vehicleprep build tmp/drop_r assets/cars/dropheli.vmesh 24000 18.6 1 0 0
+// Мод, торх (assets/trees, assets/pooshig): өндөр нь 1 м болохоор (VPREP_HEIGHT=1), зурахдаа өндрөөр нь масштаблана
+// (холын хувилбар: VPREP_MODE=1 ... 60 1, дараа нь tools/far_trees.py -> <name>_far.bin):
+//   python tools/glb_extract.py "assets/trees/pine tree 3d model.glb" tmp/larch   (+ текстур 1024 px: trees/larch_color.png)
+//   VPREP_HEIGHT=1 vehicleprep prop tmp/larch assets/trees/larch.vmesh 1500 1
+//   birch, elm, saxaul (desert tree) ижил; торх: barrel_fuel (red steel drum), barrel_old (rusty drum) 500 1
 //
 // Хөрвүүлэх (meshoptimizer v0.22: git clone --branch v0.22 https://github.com/zeux/meshoptimizer.git <dir>):
 //   g++ -O2 -std=c++17 tools/vehicleprep.cpp <dir>/src/*.cpp -I build/_deps/raylib-src/src -I <dir>/src
@@ -186,7 +202,7 @@ int main(int argc, char** argv)
         UnloadImage(image);
         return ok ? 0 : 1;
     }
-    if (argc >= 10 && std::strcmp(argv[1], "build") == 0) return Build(argc, argv);
+    if (argc >= 9 && std::strcmp(argv[1], "build") == 0) return Build(argc, argv); // (тэнхлэггүй: зөвхөн сэнс гэх мэт хэсгүүд)
     if (argc >= 6 && std::strcmp(argv[1], "prop") == 0)
     {
         // Дугуйгүй build: урд = +Z, радиус ба хажуу 0, тэнхлэг байхгүй
@@ -224,7 +240,10 @@ int Build(int argc, char** argv)
     for (int i = 9; i < argc; ++i) axles.push_back((float)std::atof(argv[i]));
     float mn[3], mx[3];
     Bounds(s, mn, mx);
-    const int mode = 0; // текстурын хилийг хадгалж хялбаршуулна
+    // 0: текстурын хилийг хадгалж хялбаршуулна; 2 (VPREP_MODE=2): зөвхөн байрлалаар (оройнууд нь хуваагдсан загварт)
+    const int mode = std::getenv("VPREP_MODE") ? std::atoi(std::getenv("VPREP_MODE")) : 0;
+    // VPREP_ERROR: хялбаршуулалтын зөвшөөрөгдөх алдаа (загварын хэмжээний хувиар; анхдагч 0.05)
+    const float maxError = std::getenv("VPREP_ERROR") ? (float)std::atof(std::getenv("VPREP_ERROR")) : 0.05f;
 
     // 1. Ижил (байрлал + uv) оройнуудыг нэгтгэнэ
     const size_t vc = s.VertexCount();
@@ -308,11 +327,31 @@ int Build(int argc, char** argv)
         }
     }
 
-    std::vector<Part> parts(1 + wheels.size());
+    // Нэмэлт хэсгүүд (сэнс): шошго ба эргэх төвүүд
+    std::vector<unsigned char> labels;
+    struct Extra { unsigned int kind; float c[3]; };
+    std::vector<Extra> extras;
+    if (FILE* pf = std::fopen((std::string(argv[2]) + ".pivots").c_str(), "r"))
+    {
+        Extra e;
+        while (std::fscanf(pf, "%u %f %f %f", &e.kind, &e.c[0], &e.c[1], &e.c[2]) == 4) extras.push_back(e);
+        std::fclose(pf);
+        labels = ReadAll<unsigned char>(std::string(argv[2]) + ".labels");
+        if (labels.size() != indices.size() / 3) { std::printf("labels: %zu, triangles %zu\n", labels.size(), indices.size() / 3); return 1; }
+        std::printf("%zu extra parts from labels\n", extras.size());
+    }
+
+    std::vector<Part> parts(1 + wheels.size() + extras.size());
     for (size_t w = 0; w < wheels.size(); ++w)
     {
         for (int a = 0; a < 3; ++a) parts[1 + w].pivot[a] = wheels[w].c[a];
         parts[1 + w].kind = wheels[w].kind;
+    }
+    for (size_t e = 0; e < extras.size(); ++e)
+    {
+        Part& part = parts[1 + wheels.size() + e];
+        for (int a = 0; a < 3; ++a) part.pivot[a] = extras[e].c[a];
+        part.kind = extras[e].kind;
     }
     for (size_t t = 0; t < indices.size(); t += 3)
     {
@@ -320,6 +359,7 @@ int Build(int argc, char** argv)
         for (int k = 0; k < 3; ++k)
             for (int a = 0; a < 3; ++a) c[a] += uv[indices[t + k]].p[a] / 3.0f;
         int target = 0;
+        if (!labels.empty() && labels[t / 3] > 0 && labels[t / 3] <= extras.size()) target = (int)(wheels.size() + labels[t / 3]);
         for (size_t w = 0; w < wheels.size() && target == 0; ++w)
         {
             const Wheel& wheel = wheels[w];
@@ -351,7 +391,8 @@ int Build(int argc, char** argv)
     }
 
     // 3. Хэсэг бүрийг багасгаж, масштаблаад бичнэ
-    const float sourceLength = mx[2] - mn[2];
+    // VPREP_HEIGHT=1: урт биш өндрийг (Y) length болгоно (мод, торх: өндөр нь 1 м, зурахдаа масштаблана)
+    const float sourceLength = std::getenv("VPREP_HEIGHT") ? mx[1] - mn[1] : mx[2] - mn[2];
     const float k = length / sourceLength;
     FILE* f = std::fopen(outPath, "wb");
     std::fwrite("VMSH", 1, 4, f);
@@ -368,7 +409,7 @@ int Build(int argc, char** argv)
         if (mode == 0)
         {
             count = meshopt_simplify(simplified.data(), part.triangles.data(), part.triangles.size(), &uv[0].p[0], unique, sizeof(Vtx),
-                                     std::min(part.triangles.size(), share * 3), 0.05f, 0, &error);
+                                     std::min(part.triangles.size(), share * 3), maxError, 0, &error);
         }
         else if (mode == 1)
         {
@@ -382,7 +423,7 @@ int Build(int argc, char** argv)
             meshopt_generateShadowIndexBuffer(shadow.data(), part.triangles.data(), part.triangles.size(), &uv[0].p[0], unique,
                                               sizeof(float) * 3, sizeof(Vtx));
             count = meshopt_simplify(simplified.data(), shadow.data(), shadow.size(), &uv[0].p[0], unique, sizeof(Vtx),
-                                     std::min(shadow.size(), share * 3), 0.05f, 0, &error);
+                                     std::min(shadow.size(), share * 3), maxError, 0, &error);
         }
         simplified.resize(count);
         meshopt_optimizeVertexCache(simplified.data(), simplified.data(), count, unique);

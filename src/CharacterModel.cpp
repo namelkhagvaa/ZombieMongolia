@@ -1,5 +1,7 @@
 #include "CharacterModel.h"
 
+#include "Platform.h"
+
 #include "raymath.h"
 #include "rlgl.h"
 
@@ -16,10 +18,25 @@ namespace
                                                   "survivor_man", "survivor_woman", "zombie_walker",
                                                   "zombie_runner", "zombie_brute",  "giant_zombie",
                                                   "model-1",       "model-3",       "demon",
-                                                  "iron" };
+                                                  "iron",          "survivor_doctor_man", "survivor_doctor_woman",
+                                                  "survivor_student_boy", "survivor_student_girl", "survivor_monk" };
 
-    // Загварын өндөр тоглоомын хүний өндөртэй (~1.9 м) таарахаар томруулна.
-    const float kTargetHeight = 1.9f;
+    // Загварын өндөр тоглоомын хүний өндөртэй (~1.9 м) таарахаар томруулна. Аврах иргэд бодит харьцаагаар:
+    // эрэгтэй цэргээс бага зэрэг намхан, эмэгтэй, сурагч (15 настай) нь түүнээс намхан.
+    float TargetHeight(int id)
+    {
+        switch (id)
+        {
+        case kCharacterSurvivorMan:
+        case kCharacterDoctorMan: return 1.84f;
+        case kCharacterSurvivorWoman:
+        case kCharacterDoctorWoman: return 1.72f;
+        case kCharacterStudentBoy: return 1.70f;
+        case kCharacterStudentGirl: return 1.64f;
+        case kCharacterMonk: return 1.78f;
+        default: return 1.9f;
+        }
+    }
 
     // Кодоор үүсгэсэн дүрийн хэмжээсүүд: буу, гарын байрлалыг түүнтэй ижил харьцаагаар тооцно.
     const float kGunX = -0.24f;      // бууны хажуу тийш байрлал (их биеийн орон зайд)
@@ -362,6 +379,29 @@ namespace
             return Vector3Distance(point, Vector3Add(s.a, Vector3Scale(axis, t)));
         };
 
+        // Мөчний бүлэг: 1 баруун гар, 2 зүүн гар, 3 баруун хөл, 4 зүүн хөл, 0 их бие (Mixamo нэршлээр).
+        // Анхны зогсолтод гар нь гуяны дэргэд унжсан загварт (iron, demon, дээлтэй хүмүүс) автомат жин нэг оройг
+        // гар, хөл хоёуланд нь холбодог: гар хөл зөрж хөдлөхөд тэдгээрийн хоорондох арьс ир шиг сунана.
+        std::vector<int> limb((size_t)model.boneCount, 0);
+        for (int bone = 0; bone < model.boneCount; ++bone)
+        {
+            std::string boneName = model.bones[bone].name;
+            const size_t colon = boneName.rfind(':');
+            if (colon != std::string::npos) boneName = boneName.substr(colon + 1);
+            for (int side = 0; side < 2; ++side)
+            {
+                const std::string prefix = side == 0 ? "Right" : "Left";
+                for (const char* part : { "Arm", "ForeArm", "Hand" })
+                {
+                    if (boneName.rfind(prefix + part, 0) == 0) limb[(size_t)bone] = 1 + side;
+                }
+                for (const char* part : { "UpLeg", "Leg", "Foot", "Toe" })
+                {
+                    if (boneName.rfind(prefix + part, 0) == 0) limb[(size_t)bone] = 3 + side;
+                }
+            }
+        }
+
         std::vector<float> reach((size_t)model.boneCount);
         for (int index = 0; index < model.meshCount; ++index)
         {
@@ -404,11 +444,33 @@ namespace
                 float* weights = &mesh.boneWeights[v * 4];
                 unsigned char* ids = &mesh.boneIds[v * 4];
                 bool changed = false;
+                // Нэг орой хоёр өөр мөчид (гар ба хөл, хоёр гар, хоёр хөл) холбогдсон бол илүү жинтэйг нь үлдээнэ
+                float limbWeight[5] = {};
+                for (int k = 0; k < 4; ++k)
+                {
+                    if (weights[k] > 0.0f && ids[k] < model.boneCount) limbWeight[limb[ids[k]]] += weights[k];
+                }
+                // Хоёр хөлийн хоорондох (бэлхүүс, өмдний дунд) холимог хэвийн тул хөлийг нэг бүлэг гэж үзнэ:
+                // гар ба хөл холилдвол илүү жинтэйг нь, хоёр гар холилдвол илүү жинтэй гарыг үлдээнэ.
+                const float legs = limbWeight[3] + limbWeight[4];
+                const int arm = limbWeight[1] >= limbWeight[2] ? 1 : 2;
+                const bool bothArms = limbWeight[1] > 0.0f && limbWeight[2] > 0.0f;
+                int keep = 0; // 0: хөндөхгүй, 1/2: тэр гар, 5: хөлнүүд
+                if (limbWeight[arm] > 0.0f && legs > 0.0f) keep = limbWeight[arm] > legs ? arm : 5;
+                else if (bothArms) keep = arm;
+                auto dropped = [&](int bone) {
+                    const int g = limb[(size_t)bone];
+                    if (keep == 0 || g == 0) return false;
+                    if (keep == 5) return g == 1 || g == 2;
+                    return g != keep;
+                };
                 float sum = 0.0f;
                 for (int k = 0; k < 4; ++k)
                 {
-                    if (weights[k] > 0.0f && (ids[k] >= model.boneCount || reach[ids[k]] > nearestDistance + margin))
-                    {                        weights[k] = 0.0f;
+                    if (weights[k] > 0.0f && (ids[k] >= model.boneCount || reach[ids[k]] > nearestDistance + margin ||
+                                              dropped(ids[k])))
+                    {
+                        weights[k] = 0.0f;
                         changed = true;
                     }
                     sum += weights[k];
@@ -423,6 +485,65 @@ namespace
                 ids[0] = (unsigned char)nearest;
                 weights[0] = 1.0f;
                 for (int k = 1; k < 4; ++k) ids[k] = 0, weights[k] = 0.0f;
+            }
+
+            // Гар, хөл хоёрыг (эсвэл хоёр гарыг) холбосон гурвалжин: анхны зогсолтод гар нь гуятай шүргэлцэж нэг
+            // гадаргуу болсон загварт (iron) гар хөдлөхөд энэ "гүүр" том хавтан шиг сунана. Тийм гурвалжныг нууна.
+            if (mesh.indices)
+            {
+                auto dominant = [&](int v) {
+                    float best = 0.0f;
+                    int group = 0;
+                    for (int k = 0; k < 4; ++k)
+                    {
+                        const float w = mesh.boneWeights[v * 4 + k];
+                        const int id = mesh.boneIds[v * 4 + k];
+                        if (w > best && id < model.boneCount)
+                        {
+                            best = w;
+                            group = limb[(size_t)id];
+                        }
+                    }
+                    return group == 4 ? 3 : group; // хоёр хөл нэг бүлэг (бэлхүүс)
+                };
+                const int hips = FindBone(model, "Hips");
+                int hidden = 0;
+                for (int t = 0; t < mesh.triangleCount; ++t)
+                {
+                    unsigned short* tri = &mesh.indices[t * 3];
+                    // 6: бэлхүүсний ясанд давамгай (гар түүнтэй шууд холбогдох ёсгүй; хөл, нуруу холбогдоно)
+                    auto group = [&](int v) {
+                        const int g = dominant(v);
+                        if (g != 0 || hips < 0) return g;
+                        float best = 0.0f;
+                        int bone = -1;
+                        for (int k = 0; k < 4; ++k)
+                        {
+                            if (mesh.boneWeights[v * 4 + k] > best)
+                            {
+                                best = mesh.boneWeights[v * 4 + k];
+                                bone = mesh.boneIds[v * 4 + k];
+                            }
+                        }
+                        return bone == hips ? 6 : 0;
+                    };
+                    const int g0 = group(tri[0]), g1 = group(tri[1]), g2 = group(tri[2]);
+                    auto apart = [](int a, int b) {
+                        if (a == 6 || b == 6) return (a == 6 ? b : a) == 1 || (a == 6 ? b : a) == 2; // гар ба бэлхүүс
+                        return a != 0 && b != 0 && a != b;
+                    };
+                    if (apart(g0, g1) || apart(g1, g2) || apart(g0, g2))
+                    {
+                        tri[1] = tri[2] = tri[0];
+                        ++hidden;
+                    }
+                }
+                if (hidden > 0)
+                {
+                    rlUpdateVertexBufferElements(mesh.vboId[RL_DEFAULT_SHADER_ATTRIB_LOCATION_INDICES], mesh.indices,
+                                                 mesh.triangleCount * 3 * (int)sizeof(unsigned short), 0);
+                    TraceLog(LOG_INFO, "CHARACTER: %s: hid %d triangles bridging an arm and a leg", name, hidden);
+                }
             }
 
             if (fixed > 0)
@@ -537,7 +658,7 @@ void LoadCharacterModels(Shader shader)
         for (const std::string& folder : { std::string("assets/"), application + "assets/", application + "../assets/" })
         {
             meshPath = folder + kNames[id] + "_mesh.glb";
-            texturePath = folder + kNames[id] + "_color.png";
+            texturePath = ImageFile(folder + kNames[id] + "_color.png"); // (хөтөч: .jpg)
             if (FileExists(meshPath.c_str()) && FileExists(texturePath.c_str()))
             {
                 break;
@@ -617,7 +738,7 @@ void LoadCharacterModels(Shader shader)
                 mesh.animNormals = (float*)MemAlloc((unsigned int)(mesh.vertexCount * 3) * sizeof(float));
             }
         }
-        c.scale = top > 0.01f ? kTargetHeight / top : 1.0f;
+        c.scale = top > 0.01f ? TargetHeight(id) / top : 1.0f;
         // Холын дүрд: ~4.5 см нүдээр бүлэглэсэн хөнгөн хувилбар
         int lodTriangles = 0;
         for (int index = 0; index < c.model.meshCount; ++index)

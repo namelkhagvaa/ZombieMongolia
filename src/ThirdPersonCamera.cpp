@@ -51,7 +51,7 @@ void ThirdPersonCamera::Update(float dt, const GameConfig& config, const World& 
     traverseBlend += ((traversing ? 1.0f : 0.0f) - traverseBlend) * std::min(1.0f, 4.0f * dt);
 
     const float sensitivity = config.mouseSensitivity * Lerp(1.0f, config.aimSensitivityScale, aimBlend) *
-                              (IsScoped() ? config.scopeSensitivityScale / config.aimSensitivityScale : 1.0f);
+                              (IsScoped() ? config.scopeSensitivityScale / config.aimSensitivityScale / (float)scopeZoom : 1.0f);
     const Vector2 mouse = InLookDelta();
     yaw -= mouse.x * sensitivity;
     pitch += mouse.y * sensitivity * (config.invertY ? -1.0f : 1.0f);
@@ -129,7 +129,7 @@ void ThirdPersonCamera::Update(float dt, const GameConfig& config, const World& 
         const Vector3 eye = { playerFeet.x, playerFeet.y + 1.72f - targetDrop, playerFeet.z };
         camera.position = Vector3Add(eye, Vector3Scale(forward, 0.3f));
         camera.target = Vector3Add(camera.position, Vector3Scale(forward, 10.0f));
-        camera.fovy = config.scopeFovY;
+        camera.fovy = config.scopeFovY / (float)scopeZoom;
     }
 
     // Сэгсрэлт: камер бүхэлдээ (байрлал ба харах цэг хамт) чичирнэ: онилгооны чиглэл өөрчлөгдөхгүй

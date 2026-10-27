@@ -18,6 +18,29 @@ const WeaponSpec& SpecFor(WeaponType type)
     return specs[(int)type];
 }
 
+const WeaponSpec& Arsenal::Spec() const
+{
+    //                                     name        dmg    intvl  mag  +lvl reload auto  pel spread  range
+    static const WeaponSpec kMounted = { "HEAVY MG", 42.0f, 0.085f, 999, 0, 0.0f, true, 1, 0.008f, 400.0f };
+    return mounted ? kMounted : SpecFor(current);
+}
+
+void Arsenal::SetMounted(bool on)
+{
+    if (on == mounted) return;
+    mounted = on;
+    reloadTimer = 0.0f;
+    if (on)
+    {
+        beforeMounted = current;
+        current = WeaponType::Rifle; // (дүр төрх, дуу нь автоматынх)
+    }
+    else
+    {
+        current = beforeMounted;
+    }
+}
+
 int Arsenal::MagazineSizeOf(WeaponType type) const
 {
     const WeaponSpec& spec = SpecFor(type);
@@ -80,7 +103,7 @@ void Arsenal::Configure(const WeaponLevels& newLevels, Loadout newLoadout)
 
 void Arsenal::Select(WeaponType type)
 {
-    if (type == current || !Has(type))
+    if (mounted || type == current || !Has(type))
     {
         return; // энэ гишүүнд байхгүй зэвсэг
     }
@@ -104,12 +127,12 @@ float Arsenal::Interval() const
 
 int Arsenal::Ammo() const
 {
-    return ammo[(int)current];
+    return mounted ? Spec().magazine : ammo[(int)current];
 }
 
 int Arsenal::MagazineSize() const
 {
-    return MagazineSizeOf(current);
+    return mounted ? Spec().magazine : MagazineSizeOf(current);
 }
 
 void Arsenal::Update(float dt)
@@ -141,8 +164,8 @@ bool Arsenal::TryUse()
         return false;
     }
 
-    // Гранат хязгааргүй: тоо нь хасагдахгүй.
-    if (UsesAmmo() && current != WeaponType::Grenade)
+    // Гранат хязгааргүй: тоо нь хасагдахгүй. Хаалганы пулемёт ч хязгааргүй.
+    if (UsesAmmo() && current != WeaponType::Grenade && !mounted)
     {
         if (Ammo() <= 0)
         {
@@ -159,7 +182,7 @@ bool Arsenal::TryUse()
 void Arsenal::Reload()
 {
     // Гранат цэнэглэгдэхгүй: давалгаа бүрийн дараа нэмэгдэнэ.
-    if (current == WeaponType::Grenade || !UsesAmmo())
+    if (current == WeaponType::Grenade || !UsesAmmo() || mounted)
     {
         return;
     }

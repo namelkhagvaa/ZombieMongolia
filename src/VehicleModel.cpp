@@ -1,5 +1,7 @@
 #include "VehicleModel.h"
 
+#include "Platform.h"
+
 #include "raymath.h"
 #include "rlgl.h"
 
@@ -13,7 +15,7 @@ namespace
     {
         Mesh mesh = {};
         Vector3 pivot = {};
-        unsigned int kind = 0; // 0 их бие, 1 урд дугуй, 2 хойд дугуй
+        unsigned int kind = 0; // 0 их бие, 1 урд дугуй, 2 хойд дугуй, 3 үндсэн сэнс, 4 сүүлний сэнс
     };
 
     struct Model3
@@ -26,11 +28,17 @@ namespace
     };
 
     Model3 models[(int)VehicleModelId::Count];
-    const char* kNames[(int)VehicleModelId::Count] = { "gclass", "truck", "xtrail", "yaris", "moto" };
+    const char* kNames[(int)VehicleModelId::Count] = { "gclass", "truck", "xtrail", "yaris", "moto", "trike", "heli", "dropheli" };
 
     Model3 props[(int)PropModelId::Count];
     const char* kPropNames[(int)PropModelId::Count] = { "ak47", "sum", "sniper", "pistol", "shotgun", "knife" };
     const Material* propDepth = nullptr;
+
+    Model3 scenery[(int)SceneryModelId::Count];
+    const char* kSceneryNames[(int)SceneryModelId::Count][2] = {
+        { "trees", "larch" }, { "trees", "birch" }, { "trees", "elm" }, { "trees", "saxaul" },
+        { "pooshig", "barrel_old" }, { "pooshig", "barrel_fuel" },
+    };
 
     // Файлын байрлал: компьютер дээр exe-ийн хажуу эсвэл төслийн assets/<sub>, утсан дээр APK-ийн assets/<sub>
     std::string AssetFolder(const std::string& sub)
@@ -100,7 +108,7 @@ namespace
                 break;
             }
             UploadMesh(&mesh, false);
-            if (part.kind != 0) model.wheelRadius = part.pivot.y;
+            if (part.kind == 1 || part.kind == 2) model.wheelRadius = part.pivot.y;
             model.parts.push_back(part);
         }
         UnloadFileData(data);
@@ -135,7 +143,7 @@ void LoadVehicleModels(Shader shader)
     for (int i = 0; i < (int)VehicleModelId::Count; ++i)
     {
         const std::string mesh = folder + kNames[i] + ".vmesh";
-        const std::string texture = folder + kNames[i] + "_color.png";
+        const std::string texture = ImageFile(folder + kNames[i] + "_color.png"); // (хөтөч: .jpg)
 #if !defined(__ANDROID__)
         if (!FileExists(mesh.c_str())) continue;
 #endif
@@ -158,7 +166,16 @@ float VehicleModelWheelRadius(VehicleModelId id)
     return models[(int)id].wheelRadius;
 }
 
-void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Material* depth, Color tint)
+Vector3 VehicleModelPivot(VehicleModelId id, unsigned int kind)
+{
+    for (const Part& part : models[(int)id].parts)
+    {
+        if (part.kind == kind) return part.pivot;
+    }
+    return { 0.0f, 0.0f, 0.0f };
+}
+
+void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Material* depth, Color tint, float rotor)
 {
     Model3& model = models[(int)id];
     if (!model.loaded) return;
@@ -174,11 +191,48 @@ void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Mate
         }
         rlPushMatrix();
         rlTranslatef(part.pivot.x, part.pivot.y, part.pivot.z);
-        if (part.kind == 1) rlRotatef(-steer * 30.0f, 0.0f, 1.0f, 0.0f); // урд дугуйнууд жолоогоор эргэнэ
-        rlRotatef(spin * RAD2DEG, 1.0f, 0.0f, 0.0f);
+        if (part.kind == 3) rlRotatef(rotor * RAD2DEG, 0.0f, 1.0f, 0.0f);             // үндсэн сэнс: босоо тэнхлэг
+        else if (part.kind == 4) rlRotatef(rotor * 5.0f * RAD2DEG, 1.0f, 0.0f, 0.0f); // сүүлний сэнс: хажуугийн тэнхлэг
+        else
+        {
+            if (part.kind == 1) rlRotatef(-steer * 30.0f, 0.0f, 1.0f, 0.0f); // урд дугуйнууд жолоогоор эргэнэ
+            rlRotatef(spin * RAD2DEG, 1.0f, 0.0f, 0.0f);
+        }
         DrawMesh(part.mesh, material, MatrixIdentity());
         rlPopMatrix();
     }
+}
+
+void LoadSceneryModels(Shader shader)
+{
+    for (int i = 0; i < (int)SceneryModelId::Count; ++i)
+    {
+        const std::string folder = AssetFolder(kSceneryNames[i][0]);
+        const std::string mesh = folder + kSceneryNames[i][1] + ".vmesh";
+        const std::string texture = ImageFile(folder + kSceneryNames[i][1] + "_color.png");
+#if !defined(__ANDROID__)
+        if (!FileExists(mesh.c_str())) continue;
+#endif
+        LoadOne(scenery[i], mesh, texture, shader);
+    }
+}
+
+void UnloadSceneryModels()
+{
+    for (Model3& model : scenery) UnloadOne(model);
+}
+
+bool HasSceneryModel(SceneryModelId id)
+{
+    return scenery[(int)id].loaded;
+}
+
+void DrawSceneryModel(SceneryModelId id, const Material* depth)
+{
+    Model3& model = scenery[(int)id];
+    if (!model.loaded) return;
+    const Material& material = depth ? *depth : model.material;
+    for (const Part& part : model.parts) DrawMesh(part.mesh, material, MatrixIdentity());
 }
 
 void LoadPropModels(Shader shader)
@@ -187,7 +241,7 @@ void LoadPropModels(Shader shader)
     for (int i = 0; i < (int)PropModelId::Count; ++i)
     {
         const std::string mesh = folder + kPropNames[i] + ".vmesh";
-        const std::string texture = folder + kPropNames[i] + "_color.png";
+        const std::string texture = ImageFile(folder + kPropNames[i] + "_color.png");
 #if !defined(__ANDROID__)
         if (!FileExists(mesh.c_str())) continue;
 #endif

@@ -166,6 +166,14 @@ int main(int argc, char** argv)
         {
             options.coopTest = true;
         }
+        else if (std::strcmp(argv[i], "--chat") == 0 && i + 1 < argc)
+        {
+            options.chat = argv[++i];
+        }
+        else if (std::strcmp(argv[i], "--heli-roof") == 0)
+        {
+            options.heliRoof = true;
+        }
         else if (std::strcmp(argv[i], "--scope") == 0)
         {
             options.scope = true;

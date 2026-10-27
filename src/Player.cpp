@@ -13,6 +13,10 @@
 
 namespace
 {
+    // Өндрөөс унах: энэ хүртэл (нэг давхар) гэмтэлгүй, kDeadlyFall м-ээс (4 давхар орчим) бүх амь, хооронд нь шугамаар
+    const float kSafeFall = 4.0f;
+    const float kDeadlyFall = 12.0f;
+
     // Цонх давах хөдөлгөөний түлхүүр агшин. Хөлийн байрлал:
     //   wall  - цонхны ханын төвөөс замын дагуу хэдэн метр (сөрөг = эхлэх тал, эерэг = хүрэх тал);
     //           -1 = эхлэх цэг, 1.2 = хүрэх цэг (бодит зай нь гарц бүрт өөр байж болно: VaultDistance)
@@ -183,6 +187,7 @@ void Player::Assume(Vector3 newPosition, float newFacing, float newHealth, float
     downed = false; // (шинэ бие: өмнөх бие унасан байсан ч)
     downTimer = 0.0f;
     swimming = false;
+    fallPeak = position.y;
 }
 
 void Player::Reset(float newMaxHealth)
@@ -204,6 +209,7 @@ void Player::Reset(float newMaxHealth)
     downed = false; // (өмнөх тоглолтод унасан чигтээ дууссан бол шинэ тоглолтод унасан хэвээр эхэлдэг байв)
     downTimer = 0.0f;
     swimming = false;
+    fallPeak = position.y;
 }
 
 void Player::Teleport(Vector3 newPosition)
@@ -211,6 +217,7 @@ void Player::Teleport(Vector3 newPosition)
     position = newPosition;
     velocity = { 0.0f, 0.0f, 0.0f };
     swimming = false;
+    fallPeak = position.y;
 }
 
 Vector3 Player::GunPivot() const
@@ -284,6 +291,7 @@ void Player::Ride(float dt, Vector3 ground, Vector3 seatHip, float heading, Ride
     position = ground;
     velocity = { 0.0f, 0.0f, 0.0f };
     floorY = ground.y;
+    fallPeak = ground.y;
     grounded = true;
     seat = seatHip;
     rideStyle = style;
@@ -302,6 +310,7 @@ void Player::StopRiding(Vector3 exitPosition)
     position = exitPosition;
     velocity = { 0.0f, 0.0f, 0.0f };
     grounded = false;
+    fallPeak = position.y;
 }
 
 void Player::StartTraverse(const Passage& passage)
@@ -309,7 +318,8 @@ void Player::StartTraverse(const Passage& passage)
     traversing = true;
     traverse = passage;
     traverseTime = 0.0f;
-    traverseDuration = passage.kind == PassageKind::LadderUp || passage.kind == PassageKind::LadderDown ? 1.9f
+    traverseDuration = passage.kind == PassageKind::LadderUp || passage.kind == PassageKind::LadderDown
+                           ? std::max(1.9f, std::fabs(passage.to.y - passage.from.y) / 3.0f) // (өндөр байшингийн олс: ~3 м/с)
                      : passage.kind == PassageKind::WindowDrop ? 2.4f
                      : passage.kind == PassageKind::FenceOver ? 1.25f : 1.4f;
     stance = Stance::Stand;
@@ -433,6 +443,7 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
 
         velocity = { 0.0f, 0.0f, 0.0f };
         grounded = false;
+        fallPeak = position.y; // (шат, олсоор, цонхоор: унасан тооцогдохгүй)
         floorY = world.SurfaceHeightAt(position.x, position.z, position.y + 0.3f);
         walkCycle += dt * 9.0f;
         crouchPose = pronePose = 0.0f;
@@ -544,14 +555,22 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
             {
                 landing = std::min(1.0f, -velocity.y / 9.0f);
                 Audio::Play(Sfx::Thud, position, std::min(1.0f, -velocity.y / 12.0f));
+                // Өндрөөс унасан: kSafeFall м хүртэл гэмтэлгүй, түүнээс дээш өндрөөр, kDeadlyFall м-ээс бүх амь
+                const float drop = fallPeak - floorY;
+                if (drop > kSafeFall)
+                {
+                    TakeDamage(maxHealth * kTeamToughness * std::min(1.0f, (drop - kSafeFall) / (kDeadlyFall - kSafeFall)));
+                }
             }
             position.y = floorY;
             velocity.y = 0.0f;
             grounded = true;
+            fallPeak = position.y;
         }
         else
         {
             grounded = false;
+            fallPeak = std::max(fallPeak, position.y);
         }
     }
 

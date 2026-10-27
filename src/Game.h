@@ -97,6 +97,9 @@ struct LaunchOptions
     int joinCode = 0;               // газрын зураг дээрээс энэ өрөөнд шууд нэгдэнэ (--join 1234, --campaign --coop-тай)
     bool show = false;              // туршилтын цонхыг дэлгэцэнд харуулна; үгүй бол нуугдмал ажиллана (--show)
     bool thirdPerson = false;       // туршилтыг 3-р этгээдийн камераар эхлүүлнэ: дүрийн бие харагдана (--third)
+    const char* chat = nullptr;     // хамтарсан тоглолтод холбогдсоноос 3 секундын дараа энэ чатын мессежийг илгээнэ (--chat)
+    bool heliRoof = false;          // ойрын өндөр байшингийн дээвэр дээр нисдэг тэрэг буулгаж тоглогчийг суулгана:
+                                    // баг нь олсоор авирч суух эсэхийг шалгана (--heli-roof)
 };
 
 // Цонхыг бусад гишүүдээс өмнө нээж, хамгийн сүүлд хаана (mesh, shader нь цонхноос хамаардаг).
@@ -160,6 +163,9 @@ private:
     void SeatHelicopterTeam(int index, bool guestSide, int firstSlot);
     // Хост: зочин нисдэг тэргэнд (нисгэгч эсвэл буудагч) сууж яваа бол түүний баг ч сууна, буувал бууна
     void UpdateGuestHelicopterCrew();
+    // Нисдэг тэрэгнээс буух цэг: local байрлалуудаас тэргийн доорх гадаргуутай (дээвэр ч) ижил өндөрт буйг нь
+    // (дээврийн ирмэгээс доош унахгүй); аль нь ч биш бол эхнийх. y нь тэр цэгийн гадаргуу.
+    Vector3 HeliExit(const Vehicle& heli, std::initializer_list<Vector3> locals) const;
     // Нөгөө тоглогчийн нисдэг тэрэгнээс буух (hurt: сүйрсэн, хүнд шарх)
     void LeaveHelicopterCrew(bool hurt);
     // Тоглогчийн сууж яваа унаа: жолоодож, буудагчийн суудалд эсвэл нисдэг тэргэнд буудагчаар (-1 = явган)
@@ -181,6 +187,10 @@ private:
 
     // stageOverride: зочин даалгаврын явцыг өөрийн хадгалалт биш, хостын (өрөөний) ахицаар харуулна.
     void StartMission(int provinceIndex, StageSave* stageOverride = nullptr);
+    // Хөтөч: аймагт орохын өмнө унаа, мод, торхны багц ба аймгийн төвийн газрын зургийг татаж дуустал хүлээнэ;
+    // унаа, модны загваруудыг анх удаа ачаална. Бусад платформд бүгд эхэндээ ачаалагдсан тул юу ч хийхгүй.
+    void EnsureMissionAssets(int provinceIndex);
+    void PlaceHelicopterOnRoof(); // туршилт (--heli-roof)
     void ReturnToMap();
     void CloseJournal();
     void OpenPause();
@@ -234,6 +244,7 @@ private:
     float battleDrawTimer = 0.0f;   // хост: хоёр баг хоёулаа зогсох дайчингүй болсноос хойш (тэнцээ)
     int lastStageKills = 0;         // зомбины хурд: өмнөх frame-ийн устгасан тоо (буурвал логт бичнэ)
     float completeBlockedNotice = 0.0f;
+    std::vector<Vector3> ropeChecked; // нисдэг тэрэг бүрийн сүүлд олс хайсан байрлал
     float rotorDust = 0.0f;         // нисдэг тэрэгний сэнсний тоос (давтамж) // хост: "тулаан дуусмагц аймаг чөлөөлөгдөнө" мэдэгдлийг давтах завсар
     bool guestWasAbsent = false;    // хост: тулааны үеэр зочин тасарсан (түүний багийг AI тулалдуулсан)
     int guestBoughtLost = 0;        // хост: энэ зочны Gold-оор авсан цэргээс үхсэн (серверт нийтээр мэдэгдэнэ)
@@ -297,6 +308,8 @@ private:
     int gunnerVehicle = -1;      // тоглогч буудагчийн суудалд сууж яваа унаа (жолоодохгүй)
     int heliPassenger = -1;      // хамтарсан тоглолт: нөгөө тоглогчийн нисдэг тэргэнд буудагчаар сууж яваа
     bool heliPassengerAir = false; // тэр тэрэг агаарт гарсан (эвдрээд газар унавал сүйрэл)
+    float heliPassengerPeak = 0.0f;  // эвдэрснээс хойш тэргийн хамгийн өндөр байрлал (унасан өндөр)
+    float heliPassengerSpeed = 0.0f; // эвдрэхээс өмнөх хурд
     int carDriver = -1;          // тэр унааг жолоодож буй AI гишүүн (squad индекс)
     float driverStuck = 0.0f, driverReverse = 0.0f;
     // Мэдрэмж: оносон тэмдэг, цохиулсан зүг, зүрхний цохилт
@@ -490,6 +503,12 @@ private:
     std::string hostName;           // зочин: нэгдсэн тоглолтын хостын (бүртгэлтэй) нэр
     bool helpedHost = false;        // зочноор хостод тусалж аймгийг давсан (өөрийн аймаг нээгдэхгүй)
     bool remoteActive = false;      // хост: зочин холбогдсон
+    float coopResumeTimer = 0.0f;
+    bool worldModelsLoaded = false;
+    float heliRoofLog = 0.0f;       // туршилт (--heli-roof): багийнхны байдлыг бичих хугацаа // унаа, мод, торхны загварууд (хөтөч: "world" багц ирсний дараа)
+    int scopeZoom = 1;              // мэргэн буудагчийн дуран: 1x, 2x (баруун товч дахин дарахад)   // зочин: тасалбарыг хадгалах завсар
+    std::string lastGuestName;      // хост: сүүлд холбогдсон зочин (буцаж ирвэл асуулгүй хүлээн авна)
+    double lastGuestLeftAt = -1.0e9; // хост: тэр зочин гарсан цаг (GetTime)
     RemoteFigure guestFigure;       // хост дээрх зочин
     RemoteFigure hostFigure;        // зочин дээрх хост
     std::vector<RemoteFigure> hostSoldiers;
@@ -515,7 +534,44 @@ private:
     void UpdateCoopMission(float dt);
     void SendHostSnapshot(float dt);
     void StartCoopGuest(int province);
-    void LeaveCoop(bool leaveRoom = true); // leaveRoom = false: серверт өрөөнөөс гарсан гэж мэдэгдэхгүй (хамт давсан)
+    void LeaveCoop(bool leaveRoom = true);
+    // Хөтөч: хамтын тоглолтын зочин хуудсыг refresh хийсний дараа "ДАХИН ХОЛБОГДОХ" товчоор ижил өрөөнд буцна
+    // (тасалбарыг sessionStorage-д хадгална; хост ижил зочныг асуулгүй хүлээн авна).
+    void SaveCoopResume(float dt);
+    std::string CoopResumeTicket() const; // хүчинтэй хадгалалт байвал тасалбар, эс бөгөөс хоосон
+    // Дахин холбогдсон зочны өмнөх байдал (SaveCoopResume хадгална): байрлал, амь, сум, зоос, алсан тоо
+    struct GuestResume
+    {
+        bool valid = false;
+        Vector3 position = { 0.0f, 0.0f, 0.0f };
+        float facing = 0.0f, health = 0.0f;
+        int ammo = 0, coins = 0, kills = 0;
+    };
+    GuestResume guestResume;
+
+    // Хамтарсан тоглолтын чат: нөгөө тоглогчтой бичиж ярилцана. Компьютер: Enter — бичих, Enter — илгээх, Esc — хаах.
+    // Утас: "ЧАТ" товч — бэлэн хэллэгүүд, хөтөч дээр бичих мөр (утасны гар).
+    struct ChatLine
+    {
+        std::string text;
+        float age = 0.0f;
+        bool mine = false;
+    };
+    std::vector<ChatLine> chatLog;
+    bool chatOpen = false;
+    std::string chatDraft;
+    float chatTestTimer = 0.0f;
+    bool ChatAvailable() const;
+    bool UpdateChat(float dt); // чатын цонх нээлттэй (тоглоомын оролтыг хаана) бол true
+    void SendChatLine(const std::string& text);
+    void AddChatLine(const std::string& text, bool mine);
+    void CloseChat();
+    Rectangle ChatButtonRect() const;
+    Rectangle ChatBarRect() const;
+    Rectangle ChatPhraseRect(int index) const;
+    void DrawChat() const;
+    bool resumingCoop = false; // "ДАХИН ХОЛБОГДОХ" дарсан: нэгдмэгц өмнөх байдлаа сэргээнэ
+    Rectangle ResumeButtonRect() const; // leaveRoom = false: серверт өрөөнөөс гарсан гэж мэдэгдэхгүй (хамт давсан)
     Rectangle FriendButtonRect() const;
     void UpdateCoopMap();
     void DrawCoopMap() const;

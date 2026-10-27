@@ -1,5 +1,7 @@
 #include "World.h"
 
+#include "VehicleModel.h"
+
 #include "City.h"
 #include "Config.h"
 #include "Procedural.h"
@@ -14,6 +16,7 @@
 namespace
 {
     const float kPieceSize = 240.0f;          // хөдөлгөөнгүй геометрийг хуваах бүсийн хэмжээ
+    const float kSceneryNear = 55.0f;         // үүнээс ойр мод, торхыг текстуртай загвараар зурна
     const float kStructureDistance = 720.0f;  // барилга, замыг зурах дээд зай (цааш нь мананд уусна)
     const float kShadowDistance = 320.0f;
     const float kGlassDistance = 320.0f;
@@ -49,6 +52,8 @@ World::~World()
     UnloadPieces(settlementGlass);
     UnloadPieces(fences);
     UnloadPieces(settlementFences);
+    UnloadPieces(sceneryPieces);
+    UnloadPieces(settlementSceneryPieces);
     UnloadPieces(boundaryPosts);
     UnloadPieces(boundaryBand);
 }
@@ -60,6 +65,11 @@ void World::BuildStatic()
     UnloadPieces(glass);
     UnloadPieces(fences);
     UnloadPieces(settlementFences);
+    UnloadPieces(sceneryPieces);
+    UnloadPieces(settlementSceneryPieces);
+    scenery.clear();
+    sceneryCpu.clear();
+    sceneryNear.clear();
     obstacles.clear();
     interiors.clear();
     doors.clear();
@@ -68,9 +78,13 @@ void World::BuildStatic()
     panels.clear();
     brokenPanels.clear();
 
-    MeshBuilder solidBuilder, shadowBuilder, glassBuilder;
+    MeshBuilder solidBuilder, shadowBuilder, glassBuilder, sceneryBuilder;
+    std::vector<SceneryPlacement> placements;
     BuildStaticStructures(layout, terrain, obstacles, solidBuilder, shadowBuilder, glassBuilder, interiors, doors,
-                          passages, walls, panels);
+                          passages, walls, panels, sceneryBuilder, placements);
+    sceneryPieces = UploadScenery(sceneryBuilder, placements, false);
+    staticSceneryCount = scenery.size();
+    staticSceneryCpu = sceneryCpu.size();
     fences = ExtractFences(solidBuilder, 0, false);
     staticPanelCount = panels.size();
     staticPassageCount = passages.size();
@@ -281,10 +295,15 @@ void World::BuildSettlements(int variant)
     UnloadPieces(settlementShadows);
     UnloadPieces(settlementGlass);
     UnloadPieces(settlementFences);
+    ShowAllScenery(); // (тогтмол хэсгийн нуусан модыг сэргээнэ; суурингийнх устна)
+    UnloadPieces(settlementSceneryPieces);
+    scenery.resize(staticSceneryCount);
+    sceneryCpu.resize(staticSceneryCpu);
     obstacles.resize(staticObstacleCount);
     interiors.resize(staticInteriorCount);
     doors.resize(staticDoorCount);
     passages.resize(staticPassageCount);
+    ropes.clear();
     walls.resize(staticWallCount);
     panels.resize(staticPanelCount);
     brokenPanels.erase(std::remove_if(brokenPanels.begin(), brokenPanels.end(), [&](int i) { return (size_t)i >= staticPanelCount; }),
@@ -293,9 +312,11 @@ void World::BuildSettlements(int variant)
     // Буянт-Ухаа нисэх буудлын хучилт зөвхөн хуучин (зохиомол) Улаанбаатарын үед (өвс ургахгүй, засмал замын хурд)
     layout.SetAirfieldActive(variant == kUlaanbaatarProvince && cityProvince < 0);
 
-    MeshBuilder solidBuilder, shadowBuilder, glassBuilder;
+    MeshBuilder solidBuilder, shadowBuilder, glassBuilder, sceneryBuilder;
+    std::vector<SceneryPlacement> placements;
     BuildSettlementStructures(variant, layout, terrain, obstacles, solidBuilder, shadowBuilder, glassBuilder, interiors,
-                              doors, passages, walls, panels);
+                              doors, passages, walls, panels, sceneryBuilder, placements);
+    settlementSceneryPieces = UploadScenery(sceneryBuilder, placements, true);
     settlementFences = ExtractFences(solidBuilder, staticPanelCount, true);
 
     settlementStructures = solidBuilder.UploadPartitioned(kPieceSize);
@@ -308,6 +329,8 @@ void World::BuildSettlements(int variant)
 
     TraceLog(LOG_INFO, "WORLD: settlements variant %d: %d triangles, %d colliders total, %d enterable buildings", variant,
              solidBuilder.TriangleCount(), (int)obstacles.size(), (int)interiors.size());
+    TraceLog(LOG_INFO, "WORLD: scenery %d trees and barrels (%d static), %d low-poly triangles", (int)scenery.size(),
+             (int)staticSceneryCount, (int)(sceneryCpu.size() / 9));
 }
 
 void World::Stream(Vector3 viewPosition, bool everything)
@@ -333,6 +356,11 @@ void World::BuildObstacleGrid()
         const Vector2 mid = Vector2Lerp(panels[(size_t)i].a, panels[(size_t)i].b, 0.5f);
         panelGrid[(size_t)GridCell(mid.y) * gridSide + GridCell(mid.x)].push_back(i);
     }
+    sceneryGrid.assign((size_t)gridSide * gridSide, {});
+    for (int i = 0; i < (int)scenery.size(); ++i)
+    {
+        sceneryGrid[(size_t)GridCell(scenery[(size_t)i].base.z) * gridSide + GridCell(scenery[(size_t)i].base.x)].push_back(i);
+    }
     interiorGrid.assign((size_t)gridSide * gridSide, {});
     doorGrid.assign((size_t)gridSide * gridSide, {});
     for (int i = 0; i < (int)interiors.size(); ++i)
@@ -351,6 +379,18 @@ void World::BuildObstacleGrid()
         for (int z = GridCell(c.z - reach); z <= GridCell(c.z + reach); ++z)
         {
             for (int x = GridCell(c.x - reach); x <= GridCell(c.x + reach); ++x) doorGrid[(size_t)z * gridSide + x].push_back(i);
+        }
+    }
+    pitchedRoofs = StaticPitchedRoofs();
+    pitchedRoofs.insert(pitchedRoofs.end(), SettlementPitchedRoofs().begin(), SettlementPitchedRoofs().end());
+    roofGrid.assign((size_t)gridSide * gridSide, {});
+    for (int i = 0; i < (int)pitchedRoofs.size(); ++i)
+    {
+        const PitchedRoof& r = pitchedRoofs[(size_t)i];
+        const float reach = std::sqrt(r.reachLong * r.reachLong + r.reachShort * r.reachShort);
+        for (int z = GridCell(r.center.y - reach); z <= GridCell(r.center.y + reach); ++z)
+        {
+            for (int x = GridCell(r.center.x - reach); x <= GridCell(r.center.x + reach); ++x) roofGrid[(size_t)z * gridSide + x].push_back(i);
         }
     }
     for (int i = 0; i < (int)walls.size(); ++i)
@@ -526,6 +566,99 @@ int World::NearestDoor(Vector3 position, float maxDistance) const
     return best;
 }
 
+std::vector<MeshPiece> World::UploadScenery(const MeshBuilder& builder, const std::vector<SceneryPlacement>& placed, bool settlement)
+{
+    std::vector<std::pair<size_t, size_t>> groups;
+    for (const SceneryPlacement& p : placed) groups.push_back({ p.first, p.count });
+    std::vector<int> piece, start;
+    std::vector<MeshPiece> pieces = builder.UploadGroups(kPieceSize, groups, piece, start);
+    for (size_t i = 0; i < placed.size(); ++i)
+    {
+        SceneryItem item;
+        item.base = placed[i].base;
+        item.height = placed[i].height;
+        item.yaw = placed[i].yaw;
+        item.kind = placed[i].kind;
+        item.settlement = settlement;
+        item.piece = piece[i];
+        item.vertexStart = start[i];
+        item.count = placed[i].count;
+        item.cpu = sceneryCpu.size();
+        builder.CopyPositions(placed[i].first, placed[i].count, sceneryCpu);
+        scenery.push_back(item);
+    }
+    return pieces;
+}
+
+void World::SetSceneryHidden(int index, bool hidden)
+{
+    SceneryItem& item = scenery[(size_t)index];
+    if (item.hidden == hidden || item.count == 0) return;
+    const std::vector<MeshPiece>& list = item.settlement ? settlementSceneryPieces : sceneryPieces;
+    if (item.piece < 0 || item.piece >= (int)list.size() || list[(size_t)item.piece].mesh.vertexCount <= 0) return;
+    item.hidden = hidden;
+    // Нуух: гурвалжнуудыг нэг цэг болгоно; харуулах: хадгалсан байрлалыг буцаана
+    static std::vector<float> collapsed;
+    collapsed.assign(item.count * 9, 0.0f);
+    const float* data = hidden ? collapsed.data() : &sceneryCpu[item.cpu];
+    UpdateMeshBuffer(list[(size_t)item.piece].mesh, 0, data, (int)(item.count * 9 * sizeof(float)),
+                     item.vertexStart * 3 * (int)sizeof(float));
+}
+
+void World::ShowAllScenery()
+{
+    for (int index : sceneryNear) SetSceneryHidden(index, false);
+    sceneryNear.clear();
+}
+
+void World::UpdateScenery(Vector3 viewPosition)
+{
+    if (sceneryGrid.empty()) return;
+    // Шинэ ойрын жагсаалт: камерын ойрын нүднүүдээс, загвар нь ачаалагдсан төрлүүд
+    static std::vector<int> wanted;
+    wanted.clear();
+    const int c0x = GridCell(viewPosition.x - kSceneryNear), c1x = GridCell(viewPosition.x + kSceneryNear);
+    const int c0z = GridCell(viewPosition.z - kSceneryNear), c1z = GridCell(viewPosition.z + kSceneryNear);
+    for (int cz = c0z; cz <= c1z; ++cz)
+    {
+        for (int cx = c0x; cx <= c1x; ++cx)
+        {
+            for (int index : sceneryGrid[(size_t)cz * gridSide + cx])
+            {
+                const SceneryItem& item = scenery[(size_t)index];
+                if (!HasSceneryModel((SceneryModelId)item.kind)) continue;
+                const float dx = item.base.x - viewPosition.x, dz = item.base.z - viewPosition.z;
+                if (dx * dx + dz * dz < kSceneryNear * kSceneryNear) wanted.push_back(index);
+            }
+        }
+    }
+    // Ойроос гарсан: хөнгөн хувилбарыг буцаана; шинээр орсон: нууна
+    for (int index : sceneryNear)
+    {
+        if (std::find(wanted.begin(), wanted.end(), index) == wanted.end()) SetSceneryHidden(index, false);
+    }
+    for (int index : wanted) SetSceneryHidden(index, true);
+    sceneryNear = wanted;
+}
+
+void World::DrawNearScenery(const ViewCone* view, const Material* depth) const
+{
+    for (int index : sceneryNear)
+    {
+        const SceneryItem& item = scenery[(size_t)index];
+        if (view && !view->Sees({ item.base.x, item.base.y + item.height * 0.5f, item.base.z }, item.height * 0.6f, kSceneryNear + 10.0f))
+        {
+            continue;
+        }
+        rlPushMatrix();
+        rlTranslatef(item.base.x, item.base.y, item.base.z);
+        rlRotatef(item.yaw * RAD2DEG, 0.0f, 1.0f, 0.0f);
+        rlScalef(item.height, item.height, item.height);
+        DrawSceneryModel((SceneryModelId)item.kind, depth);
+        rlPopMatrix();
+    }
+}
+
 std::vector<MeshPiece> World::ExtractFences(MeshBuilder& solid, size_t from, bool settlement)
 {
     std::vector<std::pair<size_t, size_t>> ranges;
@@ -642,6 +775,130 @@ void World::PoundDoors(Vector3 position, float dt)
     if (doors[index].pound >= kDoorPoundTime)
     {
         SetDoorOpen(index, true); // хаалга эвдэрч онгойно
+    }
+}
+
+bool World::SameRoof(Vector3 a, Vector3 b) const
+{
+    // a-аас b хүртэл дээвэр дагуу алхана: гадаргуу огцом өөрчлөгдвөл (ирмэг, өндөр хэсэг) өөр дээвэр
+    const float length = Vector2Distance({ a.x, a.z }, { b.x, b.z });
+    const int steps = std::max(1, (int)(length / 0.5f));
+    float previous = a.y;
+    for (int k = 1; k <= steps; ++k)
+    {
+        const float t = (float)k / (float)steps;
+        const float height = SurfaceHeightAt(Lerp(a.x, b.x, t), Lerp(a.z, b.z, t), previous + 0.6f);
+        if (std::fabs(height - previous) > 1.5f) return false;
+        previous = height;
+    }
+    return std::fabs(previous - b.y) < 1.5f;
+}
+
+bool World::AddRope(Vector3 onRoof, float radius)
+{
+    const float roof = SurfaceHeightAt(onRoof.x, onRoof.z, onRoof.y + 0.6f);
+    if (roof < GroundHeight(onRoof.x, onRoof.z) + 3.0f) return false; // дээвэр биш
+    const Vector3 here = { onRoof.x, roof, onRoof.z };
+    // Энэ дээвэр дээр (дагуу нь алхаж хүрэх) олс, шат аль хэдийн байвал дахин тавихгүй
+    for (const Passage& passage : passages)
+    {
+        if (passage.kind != PassageKind::LadderDown) continue; // (from нь дээд цэг)
+        if (Vector2Distance({ passage.from.x, passage.from.z }, { here.x, here.z }) < radius && SameRoof(here, passage.from)) return false;
+    }
+    // 32 зүгт дээвэр дагуу гадагш алхаж, гадаргуу 2 м-ээс илүү огцом доошилсон цэг: ирмэг.
+    // (Налуу дээвэр аажим доошилдог тул өмнөх алхамтай харьцуулна; илүү өндөр хэсэгт тулвал тэр зүг хаалттай.)
+    struct Edge
+    {
+        float distance, top;
+        Vector2 dir;
+    };
+    std::vector<Edge> edges;
+    for (int k = 0; k < 32; ++k)
+    {
+        const float a = (float)k * (2.0f * PI / 32.0f);
+        const Vector2 dir = { std::sin(a), std::cos(a) };
+        float previous = roof;
+        for (float r = 0.25f; r < 90.0f; r += 0.25f)
+        {
+            const float height = SurfaceHeightAt(onRoof.x + dir.x * r, onRoof.z + dir.y * r, previous + 0.6f);
+            if (height < previous - 2.0f)
+            {
+                edges.push_back({ r, previous, dir });
+                break;
+            }
+            if (height > previous + 1.5f) break;
+            previous = height;
+        }
+    }
+    std::sort(edges.begin(), edges.end(), [](const Edge& a, const Edge& b) { return a.distance < b.distance; });
+    // Ойрын ирмэгээс эхлэн: доор нь газар дээр (хананы дэргэдэх намхан тавцан, шат, хашлага дээр биш: AI цэрэг гишгэж
+    // гарч чаддаггүй), эргэн тойрондоо чөлөөтэй (хашаа, хананы завсарт биш: цэргүүд хүрч чадна) цэг.
+    const GameConfig config;
+    const float clearance = 1.1f;
+    float best = -1.0f, bestTop = roof, gap = 0.45f;
+    Vector2 bestDir = { 1.0f, 0.0f }, edge = { 0.0f, 0.0f };
+    for (const Edge& candidate : edges)
+    {
+        const Vector2 at = { onRoof.x + candidate.dir.x * candidate.distance, onRoof.z + candidate.dir.y * candidate.distance };
+        for (float d = 0.45f; d <= 3.0f && best < 0.0f; d += 0.25f)
+        {
+            const Vector2 p = Vector2Add(at, Vector2Scale(candidate.dir, d));
+            Vector3 free = { p.x, SurfaceHeightAt(p.x, p.y, candidate.top - 2.0f), p.y };
+            if (free.y > GroundHeight(p.x, p.y) + 0.15f || free.y > candidate.top - 3.0f) continue;
+            ResolveHorizontal(free, clearance, config.playerHeight, 0.0f);
+            if (Vector2Distance({ free.x, free.z }, p) > 0.05f) continue;
+            best = candidate.distance;
+            bestTop = candidate.top;
+            bestDir = candidate.dir;
+            edge = at;
+            gap = d;
+        }
+        if (best >= 0.0f) break;
+    }
+    if (best < 0.0f)
+    {
+        // Чөлөөтэй газар олдсонгүй: хамгийн ойрын ирмэгийн яг доор (тоглогч ч гэсэн буцаж авирч чадна)
+        if (edges.empty()) return false;
+        best = edges[0].distance;
+        bestTop = edges[0].top;
+        bestDir = edges[0].dir;
+        edge = { onRoof.x + bestDir.x * best, onRoof.z + bestDir.y * best };
+        gap = 0.45f;
+    }
+    const Vector2 out = Vector2Add(edge, Vector2Scale(bestDir, gap));
+    const float ground = SurfaceHeightAt(out.x, out.y, bestTop - 2.0f);
+    if (ground > bestTop - 3.0f) return false;
+    // Шаттай адил: доод цэгээс олс хүртэл gap, дээд цэг дээвэр дээр ирмэгээс 0.9 м дотор; хана руу (дотогш) харна
+    const Vector3 bottom = { out.x, ground, out.y };
+    const Vector2 inside = { edge.x - bestDir.x * 0.9f, edge.y - bestDir.y * 0.9f };
+    const Vector3 top = { inside.x, SurfaceHeightAt(inside.x, inside.y, bestTop + 0.6f) + 0.05f, inside.y };
+    const float facing = std::atan2(-bestDir.x, -bestDir.y);
+    Passage up = { bottom, top, PassageKind::LadderUp, facing, gap };
+    up.rope = true;
+    Passage down = { top, bottom, PassageKind::LadderDown, facing, gap };
+    down.rope = true;
+    passages.push_back(up);
+    passages.push_back(down);
+    ropes.push_back({ { edge.x + bestDir.x * 0.05f, bestTop + 0.25f, edge.y + bestDir.y * 0.05f }, { edge.x + bestDir.x * 0.05f, ground, edge.y + bestDir.y * 0.05f } });
+    TraceLog(LOG_INFO, "WORLD: rope from the roof at %.1f m down to %.1f m (%.0f, %.0f)", bestTop, ground, edge.x, edge.y);
+    return true;
+}
+
+void World::DrawRopes() const
+{
+    for (const Rope& rope : ropes)
+    {
+        // Ирмэг дээрх дэгээ, доош унжсан олс (бага зэрэг тахийсан)
+        DrawCubeV(rope.top, { 0.3f, 0.12f, 0.3f }, { 60, 60, 64, 255 });
+        const int segments = 10;
+        for (int i = 0; i < segments; ++i)
+        {
+            const float t0 = (float)i / segments, t1 = (float)(i + 1) / segments;
+            const float sway0 = 0.12f * std::sin(t0 * PI), sway1 = 0.12f * std::sin(t1 * PI);
+            const Vector3 a = { rope.top.x + sway0, Lerp(rope.top.y, rope.bottom.y, t0), rope.top.z };
+            const Vector3 b = { rope.top.x + sway1, Lerp(rope.top.y, rope.bottom.y, t1), rope.top.z };
+            DrawCylinderEx(a, b, 0.035f, 0.035f, 5, { 150, 120, 70, 255 });
+        }
     }
 }
 
@@ -768,6 +1025,13 @@ float World::SurfaceHeightAt(float x, float z, float maxY) const
         {
             height = o.Top();
         }
+    }
+    // Хотын налуу хананы байшингийн дээвэр: зөвхөн өндөрт байгаа (дээвэр дээр, нисдэг тэрэг) асуухад —
+    // газар дээрх олон мянган зомби, хүнд энэ тооцоо ажиллахгүй
+    if (maxY > height + 2.5f && (!wallGrid.empty() || !roofGrid.empty()))
+    {
+        const float roof = RoofHeight(x, z);
+        if (roof <= maxY && roof > height) height = roof;
     }
     return height;
 }
@@ -1010,6 +1274,56 @@ float World::WallRayDistance(Ray ray, float maxDistance) const
     return distance;
 }
 
+float World::PitchedRoofAt(float x, float z) const
+{
+    if (roofGrid.empty()) return -1.0e9f;
+    float height = -1.0e9f;
+    for (int index : roofGrid[(size_t)GridCell(z) * gridSide + GridCell(x)])
+    {
+        height = std::max(height, pitchedRoofs[(size_t)index].HeightAt(x, z));
+    }
+    return height;
+}
+
+float World::RoofHeight(float x, float z) const
+{
+    const float pitched = PitchedRoofAt(x, z);
+    if (pitched > -1.0e8f) return pitched;
+    if (wallGrid.empty()) return -1.0e9f;
+    const float ground = terrain.HeightAt(x, z);
+    const Vector2 from = { x, z };
+    const Vector2 dirs[4] = { { 1.0f, 0.0f }, { -1.0f, 0.0f }, { 0.0f, 1.0f }, { 0.0f, -1.0f } };
+    const float reach = 60.0f;
+    float roof = 1.0e9f;
+    for (const Vector2& dir : dirs)
+    {
+        const Vector2 to = Vector2Add(from, Vector2Scale(dir, reach));
+        const int x0 = GridCell(std::min(from.x, to.x)), x1 = GridCell(std::max(from.x, to.x));
+        const int z0 = GridCell(std::min(from.y, to.y)), z1 = GridCell(std::max(from.y, to.y));
+        float nearest = 2.0f, top = 0.0f;
+        for (int cz = z0; cz <= z1; ++cz)
+        {
+            for (int cx = x0; cx <= x1; ++cx)
+            {
+                for (int index : wallGrid[(size_t)cz * gridSide + cx])
+                {
+                    const WallSegment& w = walls[(size_t)index];
+                    if (w.top - ground < 3.0f) continue; // хашаа биш, байшингийн хана
+                    const float t = SegmentHit(from, to, w.a, w.b);
+                    if (t >= 0.0f && t < nearest)
+                    {
+                        nearest = t;
+                        top = w.top;
+                    }
+                }
+            }
+        }
+        if (nearest > 1.0f) return -1.0e9f; // энэ зүгт хана алга: байшин дотор биш
+        roof = std::min(roof, top);
+    }
+    return roof;
+}
+
 bool World::CrossesWall(Vector2 a, Vector2 b, float feetY) const
 {
     if (wallGrid.empty()) return false;
@@ -1216,7 +1530,11 @@ void World::Draw(const Camera3D& camera, const Material& material, const Materia
     DrawPieces(settlementStructures, material, view, kStructureDistance);
     DrawPieces(fences, material, view, kStructureDistance);
     DrawPieces(settlementFences, material, view, kStructureDistance);
+    DrawPieces(sceneryPieces, material, view, kStructureDistance);
+    DrawPieces(settlementSceneryPieces, material, view, kStructureDistance);
     DrawPieces(boundaryPosts, material, view, kBoundaryDistance);
+    DrawNearScenery(&view, nullptr);
+    DrawRopes();
 
     // Сүүдэр: газар дээр наалдсан хагас тунгалаг давхарга, гүний буферт бичихгүй.
     // Нарны жинхэнэ сүүдэр (shadow map) асаалттай бол ойр орчимд хэрэггүй: зөвхөн түүний хүрээнээс цааш.
@@ -1241,6 +1559,9 @@ void World::DrawShadowCasters(Vector3 center, float radius, const Material& mate
     DrawPieces(settlementStructures, material, all, radius);
     DrawPieces(fences, material, all, radius);
     DrawPieces(settlementFences, material, all, radius);
+    DrawPieces(sceneryPieces, material, all, radius);
+    DrawPieces(settlementSceneryPieces, material, all, radius);
+    DrawNearScenery(nullptr, &material);
     rlEnableBackfaceCulling();
 }
 

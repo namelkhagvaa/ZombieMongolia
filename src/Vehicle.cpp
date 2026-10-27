@@ -553,6 +553,13 @@ namespace
 
     void DrawTrike(const Vehicle& v)
     {
+        // Текстуртай загвар (trike.vmesh) байвал түүгээр; эс бөгөөс кодоор угсарсан гурван дугуйт
+        if (HasVehicleModel(VehicleModelId::Trike))
+        {
+            const Color tint = propMaterial && !modelDepthMaterial ? propMaterial->maps[MATERIAL_MAP_DIFFUSE].color : WHITE;
+            DrawVehicleModel(VehicleModelId::Trike, v.animation, v.steer, modelDepthMaterial, tint);
+            return;
+        }
         DrawProp(TrikeBody());
         const float spin = v.animation / 0.34f;
         DrawMotoSteering(trikeSteer, v, spin);
@@ -877,6 +884,16 @@ namespace
 
     void DrawHelicopter(const Vehicle& v)
     {
+        // Текстуртай загвар (heli.vmesh): сэнсний тэнхлэгийг kHeliMast-д тааруулж (z), сэнс тусдаа эргэнэ
+        if (HasVehicleModel(VehicleModelId::Helicopter))
+        {
+            const Color tint = propMaterial && !modelDepthMaterial ? propMaterial->maps[MATERIAL_MAP_DIFFUSE].color : WHITE;
+            rlPushMatrix();
+            rlTranslatef(0.0f, 0.0f, kHeliMast.z - VehicleModelPivot(VehicleModelId::Helicopter, 3).z);
+            DrawVehicleModel(VehicleModelId::Helicopter, 0.0f, 0.0f, modelDepthMaterial, tint, -v.rotor);
+            rlPopMatrix();
+            return;
+        }
         DrawProp(HelicopterBody());
         // Үндсэн сэнс: 5 далавч (зогссон үед бага зэрэг унжина)
         const float droop = (1.0f - v.rotorSpeed) * 2.5f;
@@ -1109,7 +1126,7 @@ int Garage::Raycast(Ray ray, float minDistance, float maxDistance, int skipA, in
         case VehicleType::Truck: halfWidth = 1.25f; halfLength = 3.4f; height = 2.9f; break;
         case VehicleType::Suv: halfWidth = 0.95f; halfLength = 2.2f; height = 1.8f; break;
         case VehicleType::Hatchback: halfWidth = 0.85f; halfLength = 1.9f; height = 1.5f; break;
-        case VehicleType::Helicopter: halfWidth = 1.35f; halfLength = 7.6f; height = 4.6f; break; // их бие + сүүлний эхлэл
+        case VehicleType::Helicopter: halfWidth = 1.6f; halfLength = 7.6f; height = 5.2f; break; // их бие + сүүлний эхлэл
         default: break;
         }
         // Туяаг хэрэгслийн орон нутгийн тэнхлэгт (урагш +Z) шилжүүлнэ: зай өөрчлөгдөхгүй.
@@ -1148,7 +1165,8 @@ void Garage::SetRemote(int index, Vector3 position, float heading, float speed, 
 {
     if (index < 0 || index >= Count()) return;
     Vehicle& vehicle = vehicles[(size_t)index];
-    if (!vehicle.remote || HorizontalDistance(vehicle.position, position) > 8.0f)
+    // (хурдтай явж буй унаа сүлжээний хоцролтоор хэдэн метр хоцордог: хурдаас хамааран зөвшөөрнө)
+    if (!vehicle.remote || HorizontalDistance(vehicle.position, position) > std::max(8.0f, std::fabs(speed) * 0.6f))
     {
         vehicle.position = position; // анх удаа эсвэл хэт хоцорсон: шууд байрлуулна
         vehicle.heading = heading;
@@ -1159,6 +1177,22 @@ void Garage::SetRemote(int index, Vector3 position, float heading, float speed, 
     vehicle.netHeading = heading;
     vehicle.netSpeed = speed;
     vehicle.netSteer = steer;
+    vehicle.netAge = 0.0f;
+}
+
+void Garage::MatchRemote(int index, VehicleType type, Vector3 position, float heading)
+{
+    if (index < 0 || index > 255) return;
+    while (Count() <= index) Add(type, position, heading);
+    if (vehicles[(size_t)index].type == type) return;
+    const float fuel = vehicles[(size_t)index].fuel;
+    Vehicle vehicle = {};
+    vehicle.type = type;
+    vehicle.position = position;
+    vehicle.heading = heading;
+    vehicle.health = SpecFor(type).maxHealth;
+    vehicle.fuel = SpecFor(type).fuelRange > 0.0f ? fuel : 1.0f;
+    vehicles[(size_t)index] = vehicle;
 }
 
 void Garage::SyncHealth(int index, float health)
@@ -1310,15 +1344,23 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
             // дайрна (хост дээр л үйлчилнэ: зочны зомбинууд хохирол авдаггүй).
             const VehicleSpec& remoteSpec = SpecFor(vehicle.type);
             const float follow = std::min(1.0f, 10.0f * dt);
-            vehicle.position.x += (vehicle.netPosition.x - vehicle.position.x) * follow;
-            vehicle.position.z += (vehicle.netPosition.z - vehicle.position.z) * follow;
-            vehicle.position.y = world.GroundHeight(vehicle.position.x, vehicle.position.z);
+            // Төлөв ирэх хооронд хурдаар нь урагш таамаглана (эс бөгөөс хурдтай унаа шат шатаар хоцорч чичирнэ)
+            vehicle.netAge += dt;
+            const float ahead = vehicle.netSpeed * std::min(vehicle.netAge, 0.25f);
+            const float goalX = vehicle.netPosition.x + std::sin(vehicle.netHeading) * ahead;
+            const float goalZ = vehicle.netPosition.z + std::cos(vehicle.netHeading) * ahead;
+            vehicle.position.x += (goalX - vehicle.position.x) * follow;
+            vehicle.position.z += (goalZ - vehicle.position.z) * follow;
             vehicle.heading += std::remainder(vehicle.netHeading - vehicle.heading, 2.0f * PI) * follow;
+            if (!IsHelicopter(vehicle.type)) vehicle.position.y = world.GroundHeight(vehicle.position.x, vehicle.position.z);
             if (IsHelicopter(vehicle.type))
             {
                 // Нисдэг тэрэг: өндөр ч сүлжээнээс; сэнс нисгэгчтэй үед эргэнэ, хазайлтыг хурд, жолооноос
-                const float ground = world.SurfaceHeightAt(vehicle.position.x, vehicle.position.z, vehicle.netPosition.y + 0.5f);
-                vehicle.position.y = std::max(ground, vehicle.netPosition.y);
+                const float ground = std::max(world.SurfaceHeightAt(vehicle.position.x, vehicle.position.z, vehicle.netPosition.y + 0.5f),
+                                              world.RoofHeight(vehicle.position.x, vehicle.position.z) <= vehicle.netPosition.y + 0.5f
+                                                  ? world.RoofHeight(vehicle.position.x, vehicle.position.z) : -1.0e9f);
+                vehicle.position.y += (std::max(ground, vehicle.netPosition.y) - vehicle.position.y) * follow;
+                vehicle.position.y = std::max(vehicle.position.y, ground);
                 vehicle.altitude = vehicle.position.y - ground;
                 vehicle.rotorSpeed += ((vehicle.occupied || vehicle.altitude > 0.5f ? 1.0f : 0.0f) - vehicle.rotorSpeed) * std::min(1.0f, 0.5f * dt);
                 vehicle.rotor += vehicle.rotorSpeed * 30.0f * dt;
@@ -1719,6 +1761,15 @@ Vector3 Garage::HelicopterSeat(int index, int slot, float& facing) const
     // хаалганы хүрээн дээр гадагш харж сууна (хөл нь гадна унжина), бусад нь бүхээгийн сандал дээр.
     const Vehicle& vehicle = vehicles[(size_t)index];
     // 0, 1: нисгэгчийн баг; 2: нөгөө тоглогч (буудагч), 3, 4: түүний баг; 5: бүхээгт
+    // Текстуртай загвар (heli.vmesh): хоёр талдаа ижил онгорхой хаалгатай (z -1.0..2.1, шал 1.7 м, дунд нь хүрээ)
+    static const Vector3 modelSeats[kHeliSeats] = {
+        { 1.45f, 1.85f, 1.55f },  // зүүн хаалганы урд хэсэг
+        { -1.45f, 1.85f, 1.55f }, // баруун хаалганы урд хэсэг
+        { -1.45f, 1.85f, -0.3f }, // баруун хаалганы хойд хэсэг
+        { 1.45f, 1.85f, -0.3f },  // зүүн хаалганы хойд хэсэг
+        { -1.0f, 1.85f, 0.6f },   // баруун хаалганы дунд, арай дотор
+        { 0.0f, 1.85f, 0.6f },    // бүхээгийн төв
+    };
     static const Vector3 seats[kHeliSeats] = {
         { 1.05f, 1.45f, 3.0f },   // зүүн хаалга
         { -1.05f, 1.45f, 1.2f },  // баруун хажуугийн цонх (хаалт)
@@ -1728,8 +1779,9 @@ Vector3 Garage::HelicopterSeat(int index, int slot, float& facing) const
         { 0.0f, 1.45f, 0.4f },    // бүхээгийн төв
     };
     const int k = std::clamp(slot, 0, kHeliSeats - 1);
-    facing = vehicle.heading + (k == 5 ? 0.0f : seats[k].x > 0.0f ? PI * 0.5f : -PI * 0.5f);
-    return HumanoidLocalToWorld(vehicle.position, vehicle.heading, PitchLocal(vehicle, seats[k]));
+    const Vector3& seat = HasVehicleModel(VehicleModelId::Helicopter) ? modelSeats[k] : seats[k];
+    facing = vehicle.heading + (k == 5 ? 0.0f : seat.x > 0.0f ? PI * 0.5f : -PI * 0.5f);
+    return HumanoidLocalToWorld(vehicle.position, vehicle.heading, PitchLocal(vehicle, seat));
 }
 
 int Garage::TakeCrash()
@@ -1750,8 +1802,16 @@ void Garage::UpdateHelicopter(int index, float dt, const World& world, float thr
     v.rotor += v.rotorSpeed * 30.0f * dt;
 
     const float forwardX = std::sin(v.heading), forwardZ = std::cos(v.heading);
-    // Доорх газар (барилгын орой, мод ч орно): шууд доор нь
-    auto groundAt = [&](float x, float z) { return world.SurfaceHeightAt(x, z, 1.0e5f); };
+    // Доорх газар (барилгын орой, мод, хотын налуу байшингийн дээвэр ч орно): шууд доор нь
+    auto groundAt = [&](float x, float z) { return std::max(world.SurfaceHeightAt(x, z, 1.0e5f), world.RoofHeight(x, z)); };
+    // Сүйрэл: хүч нь унах ба хэвтээ хурдаар (25 м/с-ээс дээш бол бүрэн)
+    auto crash = [&](float impact) {
+        if (v.crashed) return;
+        v.crashed = true;
+        crashed = index;
+        v.crashSeverity = std::clamp(impact / 25.0f, 0.2f, 1.0f);
+        Audio::Play(Sfx::Explosion, v.position, 1.0f, 0.75f);
+    };
     const float below = groundAt(v.position.x, v.position.z);
 
     if (v.wrecked)
@@ -1769,12 +1829,7 @@ void Garage::UpdateHelicopter(int index, float dt, const World& world, float thr
             if (v.position.y <= below)
             {
                 v.position.y = below;
-                if (v.climb < -4.0f && !v.crashed)
-                {
-                    v.crashed = true;
-                    crashed = index;
-                    Audio::Play(Sfx::Explosion, v.position, 1.0f, 0.75f);
-                }
+                if (v.climb < -4.0f) crash(std::max(-v.climb, std::fabs(v.speed)));
                 v.climb = 0.0f;
                 v.speed = 0.0f;
             }
@@ -1783,17 +1838,11 @@ void Garage::UpdateHelicopter(int index, float dt, const World& world, float thr
         return;
     }
 
-    // Нислэгийн өндөр: доор болон урд талын (хурдаас хамааран 15-45 м) газрын хамгийн өндөр цэгээс kHeliCruise
-    const float look = 15.0f + std::max(0.0f, v.speed) * 1.0f;
-    float terrain = below;
-    for (float k : { 0.35f, 0.7f, 1.0f })
-    {
-        terrain = std::max(terrain, groundAt(v.position.x + forwardX * look * k, v.position.z + forwardZ * look * k));
-    }
+    // Нислэгийн өндөр: шууд доорх газраас kHeliCruise (урдаас харж өндөр авахгүй: огцом уул руу хурдтай нисвэл мөргөнө)
     const bool flying = v.lift && v.rotorSpeed > 0.9f && piloted;
-    float targetY = flying ? terrain + kHeliCruise : below;
-    // Гарын босоо хурд: өгсөх 6, буух 4 м/с хүртэл (газарт ойртох тусам зөөлөн)
-    const float wanted = std::clamp((targetY - v.position.y) * 1.4f, -4.0f, 6.0f);
+    const float targetY = flying ? below + kHeliCruise : below;
+    // Босоо хурд: өгсөх 5, буух 6 м/с хүртэл (газарт ойртох тусам зөөлөн)
+    const float wanted = std::clamp((targetY - v.position.y) * 0.8f, -6.0f, 5.0f);
     v.climb += (wanted - v.climb) * std::min(1.0f, 2.5f * dt);
     v.position.y += v.climb * dt;
     if (v.position.y < below)
@@ -1821,6 +1870,25 @@ void Garage::UpdateHelicopter(int index, float dt, const World& world, float thr
         v.position.x = before.x; // аймгийн хил: цааш нисэхгүй
         v.position.z = before.z;
         v.speed = 0.0f;
+    }
+    // Мөргөлдөөн: хамар, сүүл, их бие уул, байшинд тулбал (нисэж яваа үед) сүйрнэ. Газардах үед (бага хурд, нам) биш.
+    if (v.altitude > 3.0f || std::fabs(v.speed) > 6.0f)
+    {
+        for (float along : { 8.0f, 0.0f, -9.0f })
+        {
+            const float x = v.position.x + forwardX * along, z = v.position.z + forwardZ * along;
+            if (groundAt(x, z) > v.position.y + 0.6f)
+            {
+                v.health = 0.0f;
+                v.wrecked = true;
+                v.wreckedAt = GetTime();
+                v.position.y = std::max(v.position.y, below);
+                crash(std::max(std::fabs(v.speed), -v.climb));
+                v.speed = 0.0f;
+                v.climb = 0.0f;
+                break;
+            }
+        }
     }
 
     // Хазайлт: хурдлахад хошуу доош, эргэхэд хажуу тийш (харагдах төдий)

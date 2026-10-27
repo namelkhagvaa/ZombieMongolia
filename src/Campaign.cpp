@@ -3,6 +3,7 @@
 #include "Account.h"
 
 #include "Input.h"
+#include "Platform.h"
 #include "ProvinceMap.h"
 #include "UiFont.h"
 #include "UiStyle.h"
@@ -170,7 +171,7 @@ namespace
         const std::string application = GetApplicationDirectory();
         for (const std::string& folder : { std::string("assets/"), application + "assets/", application + "../assets/" })
         {
-            const std::string path = folder + "home_back.png";
+            const std::string path = ImageFile(folder + "home_back.png"); // (хөтөч: .jpg)
             if (!FileExists(path.c_str())) continue;
             texture = LoadTexture(path.c_str());
             break;

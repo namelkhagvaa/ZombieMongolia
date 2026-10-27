@@ -30,3 +30,7 @@ Zombie Mongolia — дууны эх сурвалж (бүгд CC0 / public domain
   (Trot.ogg-оос тус тусдаа 6 цохилт хэрчиж, 90 Гц-ээс доош шүүсэн)
 
 Хутга, шидэх, дугуй чахирах, дэлбэрэлтийн нүргээн: кодоор нийлэгжүүлсэн (src/Audio.cpp).
+
+Цэргүүдийн яриа (assets/sounds/soldiers/<a|b|c>_<үйл явдал>_<n>.wav):
+  Nomad Labs, Nomad Voice (nomad-voice-v1) text-to-speech: a Дайчин 1 "Ирмүүн", b Дайчин 2 "Оргил", c Мэргэн буудагч "Мэргэн"
+  https://developers.nomadlabs.mn  (MP3-аас 44.1 кГц моно 16 бит WAV болгосон)

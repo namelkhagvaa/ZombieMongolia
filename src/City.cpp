@@ -208,10 +208,15 @@ namespace
     CityData current;
 }
 
+std::string CityFile(int province)
+{
+    return province == 15 ? std::string("city/ub.bin") : std::string(TextFormat("city/p%02d.bin", province));
+}
+
 const CityData& CityFor(int province)
 {
     if (current.province == province) return current;
-    const std::string file = province == 15 ? std::string("city/ub.bin") : TextFormat("city/p%02d.bin", province);
+    const std::string file = CityFile(province);
     current = CityData{};
 #if defined(__ANDROID__)
     current = Load(file.c_str()); // APK-ийн assets-ийн үндсэнд

@@ -556,10 +556,10 @@ namespace
     int lastVariant[3][(int)VoiceLine::Count] = {};
     Sound* talking = nullptr; // одоо ярьж буй (нэг удаад нэг хүн)
 
-    // voice/bataa/<a|b|c>_<код>_<1..4>.wav|.ogg
+    // soldiers/<a|b|c>_<код>_<1..4>.wav|.ogg: a Дайчин 1, b Дайчин 2, c Мэргэн буудагч (assets/sounds/SOURCES.txt)
     void LoadVoices()
     {
-        const std::string folder = SoundFolder() + "voice/bataa/";
+        const std::string folder = SoundFolder() + "soldiers/";
         int total = 0;
         for (int speaker = 0; speaker < 3; ++speaker)
         {

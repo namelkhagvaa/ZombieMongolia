@@ -1,5 +1,7 @@
 #include "FuelBarrels.h"
 
+#include "VehicleModel.h"
+
 #include "Layout.h"
 #include "Player.h"
 #include "Procedural.h"
@@ -238,6 +240,18 @@ void FuelBarrels::Draw(Vector3 viewPosition) const
             // Хагарсан, хар болсон үлдэгдэл, доороо түлэгдсэн газар
             DrawCylinder({ p.x, p.y + 0.01f, p.z }, 1.4f, 1.4f, 0.02f, 10, { 30, 26, 24, 255 });
             DrawCylinderEx({ p.x, p.y, p.z }, { p.x + 0.05f, p.y + 0.32f, p.z }, kRadius, kRadius * 1.15f, 8, { 40, 36, 34, 255 });
+            continue;
+        }
+        if (HasSceneryModel(SceneryModelId::FuelBarrel) && HorizontalDistance(viewPosition, p) < 70.0f)
+        {
+            // Текстуртай загвар (assets/pooshig/barrel_fuel): өндөр 1 м -> kHeight
+            rlPushMatrix();
+            rlTranslatef(p.x, p.y, p.z);
+            rlRotatef(barrel.tilt, 0.0f, 0.0f, 1.0f);
+            rlRotatef(p.x * 37.0f + p.z * 11.0f, 0.0f, 1.0f, 0.0f); // тэмдэг нь өөр өөр зүг рүү
+            rlScalef(kHeight, kHeight, kHeight);
+            DrawSceneryModel(SceneryModelId::FuelBarrel);
+            rlPopMatrix();
             continue;
         }
         rlPushMatrix();

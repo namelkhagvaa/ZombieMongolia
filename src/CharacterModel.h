@@ -27,7 +27,13 @@ constexpr int kCharacterModel1 = 9;       // assets\model-1 (1-р дайчны �
 constexpr int kCharacterModel3 = 10;      // assets\model-3 (1-р дайчны сонгож болох дүр)
 constexpr int kCharacterDemon = 11;       // assets\demon (онцгой дүр, Gold-оор)
 constexpr int kCharacterIron = 12;        // assets\iron (онцгой дүр, Gold-оор)
-constexpr int kCharacterCount = 13;
+// Аврах иргэд (даалгаврын газраас хамаарч): эмнэлэгт эмч, сургуульд сурагч, хийдэд лам, бусад нь малчин
+constexpr int kCharacterDoctorMan = 13;   // assets\survivor_doctor_man
+constexpr int kCharacterDoctorWoman = 14; // assets\survivor_doctor_woman
+constexpr int kCharacterStudentBoy = 15;  // assets\survivor_student_boy
+constexpr int kCharacterStudentGirl = 16; // assets\survivor_student_girl
+constexpr int kCharacterMonk = 17;        // assets\survivor_monk
+constexpr int kCharacterCount = 18;
 
 // shader: текстур, гэрэлтүүлэг, манантай дүрийн shader (Environment::CharacterShader).
 void LoadCharacterModels(Shader shader);

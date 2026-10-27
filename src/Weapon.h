@@ -80,7 +80,12 @@ public:
 
     void Select(WeaponType type);
     WeaponType Current() const { return current; }
-    const WeaponSpec& Spec() const { return SpecFor(current); }
+    const WeaponSpec& Spec() const;
+
+    // Нисдэг тэрэгний хаалганы хүнд пулемёт (нөгөө тоглогчийн тэргэнд суусан): автоматын дүр төрхтэй, сум
+    // хязгааргүй, цэнэглэхгүй, хүчтэй, хол тусна. Унтраахад өмнөх зэвсэг рүүгээ буцна.
+    void SetMounted(bool on);
+    bool Mounted() const { return mounted; }
 
     // Одоогийн зэвсгийг хэрэглэж чадсан бол true (сум/гранат зарцуулна).
     // Сум дууссан бол өөрөө цэнэглэж эхэлнэ.
@@ -111,4 +116,6 @@ private:
     int ammo[(int)WeaponType::Count] = {};
     float cooldown = 0.0f;
     float reloadTimer = 0.0f;
+    bool mounted = false;
+    WeaponType beforeMounted = WeaponType::Rifle;
 };

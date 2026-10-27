@@ -1,6 +1,7 @@
 #include "Grenades.h"
 
 #include "Player.h"
+#include "Vehicle.h"
 #include "Weapon.h"
 #include "Zombie.h"
 #include "raymath.h"
@@ -22,15 +23,16 @@ void Grenades::Throw(Vector3 from, Vector3 velocity, bool visual)
     grenades.push_back(grenade);
 }
 
-void Grenades::Launch(Vector3 from, Vector3 velocity, bool visual)
+void Grenades::Launch(Vector3 from, Vector3 velocity, bool visual, int ownVehicle)
 {
     Grenade rocket = { from, velocity, 4.0f }; // юунд ч тусахгүй бол 4 секундийн дараа агаарт дэлбэрнэ
     rocket.rocket = true;
+    rocket.ownVehicle = ownVehicle;
     rocket.visual = visual;
     grenades.push_back(rocket);
 }
 
-void Grenades::Update(float dt, const World& world, ZombieHorde& horde, Player& player, Particles& particles)
+void Grenades::Update(float dt, const World& world, ZombieHorde& horde, Player& player, Particles& particles, const Garage& garage)
 {
     for (Grenade& grenade : grenades)
     {
@@ -55,6 +57,12 @@ void Grenades::Update(float dt, const World& world, ZombieHorde& horde, Player& 
             if (wall < step + 0.3f)
             {
                 travel = std::min(travel, std::max(0.0f, wall - 0.1f));
+                impact = true;
+            }
+            float vehicleDistance = 0.0f;
+            if (garage.Raycast(ray, 0.0f, step + 0.3f, grenade.ownVehicle, -1, vehicleDistance) >= 0)
+            {
+                travel = std::min(travel, vehicleDistance);
                 impact = true;
             }
             grenade.position = Vector3Add(grenade.position, Vector3Scale(ray.direction, travel));

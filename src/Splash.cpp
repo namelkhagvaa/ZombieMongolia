@@ -36,7 +36,7 @@ namespace
         const std::string application = GetApplicationDirectory();
         for (const std::string& folder : { std::string("assets/"), application + "assets/", application + "../assets/" })
         {
-            const std::string path = folder + "splash.png";
+            const std::string path = ImageFile(folder + "splash.png"); // (хөтөч: .jpg)
             if (!FileExists(path.c_str())) continue;
             texture = LoadTexture(path.c_str());
             break;
@@ -139,5 +139,35 @@ namespace Splash
         WebReleaseLoadedAssets();
         if (WebHeapMegabytes() > 0) TraceLog(LOG_INFO, "MEMORY: heap %d MB after loading", WebHeapMegabytes());
         WebLoadingFinished(); // хөтөч: "ТОГЛОХ" товч (бүтэн дэлгэц хэрэглэгчийн үйлдлээр л нээгддэг)
+    }
+
+    void WaitForPacks(const char* const* names, int count)
+    {
+        auto progress = [&](bool& failing) {
+            int sum = 0;
+            failing = false;
+            for (int i = 0; i < count; ++i)
+            {
+                const int status = WebPackStatus(names[i]);
+                if (status < 0) failing = true;
+                sum += std::clamp(status, 0, 1000);
+            }
+            return count > 0 ? (float)sum / (1000.0f * (float)count) : 1.0f;
+        };
+        bool failing = false;
+        if (progress(failing) >= 1.0f) return;
+        // (эхлэлийн дэлгэцийн зураг хөтчийн санах ойд үлддэг: WebReleaseLoadedAssets)
+        LoadSplashTexture();
+        shown = 0.0f;
+        while (!AppShouldClose())
+        {
+            const float ratio = progress(failing);
+            shown = std::max(shown, ratio);
+            status = failing ? "Сүлжээ тасарлаа, дахин оролдож байна..." : "Газар нутгийн файлуудыг татаж байна...";
+            DrawFrame(1.0f);
+            if (ratio >= 1.0f) break;
+        }
+        if (texture.id != 0) UnloadTexture(texture);
+        texture = {};
     }
 }

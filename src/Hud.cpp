@@ -15,7 +15,7 @@
 namespace
 {
     // Мэргэн буудагчийн дуран хараа: дугуй цонхны гадуур хар, дотор нь нарийн загалмай ба зайн тэмдэг.
-    void DrawScope()
+    void DrawScope(int zoom)
     {
         const int width = ViewWidth();
         const int height = ViewHeight();
@@ -25,6 +25,10 @@ namespace
 
         DrawRing(center, radius, outer, 0.0f, 360.0f, 96, BLACK);
         DrawRing(center, radius - 5.0f, radius, 0.0f, 360.0f, 96, Fade(BLACK, 0.55f));
+        // Томруулалт (баруун товч / "2x" товч дахин дарахад 2x): дурангийн баруун доод хүрээнд
+        const char* zoomText = zoom >= 2 ? "2x" : "1x";
+        Ui::TextBold(zoomText, (int)(center.x + radius * 0.62f), (int)(center.y + radius * 0.62f), 22,
+                     zoom >= 2 ? Ui::kAccent : Color{ 230, 230, 230, 220 });
 
         const Color line = { 12, 12, 12, 235 };
         const float gap = 9.0f;
@@ -225,7 +229,7 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         DrawDamage((0.3f - healthRatio) * (0.6f + 0.6f * pulse));
     }
 
-    if (info.scoped) DrawScope();
+    if (info.scoped) DrawScope(info.scopeZoom);
     else DrawCrosshair();
     if (info.tutorial)
     {

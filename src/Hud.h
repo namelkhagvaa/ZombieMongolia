@@ -31,6 +31,7 @@ struct HudInfo
     int slotCount = 0;
     const char* stance = nullptr; // "CROUCH" / "PRONE"; босоо үед nullptr
     bool scoped = false;       // мэргэн буудагчийн дуран хараа дэлгэцэд гарна
+    int scopeZoom = 1;         // дурангийн томруулалт (1x, 2x)
     float hitMarker = 0.0f;    // 0..1: загалмайн эргэн тойронд "X" (сум онов)
     int hitMarkerKind = 0;     // 0 бие, 1 толгой (улаан), 2 устгасан (том)
     float damageArrow = 0.0f;  // 0..1: хаанаас цохиулсныг заах улаан нум

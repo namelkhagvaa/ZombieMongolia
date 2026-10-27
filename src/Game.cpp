@@ -96,8 +96,10 @@ namespace
     }
 
     // Гарцын үйлдлийн нэр: [0] гарын заавар, [1] мэдрэгчтэй дэлгэцийн товчлуур.
-    const char* PassageLabel(PassageKind kind, bool touch)
+    const char* PassageLabel(PassageKind kind, bool touch, bool rope = false)
     {
+        if (rope && kind == PassageKind::LadderUp) return touch ? "ОЛСООР АВИРАХ" : "F — олсоор дээш авирах";
+        if (rope && kind == PassageKind::LadderDown) return touch ? "ОЛСООР БУУХ" : "F — олсоор доош буух";
         switch (kind)
         {
         case PassageKind::LadderUp: return touch ? "ШАТААР АВИРАХ" : "F — шатаар авирах";
@@ -109,7 +111,7 @@ namespace
         }
     }
     const float kTeamVehicleRange = 70.0f; // багийн гишүүд ийм зайн доторх хэрэгслийг сонгож сууна
-    const float kTeamBoardTime = 6.0f;     // ийм хугацаанд хүрч амжаагүй гишүүн шууд сууна
+    const float kTeamBoardTime = 25.0f;    // ийм хугацаанд хүрч амжаагүй (гацсан) гишүүн шууд сууна
 
     // Хулганыг цонхонд түгжинэ (камерт). Мэдрэгчтэй дэлгэцэд заагч түгжигдэхгүй.
     void LockCursor()
@@ -200,8 +202,10 @@ Game::Game(const LaunchOptions& launchOptions)
     LoadCharacterModels(environment.CharacterShader()); // байхгүй бол дүрүүд кодоор үүсгэсэн дүрсээрээ зурагдана
     Splash::Step(0.84f, "Морьдыг ачаалж байна...");
     LoadHorseModel(environment.CharacterShader());      // байхгүй бол морь кодоор үүсгэсэн дүрсээрээ
-    LoadVehicleModels(environment.VehicleShader());     // байхгүй бол унаанууд кодоор угсарсан хэлбэрээрээ
     LoadPropModels(environment.VehicleShader());        // assets/buu: автомат буу, үсрэх сум (байхгүй бол кодоор)
+#if !defined(__EMSCRIPTEN__)
+    EnsureMissionAssets(0); // (хөтөч: унаа, модны файлууд ар талд татагдаж, анх аймагт орохдоо ачаалагдана)
+#endif
     Splash::Step(0.86f, "Дуу ачаалж байна...");
     Audio::Init();
     Splash::Step(0.94f, "Газрын зургийг бэлтгэж байна...");
@@ -238,6 +242,7 @@ Game::~Game()
     UnloadHorseModel();
     UnloadVehicleModels();
     UnloadPropModels();
+    UnloadSceneryModels();
     Save();
 }
 
@@ -323,6 +328,7 @@ void Game::Run()
         {
             ResetSquad(options.soldiers);
         }
+        if (options.heliRoof) PlaceHelicopterOnRoof();
 
         InSetTestMove({ options.moveRight, options.moveForward });
         if (options.demo)
@@ -471,7 +477,11 @@ void Game::Run()
         if (!benchmark || options.coopTest) UpdateNetwork(dt);
 
         // ESC (утсан дээр "буцах" товч): нээлттэй цонхыг (даалгаврын журнал, газрын зураг) хаана; цонхгүй бол гарна.
-        if (InKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_BACK))
+        if (chatOpen && (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_BACK)))
+        {
+            CloseChat(); // (тоглоомын цэс нээхгүй)
+        }
+        else if (InKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_BACK))
         {
             if (state == GameState::Map && !paused && Account::Back())
             {
@@ -553,6 +563,13 @@ void Game::Run()
                     InSetMuted(true);
                     UpdateMission(dt);
                 }
+                break;
+            }
+            if (UpdateChat(dt))
+            {
+                // Чат бичиж байна: ертөнц хөдөлсөөр, энэ тоглогчийн оролтгүй
+                InSetMuted(true);
+                UpdateMission(dt);
                 break;
             }
             if (InKeyPressed(KEY_Q) && !fullMap.IsOpen())
@@ -991,8 +1008,65 @@ namespace
     }
 }
 
+void Game::EnsureMissionAssets(int provinceIndex)
+{
+    const std::string city = CityFile(provinceIndex);
+    const std::string cityPack = city.substr(0, city.rfind('.')); // "city/p05"
+    const char* packs[2] = { "world", cityPack.c_str() };
+    Splash::WaitForPacks(packs, 2);
+    if (worldModelsLoaded) return;
+    worldModelsLoaded = true;
+    LoadVehicleModels(environment.VehicleShader());  // байхгүй бол унаанууд кодоор угсарсан хэлбэрээрээ
+    LoadSceneryModels(environment.VehicleShader());  // assets/trees, pooshig: ойрын мод, торх (байхгүй бол кодоор)
+    WebReleaseLoadedAssets(true);                    // хөтөч: ачаалсан файлуудыг санах ойгоос чөлөөлнө
+}
+
+void Game::PlaceHelicopterOnRoof()
+{
+    const Vector3 at = player.Position();
+    int heli = -1;
+    for (int i = 0; i < garage.Count(); ++i)
+    {
+        if (IsHelicopter(garage.At(i).type) && !garage.At(i).wrecked && (heli < 0 || HorizontalDistance(garage.At(i).position, at) <
+                                                                                     HorizontalDistance(garage.At(heli).position, at)))
+        {
+            heli = i;
+        }
+    }
+    // Тоглогчоос 25-200 м-т, газраас 8 м-ээс өндөр, 10 м-ийн хүрээндээ хавтгай дээвэр
+    Vector3 best = { 0.0f, 0.0f, 0.0f };
+    float bestDistance = 1.0e9f;
+    for (float x = at.x - 200.0f; x <= at.x + 200.0f; x += 2.0f)
+    {
+        for (float z = at.z - 200.0f; z <= at.z + 200.0f; z += 2.0f)
+        {
+            const float distance = HorizontalDistance({ x, 0.0f, z }, at);
+            if (distance < 25.0f || distance > 200.0f || distance > bestDistance) continue;
+            const float roof = world.SurfaceHeightAt(x, z, 1.0e5f);
+            if (roof - world.GroundHeight(x, z) < 8.0f) continue;
+            bool flat = true;
+            for (Vector2 d : { Vector2{ 5.0f, 0.0f }, Vector2{ -5.0f, 0.0f }, Vector2{ 0.0f, 5.0f }, Vector2{ 0.0f, -5.0f } })
+            {
+                flat = flat && std::fabs(world.SurfaceHeightAt(x + d.x, z + d.y, roof + 0.6f) - roof) < 0.5f;
+            }
+            if (!flat) continue;
+            best = { x, roof, z };
+            bestDistance = distance;
+        }
+    }
+    if (heli < 0 || bestDistance > 1.0e8f)
+    {
+        TraceLog(LOG_WARNING, "TEST: no helicopter (%d) or tall roof near (%.0f, %.0f)", heli, at.x, at.z);
+        return;
+    }
+    garage.Place(heli, best, 0.0f);
+    garage.Mount(heli);
+    TraceLog(LOG_INFO, "TEST: helicopter %d on the roof at (%.0f, %.1f, %.0f), %.0f m from the team", heli, best.x, best.y, best.z, bestDistance);
+}
+
 void Game::StartMission(int index, StageSave* stageOverride)
 {
+    EnsureMissionAssets(index);
     const double startTime = GetTime();
     provinceIndex = index;
     params = MissionFor(index);
@@ -1132,7 +1206,7 @@ bool Game::SwitchMember(int target, bool leaveDead)
     }
     // Хоёр хүний унаа: жолооч ба буудагч суудлаа солино (унаа зогсохгүй).
     int toGunner = -1, toDriver = -1;
-    if (!leaveDead && garage.IsDriving() && index == carGunner)
+    if (!leaveDead && garage.IsDriving() && index == carGunner && squad.All()[(size_t)index].riding == garage.Driven())
     {
         toGunner = garage.Driven(); // тоглогч буудагч болж, гишүүн жолоодно
     }
@@ -1354,8 +1428,8 @@ bool Game::StartWorldEvent(int kind)
         if (kind == kEventAirdrop)
         {
             const int id = nextEventId++;
-            events.AddCrate((uint16_t)id, spot, 140.0f);
-            if (remoteActive && net.Connected()) net.SendWorldEvent(kind, id, spot, 140.0f);
+            events.AddCrate((uint16_t)id, spot, 70.0f); // (нисдэг тэрэг ирж буулгана: WorldEvents)
+            if (remoteActive && net.Connected()) net.SendWorldEvent(kind, id, spot, 70.0f);
         }
         else if (kind == kEventHorde)
         {
@@ -1641,11 +1715,13 @@ void Game::UpdateVehicleCombat(float dt)
         const Vector3 blast = Vector3Add(vehicle.position, { 0.0f, 1.0f, 0.0f });
         const float radius = 7.0f;
         particles.Explosion(blast); // (ойрын унаануудыг ч UpdateVehicles гэмтээнэ)
+        // (нисдэг тэрэг: суусан хүмүүсийн хохирлыг сүйрэл тооцно — амийн 70% хүртэл; энд хүнд хохирол өгөхгүй)
+        const bool heli = IsHelicopter(vehicle.type);
         if (!coopGuest)
         {
             horde.Explode(blast, radius, 140.0f);
             barrels.Blast(blast, radius);
-            for (int k = 0; k < squad.Total(); ++k)
+            for (int k = 0; k < squad.Total() && !heli; ++k)
             {
                 const Soldier& soldier = squad.All()[(size_t)k];
                 const float d = Vector3Distance(soldier.mover.position, vehicle.position);
@@ -1653,7 +1729,7 @@ void Game::UpdateVehicleCombat(float dt)
             }
         }
         const float d = Vector3Distance(player.Position(), vehicle.position);
-        if (player.IsAlive() && d < radius) player.TakeDamage(70.0f * (1.0f - d / radius));
+        if (player.IsAlive() && d < radius && !heli) player.TakeDamage(70.0f * (1.0f - d / radius));
     }
 
     // --- Тулаан: эсрэг багийн хүнийг хурдтай унаагаар дайрвал амийн 30% хасагдана (нэг дайралтанд нэг удаа) ---
@@ -2093,7 +2169,7 @@ void Game::FireLauncher(Ray aim, float cameraDistance)
 
     const Vector3 muzzle = EffectMuzzle();
     const Vector3 direction = Vector3Normalize(Vector3Subtract(target, muzzle));
-    grenades.Launch(muzzle, Vector3Scale(direction, kRocketSpeed));
+    grenades.Launch(muzzle, Vector3Scale(direction, kRocketSpeed), false, RideVehicle());
     if (net.Connected() && (coopGuest || remoteActive)) net.SendProjectile(1, muzzle, Vector3Scale(direction, kRocketSpeed));
     horde.AlertAround(player.Position(), 130.0f);
 
@@ -2123,6 +2199,7 @@ void Game::SpawnVehicles()
     garage.Clear();
     sentVehiclePosition.clear(); // шинэ унаанууд: зочинд дахин илгээнэ
     sentVehicleHealth.clear();
+    world.SetVehicleBlockers({}); // (өмнөх тоглолтын унаанууд байрлалд нөлөөлөхгүй: хост, зочин хоёрт ижил)
 
     // Аймгийн хилийн дотор байгаа цэгүүдэд л байрлуулна.
     // Суурингууд үе бүрд өөр тул хүссэн цэг дээр барилга, хашаа таарч болно: ойролцоох чөлөөт цэгийг хайна.
@@ -2279,7 +2356,8 @@ Game::Interaction Game::FindInteraction() const
         const int heli = pilot.vehicle;
         if (pilot.alive && heli >= 0 && heli < garage.Count() && !(pilot.flags & Net::kPassenger) &&
             IsHelicopter(garage.At(heli).type) && !garage.At(heli).wrecked && !garage.Airborne(heli) &&
-            HorizontalDistance(position, garage.At(heli).position) < 9.0f)
+            HorizontalDistance(position, garage.At(heli).position) < 9.0f &&
+            std::fabs(position.y - garage.At(heli).position.y) < 2.5f) // (дээвэр дээр буусан бол олсоор авирч очно)
         {
             result.crew = heli;
             return result;
@@ -2604,10 +2682,10 @@ void Game::UpdateVehicles(float dt)
             // Унааны зүүн талд бууна (нисдэг тэргэнд: зүүн урд хаалганаас).
             const Vehicle& vehicle = garage.At(garage.Driven());
             const float side = SpecFor(vehicle.type).radius + config.playerRadius + 0.3f;
-            Vector3 exit = HumanoidLocalToWorld(vehicle.position, vehicle.heading,
-                                                IsHelicopter(vehicle.type) ? Vector3{ 2.7f, 0.0f, 3.2f } : Vector3{ side, 0.0f, 0.0f });
+            Vector3 exit = HumanoidLocalToWorld(vehicle.position, vehicle.heading, { side, 0.0f, 0.0f });
             world.ResolveHorizontal(exit, config.playerRadius, config.playerHeight, config.stepHeight);
             exit.y = world.GroundHeight(exit.x, exit.z);
+            if (IsHelicopter(vehicle.type)) exit = HeliExit(vehicle, { { 2.8f, 0.0f, 1.6f }, { -2.8f, 0.0f, 1.6f }, { 0.0f, 0.0f, 9.5f } });
             garage.Dismount();
             player.StopRiding(exit);
         }
@@ -2628,6 +2706,9 @@ void Game::UpdateVehicles(float dt)
             {
                 heliPassenger = target.crew;
                 heliPassengerAir = false;
+                float doorFacing = 0.0f;
+                garage.HelicopterSeat(heliPassenger, 2, doorFacing);
+                camera.SetView(doorFacing, 0.6f); // хаалганаас гадагш, доош газар луу
                 SetNotice("Нисдэг тэргэнд буудагчаар суулаа — нисгэгчийг дагана", 3.0f);
             }
             else if (target.vehicle >= 0)
@@ -2701,6 +2782,17 @@ void Game::UpdateVehicles(float dt)
     }
     garage.Update(dt, world, horde, throttle, steer, handbrake, garage.IsDriving() && (InSprint() || autoDrive));
     if (const int crash = garage.TakeCrash(); crash >= 0) HelicopterCrashed(crash);
+    for (int i = 0; i < garage.Count(); ++i)
+    {
+        const Vehicle& v = garage.At(i);
+        if (!IsHelicopter(v.type) || v.wrecked || v.altitude > 0.4f) continue;
+        if (v.position.y < world.GroundHeight(v.position.x, v.position.z) + 3.0f) continue; // газар дээр
+        // Ирмэг хайх нь хүнд: тэрэг 5 м-ээс илүү шилжсэн үед л дахин шалгана
+        if (ropeChecked.size() != (size_t)garage.Count()) ropeChecked.assign((size_t)garage.Count(), { 0.0f, -1.0e9f, 0.0f });
+        if (Vector3Distance(ropeChecked[(size_t)i], v.position) < 5.0f) continue;
+        ropeChecked[(size_t)i] = v.position;
+        world.AddRope(v.position, 45.0f); // (энэ дээвэр дээр олс, шат байвал дахин тавихгүй)
+    }
     // Нисдэг тэрэг нам нисэх, хөөрөх үед сэнсний салхинд газраас тоос босно
     rotorDust -= dt;
     if (rotorDust <= 0.0f)
@@ -2909,6 +3001,13 @@ void Game::UpdateVehicles(float dt)
                              !(pilot.flags & Net::kPassenger);
         const bool airborne = garage.Airborne(heliPassenger);
         if (airborne && !vehicle.wrecked) heliPassengerAir = true;
+        // Сүйрлийн хүчийг тооцоход: эвдрэхээс өмнөх хурд, эвдэрснээс хойших хамгийн өндөр цэг
+        if (!vehicle.wrecked)
+        {
+            heliPassengerSpeed = std::fabs(vehicle.speed);
+            heliPassengerPeak = vehicle.position.y;
+        }
+        else heliPassengerPeak = std::max(heliPassengerPeak, vehicle.position.y);
         if (vehicle.wrecked && !airborne) LeaveHelicopterCrew(heliPassengerAir);
         else if (!airborne && (!piloted || battleActive)) LeaveHelicopterCrew(false);
         else
@@ -2952,15 +3051,16 @@ void Game::LeaveHelicopterCrew(bool hurt)
     heliPassenger = -1;
     heliPassengerAir = false;
     // Баруун хойд талаас бууна (нисгэгч зүүн урд хаалгаар)
-    Vector3 exit = HumanoidLocalToWorld(heli.position, heli.heading, { -3.0f, 0.0f, 0.5f });
-    world.ResolveHorizontal(exit, config.playerRadius, config.playerHeight, config.stepHeight);
-    exit.y = world.GroundHeight(exit.x, exit.z);
+    const Vector3 exit = HeliExit(heli, { { -3.0f, 0.0f, 0.5f }, { 3.0f, 0.0f, 0.5f }, { 0.0f, 0.0f, 9.5f } });
     player.StopRiding(exit);
+    // Сүйрлийн хүч: унасан өндөр (сүүлд агаарт байсан хамгийн өндрөөс) ба хурдаар, амийн 70% хүртэл
+    const float fall = std::max(0.0f, heliPassengerPeak - heli.position.y);
+    const float severity = std::clamp(std::max(std::sqrt(2.0f * 9.8f * fall), heliPassengerSpeed) / 25.0f, 0.2f, 1.0f);
     if (hurt)
     {
         particles.Explosion(heli.position);
         SetNotice("НИСДЭГ ТЭРЭГ СҮЙРЛЭЭ!", 3.5f);
-        player.TakeDamage(player.MaxHealth() * kTeamToughness * 0.85f);
+        player.TakeDamage(player.MaxHealth() * kTeamToughness * 0.7f * severity);
     }
     // Хамт суусан багийн гишүүд (суудал 3, 4) ч бууна
     std::vector<Soldier>& all = squad.All();
@@ -2969,15 +3069,33 @@ void Game::LeaveHelicopterCrew(bool hurt)
     {
         Soldier& soldier = all[(size_t)i];
         if (soldier.riding != index || soldier.guestTeam) continue;
-        Vector3 at = HumanoidLocalToWorld(heli.position, heli.heading, { -3.4f, 0.0f, -1.2f - 1.8f * (float)out++ });
-        world.ResolveHorizontal(at, config.playerRadius, config.playerHeight, config.stepHeight);
-        at.y = world.GroundHeight(at.x, at.z);
+        const float back = -1.2f - 1.8f * (float)out++;
+        const Vector3 at = HeliExit(heli, { { -3.4f, 0.0f, back }, { 3.4f, 0.0f, back }, { 0.0f, 0.0f, 9.5f } });
         soldier.mover.position = at;
         soldier.riding = -1;
         soldier.boarding = false;
         soldier.seatStyle = 0;
-        if (hurt && soldier.alive) squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.85f);
+        if (hurt && soldier.alive) squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.7f * severity);
     }
+}
+
+Vector3 Game::HeliExit(const Vehicle& heli, std::initializer_list<Vector3> locals) const
+{
+    Vector3 first = heli.position;
+    bool haveFirst = false;
+    for (const Vector3& local : locals)
+    {
+        Vector3 at = HumanoidLocalToWorld(heli.position, heli.heading, local);
+        world.ResolveHorizontal(at, config.playerRadius, config.playerHeight, config.stepHeight);
+        at.y = world.SurfaceHeightAt(at.x, at.z, heli.position.y + 0.6f);
+        if (at.y > heli.position.y - 1.0f) return at; // тэрэгтэй ижил түвшинд (газар эсвэл дээвэр)
+        if (!haveFirst)
+        {
+            first = at;
+            haveFirst = true;
+        }
+    }
+    return first;
 }
 
 void Game::UpdateGuestHelicopterCrew()
@@ -2999,14 +3117,13 @@ void Game::UpdateGuestHelicopterCrew()
         // Зочин нисдэг тэрэгнээс буусан (эсвэл тэрэг сүйрсэн): гишүүд нь хажууд нь бууна
         const Vehicle& vehicle = garage.At(soldier.riding);
         if (garage.Airborne(soldier.riding) && !vehicle.wrecked && heli < 0 && guestFigure.alive) continue; // газардтал
-        Vector3 at = HumanoidLocalToWorld(vehicle.position, vehicle.heading, { 3.4f, 0.0f, 1.0f - 1.8f * (float)out++ });
-        world.ResolveHorizontal(at, config.playerRadius, config.playerHeight, config.stepHeight);
-        at.y = world.GroundHeight(at.x, at.z);
+        const float along = 1.0f - 1.8f * (float)out++;
+        const Vector3 at = HeliExit(vehicle, { { 3.4f, 0.0f, along }, { -3.4f, 0.0f, along }, { 0.0f, 0.0f, 9.5f } });
         soldier.mover.position = at;
         soldier.riding = -1;
         soldier.boarding = false;
         soldier.seatStyle = 0;
-        if (vehicle.wrecked && soldier.alive) squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.85f);
+        if (vehicle.wrecked && soldier.alive) squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.7f * std::max(0.2f, vehicle.crashSeverity > 0.0f ? vehicle.crashSeverity : 0.7f));
     }
     if (heli >= 0 && !garage.At(heli).wrecked) SeatHelicopterTeam(heli, true, first);
 }
@@ -3041,22 +3158,43 @@ void Game::SeatHelicopterTeam(int index, bool guestSide, int firstSlot)
     const Vehicle& heli = garage.At(index);
     const bool grounded = !garage.Airborne(index);
     int slot = 0;
+    for (const Soldier& soldier : all)
+    {
+        if (soldier.riding == index && soldier.alive && soldier.guestTeam == guestSide) ++slot;
+    }
+    int seated = 0;
     for (Soldier& soldier : all)
     {
         if (!soldier.alive || soldier.member < 0 || soldier.guestTeam != guestSide) continue;
         if (soldier.riding != index)
         {
-            // Газардсан тэргэнд ойрын гишүүд сууна (холын нь, унасан, "энд бай" тушаалтай нь газар үлдэнэ)
+            // Газардсан тэргэнд ойрын гишүүд хаалга руу нь гүйж очоод сууна (дээвэр дээр буусан бол олсоор авирна).
+            // Холын нь, унасан, "энд бай" тушаалтай нь газар үлдэнэ.
             if (!grounded || soldier.downed || soldier.holding || soldier.riding >= 0 || slot >= 2 ||
-                HorizontalDistance(soldier.mover.position, heli.position) > 40.0f)
+                HorizontalDistance(soldier.mover.position, heli.position) > 60.0f)
             {
+                soldier.boarding = false;
+                continue;
+            }
+            float doorFacing = heli.heading;
+            const Vector3 door = garage.HelicopterSeat(index, firstSlot + slot, doorFacing);
+            soldier.boardPoint = { door.x, heli.position.y, door.z };
+            // (бүхээгийн суудал их биеийн дотор: их биед тулж очвол хүрсэн)
+            const bool reached = soldier.climbTime < 0.0f && std::fabs(soldier.mover.position.y - heli.position.y) < 1.5f &&
+                                 (HorizontalDistance(soldier.mover.position, door) < 2.6f ||
+                                  HorizontalDistance(soldier.mover.position, heli.position) < 5.0f);
+            if (!reached)
+            {
+                soldier.boarding = true;
+                ++slot; // (энэ суудал түүнийх)
                 continue;
             }
             soldier.riding = index;
+            ++slot;
         }
-        if (slot >= 2) continue;
+        if (seated >= 2) continue;
         float facing = heli.heading;
-        const Vector3 seat = garage.HelicopterSeat(index, firstSlot + slot++, facing);
+        const Vector3 seat = garage.HelicopterSeat(index, firstSlot + seated++, facing);
         soldier.boarding = false;
         soldier.seat = seat;
         soldier.seatHeading = facing;
@@ -3079,12 +3217,10 @@ void Game::HelicopterCrashed(int index)
     TraceLog(LOG_INFO, "VEHICLES: helicopter %d crashed at (%.0f, %.0f) driven %d", index, at.x, at.z, garage.Driven());
     if (garage.Driven() == index)
     {
-        Vector3 exit = HumanoidLocalToWorld(at, heli.heading, { 2.7f, 0.0f, 3.2f });
-        world.ResolveHorizontal(exit, config.playerRadius, config.playerHeight, config.stepHeight);
-        exit.y = world.GroundHeight(exit.x, exit.z);
+        const Vector3 exit = HeliExit(heli, { { 2.8f, 0.0f, 1.6f }, { -2.8f, 0.0f, 1.6f } });
         garage.Dismount();
         player.StopRiding(exit);
-        player.TakeDamage(player.MaxHealth() * kTeamToughness * 0.85f); // хүнд шарх (унаж болно)
+        player.TakeDamage(player.MaxHealth() * kTeamToughness * 0.7f * heli.crashSeverity); // өндөр, хурдаас: амийн 70% хүртэл
     }
     std::vector<Soldier>& all = squad.All();
     int thrown = 0;
@@ -3094,20 +3230,33 @@ void Game::HelicopterCrashed(int index)
         if (soldier.riding != index) continue;
         // Их биеэс хоёр тийш шидэгдэнэ (сүйрсэн тэрэг дээр зогсохгүй)
         const float side = thrown % 2 == 0 ? 3.4f : -3.4f;
-        Vector3 out = HumanoidLocalToWorld(at, heli.heading, { side, 0.0f, 1.5f - 2.0f * (float)(thrown / 2) });
+        const float along = 1.5f - 2.0f * (float)(thrown / 2);
         ++thrown;
-        world.ResolveHorizontal(out, config.playerRadius, config.playerHeight, config.stepHeight);
-        out.y = world.GroundHeight(out.x, out.z);
+        const Vector3 out = HeliExit(heli, { { side, 0.0f, along }, { -side, 0.0f, along } });
         soldier.mover.position = out;
         soldier.riding = -1;
         soldier.seatStyle = 0;
-        squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.85f);
+        squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.7f * heli.crashSeverity);
     }
 }
 
 void Game::UpdateTeamRiding(float dt)
 {
     std::vector<Soldier>& all = squad.All();
+    if (options.heliRoof)
+    {
+        // Туршилт: багийнхны байдал (олс руу явж, авирч, сууж байгаа эсэх)
+        heliRoofLog -= dt;
+        for (size_t i = 0; i < all.size() && heliRoofLog <= 0.0f; ++i)
+        {
+            const Soldier& s = all[i];
+            if (s.member < 0) continue;
+            TraceLog(LOG_INFO, "TEST: member %d at (%.1f, %.1f, %.1f) boarding %d riding %d climbing %d passage %d", s.member,
+                     s.mover.position.x, s.mover.position.y, s.mover.position.z, s.boarding ? 1 : 0, s.riding, s.climbTime >= 0.0f ? 1 : 0,
+                     s.levelPassage);
+        }
+        if (heliRoofLog <= 0.0f) heliRoofLog = 2.0f;
+    }
 
     // Үхсэн гишүүн унаанаас унана.
     for (Soldier& soldier : all)
@@ -3181,7 +3330,7 @@ void Game::UpdateTeamRiding(float dt)
     {
         const int driven = garage.Driven();
         if (carGunner >= 0 && (carGunner >= (int)all.size() || !all[(size_t)carGunner].alive ||
-                               all[(size_t)carGunner].riding != driven))
+                               (all[(size_t)carGunner].riding != driven && !all[(size_t)carGunner].boarding)))
         {
             carGunner = -1;
         }
@@ -3199,12 +3348,31 @@ void Game::UpdateTeamRiding(float dt)
                     carGunner = (int)i;
                 }
             }
-            if (carGunner >= 0)
+        }
+        if (carGunner >= 0 && all[(size_t)carGunner].riding != driven)
+        {
+            // Унааны дэргэд гүйж очоод сууна (унаа зогссон үед); хол хоцорвол болино (бусадтай хамт дагана)
+            const Vehicle& vehicle = garage.At(driven);
+            Soldier& gunner = all[(size_t)carGunner];
+            const float distance = HorizontalDistance(gunner.mover.position, vehicle.position);
+            if (distance > 30.0f)
             {
-                SetNotice(std::string(TeamMemberName(all[(size_t)carGunner].member)) + " буудагчаар суулаа. Жолоо солих: Tab", 3.0f);
+                gunner.boarding = false;
+                carGunner = -1;
+            }
+            else if (distance > SpecFor(vehicle.type).radius + 1.3f || std::fabs(vehicle.speed) > 3.0f || gunner.climbTime >= 0.0f)
+            {
+                gunner.boarding = true;
+                gunner.boardPoint = vehicle.position;
+            }
+            else
+            {
+                gunner.boarding = false;
+                gunner.riding = driven;
+                SetNotice(std::string(TeamMemberName(gunner.member)) + " буудагчаар суулаа. Жолоо солих: Tab", 3.0f);
             }
         }
-        if (carGunner >= 0)
+        if (carGunner >= 0 && all[(size_t)carGunner].riding == driven)
         {
             const Vehicle& vehicle = garage.At(driven);
             Soldier& gunner = all[(size_t)carGunner];
@@ -3241,6 +3409,11 @@ void Game::UpdateTeamRiding(float dt)
                                                     { -side, 0.0f, slot == 0 ? 0.9f : -0.9f });
                 world.ResolveHorizontal(exit, config.playerRadius, config.playerHeight, 0.0f);
                 exit.y = world.GroundHeight(exit.x, exit.z);
+                if (IsHelicopter(vehicle.type))
+                {
+                    const float along = slot == 0 ? 0.9f : -0.9f - 1.8f * (float)(slot - 1);
+                    exit = HeliExit(vehicle, { { -3.2f, 0.0f, along }, { 3.2f, 0.0f, along }, { 0.0f, 0.0f, 9.5f } });
+                }
                 soldier.mover.position = exit;
                 ++slot;
             }
@@ -3275,7 +3448,9 @@ void Game::UpdateTeamRiding(float dt)
         for (int i = 0; i < garage.Count(); ++i)
         {
             const float distance = HorizontalDistance(reference->mover.position, garage.At(i).position);
-            if (i != garage.Driven() && !garage.At(i).occupied && !garage.At(i).wrecked && distance < best)
+            // (нисдэг тэргийг AI жолоодохгүй: тоглогч өөрөө нисгэнэ, баг нь хаалганы буудагчаар сууна)
+            if (i != garage.Driven() && !garage.At(i).occupied && !garage.At(i).wrecked && !IsHelicopter(garage.At(i).type) &&
+                distance < best)
             {
                 best = distance;
                 teamVehicle = i;
@@ -3560,6 +3735,7 @@ void Game::UpdateMission(float dt)
     {
         PROFILE_SCOPE("world stream");
         world.Stream(player.Position()); // явах тусам урд талын газрыг бага багаар үүсгэнэ
+        world.UpdateScenery(camera.Get().position); // ойрын мод, торх: текстуртай загвар
     }
 
     const bool enclosed = garage.IsDriving() && SpecFor(garage.At(garage.Driven()).type).enclosed;
@@ -3620,8 +3796,20 @@ void Game::UpdateMission(float dt)
 
     const bool forceAim = options.screenshotPath && options.scope; // туршилтын горим
     // Онилгоо: баруун товч дарахад асч, дахин дарахад унтарна (утасны "ОНИЛОХ" товч ч мөн адил).
-    if (!InTouchMode() && !paused && IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) aimToggled = !aimToggled;
+    // Мэргэн буудагч (дурантай): дарах бүрд 1x дуран -> 2x дуран -> хаах
+    const bool sniperScope = arsenal.Current() == WeaponType::Sniper && !garage.IsDriving();
+    if (!InTouchMode() && !paused && IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))
+    {
+        if (sniperScope && aimToggled && scopeZoom == 1) scopeZoom = 2;
+        else
+        {
+            aimToggled = !aimToggled;
+            scopeZoom = 1;
+        }
+    }
     if (enclosed || player.IsTraversing()) aimToggled = false;
+    if (!aimToggled || !sniperScope) scopeZoom = 1;
+    camera.SetScopeZoom(InTouchMode() ? InScopeZoom() : scopeZoom);
     const bool aimInput = InTouchMode() ? InMouseDown(MOUSE_BUTTON_RIGHT) : aimToggled;
     const bool aiming = (aimInput || forceAim) && !enclosed;
     // Мэргэн буудагч дурантай буугаараа шагайхад дуран хараа гарна (явган үед).
@@ -3661,7 +3849,8 @@ void Game::UpdateMission(float dt)
         recruitNoticeTimer = 1.4f;
         Save();
     }
-    camera.SetFirstPerson(progress.firstPerson && RideVehicle() < 0 && !player.IsTraversing());
+    // (нөгөө тоглогчийн нисдэг тэргэнд буудагч: нүднээсээ доош газрыг харж онилно)
+    camera.SetFirstPerson((progress.firstPerson && RideVehicle() < 0 && !player.IsTraversing()) || heliPassenger >= 0);
     camera.SetTraversing(player.IsTraversing());
     if (player.IsTraversing())
     {
@@ -3670,7 +3859,7 @@ void Game::UpdateMission(float dt)
     // Жолоодож байхад камер унааны төвийг, унааны өндөрт тааруулж харна (суудлыг тойрвол урт машины дотор орно)
     Vector3 cameraFocus = player.Position();
     float cameraDrop = player.CameraDrop();
-    if (RideVehicle() >= 0)
+    if (RideVehicle() >= 0 && heliPassenger < 0)
     {
         const Vehicle& vehicle = garage.At(RideVehicle());
         float height = 2.0f;
@@ -3686,6 +3875,17 @@ void Game::UpdateMission(float dt)
         cameraFocus = vehicle.position;
         cameraDrop = config.cameraTargetHeight - height;
     }
+    else if (heliPassenger >= 0)
+    {
+        // Хаалганы буудагч: нүд нь онгорхой хаалганы гадна ирмэг дээр (бүхээгийн дотор, нисгэгч харааг хаахгүй),
+        // хаалганаас гадагш талын хагас бөмбөрцөгт л эргэнэ
+        float doorFacing = 0.0f;
+        const Vector3 seat = garage.HelicopterSeat(heliPassenger, 2, doorFacing);
+        cameraFocus = { seat.x + std::sin(doorFacing) * 1.1f, seat.y, seat.z + std::cos(doorFacing) * 1.1f };
+        cameraDrop = config.cameraTargetHeight - 0.7f;
+        const float off = std::remainder(camera.Yaw() - doorFacing, 2.0f * PI);
+        if (std::fabs(off) > 1.5f) camera.SetView(doorFacing + std::clamp(off, -1.5f, 1.5f), camera.Pitch());
+    }
     camera.SetRiding(garage.IsDriving());
     camera.Update(dt, config, world, cameraFocus, aiming, cameraExtra, scoped, cameraDrop);
     if (aiming)
@@ -3693,6 +3893,8 @@ void Game::UpdateMission(float dt)
         player.AimAtPoint(CrosshairTarget());
     }
 
+    // Нөгөө тоглогчийн нисдэг тэргэнд суусан: хаалганы хүнд пулемёт (хязгааргүй сум) — газар луу буудна
+    arsenal.SetMounted(heliPassenger >= 0);
     arsenal.Update(dt);
     player.SetReload(arsenal.ReloadProgress());
     if (!enclosed)
@@ -3718,11 +3920,22 @@ void Game::UpdateMission(float dt)
         else if (hit.id == kGuestTarget) DamageGuest(damage);
         else if (hit.id >= 0 && hit.id < squad.Total()) squad.Damage(hit.id, damage);
     }
-    grenades.Update(dt, world, horde, player, particles);
+    grenades.Update(dt, world, horde, player, particles, garage);
     // Бензинтэй торх: гранат, пуужингийн дэлбэрэлт, хурдтай унаа дэлбэлнэ; тоглогч дундуур нь гарахгүй.
     for (const Grenades::BlastEvent& blast : grenades.TakeBlasts())
     {
         barrels.Blast(blast.position, blast.radius);
+        // Унаа: төвөөс (их биеийн хэмжээг хасаад) зайнаас хамаарсан хохирол; эзэмшигч тал тооцно (HitVehicle)
+        for (int i = 0; i < garage.Count(); ++i)
+        {
+            const Vehicle& vehicle = garage.At(i);
+            if (vehicle.wrecked) continue;
+            const Vector3 body = Vector3Add(vehicle.position, { 0.0f, IsHelicopter(vehicle.type) ? 2.5f : 1.0f, 0.0f });
+            const float distance = std::max(0.0f, Vector3Distance(body, blast.position) - SpecFor(vehicle.type).radius * 0.6f);
+            if (distance >= blast.radius) continue;
+            HitVehicle(i, blast.damage * (1.0f - distance / blast.radius), blast.position,
+                       Vector3Normalize(Vector3Subtract(body, blast.position)));
+        }
         if (coopGuest) net.SendBlast(blast.position, blast.radius, blast.damage); // хост тооцно
     }
     if (garage.IsDriving())
@@ -4329,6 +4542,7 @@ void Game::DrawMission() const
     info.slotCount = arsenal.SlotCount();
     for (int i = 0; i < info.slotCount && i < 8; ++i) info.slotWeapons[i] = (int)arsenal.SlotWeapon(i);
     info.scoped = camera.IsScoped() && state == GameState::Playing;
+    info.scopeZoom = camera.ScopeZoom();
     info.hitMarker = hitMarker;
     if (state == GameState::Playing && !options.screenshotPath && !coopGuest && progress.tutorial < kTutorialSteps)
     {
@@ -4538,7 +4752,7 @@ void Game::DrawMission() const
         }
         else if (target.passage >= 0)
         {
-            info.rideText = PassageLabel(world.GetPassage(target.passage).kind, false);
+            info.rideText = PassageLabel(world.GetPassage(target.passage).kind, false, world.GetPassage(target.passage).rope);
         }
         else if (target.fence)
         {
@@ -4604,6 +4818,7 @@ void Game::DrawMission() const
     }
     navigator.DrawHud(player.Position(), camera.Yaw());
     DrawCoopOverlay();
+    DrawChat();
 
     if (journalOpen)
     {
@@ -4938,7 +5153,10 @@ TouchState Game::MakeTouchState() const
             touch.useVehicleKind = (int)type;
         }
         else if (interaction.door >= 0) touch.useLabel = world.IsDoorOpen(interaction.door) ? "ХААЛГА ХААХ" : "ХААЛГА НЭЭХ";
-        else if (interaction.passage >= 0) touch.useLabel = PassageLabel(world.GetPassage(interaction.passage).kind, true);
+        else if (interaction.passage >= 0)
+        {
+            touch.useLabel = PassageLabel(world.GetPassage(interaction.passage).kind, true, world.GetPassage(interaction.passage).rope);
+        }
         else if (interaction.fence) touch.useLabel = PassageLabel(PassageKind::FenceOver, true);
     }
     if (mission.Prompt())
@@ -5313,7 +5531,7 @@ Net::AvatarState Game::LocalAvatar() const
     if (garage.IsDriving())
     {
         const Vehicle& vehicle = garage.At(garage.Driven());
-        state.vehicle = (int8_t)garage.Driven();
+        state.vehicle = (int16_t)garage.Driven();
         state.vehiclePosition = vehicle.position;
         state.vehicleHeading = vehicle.heading;
         state.vehicleSpeed = vehicle.speed;
@@ -5322,12 +5540,12 @@ Net::AvatarState Game::LocalAvatar() const
     }
     else if (gunnerVehicle >= 0)
     {
-        state.vehicle = (int8_t)gunnerVehicle; // унааг AI жолооч жолоодно (хост тооцно): зөвхөн суудал
+        state.vehicle = (int16_t)gunnerVehicle; // унааг AI жолооч жолоодно (хост тооцно): зөвхөн суудал
         state.flags |= Net::kPassenger;
     }
     else if (heliPassenger >= 0)
     {
-        state.vehicle = (int8_t)heliPassenger; // нөгөө тоглогчийн нисдэг тэргэнд буудагч (суудал 2)
+        state.vehicle = (int16_t)heliPassenger; // нөгөө тоглогчийн нисдэг тэргэнд буудагч (суудал 2)
         state.flags |= Net::kPassenger;
     }
     return state;
@@ -5341,6 +5559,20 @@ void Game::StartCoopGuest(int province)
     StartMission(province, &guestStage);
     coopGuest = true;
     guestPlaced = false;
+    // Дахин холбогдсон: өмнөх байрлал, амь, сум, зоосоо авна (байрлуулахдаа, доор)
+    guestResume = GuestResume{};
+    if (resumingCoop)
+    {
+        resumingCoop = false;
+        GuestResume r;
+        const std::string saved = WebSessionLoad("coopResumeState");
+        if (std::sscanf(saved.c_str(), "%f %f %f %f %f %d %d %d", &r.position.x, &r.position.y, &r.position.z, &r.facing, &r.health,
+                        &r.ammo, &r.coins, &r.kills) == 8 && r.health > 0.0f)
+        {
+            r.valid = true;
+            guestResume = r;
+        }
+    }
     guestRespawnTimer = 0.0f;
     squad.Reset(0, player.Position(), world); // зочин ганцаараа: AI цэрэггүй
     horde.Clear();
@@ -5357,10 +5589,51 @@ void Game::StartCoopGuest(int province)
     SetNotice(battleActive ? "ТУЛААН! Хостын үндсэн 3 дайчныг ал"
               : Account::RoomCoop() ? TextFormat("ХАМТ ТОГЛОЛТ: үеийг хамт давбал хоёулаа %d Gold", Account::CoopReward())
                                     : "ХАМТАРСАН ТОГЛОЛТ ЭХЭЛЛЭЭ", 3.5f);
+    if (guestResume.valid) SetNotice("ХАМТ ТОГЛОЛТ РУУГАА БУЦЛАА", 3.0f);
+}
+
+void Game::SaveCoopResume(float dt)
+{
+    coopResumeTimer -= dt;
+    if (coopResumeTimer > 0.0f) return;
+    coopResumeTimer = 2.0f;
+    // Найзтай хамт тоглож буй зочин (тулаан биш): тасалбар ба одоогийн цаг (хуудсыг refresh хийвэл энэ үлдэнэ)
+    if (coopGuest && net.Connected() && !battleActive && !net.JoinedTicket().empty())
+    {
+        WebSessionStore("coopResume", TextFormat("%s|%.0f", net.JoinedTicket().c_str(), WebNowMs()));
+        if (guestPlaced && player.IsAlive())
+        {
+            const Vector3 p = player.Position();
+            WebSessionStore("coopResumeState", TextFormat("%.2f %.2f %.2f %.3f %.1f %d %d %d", p.x, p.y, p.z, player.Facing(), player.Health(),
+                                                          ammoReserve, progress.coins, missionKills));
+        }
+    }
+}
+
+std::string Game::CoopResumeTicket() const
+{
+    const double now = WebNowMs();
+    if (now <= 0.0) return std::string(); // (хөтөч биш)
+    const std::string saved = WebSessionLoad("coopResume");
+    const size_t bar = saved.rfind('|');
+    if (bar == std::string::npos || bar == 0) return std::string();
+    const double savedAt = std::atof(saved.c_str() + bar + 1);
+    // Хост тоглолтоо үргэлжлүүлж байвал (ижил тасалбартай өрөө) 10 минутын дотор буцаж нэгдэнэ
+    if (now - savedAt > 10.0 * 60.0 * 1000.0) return std::string();
+    return saved.substr(0, bar);
+}
+
+Rectangle Game::ResumeButtonRect() const
+{
+    // Газрын зургийн доод хэсэгт (тэмдэглэгээний хажууд), тод
+    return { 330.0f, 514.0f, 560.0f, 36.0f };
 }
 
 void Game::LeaveCoop(bool leaveRoom)
 {
+    WebSessionStore("coopResume", ""); // зориуд гарсан / холбогдож чадаагүй: дахин холбогдох товч гарахгүй
+    WebSessionStore("coopResumeState", "");
+    resumingCoop = false;
     if (leaveRoom && Account::CurrentRoomRole() == Account::RoomRole::Guest) Account::LeaveRoom(); // барьцаа суллагдана
     net.Stop();
     coopGuest = false;
@@ -5427,6 +5700,7 @@ void Game::UpdateNetwork(float dt)
 
     netEvents.clear();
     net.Poll(netEvents);
+    SaveCoopResume(dt);
     if (net.Reconnecting() && (coopGuest || remoteActive) && state != GameState::Map)
     {
         // Нөгөө тал тасарсан / чимээгүй: тоглолт хэвээр, буцаж ирэхийг хүлээнэ (Net: kResumeGrace)
@@ -5443,6 +5717,20 @@ void Game::UpdateNetwork(float dt)
                 // Өөр хувилбартай тоглогч: өгөгдөл таарахгүй тул нэгдүүлэхгүй
                 net.AnswerJoin(false, provinceIndex);
                 SetNotice(event.text + ": тоглоомын хувилбар өөр — хоёулаа шинэчилнэ үү", 3.5f);
+            }
+            else if (state == GameState::Playing && !coopGuest && !battleActive && event.coop &&
+                     event.text == (remoteActive ? joinRequester : lastGuestName) &&
+                     (remoteActive || GetTime() - lastGuestLeftAt < 10.0 * 60.0))
+            {
+                // Ижил найз буцаж ирлээ (хуудсаа refresh хийсэн, тасарсан г.м.): асуулгүй, багийг нь хэвээр
+                TraceLog(LOG_INFO, "STEP: guest_returned %s", event.text.c_str());
+                remoteActive = false;
+                guestFigure = RemoteFigure{};
+                horde.SetRemoteTarget(false, {});
+                joinRequestPending = true;
+                joinRequester = event.text;
+                joinCoop = true;
+                AcceptGuest();
             }
             else if (state == GameState::Playing && !coopGuest && (!remoteActive || guestDefeated))
             {
@@ -5722,6 +6010,13 @@ void Game::UpdateNetwork(float dt)
                 TraceLog(LOG_INFO, "COOP: guest now controls member %d (%.0f hp)", member, event.amount);
             }
             break;
+        case Net::Msg::Chat:
+        {
+            const std::string& who = coopGuest ? hostName : joinRequester;
+            AddChatLine((who.empty() ? std::string("Найз") : who) + ": " + event.text, false);
+            Audio::Play(Sfx::Marker, player.Position(), 0.5f, 1.4f);
+            break;
+        }
         case Net::Msg::StageSync:
             // Зочин: өрөөний ахиц (журнал, газрын зургийн тэмдэглэгээ хосттой ижил)
             if (coopGuest)
@@ -5873,6 +6168,8 @@ void Game::UpdateNetwork(float dt)
                 {
                     SetNotice(joinRequester + " тоглолтоос гарлаа", 2.5f);
                 }
+                lastGuestName = joinRequester; // (буцаж ирвэл асуулгүй хүлээн авна)
+                lastGuestLeftAt = GetTime();
                 remoteActive = false;
                 joinRequestPending = false;
                 guestFigure = RemoteFigure{};
@@ -6737,8 +7034,8 @@ void Game::UpdateCoopMission(float dt)
         // Унаа: хост бүх унааг хөдөлгөнө, зөвхөн зочны өөрийн жолоодож буйг энд тооцно.
         for (const Net::VehicleState& v : snapshot.vehicles)
         {
-            if ((int)v.index >= garage.Count() || (int)v.index == garage.Driven()) continue;
-            if ((int)garage.At(v.index).type != (int)v.type) continue; // (ертөнц таарахгүй бол хөндөхгүй)
+            if ((int)v.index == garage.Driven() || v.type > (uint8_t)VehicleType::Helicopter) continue;
+            garage.MatchRemote(v.index, (VehicleType)v.type, v.position, v.heading); // (хоёр тал байрлуулахдаа зөрсөн бол)
             garage.SetRemote(v.index, v.position, v.heading, v.speed, v.steer, v.occupied != 0);
             garage.SyncHealth(v.index, v.health); // хост тооцсон (зочин зөвхөн өөрийн унааг гэмтээнэ)
         }
@@ -6776,11 +7073,27 @@ void Game::UpdateCoopMission(float dt)
                     found = true;
                 }
             }
-            TraceLog(LOG_INFO, "COOP: guest placed %.0f m from the host",
-                     std::hypot(spot.x - snapshot.host.position.x, spot.z - snapshot.host.position.z));
-            world.ResolveHorizontal(spot, config.playerRadius, config.playerHeight, 0.0f);
-            spot.y = world.GroundHeight(spot.x, spot.z);
-            player.Teleport(spot);
+            float facing = player.Facing();
+            if (guestResume.valid && world.InsideBoundary(guestResume.position.x, guestResume.position.z))
+            {
+                // Дахин холбогдсон: тасрахын өмнөх газраа (дээвэр дээр ч), амь, сум, зоосоо авна
+                spot = guestResume.position;
+                facing = guestResume.facing;
+                ammoReserve = guestResume.ammo;
+                progress.coins = guestResume.coins;
+                missionKills = guestResume.kills;
+                player.Assume(spot, facing, std::min(guestResume.health, player.MaxHealth()), player.MaxHealth());
+                TraceLog(LOG_INFO, "COOP: guest resumed at (%.0f, %.0f)", spot.x, spot.z);
+            }
+            else
+            {
+                TraceLog(LOG_INFO, "COOP: guest placed %.0f m from the host",
+                         std::hypot(spot.x - snapshot.host.position.x, spot.z - snapshot.host.position.z));
+                world.ResolveHorizontal(spot, config.playerRadius, config.playerHeight, 0.0f);
+                spot.y = world.GroundHeight(spot.x, spot.z);
+                player.Teleport(spot);
+            }
+            guestResume.valid = false;
             camera.Snap(spot);
             world.Stream(spot, true);
         }
@@ -6843,7 +7156,7 @@ void Game::SendHostSnapshot(float dt)
         s.aiming = soldier.aimPose > 0.5f ? 1 : 0;
         s.shots = soldier.shots;
         s.shotEnd = soldier.shotEnd;
-        s.vehicle = (int8_t)soldier.riding;
+        s.vehicle = (int16_t)soldier.riding;
         s.seatStyle = (uint8_t)soldier.seatStyle;
         s.seat = soldier.seat;
         s.guest = soldier.guestTeam ? 1 : 0;
@@ -7073,6 +7386,23 @@ void Game::UpdateCoopMap()
     const std::vector<Net::FoundGame>& found = net.Found();
     const bool click = InMousePressed(MOUSE_BUTTON_LEFT);
     const Vector2 pointer = InPointer();
+    if (!waitingForReply && !codeEntryOpen && click && CheckCollisionPointRec(pointer, ResumeButtonRect()))
+    {
+        // Хуудсыг refresh хийсний дараа: өмнөх хамтын тоглолт руу ижил тасалбараар буцна
+        const std::string ticket = CoopResumeTicket();
+        if (!ticket.empty())
+        {
+            TraceLog(LOG_INFO, "STEP: coop_resume");
+            resumingCoop = true;
+            net.SetName(PlayerName());
+            net.SetJoinCoop(true);
+            net.RequestJoinTicket(ticket);
+            waitingForReply = true;
+            waitTimer = 30.0f;
+            coopStatus = "Өмнөх тоглолт руу буцаж байна...";
+            return;
+        }
+    }
     if (Account::TakeJoinedRoom())
     {
         // Сервер өрөөг сонгож тасалбар өглөө: хостод шууд нэгдэнэ (хост асуулгүй хүлээн авна). Зочин онцгой
@@ -7302,6 +7632,15 @@ void Game::DrawCodeEntry() const
 void Game::DrawCoopMap() const
 {
     if (!net.Available()) return;
+    if (!waitingForReply && !CoopResumeTicket().empty())
+    {
+        // Хуудсыг refresh хийсэн: өмнөх хамтын тоглолт руу буцах
+        const Rectangle button = ResumeButtonRect();
+        DrawRectangleRounded(button, 0.4f, 6, Fade(Ui::kGood, 0.9f));
+        const char* label = "ДАХИН ХОЛБОГДОХ — хамтын тоглолт руугаа буцах";
+        Ui::TextBold(label, (int)(button.x + (button.width - (float)Ui::MeasureBold(label, 15)) / 2.0f), (int)button.y + 8, 15,
+                     { 10, 20, 30, 255 });
+    }
     const Rectangle panel = { 430.0f, 598.0f, 500.0f, 114.0f };
     Ui::PanelAccent(panel, Ui::kInfo, { 10, 13, 19, 205 });
     Ui::Outline(panel, { 96, 196, 236, 70 }, 1.0f, 10.0f);
@@ -7422,3 +7761,226 @@ extern "C" void glDrawBuffersEXT(GLsizei count, const GLenum* buffers)
     glDrawBuffers(count, buffers);
 }
 #endif
+
+// ---------------------------------------------------------------- Чат (хамтарсан тоглолт)
+
+namespace
+{
+    const char* const kChatPhrases[] = { "Над руу ир!", "Тусламж хэрэгтэй!", "Нисдэг тэрэг рүү оч", "Хүлээж бай", "Явцгаая!", "Баярлалаа" };
+    constexpr int kChatPhraseCount = 6;
+    const int kChatField = 40;          // утасны гарын <input> (WebFieldPlace): нэвтрэх цонхны талбаруудаас тусдаа
+    const float kChatLineTime = 14.0f;  // мессеж ийм удаан харагдана
+    const size_t kChatMaxBytes = 200;   // (Net: SendChat)
+    const size_t kChatLines = 6;
+    const int kChatTextSize = 15;
+    const float kChatWidth = 440.0f;    // мессежийн мөрийн өргөн (үүнээс урт бол дараагийн мөрөнд)
+
+    // UTF-8 мөрийн сүүлийн тэмдэгтийг устгана
+    void PopCodepoint(std::string& text)
+    {
+        while (!text.empty() && ((unsigned char)text.back() & 0xC0) == 0x80) text.pop_back();
+        if (!text.empty()) text.pop_back();
+    }
+
+    // Үгээр нь мөр болгон хуваана (нэг үг хэт урт бол тэр чигээр нь)
+    std::vector<std::string> WrapChat(const std::string& text)
+    {
+        std::vector<std::string> lines;
+        std::string line, word;
+        auto flush = [&]() {
+            const std::string joined = line.empty() ? word : line + " " + word;
+            if (!line.empty() && (float)Ui::Measure(joined.c_str(), kChatTextSize) > kChatWidth)
+            {
+                lines.push_back(line);
+                line = word;
+            }
+            else
+            {
+                line = joined;
+            }
+            word.clear();
+        };
+        for (char c : text)
+        {
+            if (c == ' ') flush();
+            else word.push_back(c);
+        }
+        flush();
+        if (!line.empty()) lines.push_back(line);
+        return lines;
+    }
+}
+
+bool Game::ChatAvailable() const
+{
+    return state == GameState::Playing && (coopGuest || remoteActive) && net.Connected();
+}
+
+Rectangle Game::ChatButtonRect() const
+{
+    // Дээд мөрөнд, өдрийн цагийн дүрсний зүүн талд
+    return { (float)ViewWidth() * 0.5f - 150.0f, 14.0f, 86.0f, 38.0f };
+}
+
+Rectangle Game::ChatBarRect() const
+{
+    // Дэлгэцийн дээд хэсэгт: утасны гар доод талыг дардаг
+    const float width = std::min(570.0f, (float)ViewWidth() - 40.0f);
+    return { ((float)ViewWidth() - width) * 0.5f, 64.0f, width, 44.0f };
+}
+
+Rectangle Game::ChatPhraseRect(int index) const
+{
+    const Rectangle bar = ChatBarRect();
+    const float cell = bar.width / 3.0f;
+    return { bar.x + (float)(index % 3) * cell + 3.0f, bar.y + bar.height + 10.0f + (float)(index / 3) * 46.0f, cell - 6.0f, 40.0f };
+}
+
+void Game::AddChatLine(const std::string& text, bool mine)
+{
+    TraceLog(LOG_INFO, "CHAT: %s", text.c_str());
+    chatLog.push_back({ text, 0.0f, mine });
+    while (chatLog.size() > kChatLines) chatLog.erase(chatLog.begin());
+}
+
+void Game::SendChatLine(const std::string& text)
+{
+    net.SendChat(text);
+    AddChatLine("Би: " + text, true);
+}
+
+void Game::CloseChat()
+{
+    chatOpen = false;
+    chatDraft.clear();
+    WebFieldBlur();
+    while (GetCharPressed() != 0) {}
+    if (!InTouchMode() && state == GameState::Playing && !paused && !journalOpen && !shopOpen && !fullMap.IsOpen()) LockCursor();
+}
+
+bool Game::UpdateChat(float dt)
+{
+    for (ChatLine& line : chatLog) line.age += dt;
+    if (!ChatAvailable())
+    {
+        if (chatOpen) CloseChat();
+        return false;
+    }
+    if (options.chat && (chatTestTimer += dt) > 3.0f)
+    {
+        SendChatLine(options.chat); // туршилт (--chat)
+        options.chat = nullptr;
+    }
+    const bool touch = InTouchMode();
+    const bool tapped = InMousePressed(MOUSE_BUTTON_LEFT);
+    const Vector2 pointer = InPointer();
+    if (!chatOpen)
+    {
+        // Компьютер: Enter. Утас: "ЧАТ" товч.
+        const bool open = touch ? tapped && CheckCollisionPointRec(pointer, ChatButtonRect()) : InKeyPressed(KEY_ENTER);
+        if (!open || paused) return false;
+        chatOpen = true;
+        chatDraft.clear();
+        while (GetCharPressed() != 0) {}
+        if (!touch) EnableCursor(); // бэлэн хэллэгийг хулганаар сонгоно
+        return true;
+    }
+
+    // Утасны гар (хөтөч): хуудасны <input>-д бичсэнийг авна, гарын "Done" — илгээх
+    char buffer[512];
+    bool send = false;
+    if (WebFieldPoll(buffer, (int)sizeof(buffer), send) == kChatField) chatDraft = buffer;
+    if (!touch)
+    {
+        for (int code = GetCharPressed(); code != 0; code = GetCharPressed())
+        {
+            int size = 0;
+            const char* utf8 = CodepointToUTF8(code, &size);
+            if (code >= 32 && chatDraft.size() + (size_t)size <= kChatMaxBytes) chatDraft.append(utf8, (size_t)size);
+        }
+        if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) PopCodepoint(chatDraft);
+        if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) send = true;
+    }
+    if (chatDraft.size() > kChatMaxBytes) chatDraft.resize(kChatMaxBytes);
+    if (tapped)
+    {
+        for (int i = 0; i < kChatPhraseCount; ++i)
+        {
+            if (!CheckCollisionPointRec(pointer, ChatPhraseRect(i))) continue;
+            SendChatLine(kChatPhrases[i]);
+            CloseChat();
+            return true;
+        }
+        // Утас: товчийг дахин, эсвэл цонхны гадна товшвол хаана
+        const Rectangle bar = ChatBarRect();
+        const Rectangle last = ChatPhraseRect(kChatPhraseCount - 1);
+        const Rectangle panel = { bar.x - 10.0f, bar.y - 10.0f, bar.width + 20.0f, last.y + last.height + 20.0f - bar.y };
+        if (touch && (CheckCollisionPointRec(pointer, ChatButtonRect()) || !CheckCollisionPointRec(pointer, panel)))
+        {
+            CloseChat();
+            return false;
+        }
+    }
+    if (send)
+    {
+        const size_t first = chatDraft.find_first_not_of(' '), last = chatDraft.find_last_not_of(' ');
+        if (first != std::string::npos) SendChatLine(chatDraft.substr(first, last - first + 1));
+        CloseChat();
+    }
+    return true;
+}
+
+void Game::DrawChat() const
+{
+    const bool touch = InTouchMode();
+    // Мессежүүд: зүүн талд, хуучирсан нь бүдгэрч алга болно (чат нээлттэй үед бүгд)
+    float y = 168.0f;
+    for (const ChatLine& line : chatLog)
+    {
+        const float alpha = chatOpen ? 1.0f : std::clamp((kChatLineTime - line.age) / 2.0f, 0.0f, 1.0f);
+        if (alpha <= 0.0f) continue;
+        for (const std::string& part : WrapChat(line.text))
+        {
+            const int width = Ui::Measure(part.c_str(), kChatTextSize);
+            DrawRectangleRounded({ 12.0f, y - 2.0f, (float)width + 16.0f, 24.0f }, 0.3f, 6, Fade(Ui::kPanel, alpha));
+            Ui::Text(part.c_str(), 20, (int)y + 1, kChatTextSize, Fade(line.mine ? Ui::kAccent : Ui::kText, alpha));
+            y += 27.0f;
+        }
+    }
+    if (!ChatAvailable()) return;
+    if (!touch && !chatOpen) Ui::Text("Enter — чат", 18, (int)y + 2, 13, Fade(Ui::kTextDim, 0.7f));
+    if (touch)
+    {
+        const Rectangle button = ChatButtonRect();
+        Ui::Panel(button, chatOpen ? Ui::kAccentDark : Ui::kPanel, 10.0f);
+        Ui::Outline(button, chatOpen ? Ui::kAccent : Ui::kBorder, 1.5f, 10.0f);
+        Ui::TextBold("ЧАТ", (int)(button.x + (button.width - (float)Ui::MeasureBold("ЧАТ", 17)) * 0.5f), (int)button.y + 9, 17, Ui::kText);
+    }
+    if (!chatOpen)
+    {
+        WebFieldsEnd(); // (утасны гарын талбарыг нууна)
+        return;
+    }
+    const Rectangle bar = ChatBarRect();
+    Ui::PanelAccent(bar, Ui::kInfo, { 10, 13, 19, 235 });
+    const bool empty = chatDraft.empty();
+    std::string shown = empty ? std::string(touch ? (WebIsTouchDevice() ? "Энд товшиж бичнэ үү, эсвэл доороос сонго" : "Доороос сонгоно уу")
+                                                  : "Бичээд Enter дарна уу (Esc — хаах)")
+                              : chatDraft;
+    if (!touch && !empty && std::fmod(GetTime(), 1.0) < 0.5) shown += "|";
+    Ui::Text(shown.c_str(), (int)bar.x + 14, (int)(bar.y + (bar.height - 20.0f) * 0.5f), 17, empty ? Ui::kTextDim : Ui::kText);
+    for (int i = 0; i < kChatPhraseCount; ++i)
+    {
+        const Rectangle r = ChatPhraseRect(i);
+        Ui::Panel(r, { 10, 13, 19, 220 }, 8.0f);
+        Ui::Outline(r, Ui::kBorder, 1.0f, 8.0f);
+        Ui::Text(kChatPhrases[i], (int)(r.x + (r.width - (float)Ui::Measure(kChatPhrases[i], 14)) * 0.5f), (int)r.y + 12, 14, Ui::kText);
+    }
+    // Утасны гар (хөтөч): бичих мөрийн дээр үл үзэгдэх <input>
+    if (touch)
+    {
+        const float w = (float)ViewWidth(), h = (float)ViewHeight();
+        WebFieldPlace(kChatField, bar.x / w, bar.y / h, bar.width / w, bar.height / h, 4, -1, chatDraft.c_str());
+    }
+    WebFieldsEnd();
+}

@@ -9,6 +9,7 @@
 #include "raymath.h"
 
 #include <algorithm>
+#include <map>
 #include <cmath>
 #include <cstring>
 
@@ -102,7 +103,41 @@ namespace
         std::vector<WallSegment>& walls;
         std::vector<FencePanel>& panels;
         Rng rng{ 20240u };
+        MeshBuilder* scenery = nullptr;                    // мод, торхны хөнгөн хувилбар (ойрын зайд солигдоно)
+        std::vector<SceneryPlacement>* placements = nullptr;
+        MeshBuilder discard;                               // цөөлөгдсөн мод: rng-ийн дарааллыг хадгалахын тулд зурж хаяна
+        std::map<std::pair<int, int>, std::vector<Vector2>> treeCells; // үлдсэн хээрийн мод (10 м нүд): хоорондын зай
+        size_t sceneryFirst = 0;
         int variant = 0;               // аймгийн дугаар
+
+        // Эргэлт: байрлалын хэшээс (rng-ийг хөндөхгүй; ойрын загвар, холын хувилбар хоёулаа ижил)
+        static float SceneryYaw(Vector3 base)
+        {
+            const uint32_t h = (uint32_t)(int)(base.x * 7.3f) * 2654435761u ^ (uint32_t)(int)(base.z * 9.1f) * 40503u;
+            return (float)(h % 6283u) * 0.001f;
+        }
+
+        // Мод, торх эхлэх: хөнгөн хувилбарыг scenery builder-т (solid-ийн хувиргалтаар) эсвэл (цөөлөгдсөн бол) хаяна
+        MeshBuilder& BeginScenery(bool skip)
+        {
+            if (skip)
+            {
+                discard = MeshBuilder();
+                return discard;
+            }
+            MeshBuilder& out = scenery ? *scenery : solid;
+            if (scenery) scenery->CopyPlacement(solid);
+            sceneryFirst = (size_t)out.TriangleCount();
+            return out;
+        }
+        void EndScenery(int kind, Vector3 localBase, float height)
+        {
+            if (!scenery) return;
+            const Vector3 base = solid.Placed(localBase);
+            placements->push_back({ base, height, SceneryYaw(base), kind, sceneryFirst,
+                                    (size_t)scenery->TriangleCount() - sceneryFirst });
+            scenery->ResetPlacement();
+        }
         Region region = Region::West;  // аймгийн бүс нутаг
 
         void Collider(Vector3 center, Vector3 size, bool blocksRays = true, bool walkable = false)
@@ -1731,11 +1766,14 @@ namespace
 
     void Barrel(Scene& s, float cx, float cz, Color color)
     {
-        s.solid.Cylinder({ cx, 0.0f, cz }, 0.32f, 0.32f, 0.95f, 8, JitterColor(color, s.rng, 0.1f));
-        s.solid.Cylinder({ cx, 0.3f, cz }, 0.34f, 0.34f, 0.05f, 8, ScaleColor(color, 0.6f), false);
-        s.solid.Cylinder({ cx, 0.62f, cz }, 0.34f, 0.34f, 0.05f, 8, ScaleColor(color, 0.6f), false);
-        s.Collider({ cx, 0.475f, cz }, { 0.6f, 0.95f, 0.6f });
-        s.Shadow(cx - 0.28f, cz - 0.28f, cx + 0.28f, cz + 0.28f, 0.0f, 0.95f);
+                const bool skip = false;
+        MeshBuilder& out = s.BeginScenery(skip);
+        out.Cylinder({ cx, 0.0f, cz }, 0.32f, 0.32f, 0.95f, 8, JitterColor(color, s.rng, 0.1f));
+        out.Cylinder({ cx, 0.3f, cz }, 0.34f, 0.34f, 0.05f, 8, ScaleColor(color, 0.6f), false);
+        out.Cylinder({ cx, 0.62f, cz }, 0.34f, 0.34f, 0.05f, 8, ScaleColor(color, 0.6f), false);
+        if (!skip) s.Collider({ cx, 0.475f, cz }, { 0.6f, 0.95f, 0.6f });
+        if (!skip) s.Shadow(cx - 0.28f, cz - 0.28f, cx + 0.28f, cz + 0.28f, 0.0f, 0.95f);
+        if (!skip) s.EndScenery(4, Vector3{ cx, 0.0f, cz }, 0.95f);
     }
 
     // ------------------------------------------------------------------ Том барилгууд
@@ -3707,81 +3745,214 @@ namespace
         return Vector3Normalize({ -hx, 2.0f * d, -hz });
     }
 
+    // Холын модны хувилбар (assets/trees/<name>_far.bin, tools/far_trees.py): Tripo модыг маш их хялбаршуулж
+    // текстурын өнгөөр будсан. Байхгүй бол кодоор угсарсан хуучин мод.
+    struct FarTree
+    {
+        std::vector<Vector3> corners; // гурвалжин бүрд 3 орой (өндөр 1 м, ёроол 0)
+        std::vector<Color> colors;    // гурвалжин бүрд нэг
+        bool tried = false;
+    };
+
+    const FarTree* FarTreeModel(int kind)
+    {
+        static FarTree trees[4];
+        static const char* const names[4] = { "larch", "birch", "elm", "saxaul" };
+        if (kind < 0 || kind > 3) return nullptr;
+        FarTree& tree = trees[kind];
+        if (!tree.tried)
+        {
+            tree.tried = true;
+            const std::string file = std::string(names[kind]) + "_far.bin";
+            int size = 0;
+            unsigned char* bytes = nullptr;
+#if defined(__ANDROID__)
+            bytes = LoadFileData(("trees/" + file).c_str(), &size);
+#else
+            const std::string application = GetApplicationDirectory();
+            for (const std::string& folder : { std::string("assets/trees/"), application + "assets/trees/", application + "../assets/trees/" })
+            {
+                if (FileExists((folder + file).c_str()))
+                {
+                    bytes = LoadFileData((folder + file).c_str(), &size);
+                    break;
+                }
+            }
+#endif
+            if (bytes && size >= 12 && std::memcmp(bytes, "TFAR", 4) == 0)
+            {
+                uint32_t count = 0;
+                std::memcpy(&count, bytes + 8, 4);
+                const size_t stride = 9 * sizeof(float) + 4;
+                if ((size_t)size >= 12 + count * stride)
+                {
+                    for (uint32_t t = 0; t < count; ++t)
+                    {
+                        const unsigned char* at = bytes + 12 + t * stride;
+                        float v[9];
+                        std::memcpy(v, at, sizeof(v));
+                        for (int k = 0; k < 3; ++k) tree.corners.push_back({ v[k * 3], v[k * 3 + 1], v[k * 3 + 2] });
+                        tree.colors.push_back({ at[36], at[37], at[38], 255 });
+                    }
+                }
+            }
+            if (bytes) UnloadFileData(bytes);
+            TraceLog(LOG_INFO, "TREES: %s far version %d triangles", names[kind], (int)tree.colors.size());
+        }
+        return tree.colors.empty() ? nullptr : &tree;
+    }
+
+    // Холын модыг out-д нэмнэ: ёроол base, өндөр height, эргэлт (ойрын загвартай ижил), өнгө нь мод бүрд бага зэрэг өөр
+    void EmitFarTree(MeshBuilder& out, const FarTree& tree, Vector3 base, float height, float yaw)
+    {
+        const float c = std::cos(yaw), sn = std::sin(yaw);
+        const uint32_t h = (uint32_t)(int)(base.x * 3.1f) * 73856093u ^ (uint32_t)(int)(base.z * 5.3f) * 19349663u;
+        const float shade = 0.9f + 0.2f * (float)((h >> 9) % 100u) / 100.0f;
+        auto place = [&](Vector3 p) {
+            // Y тэнхлэгээр yaw (rlRotatef-тэй ижил чиглэл), дараа нь өндрөөр томруулна
+            return Vector3{ base.x + (p.x * c + p.z * sn) * height, base.y + p.y * height, base.z + (-p.x * sn + p.z * c) * height };
+        };
+        for (size_t t = 0; t < tree.colors.size(); ++t)
+        {
+            const Color color = ScaleColor(tree.colors[t], shade);
+            out.Triangle(place(tree.corners[t * 3]), place(tree.corners[t * 3 + 1]), place(tree.corners[t * 3 + 2]), color);
+        }
+    }
+
+    // Модыг цөөлөх: байрлалын хэшээр (rng-ийн дараалал хэвээр, бусад зүйлсийн байрлал өөрчлөгдөхгүй).
+    // percent: хасах хувь (хотын гудамжны мод 40)
+    bool ThinnedTree(float x, float z, uint32_t percent = 40u)
+    {
+        const uint32_t h = ((uint32_t)(int)(x * 3.7f) * 73856093u) ^ ((uint32_t)(int)(z * 3.7f) * 19349663u);
+        return (h >> 7) % 100u < percent;
+    }
+
+    // Хээр, ойн мод (шинэс, хус, хайлаас, заг): 70%-ийг хасаж, үлдсэн модны хооронд 18 м-ээс багагүй зай
+    // (дундуур нь машинаар явж болохоор таруу)
+    bool SkipWildTree(Scene& s, float x, float z)
+    {
+        if (ThinnedTree(x, z, 70u)) return true;
+        const float kSpacing = 18.0f;
+        const int cx = (int)std::floor(x / kSpacing), cz = (int)std::floor(z / kSpacing);
+        for (int dz = -1; dz <= 1; ++dz)
+        {
+            for (int dx = -1; dx <= 1; ++dx)
+            {
+                const auto found = s.treeCells.find({ cx + dx, cz + dz });
+                if (found == s.treeCells.end()) continue;
+                for (const Vector2& p : found->second)
+                {
+                    if ((p.x - x) * (p.x - x) + (p.y - z) * (p.y - z) < kSpacing * kSpacing) return true;
+                }
+            }
+        }
+        s.treeCells[{ cx, cz }].push_back({ x, z });
+        return false;
+    }
+
     // Шинэс: нарийн их бие, давхарласан шовгор мөчир (хойд аймгийн ой)
     void Larch(Scene& s, float x, float z, float height)
     {
         const float ground = s.terrain.HeightAt(x, z) - 0.2f;
+        const bool skip = SkipWildTree(s, x, z);
+        MeshBuilder& out = s.BeginScenery(skip);
+        const FarTree* far = skip ? nullptr : FarTreeModel(0);
+        if (far) s.discard = MeshBuilder();
+        MeshBuilder& geo = far ? s.discard : out; // (холын хувилбартай бол кодоор угсарсныг хаяна)
         const Color bark = JitterColor({ 92, 70, 52, 255 }, s.rng, 0.08f);
         const Color needles = JitterColor({ 58, 88, 52, 255 }, s.rng, 0.1f);
-        s.solid.Cylinder({ x, ground, z }, 0.16f + height * 0.012f, 0.06f, height, 6, bark);
+        geo.Cylinder({ x, ground, z }, 0.16f + height * 0.012f, 0.06f, height, 6, bark);
         const int tiers = 4;
         for (int i = 0; i < tiers; ++i)
         {
             const float t = (float)i / (float)tiers;
             const float base = ground + height * (0.25f + 0.68f * t);
             const float radius = (1.0f - t * 0.75f) * height * 0.19f;
-            s.solid.Cylinder({ x, base, z }, radius, 0.0f, height * 0.32f, 7, ScaleColor(needles, 0.9f + 0.12f * t));
+            geo.Cylinder({ x, base, z }, radius, 0.0f, height * 0.32f, 7, ScaleColor(needles, 0.9f + 0.12f * t));
         }
-        s.Collider({ x, ground + 1.5f, z }, { 0.5f, 3.0f, 0.5f });
-        s.Shadow(x - height * 0.15f, z - height * 0.15f, x + height * 0.15f, z + height * 0.15f, height * 0.25f, height);
+        if (!skip) s.Collider({ x, ground + 1.5f, z }, { 0.5f, 3.0f, 0.5f });
+        if (!skip) s.Shadow(x - height * 0.15f, z - height * 0.15f, x + height * 0.15f, z + height * 0.15f, height * 0.25f, height);
+        if (far) EmitFarTree(out, *far, Vector3{ x, ground + 0.2f, z }, height, Scene::SceneryYaw(Vector3{ x, ground + 0.2f, z }));
+        if (!skip) s.EndScenery(0, Vector3{ x, ground + 0.2f, z }, height);
     }
 
     // Хус: цагаан их бие, цайвар ногоон титэм
     void Birch(Scene& s, float x, float z, float height)
     {
         const float ground = s.terrain.HeightAt(x, z) - 0.2f;
-        s.solid.Cylinder({ x, ground, z }, 0.14f, 0.07f, height * 0.85f, 6, { 222, 220, 210, 255 });
+        const bool skip = SkipWildTree(s, x, z);
+        MeshBuilder& out = s.BeginScenery(skip);
+        const FarTree* far = skip ? nullptr : FarTreeModel(1);
+        if (far) s.discard = MeshBuilder();
+        MeshBuilder& geo = far ? s.discard : out; // (холын хувилбартай бол кодоор угсарсныг хаяна)
+        geo.Cylinder({ x, ground, z }, 0.14f, 0.07f, height * 0.85f, 6, { 222, 220, 210, 255 });
         for (int i = 0; i < 3; ++i)
         {
-            s.solid.Box({ x, ground + 1.0f + 1.3f * (float)i, z }, { 0.3f, 0.12f, 0.3f }, { 40, 40, 38, 255 }); // хар толбо
+            geo.Box({ x, ground + 1.0f + 1.3f * (float)i, z }, { 0.3f, 0.12f, 0.3f }, { 40, 40, 38, 255 }); // хар толбо
         }
         const Color leaves = JitterColor({ 112, 150, 72, 255 }, s.rng, 0.1f);
         for (int i = 0; i < 3; ++i)
         {
             const float r = height * s.rng.Range(0.16f, 0.22f);
-            s.solid.Blob({ x + s.rng.Range(-0.6f, 0.6f), ground + height * (0.62f + 0.12f * (float)i), z + s.rng.Range(-0.6f, 0.6f) },
+            geo.Blob({ x + s.rng.Range(-0.6f, 0.6f), ground + height * (0.62f + 0.12f * (float)i), z + s.rng.Range(-0.6f, 0.6f) },
                          { r, r * 1.2f, r }, leaves, s.rng, 0.1f);
         }
-        s.Collider({ x, ground + 1.5f, z }, { 0.4f, 3.0f, 0.4f });
-        s.Shadow(x - height * 0.2f, z - height * 0.2f, x + height * 0.2f, z + height * 0.2f, height * 0.45f, height);
+        if (!skip) s.Collider({ x, ground + 1.5f, z }, { 0.4f, 3.0f, 0.4f });
+        if (!skip) s.Shadow(x - height * 0.2f, z - height * 0.2f, x + height * 0.2f, z + height * 0.2f, height * 0.45f, height);
+        if (far) EmitFarTree(out, *far, Vector3{ x, ground + 0.2f, z }, height, Scene::SceneryYaw(Vector3{ x, ground + 0.2f, z }));
+        if (!skip) s.EndScenery(1, Vector3{ x, ground + 0.2f, z }, height);
     }
 
     // Хайлаас: тал хээрийн ганц бие, өргөн титэмтэй мод
     void Elm(Scene& s, float x, float z, float height)
     {
         const float ground = s.terrain.HeightAt(x, z) - 0.2f;
+        const bool skip = SkipWildTree(s, x, z);
+        MeshBuilder& out = s.BeginScenery(skip);
+        const FarTree* far = skip ? nullptr : FarTreeModel(2);
+        if (far) s.discard = MeshBuilder();
+        MeshBuilder& geo = far ? s.discard : out; // (холын хувилбартай бол кодоор угсарсныг хаяна)
         const Color bark = JitterColor({ 96, 82, 66, 255 }, s.rng, 0.08f);
-        s.solid.Cylinder({ x, ground, z }, 0.32f, 0.2f, height * 0.5f, 7, bark);
+        geo.Cylinder({ x, ground, z }, 0.32f, 0.2f, height * 0.5f, 7, bark);
         const float lean = s.rng.Range(-0.8f, 0.8f);
-        s.solid.Tube({ x, ground + height * 0.45f, z }, { x + lean * 1.6f, ground + height * 0.75f, z + 0.9f }, 0.18f, 0.08f, 5, bark);
-        s.solid.Tube({ x, ground + height * 0.45f, z }, { x - 1.4f, ground + height * 0.7f, z - lean }, 0.16f, 0.07f, 5, bark);
+        geo.Tube({ x, ground + height * 0.45f, z }, { x + lean * 1.6f, ground + height * 0.75f, z + 0.9f }, 0.18f, 0.08f, 5, bark);
+        geo.Tube({ x, ground + height * 0.45f, z }, { x - 1.4f, ground + height * 0.7f, z - lean }, 0.16f, 0.07f, 5, bark);
         const Color leaves = JitterColor({ 86, 114, 62, 255 }, s.rng, 0.1f);
         for (int i = 0; i < 5; ++i)
         {
             const float angle = (float)i * 1.26f + s.rng.Range(0.0f, 0.5f);
             const float r = height * s.rng.Range(0.18f, 0.24f);
             const float spread = i == 0 ? 0.0f : height * 0.22f;
-            s.solid.Blob({ x + std::cos(angle) * spread, ground + height * (0.78f + s.rng.Range(-0.05f, 0.08f)), z + std::sin(angle) * spread },
+            geo.Blob({ x + std::cos(angle) * spread, ground + height * (0.78f + s.rng.Range(-0.05f, 0.08f)), z + std::sin(angle) * spread },
                          { r * 1.2f, r * 0.8f, r * 1.2f }, leaves, s.rng, 0.12f);
         }
-        s.Collider({ x, ground + 1.5f, z }, { 0.7f, 3.0f, 0.7f });
-        s.Shadow(x - height * 0.4f, z - height * 0.4f, x + height * 0.4f, z + height * 0.4f, height * 0.55f, height);
+        if (!skip) s.Collider({ x, ground + 1.5f, z }, { 0.7f, 3.0f, 0.7f });
+        if (!skip) s.Shadow(x - height * 0.4f, z - height * 0.4f, x + height * 0.4f, z + height * 0.4f, height * 0.55f, height);
+        if (far) EmitFarTree(out, *far, Vector3{ x, ground + 0.2f, z }, height, Scene::SceneryYaw(Vector3{ x, ground + 0.2f, z }));
+        if (!skip) s.EndScenery(2, Vector3{ x, ground + 0.2f, z }, height);
     }
 
     // Заг: говийн мушгирсан саарал бут
     void Saxaul(Scene& s, float x, float z)
     {
         const float ground = s.terrain.HeightAt(x, z) - 0.1f;
+        const bool skip = SkipWildTree(s, x, z);
+        MeshBuilder& out = s.BeginScenery(skip);
+        const FarTree* far = skip ? nullptr : FarTreeModel(3);
+        if (far) s.discard = MeshBuilder();
+        MeshBuilder& geo = far ? s.discard : out; // (холын хувилбартай бол кодоор угсарсныг хаяна)
         const Color wood = JitterColor({ 128, 116, 100, 255 }, s.rng, 0.1f);
         for (int i = 0; i < 4; ++i)
         {
             const float a = s.rng.Range(0.0f, 2.0f * PI);
             const float h = s.rng.Range(1.0f, 2.2f);
-            s.solid.Tube({ x, ground, z }, { x + std::cos(a) * 0.9f, ground + h, z + std::sin(a) * 0.9f }, 0.09f, 0.03f, 4, wood);
-            s.solid.Blob({ x + std::cos(a) * 0.9f, ground + h, z + std::sin(a) * 0.9f }, { 0.45f, 0.3f, 0.45f },
+            geo.Tube({ x, ground, z }, { x + std::cos(a) * 0.9f, ground + h, z + std::sin(a) * 0.9f }, 0.09f, 0.03f, 4, wood);
+            geo.Blob({ x + std::cos(a) * 0.9f, ground + h, z + std::sin(a) * 0.9f }, { 0.45f, 0.3f, 0.45f },
                          JitterColor({ 120, 128, 88, 255 }, s.rng, 0.1f), s.rng, 0.1f);
         }
-        s.Collider({ x, ground + 0.8f, z }, { 1.0f, 1.6f, 1.0f });
+        if (!skip) s.Collider({ x, ground + 0.8f, z }, { 1.0f, 1.6f, 1.0f });
+        if (far) EmitFarTree(out, *far, Vector3{ x, ground + 0.1f, z }, 3.2f, Scene::SceneryYaw(Vector3{ x, ground + 0.1f, z }));
+        if (!skip) s.EndScenery(3, Vector3{ x, ground + 0.1f, z }, 3.2f);
     }
 
     // Овоо: уулын оройн чулуун овоолго, төвдөө шон, хөх хадагтай
@@ -4588,10 +4759,23 @@ namespace
         }
     }
 
+    // Налуу дээврүүд (World::SurfaceHeightAt): тогтмол байгууламжийнх, суурингийнх (эхлэх функц нь сонгоно)
+    std::vector<PitchedRoof> gStaticRoofs, gSettlementRoofs;
+    std::vector<PitchedRoof>* gRoofs = &gStaticRoofs;
+
     // Хоёр налуу дээвэр (хүрээний урт тэнхлэгийн дагуу нуруутай), хоёр үзүүрт хананы өнгөтэй гурвалжин
     void TownGableRoof(Scene& s, const Plan& f, float eave, float rise, float overhang, Color roof, Color gable)
     {
         const float A = f.halfLong + overhang, B = f.halfShort + overhang;
+        PitchedRoof shape;
+        shape.center = f.center;
+        shape.axis = f.axis;
+        shape.reachLong = A;
+        shape.reachShort = B;
+        shape.eave = eave;
+        shape.rise = rise;
+        shape.slopeHalf = std::max(f.halfShort, 0.1f);
+        gRoofs->push_back(shape);
         auto p3 = [&](float along, float across, float y) { const Vector2 q = f.At(along, across); return Vector3{ q.x, y, q.y }; };
         const float drop = rise * overhang / std::max(f.halfShort, 0.1f); // хаяа нь хананаас доош унжина
         const Vector3 e1 = p3(-A, -B, eave - drop), e2 = p3(A, -B, eave - drop), e3 = p3(A, B, eave - drop), e4 = p3(-A, B, eave - drop);
@@ -4609,6 +4793,16 @@ namespace
         const float A = f.halfLong + overhang, B = f.halfShort + overhang;
         auto p3 = [&](float along, float across, float y) { const Vector2 q = f.At(along, across); return Vector3{ q.x, y, q.y }; };
         const float ridge = std::max(0.0f, A - B);
+        PitchedRoof shape;
+        shape.center = f.center;
+        shape.axis = f.axis;
+        shape.reachLong = A;
+        shape.reachShort = B;
+        shape.eave = eave;
+        shape.rise = rise;
+        shape.slopeHalf = std::max(B, 0.1f);
+        shape.ridgeHalf = ridge;
+        gRoofs->push_back(shape);
         const Vector3 e1 = p3(-A, -B, eave), e2 = p3(A, -B, eave), e3 = p3(A, B, eave), e4 = p3(-A, B, eave);
         const Vector3 r1 = p3(-ridge, 0.0f, eave + rise), r2 = p3(ridge, 0.0f, eave + rise);
         s.solid.Quad(e1, e2, r2, r1, roof);
@@ -5227,17 +5421,25 @@ namespace
     }
 
     // Хотын мод (улиас, хайлаас): энгийн хэлбэр, нэг модонд ~30 гурвалжин.
-    void CityTree(Scene& s, float x, float z, float height)
+    // area: цэцэрлэгт хүрээлэн, ой (хээрийн модтой адил 70% хасаж, 18 м-ээс таруу); эс бөгөөс гудамжны эгнээ (55%)
+    void CityTree(Scene& s, float x, float z, float height, bool area = false)
     {
         const float ground = s.terrain.HeightAt(x, z) - 0.2f;
+        const bool skip = area ? SkipWildTree(s, x, z) : ThinnedTree(x, z, 55u);
+        MeshBuilder& out = s.BeginScenery(skip);
+        const FarTree* far = skip ? nullptr : FarTreeModel(2);
+        if (far) s.discard = MeshBuilder();
+        MeshBuilder& geo = far ? s.discard : out; // (холын хувилбартай бол кодоор угсарсныг хаяна)
         const Color bark = JitterColor({ 96, 82, 66, 255 }, s.rng, 0.08f);
-        s.solid.Cylinder({ x, ground, z }, 0.24f, 0.14f, height * 0.55f, 5, bark, false);
+        geo.Cylinder({ x, ground, z }, 0.24f, 0.14f, height * 0.55f, 5, bark, false);
         const Color leaves = JitterColor(s.rng.Chance(0.3f) ? Color{ 104, 130, 64, 255 } : Color{ 82, 112, 60, 255 }, s.rng, 0.1f);
         const float r = height * 0.24f;
-        s.solid.Blob({ x, ground + height * 0.62f, z }, { r * 1.1f, r * 0.9f, r * 1.1f }, leaves, s.rng, 0.12f);
-        s.solid.Blob({ x + s.rng.Range(-0.4f, 0.4f), ground + height * 0.86f, z + s.rng.Range(-0.4f, 0.4f) },
+        geo.Blob({ x, ground + height * 0.62f, z }, { r * 1.1f, r * 0.9f, r * 1.1f }, leaves, s.rng, 0.12f);
+        geo.Blob({ x + s.rng.Range(-0.4f, 0.4f), ground + height * 0.86f, z + s.rng.Range(-0.4f, 0.4f) },
                      { r * 0.8f, r * 0.75f, r * 0.8f }, ScaleColor(leaves, 1.08f), s.rng, 0.12f);
-        s.Collider({ x, ground + 1.5f, z }, { 0.5f, 3.0f, 0.5f });
+        if (!skip) s.Collider({ x, ground + 1.5f, z }, { 0.5f, 3.0f, 0.5f });
+        if (far) EmitFarTree(out, *far, Vector3{ x, ground + 0.2f, z }, height, Scene::SceneryYaw(Vector3{ x, ground + 0.2f, z }));
+        if (!skip) s.EndScenery(2, Vector3{ x, ground + 0.2f, z }, height);
     }
 
     // Гудамжны гэрэлтүүлэг: газрын өндрийг дагана, зарим нь хазайсан.
@@ -6436,7 +6638,7 @@ namespace
                     {
                         const Vector2 q = { x + rng.Range(-0.6f, 0.6f), z + rng.Range(-0.6f, 0.6f) };
                         if (!rng.Chance(gTown.treeChance + 0.2f) || !PointInPolygon(area.outline, q) || !freeSpot(q.x, q.y, 1.6f)) continue;
-                        CityTree(s, q.x, q.y, rng.Range(6.5f, 8.5f));
+                        CityTree(s, q.x, q.y, rng.Range(6.5f, 8.5f), true);
                         ++trees;
                     }
                 }
@@ -6447,7 +6649,7 @@ namespace
             {
                 const Vector2 q = { rng.Range(minX, maxX), rng.Range(minZ, maxZ) };
                 if (!PointInPolygon(area.outline, q) || !freeSpot(q.x, q.y, 1.6f)) continue;
-                CityTree(s, q.x, q.y, rng.Range(6.0f, 11.0f));
+                CityTree(s, q.x, q.y, rng.Range(6.0f, 11.0f), true);
                 ++trees;
             }
         }
@@ -6986,13 +7188,36 @@ const std::vector<Vector3>& CityVehicleSpots()
     return gCityVehicleSpots;
 }
 
+float PitchedRoof::HeightAt(float x, float z) const
+{
+    const float dx = x - center.x, dz = z - center.y;
+    const float along = dx * axis.x + dz * axis.y, across = -dx * axis.y + dz * axis.x;
+    if (std::fabs(along) > reachLong || std::fabs(across) > reachShort) return -1.0e9f;
+    const float d = std::max(std::fabs(across), std::fabs(along) - ridgeHalf);
+    return eave + rise * (1.0f - d / slopeHalf);
+}
+
+const std::vector<PitchedRoof>& StaticPitchedRoofs()
+{
+    return gStaticRoofs;
+}
+
+const std::vector<PitchedRoof>& SettlementPitchedRoofs()
+{
+    return gSettlementRoofs;
+}
+
 void BuildStaticStructures(const Layout& layout, const Terrain& terrain, std::vector<Obstacle>& obstacles,
                            MeshBuilder& solid, MeshBuilder& shadows, MeshBuilder& glass,
                            std::vector<Interior>& interiors, std::vector<Door>& doors,
                            std::vector<Passage>& passages, std::vector<WallSegment>& walls,
-                           std::vector<FencePanel>& panels)
+                           std::vector<FencePanel>& panels, MeshBuilder& scenery, std::vector<SceneryPlacement>& placements)
 {
     Scene scene = { layout, terrain, obstacles, solid, shadows, glass, interiors, doors, passages, walls, panels };
+    scene.scenery = &scenery;
+    scene.placements = &placements;
+    gStaticRoofs.clear();
+    gRoofs = &gStaticRoofs;
     if (layout.IsCity())
     {
         BuildCity(scene, CurrentCity()); // Улаанбаатар / аймгийн жинхэнэ төв
@@ -7012,10 +7237,14 @@ void BuildSettlementStructures(int variant, const Layout& layout, const Terrain&
                                std::vector<Obstacle>& obstacles, MeshBuilder& solid, MeshBuilder& shadows,
                                MeshBuilder& glass, std::vector<Interior>& interiors, std::vector<Door>& doors,
                            std::vector<Passage>& passages, std::vector<WallSegment>& walls,
-                           std::vector<FencePanel>& panels)
+                           std::vector<FencePanel>& panels, MeshBuilder& scenery, std::vector<SceneryPlacement>& placements)
 {
     Scene scene = { layout, terrain, obstacles, solid, shadows, glass, interiors, doors, passages, walls, panels };
+    scene.scenery = &scenery;
+    scene.placements = &placements;
     scene.rng = Rng((uint32_t)(5000 + variant * 97)); // үе бүрд өөр, гэхдээ тухайн үед үргэлж ижил
+    gSettlementRoofs.clear();
+    gRoofs = &gSettlementRoofs;
     scene.variant = variant;
     scene.region = RegionFor(variant);
     if (layout.IsCity())

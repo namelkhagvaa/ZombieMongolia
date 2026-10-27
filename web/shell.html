@@ -29,7 +29,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Zombie MN">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <meta name="theme-color" content="#000000">
 <style>
   html, body { margin: 0; height: 100%; background: #0a0c12; color: #e8e4da; font-family: "Segoe UI", Arial, sans-serif; overflow: hidden; }
@@ -76,15 +77,43 @@
   #start button svg { width: 20px; height: 20px; }
   /* Утас: хуудас гүйлгэх, томруулахыг хааж бүх хүрэлтийг тоглоомд өгнө */
   html, body, canvas#canvas { touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-  /* iPhone: бүтэн дэлгэц болох цорын ганц арга — нүүр дэлгэцэд нэмэх зөвлөмж */
-  #iosHint { position: fixed; top: max(8px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 3;
-             display: none; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 8px 8px 8px 14px;
-             border-radius: 12px; background: rgba(10,13,19,.88); border: 1px solid rgba(255,192,64,.5); color: rgb(242,240,234);
-             font-family: "ZmUi", "Segoe UI", Arial, sans-serif; font-size: 14px; line-height: 1.3; }
-  #iosHint svg { flex: none; width: 18px; height: 22px; vertical-align: -4px; }
-  #iosHint b { color: rgb(255,192,64); font-weight: 700; }
-  #iosHint button { flex: none; width: 30px; height: 30px; border: 0; border-radius: 8px; background: rgba(255,255,255,.12);
-                    color: inherit; font-size: 16px; }
+  /* Апп болгож суулгах (PWA): суулгасан апп хаягийн мөргүй, бүтэн дэлгэцээр, хэвтээ нээгдэнэ.
+     Android Chrome: хөтчийн суулгах цонх (beforeinstallprompt). iPhone/iPad: "Нүүр дэлгэцэд нэмэх" заавар. */
+  #start button.secondary { margin-top: 10px; height: 46px; background: rgba(255,255,255,.08); color: rgb(242,240,234);
+                            border-color: rgba(255,200,90,.43); font-size: 17px; }
+  #start button.secondary:hover { background: rgba(255,255,255,.16); }
+  #start button.secondary img { width: 24px; height: 24px; border-radius: 6px; }
+  #install { position: fixed; top: max(8px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 4;
+             display: none; align-items: center; gap: 10px; box-sizing: border-box; width: max-content; max-width: calc(100vw - 32px);
+             padding: 7px 7px 7px 8px; border-radius: 14px; background: rgba(10,13,19,.94); border: 1px solid rgba(255,192,64,.55);
+             box-shadow: 0 6px 24px rgba(0,0,0,.5); color: rgb(242,240,234); font-family: "ZmUi", "Segoe UI", Arial, sans-serif;
+             font-size: 14px; line-height: 1.25; }
+  #install img { flex: none; width: 36px; height: 36px; border-radius: 8px; }
+  #install b { display: block; color: rgb(255,192,64); font-size: 15px; }
+  #install .go { flex: none; height: 36px; padding: 0 14px; border: 0; border-radius: 10px; background: rgb(242,178,48);
+                 color: rgb(34,24,6); font: inherit; font-weight: 700; }
+  #install .close { flex: none; width: 32px; height: 32px; border: 0; border-radius: 8px; background: rgba(255,255,255,.12);
+                    color: inherit; font-size: 15px; }
+  #guide { position: fixed; inset: 0; z-index: 7; display: none; align-items: center; justify-content: center;
+           background: rgba(0,0,0,.72); font-family: "ZmUi", "Segoe UI", Arial, sans-serif; }
+  #guide .card { box-sizing: border-box; width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 24px); overflow-y: auto;
+                 padding: 20px 22px; border-radius: 14px; background: rgba(12,16,22,.97); border: 1.5px solid rgba(255,200,90,.43);
+                 color: rgb(242,240,234); }
+  #guide h3 { margin: 0 0 4px; font-size: 20px; }
+  #guide h3 b { color: rgb(255,192,64); }
+  #guide p { margin: 0 0 12px; font-size: 13px; color: rgba(242,240,234,.62); }
+  #guide ol { margin: 0 0 16px; padding: 0; list-style: none; counter-reset: step; }
+  #guide li { counter-increment: step; display: flex; align-items: center; gap: 12px; padding: 8px 0; font-size: 15px; line-height: 1.3;
+              border-top: 1px solid rgba(255,255,255,.08); }
+  #guide li::before { content: counter(step); flex: none; width: 26px; height: 26px; border-radius: 50%; background: rgb(255,192,64);
+                      color: #111; font-weight: 700; text-align: center; line-height: 26px; }
+  #guide li b { color: rgb(255,192,64); }
+  #guide li .pic { flex: none; margin-left: auto; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+                   border-radius: 8px; background: rgba(255,255,255,.1); }
+  #guide li .pic svg { width: 20px; height: 22px; }
+  #guide li .pic img { width: 34px; height: 34px; border-radius: 8px; }
+  #guide button { width: 100%; height: 44px; border: 1.5px solid rgba(255,240,190,.78); border-radius: 12px; background: rgb(242,178,48);
+                  color: rgb(34,24,6); font: inherit; font-size: 17px; font-weight: 700; }
   #error { position: fixed; inset: 0; z-index: 5; display: none; flex-direction: column; align-items: center; justify-content: center;
            gap: 14px; padding: 0 24px; background: rgba(6,8,12,.94); text-align: center; font-size: 15px; line-height: 1.5; }
   #error b { color: rgb(255,192,64); font-size: 18px; }
@@ -119,18 +148,34 @@
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M2 7V2h5M13 2h5v5M18 13v5h-5M7 18H2v-5"/>
     </svg>БҮТЭН ДЭЛГЭЦ</button>
+  <button id="startInstall" class="secondary zm-install" style="display: none"><img src="icon-192.png" alt="">АПП БОЛГОЖ СУУЛГАХ</button>
 </div></div>
-<div id="iosHint">
-  <span>Бүтэн дэлгэцээр тоглох бол:
-    <svg viewBox="0 0 18 22" fill="none" stroke="rgb(255,192,64)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M9 14V2M5 5.5 9 1.5l4 4M6 9H3.5A1.5 1.5 0 0 0 2 10.5v8A1.5 1.5 0 0 0 3.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-8A1.5 1.5 0 0 0 14.5 9H12"/>
-    </svg>
-    → <b>Add to Home Screen</b></span>
-  <button id="iosHintClose" aria-label="Хаах">✕</button>
-</div>
 <div id="error"><b>Тоглоом зогслоо</b><div id="errorText"></div><button onclick="location.reload()">Дахин ачаалах</button></div>
 <div id="debug"></div>
 <div id="rotate"><div class="icon"></div><div>Утсаа хэвтээ болгож эргүүлнэ үү</div><small id="rotateStatus"></small></div>
+<div id="install" class="zm-install">
+  <img src="icon-192.png" alt="">
+  <span><b>Апп болгож суулгах</b>Бүтэн дэлгэцээр, хаягийн мөргүй тоглоно</span>
+  <button class="go" id="installGo">СУУЛГАХ</button>
+  <button class="close" id="installClose" aria-label="Хаах">✕</button>
+</div>
+<div id="guide" class="zm-install"><div class="card">
+  <h3>Нүүр дэлгэцэд <b>нэмэх</b></h3>
+  <p>Нэмсний дараа Zombie Mongolia апп шиг бүтэн дэлгэцээр нээгдэнэ.</p>
+  <ol>
+    <li><span id="guideShare">Safari-ийн доод (iPad дээр дээд) мөрний <b>Хуваалцах</b> товчийг дар</span>
+      <span class="pic"><svg viewBox="0 0 18 22" fill="none" stroke="rgb(80,150,255)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 14V2M5 5.5 9 1.5l4 4M6 9H3.5A1.5 1.5 0 0 0 2 10.5v8A1.5 1.5 0 0 0 3.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-8A1.5 1.5 0 0 0 14.5 9H12"/>
+      </svg></span></li>
+    <li><span>Жагсаалтыг доош гүйлгээд <b>Add to Home Screen</b> (Нүүр дэлгэцэд нэмэх) сонгоод <b>Add</b> дар</span>
+      <span class="pic"><svg viewBox="0 0 22 22" fill="none" stroke="rgb(242,240,234)" stroke-width="1.8" stroke-linecap="round">
+        <rect x="2" y="2" width="18" height="18" rx="4"/><path d="M11 7v8M7 11h8"/>
+      </svg></span></li>
+    <li><span>Нүүр дэлгэц дээрх <b>Zombie MN</b> дүрсээр тоглоомоо нээ</span>
+      <span class="pic"><img src="apple-touch-icon.png" alt=""></span></li>
+  </ol>
+  <button id="guideClose">ОЙЛГОЛОО</button>
+</div></div>
 <script>
   var canvas = document.getElementById('canvas');
   var fill = document.getElementById('fill');
@@ -251,17 +296,73 @@
   document.addEventListener('focusout', function () { setTimeout(fitCanvas, 50); }); // гар хаагдсаны дараа
   if (window.visualViewport) window.visualViewport.addEventListener('resize', function () { setTimeout(resetZoom, 50); });
   fitCanvas();
-  // iPhone-ий зөвлөмж: хаавал энэ төхөөрөмж дээр дахин харуулахгүй; хаагаагүй ч 15 секундын дараа алга болно.
-  var iosHint = document.getElementById('iosHint');
-  function showIosHint() {
-    try { if (localStorage.getItem('ZombieMongolia:iosHintClosed')) return; } catch (e) {}
-    iosHint.style.display = 'flex';
-    setTimeout(function () { iosHint.style.display = 'none'; }, 15000);
+  // Апп болгож суулгах (PWA). Суулгасан апп (standalone) дээр юу ч харуулахгүй.
+  // Android Chrome: хөтөч суулгах боломжтой болмогц beforeinstallprompt ирнэ: хадгалаад, дээд мөр болон "БҮТЭН ДЭЛГЭЦ"
+  // цонхны товчоор хөтчийн суулгах цонхыг нээнэ. iPhone/iPad: хөтөч суулгах цонхгүй тул алхам алхмаар заавар.
+  // Дээд мөрийг хаавал 3 хоног харуулахгүй (цонхны товч үлдэнэ).
+  function isStandalone() {
+    return navigator.standalone === true ||
+           (window.matchMedia && window.matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches);
   }
-  document.getElementById('iosHintClose').addEventListener('click', function () {
-    iosHint.style.display = 'none';
-    try { localStorage.setItem('ZombieMongolia:iosHintClosed', '1'); } catch (e) {}
+  var isIos = /iPhone|iPod|iPad/.test(navigator.userAgent) ||
+              (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1); // iPadOS: компьютерийн Safari шиг танигдана
+  var installPrompt = null;
+  var installEl = document.getElementById('install');
+  var guideEl = document.getElementById('guide');
+  var installDismissKey = 'ZombieMongolia:installDismissed';
+  function installDismissed() {
+    try { return Date.now() - Number(localStorage.getItem(installDismissKey) || 0) < 3 * 24 * 3600 * 1000; } catch (e) { return false; }
+  }
+  function canInstall() { return !isStandalone() && (installPrompt !== null || isIos); }
+  function updateInstall() {
+    var show = canInstall();
+    document.getElementById('startInstall').style.display = show ? 'flex' : 'none';
+    installEl.style.display = show && !installDismissed() ? 'flex' : 'none';
+    if (!show) guideEl.style.display = 'none';
+  }
+  function startInstall() {
+    if (installPrompt) {
+      var event = installPrompt;
+      installPrompt = null; // нэг удаа л prompt() дуудаж болно
+      event.prompt();
+      event.userChoice.then(function (choice) {
+        if (choice.outcome !== 'accepted') {
+          try { localStorage.setItem(installDismissKey, String(Date.now())); } catch (e) {}
+        }
+        updateInstall();
+      }).catch(updateInstall);
+    } else if (isIos) {
+      // iPad дээр Хуваалцах товч хаягийн мөрөнд (дээд талд) байдаг
+      if (!/iPhone|iPod/.test(navigator.userAgent)) {
+        document.getElementById('guideShare').innerHTML = 'Safari-ийн хаягийн мөрний хажуугийн <b>Хуваалцах</b> товчийг дар';
+      }
+      guideEl.style.display = 'flex';
+    }
+  }
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault(); // хөтчийн өөрийн жижиг санал биш, манай товчоор нээнэ
+    installPrompt = e;
+    updateInstall();
   });
+  window.addEventListener('appinstalled', function () {
+    installPrompt = null;
+    updateInstall();
+  });
+  document.getElementById('installGo').addEventListener('click', startInstall);
+  document.getElementById('startInstall').addEventListener('click', startInstall);
+  document.getElementById('installClose').addEventListener('click', function () {
+    installEl.style.display = 'none';
+    try { localStorage.setItem(installDismissKey, String(Date.now())); } catch (e) {}
+  });
+  document.getElementById('guideClose').addEventListener('click', function () {
+    guideEl.style.display = 'none';
+    canvas.focus();
+  });
+  if (isIos) updateInstall();
+  // Service worker: суулгах нөхцөл (web/sw.js, юуг ч кэшлэхгүй). Зөвхөн https эсвэл localhost дээр ажилладаг.
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+  }
   document.getElementById('startButton').addEventListener('click', function () {
     document.getElementById('start').style.display = 'none';
     enterFullscreen();
@@ -282,7 +383,11 @@
   var touchDevice = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   var fullscreenOnce = false;
   document.addEventListener('fullscreenchange', function () { if (document.fullscreenElement) fullscreenOnce = true; });
-  function autoFullscreen() { if (touchDevice || !fullscreenOnce) enterFullscreen(); }
+  function autoFullscreen(e) {
+    // Суулгах товч, заавар дээр дарахад бүтэн дэлгэц болгохгүй (хөтчийн суулгах цонхтой зөрчилдөнө)
+    if (e && e.target && e.target.closest && e.target.closest('.zm-install')) return;
+    if (touchDevice || !fullscreenOnce) enterFullscreen();
+  }
   ['touchend', 'click', 'keydown'].forEach(function (type) {
     document.addEventListener(type, autoFullscreen, { passive: true, capture: true });
   });
@@ -312,8 +417,130 @@
     else if (portraitQuery.addListener) portraitQuery.addListener(check);
     window.addEventListener('resize', check);
   }
+  // Тоглоомын файлын багцууд (tools/pack_web.py; tools/build_web.ps1 бичнэ): "core" эхлэхэд заавал, "world" (унаа,
+  // мод, торх) ар талд, "city/<нэр>" тухайн аймагт орохдоо (src/Game.cpp EnsureMissionAssets). Нэрэнд нь хэш орсон
+  // тул Cache Storage-д хадгалж, шинэ хувилбарт өөрчлөгдөөгүй багцыг дахин татахгүй. Тасарвал дахин оролдоно.
+  var ASSET_PACKS = {{{ ASSET_PACKS }}};
+  var PACK_CACHE = 'zm-packs';
+  var packs = {}; // нэр -> { progress 0..1, buffer, ready, failing }
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {}); } catch (e) {}
+  function openPackCache() {
+    try { return window.caches ? caches.open(PACK_CACHE).catch(function () { return null; }) : Promise.resolve(null); }
+    catch (e) { return Promise.resolve(null); }
+  }
+  // Татаж ArrayBuffer болгоно. Хэмжээ нь (задалсан) багцынх тул Content-Encoding gzip байсан ч явц зөв.
+  function downloadPack(info, onProgress) {
+    return openPackCache().then(function (cache) {
+      var cached = cache ? cache.match(info.url).catch(function () { return null; }) : Promise.resolve(null);
+      return cached.then(function (hit) {
+        if (hit) return hit.arrayBuffer();
+        return fetch(info.url).then(function (response) {
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          var reader = response.body && response.body.getReader ? response.body.getReader() : null;
+          if (!reader) return response.arrayBuffer();
+          var out = new Uint8Array(info.size), received = 0;
+          function pump() {
+            return reader.read().then(function (r) {
+              if (r.done) return;
+              if (received + r.value.length > out.length) { // (хэмжээ зөрвөл томсгоно)
+                var bigger = new Uint8Array(Math.max(out.length * 2, received + r.value.length));
+                bigger.set(out.subarray(0, received));
+                out = bigger;
+              }
+              out.set(r.value, received);
+              received += r.value.length;
+              onProgress(Math.min(1, received / info.size));
+              return pump();
+            });
+          }
+          return pump().then(function () { return out.buffer.slice(0, received); });
+        }).then(function (buffer) {
+          if (cache) { try { cache.put(info.url, new Response(buffer)).catch(function () {}); } catch (e) {} }
+          return buffer;
+        });
+      });
+    });
+  }
+  // Багцын файлуудыг тоглоомын FS-д бичнэ (хуулахгүй: файл бүр татсан buffer-ийн хэсэг)
+  function installPack(buffer) {
+    var FS = Module.FS, bytes = new Uint8Array(buffer);
+    if (String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) !== 'ZMPK') throw new Error('bad asset pack');
+    var headerLength = new DataView(buffer).getUint32(4, true);
+    var table = JSON.parse(new TextDecoder().decode(bytes.subarray(8, 8 + headerLength)));
+    var base = 8 + headerLength;
+    table.forEach(function (entry) {
+      var path = entry[0], dir = path.substring(0, path.lastIndexOf('/'));
+      if (dir) FS.mkdirTree(dir);
+      FS.writeFile(path, bytes.subarray(base + entry[1], base + entry[1] + entry[2]), { canOwn: true });
+    });
+  }
+  function loadPack(name) {
+    if (packs[name]) return packs[name];
+    var state = packs[name] = { progress: 0, buffer: null, ready: !ASSET_PACKS[name], failing: false };
+    if (state.ready) return state; // (ийм багц байхгүй)
+    var delay = 1000;
+    state.promise = new Promise(function (resolve) {
+      function attempt() {
+        downloadPack(ASSET_PACKS[name], function (p) { state.progress = p; }).then(function (buffer) {
+          state.failing = false;
+          state.progress = 1;
+          state.buffer = buffer;
+          resolve(buffer);
+        }).catch(function (e) {
+          debugLog('PACK ' + name + ': ' + e);
+          state.failing = true;
+          setTimeout(attempt, delay);
+          delay = Math.min(delay * 2, 15000);
+        });
+      }
+      attempt();
+    });
+    return state;
+  }
+  // Тоглоом (src/Platform.cpp WebPackStatus): 0..999 татаж байна, 1000 бэлэн, -1 сүлжээний алдаа
+  function packStatus(name) {
+    var state = loadPack(name);
+    if (!state.ready && state.buffer && Module.FS) {
+      try { installPack(state.buffer); } catch (e) { showError('Файл задлахад алдаа: ' + e); }
+      state.buffer = null;
+      state.ready = true;
+    }
+    if (state.ready) return 1000;
+    return state.failing ? -1 : Math.min(999, Math.floor(state.progress * 1000));
+  }
+  // Хуучин хувилбаруудын багцыг кэшээс устгана (одоогийнх биш бүгд)
+  function prunePackCache() {
+    openPackCache().then(function (cache) {
+      if (!cache) return;
+      var current = Object.keys(ASSET_PACKS).map(function (k) { return ASSET_PACKS[k].url; });
+      cache.keys().then(function (requests) {
+        requests.forEach(function (request) {
+          var path = new URL(request.url).pathname;
+          var used = current.some(function (url) { return path.slice(-url.length) === url; });
+          if (!used) cache.delete(request);
+        });
+      });
+    }).catch(function () {});
+  }
+  // Эхлэх багцыг тоглоомын код ирэхээс өмнө татаж эхэлнэ (.wasm-тай зэрэг); дараа нь "world"-ийг ар талд.
+  var corePack = loadPack('core');
+  corePack.promise.then(function () {
+    loadPack('world').promise.then(prunePackCache);
+  });
+  var coreProgress = setInterval(function () {
+    if (corePack.progress >= 1 || corePack.ready) { clearInterval(coreProgress); return; }
+    showProgress(0.5 * corePack.progress, corePack.failing ? 'Сүлжээ тасарлаа, дахин оролдож байна...' : 'Файлуудыг татаж байна...');
+  }, 200);
+  function installCorePack() {
+    addRunDependency('zm-core');
+    corePack.promise.then(function () {
+      packStatus('core');
+      removeRunDependency('zm-core');
+    });
+  }
   var Module = {
-    preRun: [holdWhilePortrait],
+    zmPackStatus: packStatus,
+    preRun: [holdWhilePortrait, installCorePack],
     locateFile: function (path) { return path + '?v=' + BUILD_ID; },
     // Туршилт: ?args=--join+1234 гэх мэт тоглоомын командын мөрийн сонголтууд (main.cpp)
     arguments: (new URLSearchParams(location.search).get('args') || '').split(' ').filter(Boolean),
@@ -328,16 +555,13 @@
     },
     // Тоглоом эхлэлийн дэлгэцийнхээ анхны кадрыг зурмагц дуудна (src/Platform.cpp)
     zmHideLoader: function () { loader.style.display = 'none'; canvas.focus(); },
-    // Эхлэлийн дэлгэц дууссан (src/Splash.cpp): бүтэн дэлгэц болоогүй бол "БҮТЭН ДЭЛГЭЦ" товч харуулна;
-    // iPhone (бүтэн дэлгэцгүй) дээр нүүр дэлгэцэд нэмэх зөвлөмж.
+    // Эхлэлийн дэлгэц дууссан (src/Splash.cpp): бүтэн дэлгэц болоогүй бол "БҮТЭН ДЭЛГЭЦ" товч (суулгах боломжтой
+    // бол "АПП БОЛГОЖ СУУЛГАХ" ч) харуулна. iPhone (бүтэн дэлгэцгүй) дээр суулгах мөр (updateInstall).
     zmLoadingFinished: function () {
-      var standalone = navigator.standalone === true ||
-                       (window.matchMedia && window.matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches);
-      if (standalone || document.fullscreenElement) return;
+      if (isStandalone() || document.fullscreenElement) return;
+      updateInstall();
       if (document.getElementById('stage').requestFullscreen) {
         document.getElementById('start').style.display = 'flex';
-      } else if (/iPhone|iPod/.test(navigator.userAgent)) {
-        showIosHint();
       }
     },
     onAbort: function (what) { showError('Алдаа: ' + what); }

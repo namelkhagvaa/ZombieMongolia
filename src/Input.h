@@ -94,6 +94,8 @@ bool InKeyDown(int key);
 bool InKeyPressed(int key);
 bool InMouseDown(int button);
 bool InMousePressed(int button);
+// Утас: мэргэн буудагчийн дурангийн томруулалт (1 эсвэл 2; "ДУРАН" товчийг дахин товшвол 2x)
+int InScopeZoom();
 Vector2 InLookDelta(); // камер эргүүлэх шилжилт (хулганы хөдөлгөөн эсвэл хуруугаар чирэх), пикселээр
 float InWheel();
 // Хоёр хуруугаар чимхэх (газрын зураг): энэ frame-ийн томруулах харьцаа (1 = өөрчлөлтгүй), голын цэг

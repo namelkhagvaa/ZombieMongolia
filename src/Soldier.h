@@ -89,6 +89,12 @@ struct Soldier
     // Хашаа давж буй (World::FindVault): vaultTime >= 0 үед vault.from -> vault.to нум зурж шилжинэ
     float vaultTime = -1.0f;
     Passage vault = {};
+    // Шат, олсоор авирч / бууж буй (удирдагч, суух нисдэг тэрэг өөр өндөрт): climbTime >= 0 үед climb.from -> climb.to
+    float climbTime = -1.0f;
+    float climbDuration = 0.0f;
+    Passage climb = {};
+    int levelPassage = -1;   // өөр өндөрт хүрэх шат, олс (World-ийн гарцын индекс): эхлэх цэг рүү нь явна
+    float levelCheck = 0.0f; // гарцыг дахин сонгох хүртэлх хугацаа
 };
 
 // Тулаан (нээлттэй өрөө): AI дайчин буудаж болох хүн (байрлал = цээж). id: squad-ийн индекс, эсвэл kHostTarget /

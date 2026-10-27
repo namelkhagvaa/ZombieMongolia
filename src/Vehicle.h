@@ -20,8 +20,9 @@ enum class VehicleType
 };
 
 // Нисдэг тэрэг: "өндөр авах" (Garage::SetLift) дарахад kHeliCruise метрт хөөрч, kHeliControl метрээс дээш гарсны
-// дараа л урагш хойш (throttle), эргэлтээр (steer) удирдана. Газрын хэлбэр, барилгын оройг урдаас нь харж дагана.
-constexpr float kHeliCruise = 14.0f;  // газар (барилгын орой) дээрх нислэгийн өндөр, м
+// дараа л урагш хойш (throttle), эргэлтээр (steer) удирдана. Доорх газрын өндрийг хязгаартай хурдаар (өгсөх 5 м/с)
+// дагана: огцом уул, өндөр байшин руу хурдтай нисвэл мөргөж сүйрнэ (нисгэгч удаашруулж өндөр авах ёстой).
+constexpr float kHeliCruise = 45.0f;  // газар (барилгын орой) дээрх нислэгийн өндөр, м
 constexpr float kHeliControl = 6.0f;  // үүнээс өндөр гарсны дараа хөдөлж эхэлнэ
 constexpr int kHeliSeats = 6;         // нисгэгчээс гадна: 2 хаалганы буудагч (баг), 4 бүхээгт (нөгөө тоглогч, түүний баг)
 
@@ -82,6 +83,7 @@ struct Vehicle
     bool occupied = false;  // нөгөө тал сууж яваа: энэ талын тоглогч, баг сууж болохгүй
     Vector3 netPosition = { 0.0f, 0.0f, 0.0f };
     float netHeading = 0.0f, netSpeed = 0.0f, netSteer = 0.0f;
+    float netAge = 0.0f; // сүүлийн төлөв ирснээс хойших хугацаа (хурдаар нь урагш таамаглана)
     // Нисдэг тэрэг
     bool lift = false;        // нисгэгч "өндөр авах" гэсэн (false: газардана)
     float rotorSpeed = 0.0f;  // 0..1: сэнс эргэлт (хөдөлгүүр асаахад аажим эргэж эхэлнэ)
@@ -89,6 +91,7 @@ struct Vehicle
     float climb = 0.0f;       // босоо хурд, м/с
     float altitude = 0.0f;    // доорх газар (барилгын орой) дээрх өндөр, м
     bool crashed = false;     // агаарт эвдэрч унаад газар мөргөсөн (Game: дэлбэрэлт, суусан хүмүүс)
+    float crashSeverity = 0.0f; // сүйрлийн хүч 0.2..1 (унасан өндөр, мөргөсөн хурдаар): суусан хүмүүсийн хохирол
 };
 
 inline bool IsHelicopter(VehicleType type) { return type == VehicleType::Helicopter; }
@@ -109,6 +112,9 @@ public:
     int Count() const { return (int)vehicles.size(); }
     // Хамтарсан тоглолт: сүлжээнээс ирсэн төлөв (зөөлөн дагана). occupied: нөгөө тал сууж яваа.
     void SetRemote(int index, Vector3 position, float heading, float speed, float steer, bool occupied);
+    // Хамтарсан тоглолт (зочин): хостын жагсаалттай тааруулна. Энэ дугаарт өөр төрлийн унаа байвал (хоёр тал
+    // байрлуулахдаа зөрсөн: нурсан хашаа, зогссон машин) хостынхоор сольж, дутуу бол нэмнэ.
+    void MatchRemote(int index, VehicleType type, Vector3 position, float heading);
     void ClearRemote(int index);
     // Хамтарсан тоглолт: унааг жолоодож буй тал тооцсон эрүүл мэнд (0 бол эвдэрнэ / морь үхнэ).
     // Өөрийн жолоодож буй унаанд үйлчлэхгүй.

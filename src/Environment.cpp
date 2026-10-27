@@ -4,6 +4,7 @@
 
 #include "Layout.h"
 #include "MeshBuilder.h"
+#include "Platform.h"
 #include "Procedural.h"
 #include "raymath.h"
 #include "rlgl.h"
@@ -879,7 +880,7 @@ void Environment::LoadTerrainTextures()
     Vector3 means[4] = {};
     for (int i = 0; i < 4; ++i)
     {
-        const std::string path = folder + names[i];
+        const std::string path = ImageFile(folder + names[i]); // (хөтөч: .jpg)
 #if !defined(__ANDROID__)
         if (!FileExists(path.c_str())) continue;
 #endif

@@ -170,8 +170,29 @@ namespace
         }
     }
 
-    HumanoidLook SurvivorLook(SurvivorKind kind, int variant)
+    // Аврах иргэний загвар даалгавраас: эмч нар, сурагчид (хүү, охин ээлжлэн), лам нар; бусад нь малчин
+    // (эрэгтэй, эмэгтэй ээлжлэн; эмнэлгийн өвчтөн, малчид ч орно)
+    int SurvivorModel(const ObjectiveDef& def, int variant)
     {
+        const std::string id = def.id;
+        const int herder = variant % 2 == 0 ? kCharacterSurvivorMan : kCharacterSurvivorWoman;
+        // Загвар байхгүй бол (жишээ нь ясгүй эсвэл яс нь буруу тул бэлтгээгүй) ойролцоо загвар
+        auto pick = [&](int wanted, int fallback) { return HasCharacterModel(wanted) ? wanted : fallback; };
+        if (id.rfind("rescue_doctors", 0) == 0)
+        {
+            return variant % 2 == 0 ? pick(kCharacterDoctorMan, herder) : pick(kCharacterDoctorWoman, pick(kCharacterDoctorMan, herder));
+        }
+        if (id.rfind("rescue_students", 0) == 0)
+        {
+            return variant % 2 == 0 ? pick(kCharacterStudentBoy, herder) : pick(kCharacterStudentGirl, herder);
+        }
+        if (id.rfind("rescue_monks", 0) == 0) return pick(kCharacterMonk, herder);
+        return herder;
+    }
+
+    HumanoidLook SurvivorLook(const ObjectiveDef& def, int variant)
+    {
+        const SurvivorKind kind = def.survivor;
         HumanoidLook look;
         if (kind == SurvivorKind::Soldier)
         {
@@ -189,7 +210,7 @@ namespace
             static const Color deels[] = { { 124, 70, 50, 255 }, { 56, 110, 92, 255 }, { 116, 60, 104, 255 },
                                            { 60, 84, 132, 255 } };
             look.kind = HumanoidKind::Player;
-            look.model = variant % 2 == 0 ? kCharacterSurvivorMan : kCharacterSurvivorWoman;
+            look.model = SurvivorModel(def, variant);
             look.pants = { 60, 54, 48, 255 };
             look.boots = { 52, 36, 26, 255 };
             look.body = deels[variant % 4];
@@ -1141,7 +1162,7 @@ void Mission::Draw(Vector3 viewPosition) const
                     pose.breath = std::sin(time * 3.4f + (float)k);
                 }
                 DrawBlobShadow(entity.position, 0.5f);
-                DrawHumanoid(entity.position, entity.facing, 1.0f, pose, SurvivorLook(def.survivor, k));
+                DrawHumanoid(entity.position, entity.facing, 1.0f, pose, SurvivorLook(def, k));
                 break;
             }
 

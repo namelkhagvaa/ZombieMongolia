@@ -18,6 +18,9 @@ public:
                 float extraDistance = 0.0f, bool scoped = false, float targetDrop = 0.0f);
     // Дуран хараагаар харж байгаа эсэх (тоглогчийн биеийг зурахгүй, дэлгэцэд хараа гарна).
     bool IsScoped() const { return scopeBlend > 0.6f; }
+    // Дурангийн томруулалт: 1 = анхны (scopeFovY), 2 = хоёр дахин ойртуулсан (харах өнцөг, мэдрэмж хоёр дахин бага)
+    void SetScopeZoom(int zoom) { scopeZoom = zoom < 2 ? 1 : 2; }
+    int ScopeZoom() const { return scopeZoom; }
     // 1-р этгээд: камер нүдний түвшинд, тоглогчийн биеийг зурахгүй (гар, буу нь тусдаа зурагдана).
     void SetFirstPerson(bool active) { firstPerson = active; }
     bool IsFirstPerson() const { return firstPerson && !IsScoped(); }
@@ -62,6 +65,7 @@ private:
     float distance;
     float aimBlend = 0.0f; // 0 = ердийн, 1 = бүрэн онилсон
     float scopeBlend = 0.0f; // 0 = ердийн, 1 = дуран хараа
+    int scopeZoom = 1;       // дурангийн томруулалт (1x, 2x)
     float rideDistance = 0.0f; // унаа унасан үеийн нэмэлт зай (аажим өөрчлөгдөнө)
     bool traversing = false;
     bool riding = false;

@@ -35,6 +35,25 @@ public:
     void ResetTransform();
     // Бүх оройд (хувиргалтын дараа) нэмэгдэх шилжилт: байгууламжийг газрын өндөрт өргөнө.
     void SetOffset(Vector3 value) { offset = value; }
+    // Өөр builder-ийн одоогийн хувиргалт, шилжилтийг авна (тэр builder-т зориулсан координатаар энд нэмэхэд)
+    void CopyPlacement(const MeshBuilder& other)
+    {
+        transform = other.transform;
+        hasTransform = other.hasTransform;
+        offset = other.offset;
+    }
+    void ResetPlacement()
+    {
+        hasTransform = false;
+        offset = { 0.0f, 0.0f, 0.0f };
+    }
+    // local цэгийн ертөнцийн байрлал (одоогийн хувиргалт, шилжилтээр)
+    Vector3 Placed(Vector3 local) const;
+    // first-ээс count гурвалжны оройн байрлалыг out-ын төгсгөлд нэмнэ
+    void CopyPositions(size_t first, size_t count, std::vector<float>& out) const
+    {
+        out.insert(out.end(), vertices.begin() + (long)(first * 9), vertices.begin() + (long)((first + count) * 9));
+    }
 
     void Triangle(Vector3 a, Vector3 b, Vector3 c, Color color);
     void Triangle(Vector3 a, Vector3 b, Vector3 c, Color ca, Color cb, Color cc);

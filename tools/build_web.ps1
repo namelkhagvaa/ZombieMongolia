@@ -5,7 +5,7 @@
 #   C:\emsdk\emsdk.bat install latest; C:\emsdk\emsdk.bat activate latest
 #
 # Хэрэглээ:  powershell -ExecutionPolicy Bypass -File tools\build_web.ps1 [-Serve]
-# Үр дүн:    build_web\web\ (index.html, ZombieMongolia.js, .wasm, .data): ямар ч статик вэб сервер дээр байршуулна.
+# Үр дүн:    build_web\web\ (index.html, ZombieMongolia.js, .wasm, packs\*.data): ямар ч статик вэб сервер дээр байршуулна.
 # -Serve:    бүтээсний дараа http://localhost:8080 дээр туршихаар ажиллуулна (file:// -ээр нээвэл ажиллахгүй).
 param(
     [string]$Emsdk = "C:\emsdk",
@@ -21,6 +21,8 @@ if (-not $SiteUrl.EndsWith("/")) { $SiteUrl += "/" }
 $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $build = Join-Path $root "build_web"
+# Багцлагч (tools/pack_web.py) Pillow, soundfile хэрэглэнэ: emsdk-ийн python биш, системийнхийг (emsdk_env-ээс өмнө)
+$python = (Get-Command python -ErrorAction Stop).Source
 $env:EMSDK_QUIET = 1
 & (Join-Path $Emsdk "emsdk_env.ps1") | Out-Null
 $env:PATH = "$env:PATH;C:\msys64\ucrt64\bin"
@@ -37,16 +39,22 @@ Run "cmake" @("--build", $build)
 # Байршуулах хавтас: index.html нэртэй
 $site = Join-Path $build "web"
 New-Item -ItemType Directory -Force $site | Out-Null
+# Тоглоомын файлуудыг багцална (JPG, OGG; core / world / city/<аймаг>, нэрэнд нь хэш): tools/pack_web.py
+$packManifest = Join-Path $build "packs.json"
+Run $python @((Join-Path $root "tools\pack_web.py"), (Join-Path $build "web_assets"), $site, $packManifest)
+Remove-Item (Join-Path $site "ZombieMongolia.data") -ErrorAction SilentlyContinue # (хуучин нэг том багц)
 # index.html-ийг web\shell.html-ээс шууд үүсгэнэ: хуудсыг засахад тоглоомыг дахин холбох (link) шаардлагагүй.
-# BUILD_ID: .wasm ба .data-ийн хэшээс (код эсвэл assets өөрчлөгдөх бүрд шинэ): хөтөч кэшээс хуучин файл хольж ачаалахгүй.
+# BUILD_ID: .wasm ба багцуудын жагсаалтын хэшээс (код эсвэл assets өөрчлөгдөх бүрд шинэ): хөтөч кэшээс хуучин файл
+# хольж ачаалахгүй. Багцууд өөрсдөө нэрэндээ хэштэй.
 $hash = (Get-FileHash (Join-Path $build "ZombieMongolia.wasm") -Algorithm SHA256).Hash.Substring(0, 8) +
-        (Get-FileHash (Join-Path $build "ZombieMongolia.data") -Algorithm SHA256).Hash.Substring(0, 4)
+        (Get-FileHash $packManifest -Algorithm SHA256).Hash.Substring(0, 4)
 $shell = [System.IO.File]::ReadAllText((Join-Path $root "web\shell.html"))
 $page = $shell.Replace("{{{ SCRIPT }}}", "<script async type=`"text/javascript`" src=`"ZombieMongolia.js?v=$hash`"></script>")
 $page = $page.Replace("{{{ BUILD_ID }}}", $hash.ToLower())
 $page = $page.Replace("{{{ SITE_URL }}}", $SiteUrl)
+$page = $page.Replace("{{{ ASSET_PACKS }}}", [System.IO.File]::ReadAllText($packManifest).Trim())
 [System.IO.File]::WriteAllText((Join-Path $site "index.html"), $page, (New-Object System.Text.UTF8Encoding $false))
-foreach ($ext in "js", "wasm", "data") {
+foreach ($ext in "js", "wasm") {
     Copy-Item (Join-Path $build "ZombieMongolia.$ext") $site -Force
 }
 # Хуудасны ачааллын дэлгэц тоглоомынхтой ижил зураг, фонт хэрэглэнэ (web/shell.html)
@@ -63,13 +71,20 @@ foreach ($legal in "privacy-policy", "terms-of-service") {
     if ($ContactEmail) { $text = $text.Replace("{{{ CONTACT_EMAIL }}}", $ContactEmail) }
     [System.IO.File]::WriteAllText((Join-Path $folder "index.html"), $text, (New-Object System.Text.UTF8Encoding $false))
 }
-# Вэб апп (нүүр дэлгэцэд нэмэх): бүтэн дэлгэцээр, хэвтээ нээгдэнэ
-Copy-Item (Join-Path $root "android\res\mipmap-xxxhdpi\ic_launcher.png") (Join-Path $site "icon-192.png") -Force
-$manifest = '{ "name": "Zombie Mongolia", "short_name": "Zombie MN", "start_url": ".", "display": "fullscreen", ' +
-            '"orientation": "landscape", "background_color": "#000000", "theme_color": "#000000", ' +
-            '"icons": [ { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" } ] }'
+# Вэб апп (PWA, нүүр дэлгэцэд суулгах): бүтэн дэлгэцээр, хэвтээ нээгдэнэ. sw.js: суулгах нөхцөл (web/sw.js)
+foreach ($file in "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png", "sw.js") {
+    Copy-Item (Join-Path $root "web\$file") $site -Force
+}
+$manifest = '{ "id": ".", "name": "Zombie Mongolia", "short_name": "Zombie MN", ' +
+            '"description": "Монголын 21 аймаг, Улаанбаатарыг зомбиос чөлөөл.", ' +
+            '"start_url": ".", "scope": ".", "display": "fullscreen", "display_override": [ "fullscreen", "standalone" ], ' +
+            '"orientation": "landscape", "background_color": "#000000", "theme_color": "#000000", "lang": "mn", ' +
+            '"categories": [ "games" ], "icons": [ ' +
+            '{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" }, ' +
+            '{ "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }, ' +
+            '{ "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" } ] }'
 [System.IO.File]::WriteAllText((Join-Path $site "manifest.json"), $manifest, (New-Object System.Text.UTF8Encoding $false))
-$size = (Get-ChildItem $site | Measure-Object -Property Length -Sum).Sum / 1MB
+$size = (Get-ChildItem $site -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB
 Write-Host ("Done: {0} ({1:N0} MB)" -f $site, $size)
 
 if ($Serve) {

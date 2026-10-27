@@ -66,7 +66,8 @@ namespace Net
         CrateTaken,      // аль аль нь: ачааны хайрцгийг авлаа (дугаар)
         Revive,          // аль аль нь: нөгөө талын унасан тоглогчийг босголоо
         CrateGrant,      // хост -> зочин: зочны авахыг хүссэн хайрцаг түүнийх (давхар авахаас сэргийлж хост шийднэ)
-        GuestKick        // хост -> зочин: зочин ертөнцөд хэт удаан ирээгүй тул хост хүлээхээ болив (зочин гарна)
+        GuestKick,       // хост -> зочин: зочин ертөнцөд хэт удаан ирээгүй тул хост хүлээхээ болив (зочин гарна)
+        Chat             // аль аль нь: чатын мессеж (бичвэр)
     };
     constexpr uint32_t kHostPlayer = 0xFFFF; // GuestHitHuman: хостын удирдаж буй тоглогч (бусад нь Soldier::id)
 
@@ -87,7 +88,7 @@ namespace Net
         uint8_t shots = 0;
         Vector3 shotEnd = { 0.0f, 0.0f, 0.0f };
         // Унаа: жолоодож буй хэрэгслийн индекс (-1 = явган) ба түүний төлөв (нөгөө талд хөдөлгөнө)
-        int8_t vehicle = -1;
+        int16_t vehicle = -1;
         Vector3 vehiclePosition = { 0.0f, 0.0f, 0.0f };
         float vehicleHeading = 0.0f, vehicleSpeed = 0.0f, vehicleSteer = 0.0f;
         float vehicleHealth = 0.0f; // унааны эрүүл мэнд: унааг жолоодож буй тал л тооцно
@@ -123,7 +124,7 @@ namespace Net
         uint8_t aiming = 0;  // буугаа онилсон (тулааны үед)
         uint8_t shots = 0;   // AvatarState-ийнхтэй адил
         Vector3 shotEnd = { 0.0f, 0.0f, 0.0f };
-        int8_t vehicle = -1;  // сууж яваа унаа (-1 = явган)
+        int16_t vehicle = -1;  // сууж яваа унаа (-1 = явган)
         uint8_t seatStyle = 0; // 1 мотоцикл, 2 эмээл, 3 бүхээг (харагдахгүй), 4 тэвш
         Vector3 seat = { 0.0f, 0.0f, 0.0f }; // ташааны ертөнцийн байрлал
         uint8_t guest = 0;   // зочны багийн гишүүн
@@ -230,6 +231,8 @@ namespace Net
         // Нээлттэй өрөө (Gold-той тоглолт): backend-ийн тасалбар. Хост: SetTicket-ийн дараа StartHosting нь зөвхөн
         // relay дээр тасалбартай өрөө нээнэ (дотоод сүлжээгүй: Gold-ийн дүрмийг сервер л шалгана). Хоосон = ердийн.
         void SetTicket(const std::string& value) { ticket = value; }
+        // Одоогийн тоглолтын тасалбар (хост: өрөөнийх, зочин: нэгдсэн): хуудсыг refresh хийсний дараа буцаж нэгдэхэд
+        const std::string& JoinedTicket() const { return joinTicket; }
         // Зочин: backend-ийн сонгосон өрөө рүү тасалбараар нэгдэнэ (код хэрэггүй).
         void RequestJoinTicket(const std::string& value);
         // Дараагийн нэгдэх хүсэлт найзын кодоор (хамт тоглолт) эсэх
@@ -274,6 +277,7 @@ namespace Net
         void SendRevive();
         void SendCrateGrant(int id);
         void SendGuestKick();
+        void SendChat(const std::string& text);
 
         // Хүлээн авсан сүүлийн snapshot (зочин)
         bool TakeSnapshot(Snapshot& out);

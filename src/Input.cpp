@@ -35,11 +35,20 @@ namespace
     bool virtualPressed[kKeyCount] = {};
     bool fireDown = false, firePressed = false;
     bool aimLatched = false;
+    int scopeZoom = 1; // мэргэн буудагчийн "ДУРАН" товч: 1x -> 2x -> хаах
     bool pointerDown = false, pointerPressed = false;
     Vector2 pointer = { 0.0f, 0.0f };
     Vector2 look = { 0.0f, 0.0f };
     Vector2 move = { 0.0f, 0.0f };
     float wheel = 0.0f;
+
+    // Онилох товчны бичиг: мэргэн буудагчид дараагийн товшилт юу хийхийг (дуран -> 2x -> хаах)
+    const char* AimLabel(bool sniper)
+    {
+        if (!sniper) return "ОНИЛОХ";
+        if (!aimLatched) return "ДУРАН";
+        return scopeZoom == 1 ? "2x" : "ХААХ";
+    }
 
     const float kLookScale = 1.7f;      // хуруугаар чирэх нь хулганаас удаан тул үржүүлнэ
     const float kStickRadius = 92.0f;   // хөдлөх хүрдний хүрээ, харагдацын пикселээр
@@ -140,7 +149,7 @@ namespace
             {
                 // Явган (PUBG шиг): том БУУДАХ голд, эргэн тойронд нь ҮСРЭХ / СУУХ / ХЭВТЭХ / ЦЭНЭГЛЭХ / ОНИЛОХ
                 Add(Circle(w - 180.0f, h - 262.0f, 74.0f), "БУУДАХ", Kind::Fire, 0);
-                Add(Circle(w - 66.0f, h - 410.0f, 46.0f), state.sniper ? "ДУРАН" : "ОНИЛОХ", Kind::Aim, 0, true, aimLatched);
+                Add(Circle(w - 66.0f, h - 410.0f, 46.0f), AimLabel(state.sniper), Kind::Aim, 0, true, aimLatched);
                 Add(Circle(w - 74.0f, h - 122.0f, 50.0f), state.stance != 0 ? "БОСОХ" : "ҮСРЭХ", Kind::Hold, KEY_SPACE);
                 Add(Circle(w - 192.0f, h - 80.0f, 44.0f), "СУУХ", Kind::Key, KEY_C, true, state.stance == 1);
                 Add(Circle(w - 300.0f, h - 62.0f, 40.0f), "ХЭВТЭХ", Kind::Key, KEY_Z, true, state.stance == 2);
@@ -152,7 +161,7 @@ namespace
             {
                 // Жолоодох үед: хий (БУУДАХ-ын байранд), тоормос, цэнэглэх
                 Add(Circle(w - 132.0f, h - 166.0f, 73.0f), "", Kind::Fire, 0);
-                Add(Circle(w - 280.0f, h - 96.0f, 52.0f), state.sniper ? "ДУРАН" : "ОНИЛОХ", Kind::Aim, 0, true, aimLatched);
+                Add(Circle(w - 280.0f, h - 96.0f, 52.0f), AimLabel(state.sniper), Kind::Aim, 0, true, aimLatched);
                 if (state.helicopter > 0)
                 {
                     // Нисдэг тэрэг: өндөр авах / газардах (Space); дараа нь хүрдээр (joystick) удирдана
@@ -471,6 +480,7 @@ void InBeginFrame(const TouchState& state)
     if (!gameplay)
     {
         aimLatched = false;
+        scopeZoom = 1;
     }
     // Хөдлөх хүрд нэг байрандаа (зүүн доод буланд) байна: хуруу хаана ч буусан тийш нүүхгүй.
     stickCenter = { 176.0f, (float)ViewHeight() - 202.0f };
@@ -521,7 +531,26 @@ void InBeginFrame(const TouchState& state)
                 case Kind::Key:
                 case Kind::Hold: Press(button.key); break;
                 case Kind::Fire: firePressed = true; break;
-                case Kind::Aim: aimLatched = !aimLatched; break;
+                case Kind::Aim:
+                    if (!state.sniper)
+                    {
+                        aimLatched = !aimLatched;
+                    }
+                    else if (!aimLatched)
+                    {
+                        aimLatched = true; // дуран 1x
+                        scopeZoom = 1;
+                    }
+                    else if (scopeZoom == 1)
+                    {
+                        scopeZoom = 2; // дахин товшвол 2x
+                    }
+                    else
+                    {
+                        aimLatched = false; // гурав дахь товшилт хаана
+                        scopeZoom = 1;
+                    }
+                    break;
                 case Kind::Wheel: wheel += (float)button.key; break;
                 case Kind::Menu: settingsOpen = !settingsOpen; break;
                 }
@@ -677,6 +706,11 @@ bool InMouseDown(int button)
         return button == MOUSE_BUTTON_LEFT ? (fireDown || pointerDown) : button == MOUSE_BUTTON_RIGHT ? aimLatched : false;
     }
     return IsMouseButtonDown(button);
+}
+
+int InScopeZoom()
+{
+    return touchMode && aimLatched ? scopeZoom : 1;
 }
 
 bool InMousePressed(int button)

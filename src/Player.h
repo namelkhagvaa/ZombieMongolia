@@ -169,6 +169,7 @@ private:
     float reload = -1.0f;
     float recoil = 0.0f;       // 1 = дөнгөж буудсан, 0 руу буурна
     float landing = 0.0f;      // өндрөөс буусны дараа 1 -> 0: өвдгөө нугалж цохилтоо зөөлрүүлнэ
+    float fallPeak = 0.0f;     // агаарт гарснаас хойших хамгийн их өндөр (унасны хохирол: Update)
     float action = 0.0f;       // 1 -> 0: хатгах / шидэх хөдөлгөөний явц
     float actionDuration = 0.3f;
     HeldItem held = HeldItem::Rifle;

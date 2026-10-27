@@ -90,7 +90,8 @@ namespace Net
             w.V3(a.position); w.F(a.facing); w.F(a.aimPitch); w.F(a.speed);
             w.U8(a.held); w.U8(a.member); w.U8(a.flags); w.F(a.health);
             w.U8(a.shots); w.V3(a.shotEnd);
-            w.U8((uint8_t)a.vehicle); w.V3(a.vehiclePosition); w.F(a.vehicleHeading); w.F(a.vehicleSpeed); w.F(a.vehicleSteer);
+            // (255 = явган; дугаар 254 хүртэл)
+            w.U8(a.vehicle < 0 || a.vehicle > 254 ? 255 : (uint8_t)a.vehicle); w.V3(a.vehiclePosition); w.F(a.vehicleHeading); w.F(a.vehicleSpeed); w.F(a.vehicleSteer);
             w.F(a.vehicleHealth);
             w.U8(a.leaderSkin);
             w.F(a.sentAt);
@@ -101,7 +102,7 @@ namespace Net
             a.position = r.V3(); a.facing = r.F(); a.aimPitch = r.F(); a.speed = r.F();
             a.held = r.U8(); a.member = r.U8(); a.flags = r.U8(); a.health = r.F();
             a.shots = r.U8(); a.shotEnd = r.V3();
-            a.vehicle = (int8_t)r.U8(); a.vehiclePosition = r.V3(); a.vehicleHeading = r.F(); a.vehicleSpeed = r.F();
+            a.vehicle = r.U8(); if (a.vehicle == 255) a.vehicle = -1; a.vehiclePosition = r.V3(); a.vehicleHeading = r.F(); a.vehicleSpeed = r.F();
             a.vehicleSteer = r.F();
             a.vehicleHealth = r.F();
             a.leaderSkin = r.U8();
@@ -1165,7 +1166,8 @@ namespace Net
                 so.aiming = r.U8();
                 so.shots = r.U8();
                 so.shotEnd = r.V3();
-                so.vehicle = (int8_t)r.U8();
+                so.vehicle = r.U8();
+                if (so.vehicle == 255) so.vehicle = -1;
                 so.seatStyle = r.U8();
                 so.seat = r.V3();
                 so.guest = r.U8();
@@ -1303,6 +1305,9 @@ namespace Net
             break;
         case Msg::GuestKick:
             break;
+        case Msg::Chat:
+            e.text = r.Str();
+            break;
         case Msg::Revive:
             break;
         case Msg::BattleOver:
@@ -1374,7 +1379,7 @@ namespace Net
             w.U16(so.id);
             w.V3(so.position); w.F(so.facing); w.F(so.speed); w.U8((uint8_t)so.member); w.U8(so.alive);
             w.U8(so.aiming); w.U8(so.shots); w.V3(so.shotEnd);
-            w.U8((uint8_t)so.vehicle); w.U8(so.seatStyle); w.V3(so.seat);
+            w.U8(so.vehicle < 0 || so.vehicle > 254 ? 255 : (uint8_t)so.vehicle); w.U8(so.seatStyle); w.V3(so.seat);
             w.U8(so.guest); w.F(so.health);
         }
         w.U16((uint16_t)s.zombies.size());
@@ -1420,6 +1425,14 @@ namespace Net
     {
         Writer w;
         w.U8((uint8_t)Msg::GuestKick);
+        Send(w.data, true);
+    }
+
+    void Session::SendChat(const std::string& text)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::Chat);
+        w.Str(text.substr(0, 200));
         Send(w.data, true);
     }
 

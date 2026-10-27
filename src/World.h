@@ -2,6 +2,7 @@
 
 #include "Layout.h"
 #include "MeshBuilder.h"
+#include "Structures.h"
 #include "Obstacle.h"
 #include "Polygon.h"
 #include "Terrain.h"
@@ -58,7 +59,7 @@ public:
     // (x, z) цэгийн гадаргуугийн төрөл.
     Surface SurfaceAt(float x, float z) const;
 
-    // (x, z) цэгийн доорх хамгийн өндөр гадаргуу (газар эсвэл саадын орой); maxY-аас дээшхийг тооцохгүй.
+    // (x, z) цэгийн доорх хамгийн өндөр гадаргуу (газар, саадын орой, өндөрт бол байшингийн дээвэр); maxY-аас дээшхийг тооцохгүй.
     float SurfaceHeightAt(float x, float z, float maxY) const;
     // Усны гүн (гол, цөөрмийн гадаргуугаас ёроол хүртэл, м); усгүй бол 0. Гадаргуу = GroundHeight + WaterDepth.
     float WaterDepth(float x, float z) const;
@@ -78,6 +79,12 @@ public:
     bool CrossesWall(Vector2 a, Vector2 b, float feetY) const;
     // Сум, камер хаадаг налуу хана хүртэлх зай (хотын байшин); байхгүй бол maxDistance
     float WallRayDistance(Ray ray, float maxDistance) const;
+    // (x, z) дөрвөн талаасаа өндөр (3 м-ээс дээш) хананд хүрээлэгдсэн бол (хотын налуу байшин) түүний оройн өндөр,
+    // үгүй бол -1e9. Нисдэг тэрэг байшингийн дээвэр дээр сууна (SurfaceHeightAt-д налуу хана ордоггүй).
+    // Налуу (хоёр, дөрвөн налуу) дээвэртэй бол дээврийн гадаргуугийн өндөр (PitchedRoofAt).
+    float RoofHeight(float x, float z) const;
+    // (x, z) дээрх налуу дээврийн гадаргуугийн өндөр (Structures.h PitchedRoof), байхгүй бол -1e9
+    float PitchedRoofAt(float x, float z) const;
     // Явган хүмүүсийн мөргөлдөх унаанууд (Game frame бүрд: зогсож буй, удаан явж буй унаа)
     void SetVehicleBlockers(std::vector<VehicleBlocker> blockers) { vehicleBlockers = std::move(blockers); }
     const std::vector<WallSegment>& Walls() const { return walls; }
@@ -142,6 +149,12 @@ public:
     // position-д (хөлийн байрлал) хамгийн ойр эхлэлтэй гарц; -1 = байхгүй.
     int NearestPassage(Vector3 position, float maxDistance) const;
     const Passage& GetPassage(int index) const { return passages[(size_t)index]; }
+    // Өндөр байшингийн дээвэр (onRoof) дээрээс хамгийн ойрын ирмэгт газар хүртэл олс тавина: олсоор авирах, буух
+    // гарц (шаттай адил). Энэ дээвэр дээр radius дотор олс, шат аль хэдийн байвал, эсвэл ирмэг олдохгүй бол юу ч хийхгүй.
+    bool AddRope(Vector3 onRoof, float radius);
+    // a, b хоёр нэг дээвэр дээр (a-аас b хүртэл гадаргуу огцом өөрчлөгдөхгүй алхаж хүрнэ) эсэх; y нь хөлийн өндөр
+    bool SameRoof(Vector3 a, Vector3 b) const;
+    void DrawRopes() const;
     int PassageCount() const { return (int)passages.size(); }
 
     // Газар, байгууламж, сүүдэр. Орчны shader-тэй material дамжуулна.
@@ -154,6 +167,9 @@ public:
     void DrawTransparent(const Camera3D& camera, const Material& material) const;
     void DrawColliders(Vector3 viewPosition) const;
 
+    // Мод, торх: kSceneryNear дотор хөнгөн хувилбарыг нууж текстуртай загвараар зурна (frame бүрд камерын байрлалаар)
+    void UpdateScenery(Vector3 viewPosition);
+    int NearSceneryCount() const { return (int)sceneryNear.size(); }
     int DrawnChunks() const { return terrain.LastDrawnChunks(); }
     int LoadedTerrainMeshes() const { return terrain.LoadedMeshes(); }
     int ObstacleCount() const { return (int)obstacles.size(); }
@@ -165,6 +181,12 @@ private:
     void SwitchCity(int province);
     void BuildFarLand();
     void BuildObstacleGrid();
+    // Мод, торх: хөнгөн хувилбарыг бүлгээр (нэг мод нэг хэсэгт) GPU-д хуулж, бүртгэлд нэмнэ
+    std::vector<MeshPiece> UploadScenery(const MeshBuilder& builder, const std::vector<SceneryPlacement>& placed, bool settlement);
+    void SetSceneryHidden(int index, bool hidden);
+    void ShowAllScenery();
+    // Ойрын модыг текстуртай загвараар (view != nullptr бол харагдах конусаар шүүнэ; depth: сүүдрийн зураг)
+    void DrawNearScenery(const ViewCone* view, const Material* depth) const;
     // Цонхны гарцын зогсох цэгүүд хашаа, тавилга зэрэг саадтай давхцвал ойрын чөлөөт газар руу шилжүүлнэ;
     // хол шилжүүлэх шаардлагатай бол (давсны дараа гацна) гарцыг хасна.
     void FitWindowPassages();
@@ -178,18 +200,43 @@ private:
     std::vector<Interior> interiors;
     std::vector<Door> doors;
     std::vector<Passage> passages;
+    struct Rope
+    {
+        Vector3 top, bottom; // ирмэг дээрх бэхэлгээ, газар дээрх үзүүр
+    };
+    std::vector<Rope> ropes; // (суурин солигдоход passages-тай хамт арилна)
     size_t staticPassageCount = 0; // эхний хэсэг нь тогтмол (цамхаг), үлдсэн нь суурингийнх
     std::vector<WallSegment> walls; // хашаа, хотын байшингийн хана
     size_t staticWallCount = 0;
     size_t staticInteriorCount = 0, staticDoorCount = 0; // хотын орж болох барилга (суурингийнх араас нь)
     std::vector<std::vector<int>> interiorGrid, doorGrid; // obstacleGrid-тэй ижил нүд
     std::vector<std::vector<int>> wallGrid; // obstacleGrid-тэй ижил нүд
+    std::vector<PitchedRoof> pitchedRoofs;  // тогтмол ба суурингийн налуу дээвэр (BuildObstacleGrid)
+    std::vector<std::vector<int>> roofGrid; // obstacleGrid-тэй ижил нүд
     std::vector<std::vector<int>> panelGrid; // нурдаг хашааны хэсгүүд (дундаж цэгээр)
     std::vector<VehicleBlocker> vehicleBlockers;
 
     // Саадын тор: нүд бүрд тэр нүдтэй давхцах саадуудын индекс
     int gridSide = 0;
     std::vector<std::vector<int>> obstacleGrid;
+
+    // Мод, торх (тогтмол хэсгийнх эхэнд, суурингийнх араас нь)
+    struct SceneryItem
+    {
+        Vector3 base;
+        float height, yaw;
+        int kind;
+        bool settlement;
+        int piece = -1, vertexStart = 0;
+        size_t count = 0, cpu = 0; // гурвалжны тоо, sceneryCpu дахь эхлэл (байрлалыг сэргээхэд)
+        bool hidden = false;
+    };
+    std::vector<SceneryItem> scenery;
+    std::vector<float> sceneryCpu;
+    size_t staticSceneryCount = 0, staticSceneryCpu = 0;
+    std::vector<MeshPiece> sceneryPieces, settlementSceneryPieces;
+    std::vector<std::vector<int>> sceneryGrid; // obstacleGrid-тэй ижил нүд
+    std::vector<int> sceneryNear;
 
     // Бүсчилсэн хөдөлгөөнгүй геометр: тогтмол хэсэг
     std::vector<MeshPiece> structures;

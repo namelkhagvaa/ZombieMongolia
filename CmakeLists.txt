@@ -36,6 +36,10 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(raylib)
+if(EMSCRIPTEN)
+    # Хөтөч: том текстуруудыг JPG болгож багасгадаг (tools/pack_web.py)
+    target_compile_definitions(raylib PRIVATE SUPPORT_FILEFORMAT_JPG=1)
+endif()
 
 # raylib-ийн үндсэн vertex shader (DrawTriangle3D, DrawCube, DrawLine3D г.м.) OpenGL ES дээр mediump: олон утасны GPU
 # үүнийг 16 битээр тооцдог тул мянган метрийн ертөнцийн координатад ~2 м нарийвчлалтай болж, хөтлөгч сум, сумны мөр
@@ -150,8 +154,9 @@ if(WIN32)
 endif()
 
 if(EMSCRIPTEN)
-    # Хөтчийн хуудас: ZombieMongolia.html + .js + .wasm + .data (assets). Тоглоомд хэрэгтэй файлууд л
-    # (Android-ийн APK-тай ижил): эх .glb загварууд хэт том тул орохгүй.
+    # Хөтчийн хуудас: ZombieMongolia.html + .js + .wasm. Тоглоомд хэрэгтэй файлууд л (Android-ийн APK-тай ижил;
+    # эх .glb загварууд хэт том тул орохгүй) web_assets-д бэлтгэгдэж, tools/build_web.ps1 тэднийг tools/pack_web.py-оор
+    # багцална (JPG, OGG болгож; эхлэх, ар талд, аймаг бүрд тусдаа татагдана: web/shell.html).
     set(WEB_ASSETS ${CMAKE_BINARY_DIR}/web_assets)
     file(REMOVE_RECURSE ${WEB_ASSETS})
     file(GLOB WEB_TOP ${CMAKE_SOURCE_DIR}/assets/*_mesh.glb ${CMAKE_SOURCE_DIR}/assets/*_color.png
@@ -161,12 +166,14 @@ if(EMSCRIPTEN)
         file(GLOB files ${CMAKE_SOURCE_DIR}/assets/${sub}/*.png)
         file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/${sub})
     endforeach()
-    foreach(sub cars buu)
-        file(GLOB files ${CMAKE_SOURCE_DIR}/assets/${sub}/*.vmesh ${CMAKE_SOURCE_DIR}/assets/${sub}/*_color.png)
+    foreach(sub cars buu trees pooshig)
+        file(GLOB files ${CMAKE_SOURCE_DIR}/assets/${sub}/*.vmesh ${CMAKE_SOURCE_DIR}/assets/${sub}/*_color.png ${CMAKE_SOURCE_DIR}/assets/${sub}/*_far.bin)
         file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/${sub})
     endforeach()
     file(GLOB files ${CMAKE_SOURCE_DIR}/assets/city/*.bin) # Улаанбаатар, аймгийн төвүүдийн газрын зураг
     file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/city)
+    file(GLOB files ${CMAKE_SOURCE_DIR}/assets/sounds/soldiers/*.wav) # цэргүүдийн яриа
+    file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/sounds/soldiers)
     file(GLOB files ${CMAKE_SOURCE_DIR}/assets/sounds/*.wav)
     file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/sounds)
     file(COPY ${CMAKE_SOURCE_DIR}/android/ui_font.ttf DESTINATION ${WEB_ASSETS})
@@ -182,8 +189,9 @@ if(EMSCRIPTEN)
         -sINITIAL_MEMORY=256MB      # утасны Safari том санах ойг эхэнд нь өгч чаддаггүй; хэрэгтэй үед өснө
         -sSTACK_SIZE=8MB
         # HEAPF32: raylib-ийн дууны сан (miniaudio); stringToUTF8, UTF8ToString, lengthBytesUTF8: fetch, localStorage (Online.cpp)
-        -sEXPORTED_RUNTIME_METHODS=HEAPF32,stringToUTF8,UTF8ToString,lengthBytesUTF8
-        --preload-file ${WEB_ASSETS}@/
+        # FS, addRunDependency, removeRunDependency: багц татагч файлуудыг FS-д бичнэ (web/shell.html)
+        -sEXPORTED_RUNTIME_METHODS=HEAPF32,stringToUTF8,UTF8ToString,lengthBytesUTF8,FS,addRunDependency,removeRunDependency
+        -sFORCE_FILESYSTEM=1
         --shell-file ${CMAKE_SOURCE_DIR}/web/shell.html
     )
 endif()
