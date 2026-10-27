@@ -60,9 +60,12 @@ public:
 
     // (x, z) цэгийн доорх хамгийн өндөр гадаргуу (газар эсвэл саадын орой); maxY-аас дээшхийг тооцохгүй.
     float SurfaceHeightAt(float x, float z, float maxY) const;
-    // Усны гадаргуугийн өндөр (гол, цөөрөм, нуур); ус байхгүй бол -1e9. Хотод газар усны гүнээр хотойсон, ус нь эргийн
-    // түвшнээс 0.45 м доор (Structures.cpp CityWaterPoint); хээрийн нуурынх тогтмол kLakeLevel.
-    float WaterSurface(float x, float z) const;
+    // Усны гүн (гол, цөөрмийн гадаргуугаас ёроол хүртэл, м); усгүй бол 0. Гадаргуу = GroundHeight + WaterDepth.
+    float WaterDepth(float x, float z) const;
+    // Бүсэлхийнээс гүн ус: хүн сэлнэ
+    static constexpr float kSwimDepth = 1.0f;
+    // Усанд явах хурдны үржүүлэгч (feet: хөлийн байрлал; гүүр, тавцан дээр 1): гүехэнд гүнийхээ хэрээр, гүнд сэлэх хурд
+    float WadeFactor(Vector3 feet) const;
 
     // Босоо цилиндр (хөлийн байрлал feetPos) саад руу орсон бол хэвтээ чиглэлд түлхэж гаргана.
     // person: явган хүн, зомби (хашаа, зогсож буй унааг тооцно); унаа өөрөө false.

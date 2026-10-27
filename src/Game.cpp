@@ -1826,10 +1826,10 @@ HeldItem Game::HeldFor(WeaponType type) const
 
 void Game::UpdateShooting()
 {
-    if (player.IsDowned() || player.IsSwimming()) return; // унасан, сэлж байгаа: буудахгүй
-    if (player.IsTraversing())
+    if (player.IsDowned()) return; // унасан: буудахгүй
+    if (player.IsTraversing() || player.IsSwimming())
     {
-        return; // шат, цонхоор гарч байхдаа буудахгүй
+        return; // шат, цонхоор гарч байхдаа, сэлж байхдаа буудахгүй
     }
 
     // --- Зэвсэг сонгох. Дайчин: 1 хутга, 2 гар буу, 3 автомат, 4 үрлэн буу, 5 гранат.
@@ -5279,9 +5279,9 @@ void Game::DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& base
         else
         {
             // Сэлж байна: сүлжээгээр дамжуулахгүй, байрлалын усны гүнээс (тоглогч, цэрэг өөрсдөө ижил дүрмээр хөвнө)
-            const float water = world.WaterSurface(figure.position.x, figure.position.z);
-            const float floor = world.SurfaceHeightAt(figure.position.x, figure.position.z, figure.position.y + 0.3f);
-            if (water - floor >= kSwimDepth && figure.position.y < water - kSwimSink + 0.3f)
+            const float depth = world.WaterDepth(figure.position.x, figure.position.z);
+            const float bed = world.GroundHeight(figure.position.x, figure.position.z);
+            if (depth > World::kSwimDepth && figure.position.y < bed + depth - kSwimSink + 0.3f)
             {
                 ApplySwimPose(pose, (float)GetTime(), figure.speed);
             }

@@ -969,6 +969,19 @@ void World::ResolveHorizontal(Vector3& feetPos, float radius, float height, floa
     feetPos.z = Clamp(feetPos.z, -limit, limit);
 }
 
+float World::WaterDepth(float x, float z) const
+{
+    // Хотын гол, цөөрмийн гадаргуу ёроолоос LakeDepth - 0.45 м дээр (Structures: CityWaterPoint); хээр талын нуур усгүй
+    return layout.IsCity() ? std::max(0.0f, layout.LakeDepth(x, z) - 0.45f) : 0.0f;
+}
+
+float World::WadeFactor(Vector3 feet) const
+{
+    const float depth = WaterDepth(feet.x, feet.z);
+    if (depth <= 0.2f || feet.y > GroundHeight(feet.x, feet.z) + depth) return 1.0f; // гүехэн эсвэл гүүр дээр
+    return depth > kSwimDepth ? 0.45f : 1.0f - 0.5f * depth / kSwimDepth;
+}
+
 float World::WallRayDistance(Ray ray, float maxDistance) const
 {
     // Сум, камер хаадаг налуу хана (хотын байшин): туяаны хэвтээ төсөөллийг хэрчимтэй огтлолцуулна
@@ -1255,9 +1268,3 @@ void World::DrawColliders(Vector3 viewPosition) const
     }
 }
 
-float World::WaterSurface(float x, float z) const
-{
-    const float depth = layout.LakeDepth(x, z);
-    if (depth <= 0.0f) return -1.0e9f;
-    return layout.IsCity() ? terrain.HeightAt(x, z) + depth - 0.45f : kLakeLevel;
-}

@@ -130,7 +130,6 @@ void ApplyDownedPose(HumanoidPose& pose, float time);
 
 // Гүн усанд сэлэх: хэвтээ биетэй (prone), гараа ээлжлэн сэлүүрдэж, хөлөө жийнэ; толгой усан дээр, барьсан зүйл
 // харагдахгүй. swimSpeed: явах хурд (м/с; 0 бол хөвж зогсоно). Хөлийн цэг (feet) нь гадаргуугаас kSwimSink доор.
-constexpr float kSwimDepth = 1.15f; // хөл доорх гадаргуугаас усны гадаргуу хүртэл ийм гүн бол сэлнэ
 constexpr float kSwimSink = 0.95f;  // сэлэх үед хөлийн цэг (биеийн суурь) усны гадаргуугаас доош
 void ApplySwimPose(HumanoidPose& pose, float time, float swimSpeed);
 

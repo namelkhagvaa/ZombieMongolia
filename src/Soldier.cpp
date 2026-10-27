@@ -116,6 +116,19 @@ void SoldierSquad::ChooseGuardPost(int index, Vector3 playerPosition, const Worl
     }
 }
 
+namespace
+{
+    // Бүсэлхийнээс гүн усанд: гадаргуу дээр хэвтээ хөвнө (сэлнэ). pos.y нь газрын түвшинд (SurfaceHeightAt) байх ёстой.
+    void FloatInWater(Soldier& soldier, const World& world)
+    {
+        Vector3& pos = soldier.mover.position;
+        const float bed = world.GroundHeight(pos.x, pos.z);
+        const float depth = world.WaterDepth(pos.x, pos.z);
+        soldier.swimming = pos.y < bed + 0.2f && depth > World::kSwimDepth;
+        if (soldier.swimming) pos.y = bed + depth - kSwimSink; // (ApplySwimPose-ийн хөлийн цэг)
+    }
+}
+
 void SoldierSquad::Reset(int count, Vector3 around, const World& world)
 {
     soldiers.assign(count, Soldier{});
@@ -219,7 +232,6 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
     {
         Soldier& soldier = soldiers[i];
         soldier.sinceHit += dt;
-        const Vector3 frameStart = soldier.mover.position; // (сэлэх үед энэ frame-ийн шилжилтийг багасгана)
         // Дагах удирдагч: хостын тоглогч, эсвэл зочны багийнхны хувьд зочин
         const bool followGuest = soldier.guestTeam && guestLeaderActive;
         const Vector3 playerPosition = followGuest ? guestLeader : hostPosition;
@@ -297,6 +309,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
                 soldier.moveAmount = eased / kWalkSpeed;
                 soldier.moving = true;
                 here.y = world.SurfaceHeightAt(here.x, here.z, here.y + 0.5f);
+                FloatInWater(soldier, world);
             }
             else
             {
@@ -652,23 +665,9 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
         // Газрын гадаргууг дагана
         if (soldier.riding < 0)
         {
-            const float floor = world.SurfaceHeightAt(pos.x, pos.z, pos.y + 0.5f);
-            const float water = world.WaterSurface(pos.x, pos.z);
-            if (water - floor >= kSwimDepth)
-            {
-                // Гүн ус: гадаргуу дээр хөвж сэлнэ (явган хүний хагас хурдаар), буудахгүй
-                if (soldier.swimming)
-                {
-                    pos.x = frameStart.x + (pos.x - frameStart.x) * 0.5f;
-                    pos.z = frameStart.z + (pos.z - frameStart.z) * 0.5f;
-                }
-                soldier.swimming = true;
-                pos.y = water - kSwimSink;
-                soldier.aimPose = std::max(0.0f, soldier.aimPose - dt * 4.0f);
-                continue;
-            }
-            soldier.swimming = false;
-            pos.y = floor;
+            pos.y = world.SurfaceHeightAt(pos.x, pos.z, pos.y + 0.5f);
+            FloatInWater(soldier, world);
+            if (soldier.swimming) continue; // сэлж байхад буудахгүй
         }
         else if (soldier.seatStyle == 3)
         {
@@ -925,12 +924,18 @@ void SoldierSquad::Draw(Vector3 viewPosition, bool showColliders) const
         static const HumanoidLook recruitLook = MakeLook();
         const HumanoidLook memberLook =
             soldier.member >= 0 ? TeamMemberLook(soldier.member, soldier.guestTeam ? guestLeaderSkin : leaderSkin) : recruitLook;
-        const HumanoidLook& look = memberLook;
+        HumanoidLook look = memberLook;
+        if (soldier.swimming && soldier.riding < 0) look.held = HeldItem::None; // сэлж байхад буу харагдахгүй
         const bool detailed = HorizontalDistance(viewPosition, soldier.mover.position) < kHumanoidDetailDistance;
         HumanoidPose pose = MakeSoldierPose(soldier.walkCycle, soldier.moving ? soldier.moveAmount : 0.0f, true,
                                             (float)GetTime() + soldier.walkCycle, soldier.recoil, look.held);
         pose.aim = soldier.aimPose;
         pose.speed = soldier.moving ? soldier.moveAmount * kWalkSpeed : 0.0f;
+        if (soldier.swimming && soldier.riding < 0)
+        {
+            pose.prone = 1.0f; // сэлэх: хэвтээ, мөлхөх хөдөлгөөн
+            pose.aim = 0.0f;
+        }
 
         if (soldier.alive && soldier.riding >= 0)
         {

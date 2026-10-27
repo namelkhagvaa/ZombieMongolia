@@ -463,18 +463,27 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
         wish = Vector3Normalize(wish);
     }
 
-    // --- Биеийн байрлал: C суух / босох, Z хэвтэх / босох, Space босох ---
-    if (InKeyPressed(KEY_C) && !swimming) stance = stance == Stance::Crouch ? Stance::Stand : Stance::Crouch;
-    if (InKeyPressed(KEY_Z) && !swimming) stance = stance == Stance::Prone ? Stance::Stand : Stance::Prone;
-    bool jump = InKeyPressed(KEY_SPACE) && !swimming;
+    // --- Ус: бүсэлхийнээс гүн бол сэлнэ (гадаргуу дээр хэвтээ хөвж, удаан), гүехэн бол гүнийхээ хэрээр удаашрана.
+    //     Гүүр, тавцан дээр (доор нь ус байсан ч) хэвийн. ---
+    const float bed = world.GroundHeight(position.x, position.z);
+    const float water = world.WaterDepth(position.x, position.z);
+    const bool onBed = world.SurfaceHeightAt(position.x, position.z, position.y + config.stepHeight) < bed + 0.2f;
+    swimming = onBed && water > (swimming ? World::kSwimDepth - 0.15f : World::kSwimDepth);
+    const float wade = onBed && !swimming ? std::clamp((bed + water - position.y) / World::kSwimDepth, 0.0f, 1.0f) : 0.0f;
     if (swimming) stance = Stance::Stand;
+
+    // --- Биеийн байрлал: C суух / босох, Z хэвтэх / босох, Space босох ---
+    if (InKeyPressed(KEY_C)) stance = stance == Stance::Crouch ? Stance::Stand : Stance::Crouch;
+    if (InKeyPressed(KEY_Z)) stance = stance == Stance::Prone ? Stance::Stand : Stance::Prone;
+    bool jump = InKeyPressed(KEY_SPACE) && !swimming;
+    if (swimming) stance = Stance::Stand; // (C, Z сэлж байхад үйлчлэхгүй)
     if (jump && stance != Stance::Stand)
     {
         stance = Stance::Stand; // эхний Space зөвхөн босгоно
         jump = false;
     }
     crouchPose += ((stance == Stance::Crouch ? 1.0f : 0.0f) - crouchPose) * std::min(1.0f, 10.0f * dt);
-    pronePose += ((stance == Stance::Prone ? 1.0f : 0.0f) - pronePose) * std::min(1.0f, 6.0f * dt);
+    pronePose += ((stance == Stance::Prone ? 1.0f : 0.0f) - pronePose) * std::min(1.0f, 6.0f * dt); // (сэлэх дүрсийг ApplySwimPose)
 
     // Сууж алхах нь удаан, мөлхөх нь бүр удаан; хурдан гүйх нь зөвхөн босоо үед бүрэн хүчтэй.
     float speed = config.walkSpeed * (1.0f - 0.45f * crouchPose - 0.78f * pronePose);
@@ -482,9 +491,10 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
     {
         speed *= stance == Stance::Crouch ? 1.25f : config.sprintMultiplier;
     }
+    if (swimming) speed = config.walkSpeed * 0.42f * (InSprint() ? 1.3f : 1.0f); // сэлэх хурд
+    else speed *= 1.0f - 0.5f * wade;                                              // ус гатлах
     speed *= inputStrength;
     speed *= 1.0f - 0.7f * landing; // буусан даруйд хурдан гүйж чадахгүй
-    if (swimming) speed = config.walkSpeed * 0.45f * inputStrength; // сэлэх: удаан, хурдан гүйхгүй
 
     // --- Хэвтээ хурд: зорилтот хурд руу зөөлөн ойртоно ---
     const float control = grounded ? 1.0f : config.airControl;
@@ -509,41 +519,40 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
     const float height = config.playerHeight * (1.0f - 0.3f * crouchPose - 0.65f * pronePose);
     world.ResolveHorizontal(position, config.playerRadius, height, config.stepHeight);
 
-    position.y += velocity.y * dt;
-
-    // Өмнөх өндрөөс stepHeight-аас илүүгүй өндөр гадаргуу дээр л зогсож чадна.
-    floorY = world.SurfaceHeightAt(position.x, position.z, previousY + config.stepHeight);
-    // Уруудах үед газраас хөндийрөхгүй: газар дээр байсан бол жижиг зөрүүг шууд дагана.
-    const bool snapDown = wasGrounded && position.y - floorY < config.stepHeight;
-    if (velocity.y <= 0.0f && (position.y <= floorY || snapDown))
+    if (swimming)
     {
-        // Өндрөөс (~1.5 м-ээс дээш) унаж буувал хөлөө нугалж суугаад босно.
-        if (!wasGrounded && velocity.y < -5.5f)
+        // Гадаргуу дээр хөвнө (бие усанд, толгой мөр гадна; ApplySwimPose-ийн хөлийн цэг kSwimSink доор); таталцал, үсрэлтгүй
+        const float surface = world.GroundHeight(position.x, position.z) + world.WaterDepth(position.x, position.z);
+        const float target = std::max(world.GroundHeight(position.x, position.z), surface - kSwimSink);
+        position.y += (target - position.y) * std::min(1.0f, 4.0f * dt);
+        velocity.y = 0.0f;
+        floorY = world.GroundHeight(position.x, position.z);
+        grounded = true;
+    }
+    else
+    {
+        position.y += velocity.y * dt;
+
+        // Өмнөх өндрөөс stepHeight-аас илүүгүй өндөр гадаргуу дээр л зогсож чадна.
+        floorY = world.SurfaceHeightAt(position.x, position.z, previousY + config.stepHeight);
+        // Уруудах үед газраас хөндийрөхгүй: газар дээр байсан бол жижиг зөрүүг шууд дагана.
+        const bool snapDown = wasGrounded && position.y - floorY < config.stepHeight;
+        if (velocity.y <= 0.0f && (position.y <= floorY || snapDown))
         {
-            landing = std::min(1.0f, -velocity.y / 9.0f);
-            Audio::Play(Sfx::Thud, position, std::min(1.0f, -velocity.y / 12.0f));
+            // Өндрөөс (~1.5 м-ээс дээш) унаж буувал хөлөө нугалж суугаад босно.
+            if (!wasGrounded && velocity.y < -5.5f)
+            {
+                landing = std::min(1.0f, -velocity.y / 9.0f);
+                Audio::Play(Sfx::Thud, position, std::min(1.0f, -velocity.y / 12.0f));
+            }
+            position.y = floorY;
+            velocity.y = 0.0f;
+            grounded = true;
         }
-        position.y = floorY;
-        velocity.y = 0.0f;
-        grounded = true;
-    }
-    else
-    {
-        grounded = false;
-    }
-
-    // --- Гүн ус: гадаргуу дээр хөвж сэлнэ (гүүр, байшингийн шал усны дээр бол тэр дээгүүр алхана) ---
-    const float water = world.WaterSurface(position.x, position.z);
-    if (water - floorY >= kSwimDepth && position.y <= water - kSwimSink + 0.05f)
-    {
-        swimming = true;
-        position.y = water - kSwimSink;
-        velocity.y = 0.0f;
-        grounded = true;
-    }
-    else
-    {
-        swimming = false;
+        else
+        {
+            grounded = false;
+        }
     }
 
     // --- Биеэ хөдөлгөөний зүг рүү эргүүлэх (онилж байхгүй үед) ---
@@ -576,7 +585,7 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
     }
 
     HumanoidLook look = this->look;
-    look.held = held;
+    look.held = swimming ? HeldItem::None : held; // сэлж байхад буу харагдахгүй
 
     if (IsRiding())
     {
