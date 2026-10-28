@@ -482,6 +482,14 @@ namespace
             Vector2 p = view.ToScreen(zombie.mover.position.x, zombie.mover.position.z);
             bool outside = false;
             if (!place(p, outside)) continue;
+            if (zombie.IsBear())
+            {
+                // Баавгай: хүрэн цэг (уурласан бол улбар хүрээтэй); газрын зургийн ирмэгт гаргахгүй
+                if (outside) continue;
+                DrawCircleV(p, 3.6f * markerScale, zombie.alerted ? Color{ 230, 120, 40, 255 } : Color{ 40, 26, 16, 255 });
+                DrawCircleV(p, 2.6f * markerScale, Color{ 130, 86, 50, 255 });
+                continue;
+            }
             const float radius = (zombie.type == ZombieType::Brute ? 4.0f : 3.0f) * markerScale;
             const bool brute = zombie.type == ZombieType::Brute;
             const float icon = radius * 2.6f;

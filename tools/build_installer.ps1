@@ -22,4 +22,11 @@ if (-not $iscc) { throw "Inno Setup 6 олдсонгүй: winget install JRSoftw
 
 & $iscc (Join-Path $root "installer\ZombieMongolia.iss")
 if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
+# Вэб сайтаас татах (тоглоом шинэ хувилбарыг download\windows-version.txt-ээс шалгаж "ТАТАХ" товч гаргана):
+# build_web\web\download\ хавтсыг вэб сайттай хамт байршуулна
+$download = Join-Path $root "build_web\web\download"
+New-Item -ItemType Directory -Force $download | Out-Null
+Copy-Item (Join-Path $root "dist\ZombieMongolia_Setup.exe") $download -Force
+$stamp = [regex]::Match((Get-Content -Raw (Join-Path $root "cmake-build-release\generated\BuildStampValue.h")), '"([^"]+)"').Groups[1].Value
+[System.IO.File]::WriteAllText((Join-Path $download "windows-version.txt"), $stamp, (New-Object System.Text.UTF8Encoding $false))
 Get-Item (Join-Path $root "dist\ZombieMongolia_Setup.exe")

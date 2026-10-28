@@ -51,10 +51,6 @@ class GameSettings(models.Model):
     battle_pair_limit = models.PositiveSmallIntegerField("Нэг хосын хоногийн төлбөртэй тулаан", default=3)
     stage_daily_limit = models.PositiveSmallIntegerField("Үе шатны шагнал хоногт (тоглогч бүрд)", default=10)
     verify_bonus = models.PositiveIntegerField("Утас баталгаажуулсны урамшуулал (Gold)", default=100)
-    # Утасны операторууд олон хэрэглэгчийг нэг IP-аар гаргадаг (CGNAT): хэт бага бол жинхэнэ хэрэглэгч бүртгүүлж чадахгүй
-    register_per_ip_day = models.PositiveSmallIntegerField("Нэг IP-ээс хоногт нээх данс (SMS-гүй бүртгэл)", default=20)
-    block_same_ip = models.BooleanField("Ижил IP-тай тоглогчдын тулаанд Gold шилжүүлэхгүй (олон дансаар)",
-                                        default=True)
     # Вэбээр Gold худалдах багцууд: [[Gold, үнэ ₮], ...]
     gold_packs = models.JSONField("Gold-ийн багцууд", default=list, blank=True)
     # Сайжруулалтын үнэ: дараагийн түвшин = үнэ x (одоогийн түвшин + 1) Gold

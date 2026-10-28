@@ -39,12 +39,10 @@ const MAX_MESSAGE = 1 << 20; // 1 MB: snapshot хэдэн арван KB байд
 const GRACE_MS = 45000;      // тасарсан хостыг (тасалбартай өрөө) хүлээх хугацаа
 const BACKLOG_LIMIT = 65536; // хүлээн авагчийн илгээгээгүй дараалал: үүнээс их бол хаяж болох мессежийг хаяна
 const DROP_MARK = 0xff;      // WebSocket: хаяж болох мессежийн эхний байт
-const MAX_ROOMS_PER_IP = 8;  // нэг IP-ээс код олгох өрөө (тасалбаргүй): серверийг дүүргэхээс
 
 const RELAY_SECRET = process.env.RELAY_SECRET || '';
 
 const rooms = new Map(); // code (кодоор) эсвэл "room:<id>" (тасалбараар) -> Room
-const roomsByIp = new Map();
 
 // Тасалбарыг шалгаж агуулгыг буцаана; буруу, хугацаа нь дууссан бол null.
 function readTicket(ticket) {
@@ -79,16 +77,9 @@ function deliver(target, data, droppable) {
   target.send(data);
 }
 
-function countIp(ip, delta) {
-  const value = (roomsByIp.get(ip) || 0) + delta;
-  if (value > 0) roomsByIp.set(ip, value);
-  else roomsByIp.delete(ip);
-}
-
 function deleteRoom(code, room) {
   if (rooms.get(code) !== room) return;
   rooms.delete(code);
-  if (room.ip) countIp(room.ip, -1);
   clearTimeout(room.hostGone);
 }
 
@@ -106,11 +97,10 @@ function attach(peer, hello) {
   if (params.has('host')) {
     if (ticket) { hostTicketRoom(peer, `room:${ticket.r}`, ticket.r, ticket); return; }
     // Тасалбаргүй (дотоод сүлжээ, хуучин хувилбар): санамсаргүй код
-    const code = rooms.size < MAX_ROOMS && (roomsByIp.get(peer.ip) || 0) < MAX_ROOMS_PER_IP ? newCode() : 0;
+    const code = rooms.size < MAX_ROOMS ? newCode() : 0;
     if (!code) { peer.control({ type: 'error', reason: 'full' }); peer.close(); return; }
     const room = { host: peer, guest: null, guestPlayer: null, ticket: false, ip: peer.ip, hostGone: null };
     rooms.set(code, room);
-    countIp(peer.ip, 1);
     peer.control({ type: 'room', code });
     bindHost(peer, room, code);
     return;

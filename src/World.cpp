@@ -1274,6 +1274,29 @@ float World::WallRayDistance(Ray ray, float maxDistance) const
     return distance;
 }
 
+float World::TallestNear(float x, float z, float radius) const
+{
+    if (obstacleGrid.empty()) return -1.0e9f;
+    float top = -1.0e9f;
+    for (int cz = GridCell(z - radius); cz <= GridCell(z + radius); ++cz)
+    {
+        for (int cx = GridCell(x - radius); cx <= GridCell(x + radius); ++cx)
+        {
+            const size_t cell = (size_t)cz * gridSide + cx;
+            for (int index : obstacleGrid[cell]) top = std::max(top, obstacles[(size_t)index].Top());
+            if (!wallGrid.empty())
+            {
+                for (int index : wallGrid[cell]) top = std::max(top, walls[(size_t)index].top);
+            }
+            if (!roofGrid.empty())
+            {
+                for (int index : roofGrid[cell]) top = std::max(top, pitchedRoofs[(size_t)index].eave + pitchedRoofs[(size_t)index].rise);
+            }
+        }
+    }
+    return top;
+}
+
 float World::PitchedRoofAt(float x, float z) const
 {
     if (roofGrid.empty()) return -1.0e9f;

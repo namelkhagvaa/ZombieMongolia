@@ -18,9 +18,7 @@ UB = 15  # Улаанбаатар
 class FlowTests(TestCase):
     def setUp(self):
         qpay.MockQPay.paid.clear()
-        # Тестийн бүх хүсэлт нэг IP-ээс (127.0.0.1): ижил IP-ийн хоригийг тусгай тестэд л шалгана
         settings = GameSettings.load()
-        settings.block_same_ip = False
         settings.verify_bonus = 0  # (тусгай тестэд л: бусад тестийн Gold-ийн тооцоо өөрчлөгдөхгүй)
         settings.save()
 
@@ -627,18 +625,6 @@ class FlowTests(TestCase):
         account = self.post(f"rooms/{room_id}/complete/", {}, host)["account"]
         self.assertEqual(account["gold"], 480)  # 500 - 20, шагналгүй (барьцаа буцсан)
 
-    def test_same_network_players_battle_without_gold(self):
-        # Нэг гэрийн роутер (ижил IP): тулалдаж болно, гэхдээ ялагдагчийн барьцаа ялагчид очихгүй (зүгээр суллагдана)
-        settings = GameSettings.load()
-        settings.block_same_ip = True
-        settings.save()
-        host, guest, room_id = self.battle()
-        for token in (host, guest):
-            self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, token)
-        self.assertEqual(self.gold_of("+97699112233"), (480, 50))  # (500 - 20, барьцаа өрөөнд)
-        self.assertEqual(self.gold_of("+97688112233"), (480, 0))   # барьцаа шатаагүй
-        self.assertTrue(Event.objects.get(kind="battle_won").data["same_network"])
-
     def test_host_sees_guest_soldiers_from_the_server(self):
         host, guest = self.two_players()
         Player.objects.filter(phone="+97688112233").update(soldiers=2, health_level=3)
@@ -811,13 +797,6 @@ class FlowTests(TestCase):
         self.assertEqual(self.post("register/", {"name": "Өөр", "phone": "96112233", "password": "secret1",
                                                  "device_id": "device-dddd-4444"}, status=409)["error"], "device_taken")
         self.post("login/", {"phone": "95112233", "password": "secret1", "device_id": "device-dddd-4444"})
-        # Нэг сүлжээнээс хоногт тохиргооноос олон данс нээхгүй
-        GameSettings.objects.filter(pk=GameSettings.load().pk).update(register_per_ip_day=5)
-        for k in range(4):
-            self.post("register/", {"name": f"Тоглогч{k}", "phone": f"9{k}332211", "password": "secret1",
-                                    "device_id": f"device-ip-{k}000"})
-        self.assertEqual(self.post("register/", {"name": "Тав", "phone": "99887700", "password": "secret1",
-                                                 "device_id": "device-ip-9000"}, status=429)["error"], "too_many_accounts")
 
     # ---- утас баталгаажуулалт
     def quick_player(self, phone="95112233", device="device-dddd-4444", name="Тэмүүлэн"):

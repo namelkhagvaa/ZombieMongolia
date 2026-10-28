@@ -7,7 +7,9 @@
 
 #include "Account.h"
 #include "Audio.h"
+#include "Bear.h"
 #include "BuildStamp.h"
+#include "Online.h"
 #include "GameLog.h"
 #include "Platform.h"
 #include "Input.h"
@@ -29,6 +31,7 @@
 #include <cmath>
 #include <cctype>
 #include <cstdio>
+#include <unordered_map>
 
 namespace
 {
@@ -202,6 +205,7 @@ Game::Game(const LaunchOptions& launchOptions)
     LoadCharacterModels(environment.CharacterShader()); // байхгүй бол дүрүүд кодоор үүсгэсэн дүрсээрээ зурагдана
     Splash::Step(0.84f, "Морьдыг ачаалж байна...");
     LoadHorseModel(environment.CharacterShader());      // байхгүй бол морь кодоор үүсгэсэн дүрсээрээ
+    LoadBearModel(environment.CharacterShader());       // байхгүй бол баавгай кодоор үүсгэсэн дүрсээрээ
     LoadPropModels(environment.VehicleShader());        // assets/buu: автомат буу, үсрэх сум (байхгүй бол кодоор)
 #if !defined(__EMSCRIPTEN__)
     EnsureMissionAssets(0); // (хөтөч: унаа, модны файлууд ар талд татагдаж, анх аймагт орохдоо ачаалагдана)
@@ -210,6 +214,7 @@ Game::Game(const LaunchOptions& launchOptions)
     Audio::Init();
     Splash::Step(0.94f, "Газрын зургийг бэлтгэж байна...");
     LoadProgress(progress, (int)Provinces().size());
+    InLayoutLoad(progress.touchLayout); // утасны товчнуудын тоглогчийн байрлал
     Audio::SetVolume(progress.sound ? kSoundLevels[std::clamp(progress.soundLevel, 0, 3)] : 0.0f);
     // Компьютерт (утас биш) видео картын хүчээр график сонгоно: тоглогч цэснээс сонгоогүй үед
     if (options.graphics < 0 && progress.graphicsAuto && !InTouchMode()) progress.graphics = RecommendedGraphics();
@@ -240,6 +245,7 @@ Game::~Game()
     }
     UnloadCharacterModels();
     UnloadHorseModel();
+    UnloadBearModel();
     UnloadVehicleModels();
     UnloadPropModels();
     UnloadSceneryModels();
@@ -298,6 +304,7 @@ void Game::Run()
         if (options.ride >= 1 && options.ride <= garage.Count())
         {
             garage.Mount(options.ride - 1); // туршилт: унаад шууд урагш явна
+            if (IsHelicopter(garage.At(options.ride - 1).type)) garage.SetLift(options.ride - 1, true); // (нисдэг тэрэг: хөөрнө)
             if (options.hasPose)
             {
                 garage.Place(options.ride - 1, { options.x, world.GroundHeight(options.x, options.z), options.z },
@@ -384,6 +391,16 @@ void Game::Run()
             const int last = horde.Count() - 1;
             if (i < 2) horde.Damage(last, 1.0e6f);
             else if (i < 4) horde.Damage(last, 1.0f);
+        }
+        const int bears = std::abs(options.bears); // (сөрөг: үхэх хөдөлгөөний туршилт)
+        for (int i = 0; i < bears; ++i)
+        {
+            const float angle = yaw + ((float)i - 0.5f * (float)(bears - 1)) * 0.3f;
+            const Vector3 origin = player.Position();
+            Vector3 position = { origin.x + std::sin(angle) * 14.0f, 0.0f, origin.z + std::cos(angle) * 14.0f };
+            position.y = world.GroundHeight(position.x, position.z);
+            horde.SpawnBear(position, params);
+            if (options.bears < 0) horde.Damage(horde.Count() - 1, 1.0e6f);
         }
         for (int i = 0; i < 6 && options.zombies > 0 && options.weapon == 0; ++i)
         {
@@ -481,6 +498,10 @@ void Game::Run()
         {
             CloseChat(); // (тоглоомын цэс нээхгүй)
         }
+        else if (endDialog.open && state == GameState::Map && (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_BACK)))
+        {
+            endDialog.open = false;
+        }
         else if (InKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_BACK))
         {
             if (state == GameState::Map && !paused && Account::Back())
@@ -563,6 +584,29 @@ void Game::Run()
                     InSetMuted(true);
                     UpdateMission(dt);
                 }
+                break;
+            }
+            if (InLayoutEditing())
+            {
+                // Утасны товч байрлуулах цэс: ганцаараа тоглож байвал зогсоно, хамтын тоглолтод ертөнц хөдөлсөөр
+                if (net.Connected())
+                {
+                    InSetMuted(true);
+                    UpdateMission(dt);
+                }
+                break;
+            }
+            if (InLayoutTakeSaved())
+            {
+                progress.touchLayout = InLayoutText();
+                Save();
+                SetNotice("Товчнуудын байрлал хадгалагдлаа", 2.0f);
+            }
+            if (UpdateSeatChoice())
+            {
+                // Суудал сонгох цонх: ертөнц хөдөлсөөр, энэ тоглогчийн оролтгүй
+                InSetMuted(true);
+                UpdateMission(dt);
                 break;
             }
             if (UpdateChat(dt))
@@ -674,6 +718,12 @@ void Game::HandleSettingsInput()
 
 void Game::UpdateMap()
 {
+    if (endDialog.open)
+    {
+        UpdateEndDialog(); // (газрын зургийг хаана)
+        return;
+    }
+    if (UpdateVersionCheck()) return;
     // Туршилт (--campaign --api ...): нэвтэрсэн бол сонгосон аймгийг эхлүүлэх хүсэлт (эрх нээх, төлөх цонх)
     static bool accountTestSent = false;
     static double accountTestEnter = 0.0;
@@ -1156,6 +1206,7 @@ void Game::StartMission(int index, StageSave* stageOverride)
         mission.SetQuota(options.quotaSmall, std::max(0, options.quotaBig)); // туршилт
     }
     mission.Start(index, params, world, stageSave);
+    SpawnBears();
     navigator.Clear();
     SetMapNavigator(&navigator);
     if (options.hasWaypoint) navigator.SetTarget(world, player.Position(), { options.waypointX, options.waypointZ });
@@ -1169,6 +1220,71 @@ void Game::StartMission(int index, StageSave* stageOverride)
         TraceLog(LOG_INFO, "STEP: host_start province %d (%s), room code %s", index + 1,
                  Account::RoomPvp() ? "open for battles" : "friends only", Account::RoomCode().c_str());
     }
+}
+
+void Game::SpawnBears()
+{
+    if (horde.IsPuppet()) return;
+    const int kBears = 50;
+    const int townBears = kBears / 10;
+    const float half = world.HalfSize() - 60.0f;
+    const Vector3 start = player.Position();
+    auto random = [](float low, float high) { return low + (high - low) * (float)GetRandomValue(0, 10000) / 10000.0f; };
+    // Суурин газар: байшинтай 40 м нүднүүд (хотын өгөгдөлтэй аймаг), эс бөгөөс зохиомол аймгийн төвийн гудамжнууд
+    const float kCell = 40.0f;
+    auto key = [&](float x, float z) { return ((long long)std::floor(x / kCell) << 32) ^ (long long)(unsigned)(int)std::floor(z / kCell); };
+    std::unordered_map<long long, Vector2> built;
+    if (world.CityActive())
+    {
+        for (const CityBuilding& building : CurrentCity().buildings)
+        {
+            if (!building.outline.empty()) built.emplace(key(building.outline[0].x, building.outline[0].y), building.outline[0]);
+        }
+    }
+    std::vector<Vector2> spots;
+    for (const auto& entry : built) spots.push_back(entry.second);
+    auto settled = [&](float x, float z, int ring) {
+        if (built.empty()) return InTown(x, z);
+        for (int dz = -ring; dz <= ring; ++dz)
+        {
+            for (int dx = -ring; dx <= ring; ++dx)
+            {
+                if (built.count(key(x + (float)dx * kCell, z + (float)dz * kCell))) return true;
+            }
+        }
+        return false;
+    };
+    int placed = 0;
+    for (int attempt = 0; attempt < 8000 && placed < kBears; ++attempt)
+    {
+        const bool town = placed < townBears;
+        float x = random(-half, half), z = random(-half, half);
+        if (town)
+        {
+            if (spots.empty())
+            {
+                x = random(kTownStreets[0], kTownStreets[4]);
+                z = random(kTownRows[0], kTownRows[4]);
+            }
+            else
+            {
+                // Санамсаргүй байшингийн дэргэд (гудамж, хашаанд)
+                const Vector2 near = spots[(size_t)GetRandomValue(0, (int)spots.size() - 1)];
+                const float angle = random(0.0f, 2.0f * PI), r = random(10.0f, 30.0f);
+                x = near.x + std::sin(angle) * r;
+                z = near.y + std::cos(angle) * r;
+            }
+        }
+        else if (settled(x, z, 2)) continue; // хээр тал: байшингаас 80 м-ээс хол
+        if (std::fabs(x) > half || std::fabs(z) > half) continue;
+        if (std::hypot(x - start.x, z - start.z) < 150.0f) continue; // заставын дэргэд биш
+        if (world.WaterDepth(x, z) > 0.1f || world.InteriorAt(x, z) >= 0) continue;
+        const float ground = world.GroundHeight(x, z);
+        if (world.SurfaceHeightAt(x, z, ground + 3.0f) > ground + 0.3f) continue; // байшин, саад дээр биш
+        horde.SpawnBear({ x, ground, z }, params);
+        ++placed;
+    }
+    TraceLog(LOG_INFO, "BEARS: %d placed (%d in settlements)", placed, std::min(placed, townBears));
 }
 
 void Game::ResetSquad(int recruits)
@@ -1842,6 +1958,45 @@ void Game::LeaveGunnerSeat()
     garage.SetEscortInput(0.0f, 0.0f);
 }
 
+float Game::SteerClear(const Vehicle& vehicle, float wanted, bool& blocked)
+{
+    // Хурдтай явах тусам хол харна. Зүг бүрт 1.6 м өндрөөс (газрын хотгор, товгорыг дагаж) саад, 6 / 12 м-т гүн ус шалгана.
+    const float look = std::clamp(7.0f + std::fabs(vehicle.speed) * 0.9f, 9.0f, 24.0f);
+    const Vector3 from = { vehicle.position.x, world.GroundHeight(vehicle.position.x, vehicle.position.z) + 1.6f, vehicle.position.z };
+    auto clear = [&](float yaw) {
+        const float sx = std::sin(yaw), cz = std::cos(yaw);
+        for (float side : { -1.1f, 1.1f }) // машины хоёр хажуу
+        {
+            const Vector3 start = { from.x + cz * side, from.y, from.z - sx * side };
+            const Vector3 end = { start.x + sx * look, world.GroundHeight(start.x + sx * look, start.z + cz * look) + 1.6f, start.z + cz * look };
+            const Vector3 dir = Vector3Normalize(Vector3Subtract(end, start));
+            if (world.ClipDistance(start, dir, look) < look - 0.5f) return false;
+        }
+        for (float ahead : { 6.0f, 12.0f })
+        {
+            if (world.WaterDepth(from.x + sx * ahead, from.z + cz * ahead) > 0.9f) return false;
+        }
+        return true;
+    };
+    blocked = false;
+    if (clear(wanted)) return wanted;
+    // Өмнө нь тойрсон талаа түрүүлж оролдоно (баруун зүүн хооронд савлахгүй)
+    for (int step = 1; step <= 6; ++step)
+    {
+        for (float sign : { armorAvoid, -armorAvoid })
+        {
+            const float yaw = wanted + sign * 0.3f * (float)step;
+            if (clear(yaw))
+            {
+                armorAvoid = sign;
+                return yaw;
+            }
+        }
+    }
+    blocked = true;
+    return wanted;
+}
+
 void Game::DriveForGunner(float dt)
 {
     const Vehicle& vehicle = garage.At(gunnerVehicle);
@@ -1859,14 +2014,100 @@ void Game::DriveForGunner(float dt)
             goal = marker;
         }
     }
+    // Хуягт машин: зомбинууд байвал хэзээ ч зогсохгүй. Хамгийн олон зомбитой бөөгнөрлийг сонгож урдаас нь давшина
+    // (зомби урд талд: пулемётын ±kArmorTraverse хүрээнд), дундуур нь гарч цааш явна, дараа нь эргэж ирнэ.
+    // Аварга зомби дунд байвал хажуугаар нь өнгөрнө (мөргөхөд машин эвдэрнэ). Зомбигүй бол даалгаврын тэмдэг рүү.
+    bool hunting = false;
+    if (vehicle.type == VehicleType::Armored)
+    {
+        armorThink -= dt;
+        if (armorThink <= 0.0f)
+        {
+            armorThink = 0.3f;
+            // 12 м нүдээр бөөгнөрлийг тоолно: олон, ойр, урд талдаа байх тусам сайн
+            struct Cell { int count = 0; bool boss = false; Vector3 sum = { 0.0f, 0.0f, 0.0f }; };
+            std::unordered_map<long long, Cell> cells;
+            for (int i = 0; i < horde.Count(); ++i)
+            {
+                const Zombie& zombie = horde.At(i);
+                if (!zombie.IsAlive() || zombie.IsBear()) continue;
+                const Vector3 p = zombie.mover.position;
+                if (HorizontalDistance(p, vehicle.position) > 140.0f) continue;
+                const long long key = ((long long)std::floor(p.x / 12.0f) << 32) ^ (long long)(unsigned)(int)std::floor(p.z / 12.0f);
+                Cell& cell = cells[key];
+                ++cell.count;
+                cell.boss = cell.boss || zombie.boss;
+                cell.sum = Vector3Add(cell.sum, p);
+            }
+            float bestScore = 0.0f;
+            armorHasTarget = false;
+            for (const auto& entry : cells)
+            {
+                const Cell& cell = entry.second;
+                const Vector3 center = Vector3Scale(cell.sum, 1.0f / (float)cell.count);
+                const float d = HorizontalDistance(center, vehicle.position);
+                const float off = std::fabs(std::remainder(std::atan2(center.x - vehicle.position.x, center.z - vehicle.position.z) -
+                                                           vehicle.heading, 2.0f * PI));
+                float score = (float)cell.count / (1.0f + d / 35.0f) * (off < kArmorTraverse ? 1.5f : 1.0f);
+                // Одоогийн байгаа ойр бол түүнийгээ барина (байнга солихгүй)
+                if (HorizontalDistance(center, armorTarget) < 15.0f) score *= 1.4f;
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    armorTarget = center;
+                    armorBoss = cell.boss;
+                    armorHasTarget = true;
+                }
+            }
+        }
+        if (armorHasTarget)
+        {
+            hunting = true;
+            const float d = HorizontalDistance(armorTarget, vehicle.position);
+            const float off = std::remainder(std::atan2(armorTarget.x - vehicle.position.x, armorTarget.z - vehicle.position.z) - vehicle.heading,
+                                             2.0f * PI);
+            if (armorPass)
+            {
+                // Дундуур нь гарсан: шулуун цааш, хангалттай холдвол эргэж ирнэ
+                if (d > 32.0f) armorPass = false;
+                goal = { vehicle.position.x + std::sin(vehicle.heading) * 20.0f, vehicle.position.y,
+                         vehicle.position.z + std::cos(vehicle.heading) * 20.0f };
+            }
+            else
+            {
+                if (d < 6.0f || (d < 16.0f && std::fabs(off) > 1.6f)) armorPass = true;
+                goal = armorTarget;
+                if (armorBoss)
+                {
+                    // Аварга: 9 м хажуугаар нь өнгөрнө
+                    const float ax = armorTarget.x - vehicle.position.x, az = armorTarget.z - vehicle.position.z;
+                    const float length = std::max(0.1f, std::sqrt(ax * ax + az * az));
+                    goal = { armorTarget.x + az / length * 9.0f, armorTarget.y, armorTarget.z - ax / length * 9.0f };
+                }
+            }
+        }
+        else armorPass = false;
+    }
+    const float arrive = 18.0f;
     const float dx = goal.x - vehicle.position.x, dz = goal.z - vehicle.position.z;
     const float distance = std::sqrt(dx * dx + dz * dz);
-    const float turn = std::remainder(std::atan2(dx, dz) - vehicle.heading, 2.0f * PI);
+    bool blocked = false;
+    const float wanted = distance > 1.0f ? SteerClear(vehicle, std::atan2(dx, dz), blocked) : vehicle.heading;
+    const float turn = std::remainder(wanted - vehicle.heading, 2.0f * PI);
     float throttle = 0.0f, steer = std::clamp(-turn * 2.5f, -1.0f, 1.0f);
-    if (distance > 18.0f) throttle = distance > 40.0f ? 0.8f : 0.45f;
+    if (hunting)
+    {
+        // Хол бол бүтэн хурд, ойртоход буудагч онох хурдтай, сүүлийн 15 м-т мөргөнө; эргэлтэнд хурдаа хасна (зогсохгүй)
+        const float d = HorizontalDistance(armorTarget, vehicle.position);
+        throttle = armorPass ? 0.8f : d > 45.0f ? 1.0f : d > 15.0f ? 0.65f : armorBoss ? 0.6f : 1.0f;
+        if (std::fabs(turn) > 0.9f && vehicle.speed > 8.0f) throttle = 0.15f;
+        else if (std::fabs(turn) > 0.5f && vehicle.speed > 13.0f) throttle = 0.3f;
+    }
+    else if (distance > arrive) throttle = distance > 40.0f ? 0.8f : 0.45f;
     else if (vehicle.speed > 1.0f) throttle = -1.0f; // хүрлээ: зогсоно
     else steer = 0.0f;
-    if (std::fabs(turn) > 1.2f && vehicle.speed > 5.0f) throttle = 0.0f;
+    if (!hunting && std::fabs(turn) > 1.2f && vehicle.speed > 5.0f) throttle = 0.0f;
+    if (blocked && throttle > 0.0f && vehicle.speed > 4.0f) throttle = -0.6f; // урд бүх зүг хаалттай: тоормос
 
     // Гацвал (хана, мод) хэсэг ухарч, эсрэг тийш эргэнэ.
     driverStuck = throttle > 0.0f && std::fabs(vehicle.speed) < 1.0f ? driverStuck + dt : 0.0f;
@@ -1934,6 +2175,14 @@ void Game::UpdateShooting()
     }
 
     player.AimAtPoint(CrosshairTarget());
+    if (gunnerVehicle >= 0 && garage.At(gunnerVehicle).type == VehicleType::Armored)
+    {
+        // Хуягт машины пулемёт урдаасаа ±kArmorTraverse-ээс цааш эргэхгүй: тийш буудахгүй
+        const Vehicle& vehicle = garage.At(gunnerVehicle);
+        const Vector3 target = CrosshairTarget();
+        const float yaw = std::atan2(target.x - vehicle.position.x, target.z - vehicle.position.z);
+        if (std::fabs(std::remainder(yaw - vehicle.heading, 2.0f * PI)) > kArmorTraverse) return;
+    }
     if (!arsenal.TryUse())
     {
         return;
@@ -1969,6 +2218,8 @@ void Game::UpdateShooting()
 
 Vector3 Game::EffectMuzzle() const
 {
+    // Хуягт машины пулемётод: сумны мөр пулемётын амснаас
+    if (gunnerVehicle >= 0 && garage.At(gunnerVehicle).type == VehicleType::Armored) return garage.TurretMuzzle(gunnerVehicle);
     // 1-р этгээдийн үед сумны мөр, амны гал дэлгэц дээрх бууны амнаас гарна.
     return camera.IsFirstPerson() ? ViewModelMuzzle(camera.Get(), player.Held(), camera.AimBlend()) : player.MuzzlePosition();
 }
@@ -2261,6 +2512,13 @@ void Game::SpawnVehicles()
         if (!parked) place(VehicleType::Helicopter, post.x + 40.0f, post.y + 30.0f, 0.0f);
     }
 
+    // Хуягт машин (дээврийн пулемёттой): заставын дэргэд
+    place(VehicleType::Armored, -34.0f, 36.0f, 90.0f);
+    if (garage.Count() > 0 && garage.At(garage.Count() - 1).type == VehicleType::Armored)
+    {
+        TraceLog(LOG_INFO, "VEHICLES: armored at (%.0f, %.0f)", garage.At(garage.Count() - 1).position.x, garage.At(garage.Count() - 1).position.z);
+    }
+
     // Талбараар тархсан нэмэлт унаа: суурин, шатахуун түгээх газар, цэргийн пост, малчдын отор
     place(VehicleType::Trike, 37.0f, -8.6f, -90.0f);
     place(VehicleType::Jeep, -40.0f, -13.0f, 0.0f);
@@ -2438,7 +2696,8 @@ void Game::UpdateSounds(float dt, float throttle)
         {
         case VehicleType::Motorcycle: return EngineSound::Moto;
         case VehicleType::Trike: return EngineSound::Trike;
-        case VehicleType::Truck: return EngineSound::Truck;
+        case VehicleType::Truck:
+        case VehicleType::Armored: return EngineSound::Truck;
         default: return EngineSound::Car;
         }
     };
@@ -2710,6 +2969,10 @@ void Game::UpdateVehicles(float dt)
                 garage.HelicopterSeat(heliPassenger, 2, doorFacing);
                 camera.SetView(doorFacing, 0.6f); // хаалганаас гадагш, доош газар луу
                 SetNotice("Нисдэг тэргэнд буудагчаар суулаа — нисгэгчийг дагана", 3.0f);
+            }
+            else if (target.vehicle >= 0 && garage.At(target.vehicle).type == VehicleType::Armored && !coopGuest)
+            {
+                seatChoice = target.vehicle; // жолооч уу, буудагч уу (UpdateSeatChoice)
             }
             else if (target.vehicle >= 0)
             {
@@ -3027,9 +3290,24 @@ void Game::UpdateVehicles(float dt)
         }
         else
         {
-            const RideStyle style = SpecFor(vehicle.type).enclosed ? RideStyle::Hidden
+            const RideStyle style = vehicle.type == VehicleType::Armored ? RideStyle::Stand // (пулемётын ард зогсоно)
+                                  : SpecFor(vehicle.type).enclosed ? RideStyle::Hidden
                                   : vehicle.type == VehicleType::Horse ? RideStyle::Saddle : RideStyle::Bike;
+            if (vehicle.type == VehicleType::Armored)
+            {
+                // Пулемёт камерын харсан зүгт (загалмайн цэг рүү хошуугаа өргөнө / доошлуулна); буудагч ард нь
+                const Vector3 muzzle = garage.TurretMuzzle(gunnerVehicle);
+                const Vector3 target = CrosshairTarget();
+                const float flat = std::max(0.5f, HorizontalDistance(muzzle, target));
+                garage.AimTurret(gunnerVehicle, std::atan2(target.x - muzzle.x, target.z - muzzle.z),
+                                 std::atan2(target.y - muzzle.y, flat), player.Recoil() > 0.9f);
+            }
             player.Ride(dt, vehicle.position, garage.SeatWorld(gunnerVehicle, true), vehicle.heading, style);
+            if (vehicle.type == VehicleType::Armored)
+            {
+                player.SetFacing(garage.At(gunnerVehicle).turretYaw);
+                player.SetGrips(garage.TurretGrip(gunnerVehicle, 0), garage.TurretGrip(gunnerVehicle, 1));
+            }
         }
     }
     else
@@ -3243,6 +3521,7 @@ void Game::HelicopterCrashed(int index)
 void Game::UpdateTeamRiding(float dt)
 {
     std::vector<Soldier>& all = squad.All();
+    for (Soldier& soldier : all) soldier.turret = false; // (хуягт машины буудагчийг доор дахин тавина)
     if (options.heliRoof)
     {
         // Туршилт: багийнхны байдал (олс руу явж, авирч, сууж байгаа эсэх)
@@ -3311,6 +3590,16 @@ void Game::UpdateTeamRiding(float dt)
         teamVehicle = -1;
         const Vehicle& vehicle = garage.At(gunnerVehicle);
         Soldier& driver = all[(size_t)carDriver];
+        if (driver.riding != gunnerVehicle &&
+            (HorizontalDistance(driver.mover.position, vehicle.position) > SpecFor(vehicle.type).radius + 1.6f || driver.climbTime >= 0.0f))
+        {
+            // (хуягт машин: буудагч болсон тоглогчийн жолооч эхлээд машины дэргэд гүйж очно; машин хүлээнэ)
+            driver.boarding = true;
+            driver.boardPoint = vehicle.position;
+            garage.SetEscort(gunnerVehicle);
+            garage.SetEscortInput(0.0f, 0.0f);
+            return;
+        }
         driver.riding = gunnerVehicle;
         driver.boarding = false;
         driver.mover.position = vehicle.position;
@@ -3336,7 +3625,9 @@ void Game::UpdateTeamRiding(float dt)
         }
         if (carGunner < 0)
         {
-            float best = 15.0f;
+            // (хуягт машины пулемётод холоос ч гүйж ирнэ: зөвхөн тэнд буудагч хэрэгтэй)
+            const bool armored = garage.At(driven).type == VehicleType::Armored;
+            float best = armored ? 80.0f : 15.0f;
             for (size_t i = 0; i < all.size(); ++i)
             {
                 const Soldier& soldier = all[i];
@@ -3355,7 +3646,7 @@ void Game::UpdateTeamRiding(float dt)
             const Vehicle& vehicle = garage.At(driven);
             Soldier& gunner = all[(size_t)carGunner];
             const float distance = HorizontalDistance(gunner.mover.position, vehicle.position);
-            if (distance > 30.0f)
+            if (distance > (vehicle.type == VehicleType::Armored ? 90.0f : 30.0f))
             {
                 gunner.boarding = false;
                 carGunner = -1;
@@ -3383,9 +3674,30 @@ void Game::UpdateTeamRiding(float dt)
             gunner.seatHeading = vehicle.heading;
             gunner.seat = garage.SeatWorld(driven, true);
             gunner.hasRein = false;
-            gunner.seatStyle = SpecFor(vehicle.type).enclosed ? 5
+            gunner.seatStyle = vehicle.type == VehicleType::Armored ? 6 // пулемётын ард зогсоно (харагдана)
+                             : SpecFor(vehicle.type).enclosed ? 5
                              : vehicle.type == VehicleType::Horse ? 2
                              : vehicle.type == VehicleType::Trike ? 4 : 1;
+            gunner.turret = vehicle.type == VehicleType::Armored;
+            if (gunner.turret)
+            {
+                // Хамгийн ойрын зомби руу хошуугаа чиглүүлнэ (буудагч ард нь пулемётын зүгт)
+                float pitch = 0.0f;
+                const Vector3 muzzle = garage.TurretMuzzle(driven);
+                const int zombie = horde.Nearest(muzzle, 160.0f);
+                if (zombie >= 0)
+                {
+                    const Vector3 chest = horde.At(zombie).Chest();
+                    pitch = std::atan2(chest.y - muzzle.y, std::max(0.5f, HorizontalDistance(muzzle, chest)));
+                }
+                garage.AimTurret(driven, gunner.mover.facing, pitch, gunner.recoil > 0.9f);
+                gunner.turretMuzzle = garage.TurretMuzzle(driven);
+                gunner.turretHeading = vehicle.heading;
+                gunner.seatHeading = garage.At(driven).turretYaw;
+                gunner.seat = garage.SeatWorld(driven, true);
+                gunner.turretGrips[0] = garage.TurretGrip(driven, 0);
+                gunner.turretGrips[1] = garage.TurretGrip(driven, 1);
+            }
         }
     }
     else
@@ -3870,6 +4182,7 @@ void Game::UpdateMission(float dt)
         case VehicleType::Suv: height = 2.2f; break;
         case VehicleType::Horse: height = 2.4f; break;
         case VehicleType::Helicopter: height = 4.6f; break;
+        case VehicleType::Armored: height = 3.2f; break;
         default: height = 1.9f; break;
         }
         cameraFocus = vehicle.position;
@@ -3886,6 +4199,13 @@ void Game::UpdateMission(float dt)
         const float off = std::remainder(camera.Yaw() - doorFacing, 2.0f * PI);
         if (std::fabs(off) > 1.5f) camera.SetView(doorFacing + std::clamp(off, -1.5f, 1.5f), camera.Pitch());
     }
+    if (gunnerVehicle >= 0 && garage.At(gunnerVehicle).type == VehicleType::Armored)
+    {
+        // Хуягт машины пулемётод: камер (онилгоо) пулемётын эргэх хязгаараас (урдаасаа ±kArmorTraverse) гарахгүй
+        const float heading = garage.At(gunnerVehicle).heading;
+        const float off = std::remainder(camera.Yaw() - heading, 2.0f * PI);
+        if (std::fabs(off) > kArmorTraverse) camera.SetView(heading + std::clamp(off, -kArmorTraverse, kArmorTraverse), camera.Pitch());
+    }
     camera.SetRiding(garage.IsDriving());
     camera.Update(dt, config, world, cameraFocus, aiming, cameraExtra, scoped, cameraDrop);
     if (aiming)
@@ -3894,7 +4214,7 @@ void Game::UpdateMission(float dt)
     }
 
     // Нөгөө тоглогчийн нисдэг тэргэнд суусан: хаалганы хүнд пулемёт (хязгааргүй сум) — газар луу буудна
-    arsenal.SetMounted(heliPassenger >= 0);
+    arsenal.SetMounted(heliPassenger >= 0 || (gunnerVehicle >= 0 && garage.At(gunnerVehicle).type == VehicleType::Armored));
     arsenal.Update(dt);
     player.SetReload(arsenal.ReloadProgress());
     if (!enclosed)
@@ -4050,7 +4370,14 @@ void Game::UpdateMission(float dt)
             else if (battleActive)
             {
                 LoseBattleAsHost(); // (state = Lost)
+                OpenEndDialog("ТУЛААНД ЯЛАГДЛАА", "Таны 3 дайчин бүгд унав.", true);
                 return;
+            }
+            if (remoteActive)
+            {
+                // Хамтын тоглолт: зочинд мэдэгдэнэ (эс бөгөөс тэр юу болсныг мэдэлгүй газрын зураг руу шидэгддэг байв)
+                net.SendMissionLost();
+                OpenEndDialog("БАГ ЯЛАГДЛАА", "Хамтын тоглолт дууслаа: таны баг бүгд унав.", false);
             }
             state = GameState::Lost;
             return;
@@ -4414,7 +4741,9 @@ void Game::RenderShadows() const
     garage.Draw(center, radius * 1.4f, &environment.DepthMaterial(), true);
     SetPropDepthMaterial(&environment.DepthMaterial()); // хүмүүсийн барьсан бууны загвар
     squad.Draw(center, false);
+    SetBearMaterial(&environment.DepthMaterial(), true);
     horde.Draw(view.position, 12.0f, false); // зомби олон тул зөвхөн хамгийн ойрынх нь сүүдэр тусгана
+    SetBearMaterial(nullptr);
     if (player.IsAlive()) player.Draw(config, false); // 1-р этгээдийн үед ч өөрийн сүүдэр харагдана
     barrels.Draw(center);
     if (remoteActive && !coopGuest) DrawRemoteFigure(guestFigure, TeamMemberLook(guestFigure.member, guestFigure.skin));
@@ -4460,6 +4789,7 @@ void Game::DrawMissionScene() const
     }
     {
         PROFILE_SCOPE("draw zombies");
+        SetBearMaterial(&environment.PropMaterial());
         horde.Draw(view.position, config.characterDrawDistance, showDebug);
     }
     if (cinematic || (!camera.IsScoped() && !camera.IsFirstPerson()))
@@ -4819,6 +5149,7 @@ void Game::DrawMission() const
     navigator.DrawHud(player.Position(), camera.Yaw());
     DrawCoopOverlay();
     DrawChat();
+    DrawSeatChoice();
 
     if (journalOpen)
     {
@@ -5235,6 +5566,8 @@ void Game::Draw() const
         mapScreen.Draw(progress);
         DrawCoopMap();
         mapScreen.DrawConfirm(progress);
+        DrawUpdateBanner();
+        if (endDialog.open) DrawEndDialog();
         if (codeEntryOpen) DrawCodeEntry();
         if (characterSelectOpen) DrawCharacterSelect();
         Account::Draw();
@@ -5324,6 +5657,8 @@ void Game::UpdateRemoteFigure(RemoteFigure& figure, const Net::AvatarState& stat
     const bool wasAlive = figure.alive, wasDowned = (figure.flags & Net::kDowned) != 0;
     figure.flags = state.flags;
     figure.alive = (state.flags & Net::kAlive) != 0;
+    figure.health = std::max(0.0f, state.health);
+    figure.healthMax = std::max(figure.healthMax, figure.health);
     if (wasAlive && !figure.alive)
     {
         // Яг одоо үхэв: үхэх хөдөлгөөн (унасан байсан бол хэвтсэн хэвээр)
@@ -5434,7 +5769,16 @@ void Game::DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& base
     Vector3 seat = Vector3Add(figure.position, figure.seatOffset);
     float facing = figure.facing;
     float seatHeading = facing;
-    if (figure.alive && figure.vehicle >= 0 && figure.vehicle < garage.Count())
+    if (figure.alive && seatStyle > 0 && figure.seatVehicle >= 0 && figure.seatVehicle < garage.Count())
+    {
+        // Цэрэг: өөрийн унааны хуулбар дээрх суудал (хоцролтгүй)
+        const Vehicle& vehicle = garage.At(figure.seatVehicle);
+        seat = HumanoidLocalToWorld(vehicle.position, vehicle.heading, figure.seatLocal);
+        // (нисдэг тэрэгний хаалганы буудагч гадагш харж сууна: бие бүхэлдээ харах зүгт)
+        seatHeading = IsHelicopter(vehicle.type) ? figure.facing : vehicle.heading;
+        facing = seatHeading + std::clamp(std::remainder(figure.facing - seatHeading, 2.0f * PI), -2.1f, 2.1f);
+    }
+    else if (figure.alive && figure.vehicle >= 0 && figure.vehicle < garage.Count())
     {
         const Vehicle& vehicle = garage.At(figure.vehicle);
         seatStyle = SpecFor(vehicle.type).enclosed ? 3 : vehicle.type == VehicleType::Horse ? 2 : 1;
@@ -5445,10 +5789,28 @@ void Game::DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& base
             seatStyle = 1; // нисдэг тэрэгний буудагч: хажуугийн хаалганд харагдана
             seat = garage.HelicopterSeat(figure.vehicle, 2, seatHeading);
         }
+        if (vehicle.type == VehicleType::Armored && (figure.flags & Net::kPassenger)) seatStyle = 6; // пулемётын ард
         // Онилж буудаж байвал бие тэр зүг рүү (±120 градус), үгүй бол суудлын зүгт.
         const bool aiming = figure.aiming || figure.aimTimer > 0.0f;
         facing = aiming ? seatHeading + std::clamp(std::remainder(figure.facing - seatHeading, 2.0f * PI), -2.1f, 2.1f)
                         : seatHeading;
+    }
+    if (figure.alive && seatStyle == 6)
+    {
+        // Хуягт машины пулемётын ард зогсож, хоёр гараараа бариулаас нь барина (өөрийн буу харагдахгүй)
+        look.held = HeldItem::None;
+        const int gunVehicle = figure.seatVehicle >= 0 ? figure.seatVehicle : figure.vehicle;
+        const Vector3 feet = { seat.x, seat.y - 0.9f, seat.z };
+        float gunnerFacing = figure.facing;
+        Vector3 grips[2] = { feet, feet };
+        if (gunVehicle >= 0 && gunVehicle < garage.Count())
+        {
+            gunnerFacing = garage.At(gunVehicle).turretYaw;
+            grips[0] = garage.TurretGrip(gunVehicle, 0);
+            grips[1] = garage.TurretGrip(gunVehicle, 1);
+        }
+        DrawHumanoid(feet, gunnerFacing, 1.0f, MakeGunnerPose(feet, gunnerFacing, grips, (float)GetTime()), look);
+        return;
     }
     if (figure.alive && seatStyle > 0)
     {
@@ -5799,9 +6161,12 @@ void Game::UpdateNetwork(float dt)
             }
             remoteActive = true; // буудлагыг UpdateRemoteFigure тоолуураар харуулна
             {
-                // Зочны жолоодож буй унааг энд хөдөлгөнө (хост, түүний баг сууж чадахгүй).
+                // Зочны жолоодож буй унааг энд хөдөлгөнө (хост, түүний баг сууж чадахгүй). Зочин зорчигч / буудагч
+                // (хостын нисдэг тэрэг, AI жолоочтой унаа) бол унааг хөдөлгөхгүй: түүний төлөвт унааны байрлал байхгүй
+                // (0, 0, 0) тул хост нисдэг тэрэгнээсээ буумагц тэрэг эхлэх цэг рүү "үсэрч" алга болдог байв.
                 const int vehicle = event.avatar.vehicle;
-                const int next = vehicle >= 0 && vehicle < garage.Count() && vehicle != garage.Driven() ? vehicle : -1;
+                const bool drives = !(event.avatar.flags & Net::kPassenger);
+                const int next = drives && vehicle >= 0 && vehicle < garage.Count() && vehicle != garage.Driven() ? vehicle : -1;
                 if (guestVehicle >= 0 && guestVehicle != next) garage.ClearRemote(guestVehicle);
                 guestVehicle = next;
                 if (guestVehicle >= 0)
@@ -6010,6 +6375,15 @@ void Game::UpdateNetwork(float dt)
                 TraceLog(LOG_INFO, "COOP: guest now controls member %d (%.0f hp)", member, event.amount);
             }
             break;
+        case Net::Msg::MissionLost:
+            if (coopGuest)
+            {
+                TraceLog(LOG_INFO, "COOP: the host's team was defeated");
+                LeaveCoop();
+                if (state == GameState::Playing || state == GameState::Airstrike) ReturnToMap();
+                OpenEndDialog("ХОСТЫН БАГ ЯЛАГДЛАА", "Хамтын тоглолт дууслаа: хостын баг бүгд унав.", false);
+            }
+            break;
         case Net::Msg::Chat:
         {
             const std::string& who = coopGuest ? hostName : joinRequester;
@@ -6152,6 +6526,7 @@ void Game::UpdateNetwork(float dt)
                 LeaveCoop();
                 coopStatus = "Хост тоглолтоос гарлаа";
                 if (state == GameState::Playing) ReturnToMap();
+                OpenEndDialog("ХАМТЫН ТОГЛОЛТ ДУУСЛАА", "Хост тоглолтоос гарлаа.", false);
             }
             else if (remoteActive || joinRequestPending)
             {
@@ -6688,6 +7063,8 @@ void Game::UpdateBattle(float dt)
         LeaveCoop();
         ReturnToMap();
         coopStatus = lost ? "Тулаанд ялагдлаа" : "Тулааны үр дүн зөрсөн: хүчингүй боллоо";
+        OpenEndDialog(lost ? "ТУЛААНД ЯЛАГДЛАА" : "ТУЛААН ХҮЧИНГҮЙ БОЛЛОО",
+                      lost ? "Таны 3 дайчин бүгд унав." : "Хоёр талын үр дүн зөрсөн тул тулаан тоологдсонгүй.", true);
         return;
     }
     else if (result == Account::BattleResult::Void)
@@ -6700,6 +7077,7 @@ void Game::UpdateBattle(float dt)
         LeaveCoop();
         ReturnToMap();
         coopStatus = "Хост тоглолтоос гарлаа";
+        OpenEndDialog("ТОГЛОЛТ ДУУСЛАА", "Хост тоглолтоос гарлаа.", true);
         return;
     }
 
@@ -7025,16 +7403,35 @@ void Game::UpdateCoopMission(float dt)
             a.flags = (uint8_t)((s.alive ? Net::kAlive : 0) | (s.aiming ? Net::kAiming : 0) | (s.alive == 2 ? Net::kDowned : 0));
             a.shots = s.shots;
             a.shotEnd = s.shotEnd;
+            a.health = s.health;
             a.leaderSkin = (uint8_t)(s.guest ? progress.leaderSkin : snapshot.host.leaderSkin); // зочны баг: өөрийн дүр
             a.sentAt = snapshot.host.sentAt;
             UpdateRemoteFigure(hostSoldiers[i], a, dt, false);
             hostSoldiers[i].seatStyle = s.vehicle >= 0 ? s.seatStyle : 0;
             hostSoldiers[i].seatOffset = Vector3Subtract(s.seat, s.position);
+            if (s.vehicle < 0 || s.vehicle >= garage.Count())
+            {
+                hostSoldiers[i].seatVehicle = -1;
+            }
+            else
+            {
+                for (const Net::VehicleState& v : snapshot.vehicles)
+                {
+                    if ((int)v.index != s.vehicle) continue;
+                    // Суудлыг хостын тэр агшны унаанаас хамааруулж (орон нутгийн тэнхлэгт) хадгална
+                    const Vector3 d = Vector3Subtract(s.seat, v.position);
+                    const float c = std::cos(v.heading), sn = std::sin(v.heading);
+                    hostSoldiers[i].seatLocal = { d.x * c - d.z * sn, d.y, d.x * sn + d.z * c };
+                    hostSoldiers[i].seatVehicle = s.vehicle;
+                    break;
+                }
+                if (hostSoldiers[i].seatVehicle != s.vehicle) hostSoldiers[i].seatVehicle = -1; // (энэ snapshot-д унаа алга)
+            }
         }
         // Унаа: хост бүх унааг хөдөлгөнө, зөвхөн зочны өөрийн жолоодож буйг энд тооцно.
         for (const Net::VehicleState& v : snapshot.vehicles)
         {
-            if ((int)v.index == garage.Driven() || v.type > (uint8_t)VehicleType::Helicopter) continue;
+            if ((int)v.index == garage.Driven() || v.type >= (uint8_t)kVehicleTypeCount) continue;
             garage.MatchRemote(v.index, (VehicleType)v.type, v.position, v.heading); // (хоёр тал байрлуулахдаа зөрсөн бол)
             garage.SetRemote(v.index, v.position, v.heading, v.speed, v.steer, v.occupied != 0);
             garage.SyncHealth(v.index, v.health); // хост тооцсон (зочин зөвхөн өөрийн унааг гэмтээнэ)
@@ -7354,20 +7751,61 @@ void Game::DrawCoopOverlay() const
         Ui::TextBold(code, (int)chip.x + 22 + labelWidth, (int)chip.y + 4, 20, Ui::kInfo);
     }
 
-    // Нөгөө тоглогчийн нэр: толгой дээр
-    const Camera3D& view = camera.Get();
-    auto nameTag = [&](const RemoteFigure& figure, const std::string& name) {
-        const Vector3 head = { figure.position.x, figure.position.y + 2.25f, figure.position.z };
-        const Vector3 forward = Vector3Subtract(view.target, view.position);
-        if (Vector3DotProduct(Vector3Subtract(head, view.position), forward) <= 0.0f) return;
-        if (Vector3Distance(head, view.position) > 120.0f) return;
-        const Vector2 p = ViewWorldToScreen(head, view);
-        const int w = Ui::MeasureBold(name.c_str(), 15) + 20;
-        DrawRectangleRounded({ p.x - (float)w / 2.0f, p.y - 13.0f, (float)w, 24.0f }, 1.0f, 8, Fade({ 12, 18, 28, 255 }, 0.7f));
-        Ui::TextBold(name.c_str(), (int)p.x - w / 2 + 10, (int)p.y - 10, 15, Ui::kInfo);
-    };
-    if (remoteActive && !coopGuest) nameTag(guestFigure, joinRequester);
-    if (coopGuest && guestPlaced) nameTag(hostFigure, hostName.empty() ? std::string("Хост") : hostName);
+    // Тулаан: дайсны багийн дайчдын амь (хяналтын дэлгэцийн баруун талд, өөрийн багийн жагсаалтын доор). Нөгөө
+    // тоглогчийн нэрийг толгой дээр нь харуулахаа больсон.
+    if (battleActive && state == GameState::Playing)
+    {
+        struct Row
+        {
+            std::string name;
+            float health, healthMax;
+            bool alive;
+        };
+        std::vector<Row> rows;
+        if (!coopGuest)
+        {
+            if (remoteActive)
+            {
+                rows.push_back({ joinRequester.empty() ? std::string("Зочин") : joinRequester, guestHealth,
+                                 std::max(guestFigure.healthMax, guestHealth), guestFigure.alive });
+            }
+            for (const Soldier& soldier : squad.All())
+            {
+                if (!soldier.guestTeam || soldier.member < 0) continue;
+                rows.push_back({ TeamMemberName(soldier.member), soldier.alive ? soldier.health : 0.0f, soldier.maxHealth, soldier.alive });
+            }
+        }
+        else
+        {
+            rows.push_back({ hostName.empty() ? std::string("Хост") : hostName, hostFigure.health, hostFigure.healthMax,
+                             hostFigure.alive && !hostGone });
+            for (size_t i = 0; i < hostSoldiers.size() && i < hostSoldierSide.size(); ++i)
+            {
+                if (hostSoldierSide[i] != 1) continue; // хостын багийн үндсэн дайчид
+                const RemoteFigure& s = hostSoldiers[i];
+                rows.push_back({ TeamMemberName(s.member), s.alive ? s.health : 0.0f, s.healthMax, s.alive });
+            }
+        }
+        // Дэлгэцийн дээд голд, "ТУЛААН" мөрийн доор нэг эгнээ (утасны товчнууд баруун, зүүн талд байдаг)
+        const float cellW = 156.0f, gap = 8.0f, cellH = 40.0f;
+        const float total = cellW * (float)rows.size() + gap * (float)(rows.size() > 0 ? rows.size() - 1 : 0);
+        float x = ((float)width - total) * 0.5f;
+        const float y = 90.0f;
+        for (const Row& row : rows)
+        {
+            const Rectangle cell = { x, y, cellW, cellH };
+            DrawRectangleRounded(cell, 0.3f, 8, Fade({ 40, 10, 10, 255 }, 0.82f));
+            DrawRectangleRoundedLinesEx(cell, 0.3f, 8, 1.2f, Fade(Ui::kDanger, row.alive ? 0.8f : 0.3f));
+            const float ratio = row.alive && row.healthMax > 0.0f ? std::clamp(row.health / row.healthMax, 0.0f, 1.0f) : 0.0f;
+            Ui::Text(row.name.c_str(), (int)cell.x + 10, (int)cell.y + 5, 13, row.alive ? Ui::kText : Ui::kTextDim);
+            const char* value = row.alive ? TextFormat("%d", (int)std::lround(row.health)) : "унасан";
+            Ui::TextBold(value, (int)(cell.x + cell.width) - 10 - Ui::MeasureBold(value, 13), (int)cell.y + 5, 13,
+                         row.alive ? Ui::kDanger : Ui::kTextDim);
+            Ui::Bar({ cell.x + 10.0f, cell.y + 26.0f, cell.width - 20.0f, 6.0f }, ratio,
+                    ratio > 0.35f ? Ui::kDanger : Color{ 255, 150, 60, 255 });
+            x += cellW + gap;
+        }
+    }
 
     if (coopGuest && !player.IsAlive())
     {
@@ -7983,4 +8421,314 @@ void Game::DrawChat() const
         WebFieldPlace(kChatField, bar.x / w, bar.y / h, bar.width / w, bar.height / h, 4, -1, chatDraft.c_str());
     }
     WebFieldsEnd();
+}
+
+
+// ---------------------------------------------------------------- Хамтын тоглолт, тулаан дууссаны мэдээ
+
+void Game::OpenEndDialog(const std::string& title, const std::string& detail, bool battle)
+{
+    endDialog.open = true;
+    endDialog.battle = battle;
+    endDialog.title = title;
+    endDialog.detail = detail;
+    TraceLog(LOG_INFO, "COOP: end dialog \"%s\"", title.c_str());
+}
+
+bool Game::EndDialogHasBattle() const
+{
+    return Account::ServerShop(); // (нээлттэй өрөөний тулаан: данстай үед л)
+}
+
+bool Game::EndDialogHasCode() const
+{
+    return Account::ServerShop() || net.UsesRoomCodes();
+}
+
+Rectangle Game::EndDialogPanel() const
+{
+    const float width = 520.0f, height = 250.0f;
+    return { ((float)ViewWidth() - width) * 0.5f, ((float)ViewHeight() - height) * 0.5f, width, height };
+}
+
+Rectangle Game::EndDialogButton(int index) const
+{
+    // Байгаа товчнуудыг доод мөрөнд тэгш хуваана
+    const Rectangle panel = EndDialogPanel();
+    int count = 0, order = -1;
+    for (int i = 0; i < 3; ++i)
+    {
+        const bool shown = i == 0 || (i == 1 && EndDialogHasBattle()) || (i == 2 && EndDialogHasCode());
+        if (!shown) continue;
+        if (i == index) order = count;
+        ++count;
+    }
+    if (order < 0) return { 0.0f, 0.0f, 0.0f, 0.0f };
+    const float gap = 12.0f, margin = 24.0f;
+    const float width = (panel.width - 2.0f * margin - gap * (float)(count - 1)) / (float)count;
+    return { panel.x + margin + (float)order * (width + gap), panel.y + panel.height - 74.0f, width, 50.0f };
+}
+
+void Game::UpdateEndDialog()
+{
+    if (!InMousePressed(MOUSE_BUTTON_LEFT) && !InKeyPressed(KEY_ENTER)) return;
+    const Vector2 pointer = InPointer();
+    auto hit = [&](int i) { const Rectangle r = EndDialogButton(i); return r.width > 0.0f && CheckCollisionPointRec(pointer, r); };
+    if (InKeyPressed(KEY_ENTER) || hit(0))
+    {
+        endDialog.open = false; // газрын зураг
+        return;
+    }
+    if (hit(1))
+    {
+        endDialog.open = false;
+        if (Account::GoldAvailable() >= Account::RoomEntry())
+        {
+            coopStatus.clear();
+            Account::JoinRoom(); // сул өрөө олдтол хайна (UpdateCoopMap-ийн "ТУЛААН ХАЙХ"-тай ижил)
+        }
+        else
+        {
+            coopStatus = TextFormat("Тулаанд %d Gold хэрэгтэй (танд %d). Найзтайгаа кодоор үнэгүй тоглоорой",
+                                    Account::RoomEntry(), Account::GoldAvailable());
+        }
+        return;
+    }
+    if (hit(2))
+    {
+        endDialog.open = false;
+        OpenCodeEntry();
+    }
+}
+
+void Game::DrawEndDialog() const
+{
+    DrawRectangle(0, 0, ViewWidth(), ViewHeight(), { 0, 0, 0, 150 });
+    const Rectangle panel = EndDialogPanel();
+    const Color accent = endDialog.battle ? Ui::kDanger : Ui::kAccent;
+    Ui::PanelAccent(panel, accent, { 10, 13, 19, 245 });
+    const char* title = endDialog.title.c_str();
+    Ui::TextBold(title, (int)(panel.x + (panel.width - (float)Ui::MeasureBold(title, 26)) * 0.5f), (int)panel.y + 30, 26, accent);
+    const char* detail = endDialog.detail.c_str();
+    Ui::Text(detail, (int)(panel.x + (panel.width - (float)Ui::Measure(detail, 16)) * 0.5f), (int)panel.y + 78, 16, Ui::kText);
+    const char* hint = "Дараа нь юу хийх вэ?";
+    Ui::Text(hint, (int)(panel.x + (panel.width - (float)Ui::Measure(hint, 14)) * 0.5f), (int)panel.y + 112, 14, Ui::kTextDim);
+    static const char* const labels[3] = { "ГАЗРЫН ЗУРАГ", "ДАХИН ТУЛААН", "КОДООР ХАМТ" };
+    for (int i = 0; i < 3; ++i)
+    {
+        const Rectangle r = EndDialogButton(i);
+        if (r.width <= 0.0f) continue;
+        const bool primary = i == (endDialog.battle && EndDialogHasBattle() ? 1 : 0);
+        DrawRectangleRounded(r, 0.3f, 8, primary ? Fade(accent, 0.9f) : Color{ 255, 255, 255, 26 });
+        Ui::Outline(r, primary ? accent : Ui::kBorder, 1.5f, 10.0f);
+        Ui::TextBold(labels[i], (int)(r.x + (r.width - (float)Ui::MeasureBold(labels[i], 17)) * 0.5f), (int)(r.y + 15.0f), 17,
+                     primary ? Color{ 20, 16, 8, 255 } : Ui::kText);
+    }
+}
+
+
+// ---------------------------------------------------------------- Шинэ хувилбар (Windows, Android)
+
+namespace
+{
+    // Тоглоомын вэб сайт: татах файлууд download/ хавтаст (tools/build_installer.ps1, tools/build_android.ps1 бэлтгэнэ)
+    const char* const kDefaultSiteUrl = "https://play-zombie.apps.mn/";
+    // (туршилт: ZM_SITE_URL орчны хувьсагчаар өөр сайт)
+    std::string SiteUrl()
+    {
+        const char* custom = std::getenv("ZM_SITE_URL");
+        return custom && *custom ? std::string(custom) : std::string(kDefaultSiteUrl);
+    }
+#if defined(__ANDROID__)
+    const char* const kUpdatePlatform = "android";
+    const char* const kUpdateFile = "ZombieMongolia.apk";
+#else
+    const char* const kUpdatePlatform = "windows";
+    const char* const kUpdateFile = "ZombieMongolia_Setup.exe";
+#endif
+}
+
+bool Game::UpdateVersionCheck()
+{
+#if defined(__EMSCRIPTEN__)
+    return false; // (хөтөч: web/shell.html)
+#else
+    if (options.screenshotPath && !options.apiBase && !std::getenv("ZM_SITE_URL")) return false; // туршилт: сүлжээнд гарахгүй
+    if (!updateChecked)
+    {
+        updateChecked = true;
+        updateRequest = Online::Send("GET", SiteUrl() + "download/" + kUpdatePlatform + "-version.txt", "", "");
+    }
+    if (updateRequest >= 0)
+    {
+        int status = 0;
+        std::string body;
+        if (Online::Poll(updateRequest, status, body))
+        {
+            updateRequest = -1;
+            // Build-ийн цаг "YYYY-MM-DD HH:MM": мөрөөр харьцуулахад хугацааны дараалал
+            const size_t first = body.find_first_not_of(" \r\n\t"), last = body.find_last_not_of(" \r\n\t");
+            const std::string latest = first == std::string::npos ? std::string() : body.substr(first, last - first + 1);
+            updateAvailable = status == 200 && latest.size() == 16 && latest > std::string(BuildStamp());
+            TraceLog(LOG_INFO, "UPDATE: latest %s build \"%s\", this build %s%s", kUpdatePlatform, latest.c_str(), BuildStamp(),
+                     updateAvailable ? " (update available)" : "");
+        }
+    }
+    if (!updateAvailable || updateClosed || !InMousePressed(MOUSE_BUTTON_LEFT)) return false;
+    const Vector2 pointer = InPointer();
+    if (CheckCollisionPointRec(pointer, UpdateCloseRect()))
+    {
+        updateClosed = true;
+        return true;
+    }
+    if (CheckCollisionPointRec(pointer, UpdateButtonRect()))
+    {
+        Online::OpenUrl(SiteUrl() + "download/" + kUpdateFile); // хөтөч татаж авна (суулгагч / APK)
+        return true;
+    }
+    return CheckCollisionPointRec(pointer, UpdateBannerRect());
+#endif
+}
+
+Rectangle Game::UpdateBannerRect() const
+{
+    const float width = 470.0f;
+    return { ((float)ViewWidth() - width) * 0.5f, 10.0f, width, 52.0f };
+}
+
+Rectangle Game::UpdateButtonRect() const
+{
+    const Rectangle banner = UpdateBannerRect();
+    return { banner.x + banner.width - 160.0f, banner.y + 8.0f, 112.0f, 36.0f };
+}
+
+Rectangle Game::UpdateCloseRect() const
+{
+    const Rectangle banner = UpdateBannerRect();
+    return { banner.x + banner.width - 42.0f, banner.y + 10.0f, 32.0f, 32.0f };
+}
+
+void Game::DrawUpdateBanner() const
+{
+    if (!updateAvailable || updateClosed) return;
+    const Color green = { 112, 214, 132, 255 };
+    const Rectangle banner = UpdateBannerRect();
+    Ui::PanelAccent(banner, green, { 10, 13, 19, 242 });
+    Ui::TextBold("Шинэ хувилбар гарлаа", (int)banner.x + 16, (int)banner.y + 8, 16, green);
+    Ui::Text(InTouchMode() ? "Татаж аваад суулгана уу" : "Татаж аваад суулгана уу (хуучныг дарж суулгана)", (int)banner.x + 16,
+             (int)banner.y + 29, 12, Ui::kText);
+    const Rectangle button = UpdateButtonRect();
+    DrawRectangleRounded(button, 0.3f, 8, green);
+    Ui::TextBold("ТАТАХ", (int)(button.x + (button.width - (float)Ui::MeasureBold("ТАТАХ", 16)) * 0.5f), (int)button.y + 9, 16,
+                 { 8, 24, 12, 255 });
+    const Rectangle close = UpdateCloseRect();
+    DrawRectangleRounded(close, 0.3f, 6, { 255, 255, 255, 30 });
+    Ui::Text("x", (int)(close.x + (close.width - (float)Ui::Measure("x", 16)) * 0.5f), (int)close.y + 6, 16, Ui::kText);
+}
+
+
+// ---------------------------------------------------------------- Хуягт машин: суудал сонгох
+
+bool Game::UpdateSeatChoice()
+{
+    if (seatChoice < 0) return false;
+    const Vehicle& vehicle = seatChoice < garage.Count() ? garage.At(seatChoice) : garage.At(0);
+    if (seatChoice >= garage.Count() || vehicle.wrecked || vehicle.occupied || garage.IsDriving() || gunnerVehicle >= 0 ||
+        HorizontalDistance(player.Position(), vehicle.position) > SpecFor(vehicle.type).radius + 4.0f || !player.IsAlive())
+    {
+        seatChoice = -1;
+        return false;
+    }
+    if (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_BACK) || IsKeyPressed(KEY_F))
+    {
+        seatChoice = -1; // болих
+        return true;
+    }
+    if (options.screenshotPath && options.seat > 0)
+    {
+        ChooseSeat(options.seat == 1); // туршилт (--seat)
+        return true;
+    }
+    const bool tapped = InMousePressed(MOUSE_BUTTON_LEFT);
+    const Vector2 pointer = InPointer();
+    if (IsKeyPressed(KEY_ONE) || (tapped && CheckCollisionPointRec(pointer, SeatChoiceButton(0)))) ChooseSeat(true);
+    else if (IsKeyPressed(KEY_TWO) || (tapped && CheckCollisionPointRec(pointer, SeatChoiceButton(1)))) ChooseSeat(false);
+    return true;
+}
+
+void Game::ChooseSeat(bool driver)
+{
+    const int index = seatChoice;
+    seatChoice = -1;
+    std::vector<Soldier>& all = squad.All();
+    if (driver)
+    {
+        // Тоглогч жолоодно: ойрын багийн гишүүн дэргэд нь гүйж ирээд дээврийн пулемётод сууна (carGunner)
+        garage.ClearRemote(index);
+        garage.Mount(index);
+        SetNotice("ХУЯГТ МАШИН: та жолоодно — ойрын цэрэг пулемётод сууна", 3.0f);
+        return;
+    }
+    // Тоглогч буудагч: хамгийн ойрын багийн гишүүн жолоодож, ойрын зомбинууд руу явна
+    int best = -1;
+    float bestDistance = 80.0f;
+    for (size_t i = 0; i < all.size(); ++i)
+    {
+        const Soldier& soldier = all[i];
+        if (!soldier.alive || soldier.downed || soldier.member < 0 || soldier.guestTeam || soldier.holding || soldier.riding >= 0) continue;
+        const float d = HorizontalDistance(soldier.mover.position, garage.At(index).position);
+        if (d < bestDistance)
+        {
+            bestDistance = d;
+            best = (int)i;
+        }
+    }
+    if (best < 0)
+    {
+        SetNotice("Жолоодох цэрэг ойролцоо алга — жолоочоор сууна уу", 3.0f);
+        return;
+    }
+    TraceLog(LOG_INFO, "VEHICLES: armored %d, player is the gunner, member %d drives", index, all[(size_t)best].member);
+    garage.ClearRemote(index);
+    gunnerVehicle = index;
+    carDriver = best;
+    carGunner = -1;
+    driverStuck = driverReverse = 0.0f;
+    camera.SetView(garage.At(index).heading, 0.25f);
+    SetNotice(std::string("ХУЯГТ МАШИН: та пулемётод — ") + TeamMemberName(all[(size_t)best].member) +
+              " жолоодож ойрын зомби руу явна. Буух: F", 3.5f);
+}
+
+Rectangle Game::SeatChoiceButton(int index) const
+{
+    const float width = 240.0f, gap = 20.0f;
+    const float left = (float)ViewWidth() * 0.5f - width - gap * 0.5f;
+    return { left + (float)index * (width + gap), (float)ViewHeight() * 0.5f - 10.0f, width, 64.0f };
+}
+
+void Game::DrawSeatChoice() const
+{
+    if (seatChoice < 0) return;
+    const Rectangle first = SeatChoiceButton(0), second = SeatChoiceButton(1);
+    const Rectangle panel = { first.x - 24.0f, first.y - 70.0f, second.x + second.width - first.x + 48.0f, first.height + 110.0f };
+    Ui::PanelAccent(panel, Ui::kAccent, { 10, 13, 19, 240 });
+    const char* title = "ХУЯГТ МАШИН — хаана суух вэ?";
+    Ui::TextBold(title, (int)(panel.x + (panel.width - (float)Ui::MeasureBold(title, 20)) * 0.5f), (int)panel.y + 18, 20, Ui::kText);
+    static const char* const labels[2] = { "ЖОЛООЧ", "БУУДАГЧ" };
+    static const char* const notes[2] = { "AI цэрэг пулемётод сууна", "AI цэрэг жолоодож зомби руу явна" };
+    for (int i = 0; i < 2; ++i)
+    {
+        const Rectangle r = SeatChoiceButton(i);
+        DrawRectangleRounded(r, 0.25f, 8, i == 0 ? Color{ 255, 255, 255, 26 } : Fade(Ui::kAccent, 0.9f));
+        Ui::Outline(r, Ui::kAccent, 1.5f, 10.0f);
+        const Color ink = i == 0 ? Ui::kText : Color{ 20, 16, 8, 255 };
+        const char* label = InTouchMode() ? labels[i] : TextFormat("%d  %s", i + 1, labels[i]);
+        Ui::TextBold(label, (int)(r.x + (r.width - (float)Ui::MeasureBold(label, 20)) * 0.5f), (int)r.y + 10, 20, ink);
+        Ui::Text(notes[i], (int)(r.x + (r.width - (float)Ui::Measure(notes[i], 12)) * 0.5f), (int)r.y + 40, 12, ink);
+    }
+    if (!InTouchMode())
+    {
+        const char* hint = "1 / 2 — сонгох, F эсвэл Esc — болих";
+        Ui::Text(hint, (int)(panel.x + (panel.width - (float)Ui::Measure(hint, 13)) * 0.5f), (int)(panel.y + panel.height) - 22, 13, Ui::kTextDim);
+    }
 }

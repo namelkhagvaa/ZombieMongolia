@@ -66,6 +66,10 @@ int main(int argc, char** argv)
         {
             options.zombies = std::atoi(argv[++i]);
         }
+        else if (std::strcmp(argv[i], "--bears") == 0 && i + 1 < argc)
+        {
+            options.bears = std::atoi(argv[++i]);
+        }
         else if (std::strcmp(argv[i], "--soldiers") == 0 && i + 1 < argc)
         {
             options.soldiers = std::atoi(argv[++i]);
@@ -165,6 +169,10 @@ int main(int argc, char** argv)
         else if (std::strcmp(argv[i], "--coop") == 0)
         {
             options.coopTest = true;
+        }
+        else if (std::strcmp(argv[i], "--seat") == 0 && i + 1 < argc)
+        {
+            options.seat = std::atoi(argv[++i]);
         }
         else if (std::strcmp(argv[i], "--chat") == 0 && i + 1 < argc)
         {

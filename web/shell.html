@@ -94,6 +94,17 @@
                  color: rgb(34,24,6); font: inherit; font-weight: 700; }
   #install .close { flex: none; width: 32px; height: 32px; border: 0; border-radius: 8px; background: rgba(255,255,255,.12);
                     color: inherit; font-size: 15px; }
+  /* Шинэ хувилбар гарсан (сервер дээрх version.txt өөр): дээд мөрөнд "ШИНЭЧЛЭХ" */
+  #update { position: fixed; top: max(8px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 6;
+            display: none; align-items: center; gap: 10px; box-sizing: border-box; width: max-content; max-width: calc(100vw - 32px);
+            padding: 7px 7px 7px 14px; border-radius: 14px; background: rgba(10,13,19,.95); border: 1px solid rgba(112,214,132,.6);
+            box-shadow: 0 6px 24px rgba(0,0,0,.5); color: rgb(242,240,234); font-family: "ZmUi", "Segoe UI", Arial, sans-serif;
+            font-size: 14px; line-height: 1.25; }
+  #update b { display: block; color: rgb(112,214,132); font-size: 15px; }
+  #update .go { flex: none; height: 36px; padding: 0 14px; border: 0; border-radius: 10px; background: rgb(112,214,132);
+                color: rgb(8,24,12); font: inherit; font-weight: 700; }
+  #update .close { flex: none; width: 32px; height: 32px; border: 0; border-radius: 8px; background: rgba(255,255,255,.12);
+                   color: inherit; font-size: 15px; }
   #guide { position: fixed; inset: 0; z-index: 7; display: none; align-items: center; justify-content: center;
            background: rgba(0,0,0,.72); font-family: "ZmUi", "Segoe UI", Arial, sans-serif; }
   #guide .card { box-sizing: border-box; width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 24px); overflow-y: auto;
@@ -153,6 +164,11 @@
 <div id="error"><b>Тоглоом зогслоо</b><div id="errorText"></div><button onclick="location.reload()">Дахин ачаалах</button></div>
 <div id="debug"></div>
 <div id="rotate"><div class="icon"></div><div>Утсаа хэвтээ болгож эргүүлнэ үү</div><small id="rotateStatus"></small></div>
+<div id="update" class="zm-install">
+  <span><b>Шинэ хувилбар гарлаа</b>Шинэчлээд хамгийн сүүлийн хувилбараар тоглоорой</span>
+  <button class="go" id="updateGo">ШИНЭЧЛЭХ</button>
+  <button class="close" id="updateClose" aria-label="Хаах">✕</button>
+</div>
 <div id="install" class="zm-install">
   <img src="icon-192.png" alt="">
   <span><b>Апп болгож суулгах</b>Бүтэн дэлгэцээр, хаягийн мөргүй тоглоно</span>
@@ -317,7 +333,7 @@
   function updateInstall() {
     var show = canInstall();
     document.getElementById('startInstall').style.display = show ? 'flex' : 'none';
-    installEl.style.display = show && !installDismissed() ? 'flex' : 'none';
+    installEl.style.display = show && !installDismissed() && !updateShown ? 'flex' : 'none'; // (шинэчлэх мөр давуу)
     if (!show) guideEl.style.display = 'none';
   }
   function startInstall() {
@@ -401,6 +417,33 @@
   // Build бүрийн дугаар (tools/build_web.ps1 бичнэ): файлуудыг ?v=... -аар ачаалж, хөтөч хуучин .js-ийг
   // шинэ .wasm-тай хольж ачаалахаас сэргийлнэ (Safari кэшээс хуучин .js өгч "ASM_CONSTS" алдаа гарч байсан).
   var BUILD_ID = '{{{ BUILD_ID }}}';
+  // Шинэ хувилбар: сервер дээрх version.txt (tools/build_web.ps1 бичнэ) энэ хуудасны BUILD_ID-аас өөр бол дээд мөрөнд
+  // "ШИНЭЧЛЭХ" товч. 3 минут тутам, tab руу буцаж ирэх бүрд шалгана. Дарахад хуудсыг (кэшгүйгээр) дахин ачаална:
+  // хамтын тоглолтод байсан бол "ДАХИН ХОЛБОГДОХ"-оор буцна, өөрчлөгдөөгүй файлын багцууд дахин татагдахгүй.
+  var updateEl = document.getElementById('update');
+  var updateShown = false, updateClosed = false;
+  function checkForUpdate() {
+    if (updateShown || updateClosed || BUILD_ID.indexOf('{') >= 0 || location.protocol === 'file:') return;
+    fetch('version.txt?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (text) {
+      var latest = (text || '').trim();
+      if (!latest || latest === BUILD_ID || updateClosed) return;
+      updateShown = true;
+      updateEl.style.display = 'flex';
+      installEl.style.display = 'none';
+    }).catch(function () {});
+  }
+  document.getElementById('updateGo').addEventListener('click', function () {
+    // (index.html-ийг кэшээс биш серверээс: шинэ BUILD_ID-тай хуудас)
+    fetch(location.pathname, { cache: 'reload' }).catch(function () {}).then(function () { location.reload(); });
+  });
+  document.getElementById('updateClose').addEventListener('click', function () {
+    updateClosed = true; // (энэ удаад дахин гаргахгүй)
+    updateEl.style.display = 'none';
+    updateInstall();
+  });
+  setInterval(checkForUpdate, 3 * 60 * 1000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) checkForUpdate(); });
+  setTimeout(checkForUpdate, 20000);
   // Утас босоо байхад тоглоомыг эхлүүлэхгүй (файлууд татагдсаар байна): ачааллын хүнд ажил (WebGL, загварууд)
   // утас эргэх явцтай давхцаж дэлгэц харлаж, гацдаг байсан. Хэвтээ болж, эргэлт дууссаны дараа эхэлнэ.
   var portraitQuery = window.matchMedia && window.matchMedia('(pointer: coarse) and (orientation: portrait)');

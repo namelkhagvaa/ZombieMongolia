@@ -84,6 +84,8 @@ $manifest = '{ "id": ".", "name": "Zombie Mongolia", "short_name": "Zombie MN", 
             '{ "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }, ' +
             '{ "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" } ] }'
 [System.IO.File]::WriteAllText((Join-Path $site "manifest.json"), $manifest, (New-Object System.Text.UTF8Encoding $false))
+# Ажиллаж буй хуудсууд үүнийг шалгаж "ШИНЭЧЛЭХ" товч гаргана (web/shell.html checkForUpdate)
+[System.IO.File]::WriteAllText((Join-Path $site "version.txt"), $hash.ToLower(), (New-Object System.Text.UTF8Encoding $false))
 $size = (Get-ChildItem $site -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB
 Write-Host ("Done: {0} ({1:N0} MB)" -f $site, $size)
 

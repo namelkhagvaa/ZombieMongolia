@@ -71,7 +71,8 @@ namespace
         Fire,  // хулганы зүүн товч; хурууг чирэхэд камер мөн эргэнэ
         Aim,   // онилгоог асааж унтраана (хулганы баруун товч)
         Wheel, // газрын зураг томруулах / жижигрүүлэх
-        Menu   // ⚙ тохиргооны задрах цэсийг нээж хаана
+        Menu,  // ⚙ тохиргооны задрах цэсийг нээж хаана
+        Layout // товч байрлуулах цэсийг нээнэ
     };
 
     enum Glyph
@@ -123,6 +124,167 @@ namespace
     Vector2 stickCenter = { 150.0f, 0.0f };
     bool stickActive = false;
 
+    // ---- Тоглогчийн өөрөө байрлуулдаг товчнууд (явган үеийн)
+    enum LayoutItem
+    {
+        kLayoutStick,
+        kLayoutFire,
+        kLayoutAim,
+        kLayoutJump,
+        kLayoutCrouch,
+        kLayoutProne,
+        kLayoutReload,
+        kLayoutCount
+    };
+    const char* const kLayoutNames[kLayoutCount] = { "ХҮРД", "БУУДАХ", "ОНИЛОХ", "ҮСРЭХ", "СУУХ", "ХЭВТЭХ", "ЦЭНЭГЛЭХ" };
+    const float kLayoutRadius[kLayoutCount] = { kStickRadius, 74.0f, 46.0f, 50.0f, 44.0f, 40.0f, 42.0f };
+    // Хадгалсан байрлал: дэлгэцийн өргөн, өндөрт харьцуулсан төв (0..1); set = false бол анхных
+    Vector2 layoutAt[kLayoutCount] = {};
+    bool layoutSet[kLayoutCount] = {};
+    // Байрлуулах цэс: засаж буй хуулбар, чирж буй товч ба хуруу
+    bool layoutEditing = false;
+    bool layoutSaved = false;
+    Vector2 editAt[kLayoutCount] = {};
+    bool editSet[kLayoutCount] = {};
+    int dragItem = -1, dragId = -1;
+    Vector2 dragGrab = { 0.0f, 0.0f };
+    int prevIds[10] = {};
+    int prevCount = 0;
+
+    // Анхны байрлал (өмнөх тогтмол байрлалууд)
+    Vector2 DefaultCenter(int item, float w, float h)
+    {
+        switch (item)
+        {
+        case kLayoutStick: return { 176.0f, h - 202.0f };
+        case kLayoutFire: return { w - 180.0f, h - 262.0f };
+        case kLayoutAim: return { w - 66.0f, h - 410.0f };
+        case kLayoutJump: return { w - 74.0f, h - 122.0f };
+        case kLayoutCrouch: return { w - 192.0f, h - 80.0f };
+        case kLayoutProne: return { w - 300.0f, h - 62.0f };
+        default: return { w - 336.0f, h - 312.0f }; // цэнэглэх
+        }
+    }
+
+    Vector2 CenterOf(int item, const Vector2* at, const bool* set)
+    {
+        const float w = (float)ViewWidth(), h = (float)ViewHeight();
+        return set[item] ? Vector2{ at[item].x * w, at[item].y * h } : DefaultCenter(item, w, h);
+    }
+
+    Vector2 LayoutCenter(int item)
+    {
+        return CenterOf(item, layoutAt, layoutSet);
+    }
+
+    // Байрлуулах цэсийн дээд талын товчнууд: 0 хадгалах, 1 анхны байрлал, 2 болих
+    Rectangle LayoutButton(int index)
+    {
+        const float width = 190.0f, gap = 14.0f;
+        const float left = (float)ViewWidth() * 0.5f - (width * 3.0f + gap * 2.0f) * 0.5f;
+        return { left + (float)index * (width + gap), 18.0f, width, 52.0f };
+    }
+
+    void StartLayoutEdit()
+    {
+        layoutEditing = true;
+        std::copy(layoutAt, layoutAt + kLayoutCount, editAt);
+        std::copy(layoutSet, layoutSet + kLayoutCount, editSet);
+        dragItem = dragId = -1;
+    }
+
+    // Байрлуулах цэс: шинээр хүрсэн хуруу товч дээр бол түүнийг чирнэ, дээд талын товчнууд хадгална / буцаана
+    void UpdateLayoutEdit(const Vector2* positions, const int* ids, int count)
+    {
+        const float w = (float)ViewWidth(), h = (float)ViewHeight();
+        for (int i = 0; i < count; ++i)
+        {
+            bool fresh = true;
+            for (int k = 0; k < prevCount; ++k) fresh = fresh && prevIds[k] != ids[i];
+            if (!fresh) continue;
+            const Vector2 p = positions[i];
+            if (CheckCollisionPointRec(p, LayoutButton(0)))
+            {
+                std::copy(editAt, editAt + kLayoutCount, layoutAt);
+                std::copy(editSet, editSet + kLayoutCount, layoutSet);
+                layoutSaved = true;
+                layoutEditing = false;
+                return;
+            }
+            if (CheckCollisionPointRec(p, LayoutButton(1)))
+            {
+                std::fill(editSet, editSet + kLayoutCount, false); // анхны байрлал (хадгалахад л хэрэгжинэ)
+                continue;
+            }
+            if (CheckCollisionPointRec(p, LayoutButton(2)))
+            {
+                layoutEditing = false; // хадгалалгүй гарна
+                return;
+            }
+            if (dragItem >= 0) continue;
+            // Хамгийн ойрын товч (хүрээнийх нь дотор)
+            float best = 1.0e9f;
+            for (int item = 0; item < kLayoutCount; ++item)
+            {
+                const Vector2 c = CenterOf(item, editAt, editSet);
+                const float d = Vector2Distance(p, c);
+                if (d < kLayoutRadius[item] * 1.15f && d < best)
+                {
+                    best = d;
+                    dragItem = item;
+                    dragId = ids[i];
+                    dragGrab = Vector2Subtract(c, p);
+                }
+            }
+        }
+        if (dragItem >= 0)
+        {
+            bool held = false;
+            for (int i = 0; i < count; ++i)
+            {
+                if (ids[i] != dragId) continue;
+                held = true;
+                const float r = kLayoutRadius[dragItem];
+                Vector2 c = Vector2Add(positions[i], dragGrab);
+                c.x = std::clamp(c.x, r, w - r);
+                c.y = std::clamp(c.y, std::max(r, 80.0f + r * 0.3f), h - r); // (дээд талын товчнуудтай давхцахгүй)
+                editAt[dragItem] = { c.x / w, c.y / h };
+                editSet[dragItem] = true;
+            }
+            if (!held) dragItem = dragId = -1;
+        }
+        prevCount = std::min(count, 10);
+        std::copy(ids, ids + prevCount, prevIds);
+    }
+
+    void DrawLayoutEdit()
+    {
+        const float w = (float)ViewWidth(), h = (float)ViewHeight();
+        DrawRectangle(0, 0, (int)w, (int)h, { 0, 0, 0, 150 });
+        const char* hint = "Товчнуудыг хуруугаараа чирж хүссэн газраа тавиад ХАДГАЛАХ дарна уу";
+        Ui::Text(hint, (int)((w - (float)Ui::Measure(hint, 16)) * 0.5f), 84, 16, Ui::kText);
+        for (int item = 0; item < kLayoutCount; ++item)
+        {
+            const Vector2 c = CenterOf(item, editAt, editSet);
+            const float r = kLayoutRadius[item];
+            const bool active = item == dragItem;
+            DrawCircleV(c, r, active ? Color{ 60, 46, 14, 220 } : Color{ 12, 16, 22, 200 });
+            DrawRing(c, r - 2.5f, r, 0.0f, 360.0f, 48, active ? Ui::kAccent : Color{ 255, 255, 255, 140 });
+            const int size = item == kLayoutStick || item == kLayoutFire ? 18 : 14;
+            Ui::TextBold(kLayoutNames[item], (int)(c.x - (float)Ui::MeasureBold(kLayoutNames[item], size) * 0.5f),
+                         (int)(c.y - (float)size * 0.6f), size, Ui::kText);
+        }
+        static const char* const labels[3] = { "ХАДГАЛАХ", "АНХНЫ БАЙРЛАЛ", "БОЛИХ" };
+        for (int i = 0; i < 3; ++i)
+        {
+            const Rectangle r = LayoutButton(i);
+            DrawRectangleRounded(r, 0.3f, 8, i == 0 ? Ui::kAccent : Color{ 12, 16, 22, 230 });
+            Ui::Outline(r, i == 0 ? Ui::kAccent : Color{ 255, 255, 255, 90 }, 1.5f, 10.0f);
+            Ui::TextBold(labels[i], (int)(r.x + (r.width - (float)Ui::MeasureBold(labels[i], 17)) * 0.5f), (int)r.y + 16, 17,
+                         i == 0 ? Color{ 20, 16, 8, 255 } : Ui::kText);
+        }
+    }
+
     Rectangle Circle(float cx, float cy, float radius)
     {
         return { cx - radius, cy - radius, radius * 2.0f, radius * 2.0f };
@@ -148,14 +310,19 @@ namespace
             if (!state.driving)
             {
                 // Явган (PUBG шиг): том БУУДАХ голд, эргэн тойронд нь ҮСРЭХ / СУУХ / ХЭВТЭХ / ЦЭНЭГЛЭХ / ОНИЛОХ
-                Add(Circle(w - 180.0f, h - 262.0f, 74.0f), "БУУДАХ", Kind::Fire, 0);
-                Add(Circle(w - 66.0f, h - 410.0f, 46.0f), AimLabel(state.sniper), Kind::Aim, 0, true, aimLatched);
-                Add(Circle(w - 74.0f, h - 122.0f, 50.0f), state.stance != 0 ? "БОСОХ" : "ҮСРЭХ", Kind::Hold, KEY_SPACE);
-                Add(Circle(w - 192.0f, h - 80.0f, 44.0f), "СУУХ", Kind::Key, KEY_C, true, state.stance == 1);
-                Add(Circle(w - 300.0f, h - 62.0f, 40.0f), "ХЭВТЭХ", Kind::Key, KEY_Z, true, state.stance == 2);
-                Add(Circle(w - 336.0f, h - 312.0f, 42.0f), "ЦЭНЭГЛЭХ", Kind::Key, KEY_R);
-                // Зүүн гарын эрхий хуруунд: хүрдний дээд зүүн талд хоёр дахь буудах товч
-                Add(Circle(70.0f, std::max(h - 400.0f, 215.0f), 52.0f), "БУУДАХ", Kind::Fire, 0);
+                // (байрлалыг тоглогч өөрчилж болно: LayoutCenter)
+                auto at = [&](int item) { const Vector2 c = LayoutCenter(item); return Circle(c.x, c.y, kLayoutRadius[item]); };
+                Add(at(kLayoutFire), "БУУДАХ", Kind::Fire, 0);
+                Add(at(kLayoutAim), AimLabel(state.sniper), Kind::Aim, 0, true, aimLatched);
+                Add(at(kLayoutJump), state.stance != 0 ? "БОСОХ" : "ҮСРЭХ", Kind::Hold, KEY_SPACE);
+                Add(at(kLayoutCrouch), "СУУХ", Kind::Key, KEY_C, true, state.stance == 1);
+                Add(at(kLayoutProne), "ХЭВТЭХ", Kind::Key, KEY_Z, true, state.stance == 2);
+                Add(at(kLayoutReload), "ЦЭНЭГЛЭХ", Kind::Key, KEY_R);
+                // Зүүн гарын эрхий хуруунд: хүрдний дээд зүүн талд хоёр дахь буудах товч (хүрдийг зөөвөл хамт)
+                {
+                    const Vector2 stick = LayoutCenter(kLayoutStick);
+                    Add(Circle(std::max(stick.x - 106.0f, 56.0f), std::max(stick.y - 198.0f, 215.0f), 52.0f), "БУУДАХ", Kind::Fire, 0);
+                }
             }
             else
             {
@@ -245,6 +412,9 @@ namespace
                 // Камерын горим: 1-р этгээд (зөвхөн гар, буу) / 3-р этгээд (бүтэн бие)
                 Add({ x, y, panelW, rowH }, state.firstPerson ? "КАМЕР: 1-Р" : "КАМЕР: 3-Р", Kind::Key, KEY_V, false,
                     state.firstPerson);
+                y += rowH + rowGap;
+                // Хүрд, буудах, онилох г.м. товчнуудыг өөрт тохирох газар чирж байрлуулна
+                Add({ x, y, panelW, rowH }, "ТОВЧ БАЙРЛУУЛАХ", Kind::Layout, 0, false);
                 y += rowH + rowGap;
                 if (state.showHold)
                 {
@@ -482,12 +652,23 @@ void InBeginFrame(const TouchState& state)
         aimLatched = false;
         scopeZoom = 1;
     }
-    // Хөдлөх хүрд нэг байрандаа (зүүн доод буланд) байна: хуруу хаана ч буусан тийш нүүхгүй.
-    stickCenter = { 176.0f, (float)ViewHeight() - 202.0f };
+    // Хөдлөх хүрд нэг байрандаа (анхдагч: зүүн доод буланд; тоглогч өөрөө зөөж болно) байна: хуруу хаана ч буусан
+    // тийш нүүхгүй.
+    stickCenter = LayoutCenter(kLayoutStick);
 
     Vector2 positions[10] = {};
     int ids[10] = {};
     const int count = ReadTouches(positions, ids, 10);
+    if (layoutEditing)
+    {
+        // Байрлуулах цэс: тоглоомын товчнууд ажиллахгүй
+        buttons.clear();
+        for (Finger& finger : fingers) finger = Finger{};
+        UpdateLayoutEdit(positions, ids, count);
+        if (count > 0) pointer = positions[0];
+        return;
+    }
+    prevCount = 0;
 
     for (Finger& finger : fingers) finger.seen = false;
     stickActive = false;
@@ -553,6 +734,10 @@ void InBeginFrame(const TouchState& state)
                     break;
                 case Kind::Wheel: wheel += (float)button.key; break;
                 case Kind::Menu: settingsOpen = !settingsOpen; break;
+                case Kind::Layout:
+                    settingsOpen = false;
+                    StartLayoutEdit();
+                    break;
                 }
             }
             else if (gameplay && Vector2Distance(position, stickCenter) < kStickRadius * kStickGrab)
@@ -785,6 +970,12 @@ void InDrawTouch(const TouchState& state)
 {
     if (!touchMode)
     {
+        return;
+    }
+
+    if (layoutEditing)
+    {
+        DrawLayoutEdit();
         return;
     }
 
@@ -1056,4 +1247,48 @@ bool InActivity()
         if (IsKeyDown(key)) return true;
     }
     return false;
+}
+
+
+void InLayoutLoad(const std::string& text)
+{
+    std::fill(layoutSet, layoutSet + kLayoutCount, false);
+    const char* p = text.c_str();
+    for (int item = 0; item < kLayoutCount; ++item)
+    {
+        char* end = nullptr;
+        const float x = std::strtof(p, &end);
+        if (end == p) break;
+        p = end;
+        const float y = std::strtof(p, &end);
+        if (end == p) break;
+        p = end;
+        if (x < 0.0f || y < 0.0f || x > 1.0f || y > 1.0f) continue; // (-1 = анхных)
+        layoutAt[item] = { x, y };
+        layoutSet[item] = true;
+    }
+}
+
+std::string InLayoutText()
+{
+    bool any = false;
+    std::string text;
+    for (int item = 0; item < kLayoutCount; ++item)
+    {
+        any = any || layoutSet[item];
+        text += layoutSet[item] ? TextFormat("%.4f %.4f ", layoutAt[item].x, layoutAt[item].y) : "-1 -1 ";
+    }
+    return any ? text : std::string();
+}
+
+bool InLayoutEditing()
+{
+    return layoutEditing;
+}
+
+bool InLayoutTakeSaved()
+{
+    const bool saved = layoutSaved;
+    layoutSaved = false;
+    return saved;
 }

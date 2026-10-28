@@ -555,29 +555,6 @@ namespace
     std::vector<Sound> voiceLines[3][(int)VoiceLine::Count];
     int lastVariant[3][(int)VoiceLine::Count] = {};
     Sound* talking = nullptr; // одоо ярьж буй (нэг удаад нэг хүн)
-
-    // soldiers/<a|b|c>_<код>_<1..4>.wav|.ogg: a Дайчин 1, b Дайчин 2, c Мэргэн буудагч (assets/sounds/SOURCES.txt)
-    void LoadVoices()
-    {
-        const std::string folder = SoundFolder() + "soldiers/";
-        int total = 0;
-        for (int speaker = 0; speaker < 3; ++speaker)
-        {
-            for (int line = 0; line < (int)VoiceLine::Count; ++line)
-            {
-                for (int k = 1; k <= 4; ++k)
-                {
-                    const std::string base = folder + (char)('a' + speaker) + "_" + kLineCodes[line] + "_" + std::to_string(k);
-                    Sound sound = {};
-                    if (!TryLoad(base + ".wav", sound) && !TryLoad(base + ".ogg", sound)) break;
-                    voiceLines[speaker][line].push_back(sound);
-                    ++total;
-                }
-                lastVariant[speaker][line] = -1;
-            }
-        }
-        TraceLog(LOG_INFO, "AUDIO: %d voice lines", total);
-    }
 }
 
 namespace Audio
@@ -643,7 +620,7 @@ namespace Audio
         if (!LoadFile(Sfx::Marker, "hit_marker")) Add(Sfx::Marker, Marker());
         if (!LoadFile(Sfx::Headshot, "headshot")) Add(Sfx::Headshot, Headshot());
         if (!LoadFile(Sfx::Heartbeat, "heartbeat")) Add(Sfx::Heartbeat, Heartbeat());
-        LoadVoices();
+        // (цэргүүдийн яриа болиулсан: дуу ачаалдаггүй тул Say юу ч тоглуулахгүй)
 
         // Сонсогдох зай
         for (Sfx id : { Sfx::Rifle, Sfx::Pistol, Sfx::Shotgun, Sfx::Sniper, Sfx::Launcher }) Range(id, 22.0f, 320.0f);

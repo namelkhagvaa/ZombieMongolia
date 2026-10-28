@@ -1042,6 +1042,26 @@ void DrawBlobShadow(Vector3 ground, float radius)
                  { 10, 12, 22, 90 });
 }
 
+HumanoidPose MakeGunnerPose(Vector3 feet, float facing, const Vector3 grips[2], float time)
+{
+    HumanoidPose pose = MakeSoldierPose(0.0f, 0.0f, true, time, 0.0f, HeldItem::None);
+    // seated (өгөгдсөн өнцөг) боловч хөл шулуун: зогсож буй хэлбэр, гар нь бариулын цэг рүү (grip)
+    pose.seated = true;
+    pose.hip[0] = pose.hip[1] = 4.0f;
+    pose.knee[0] = pose.knee[1] = 8.0f;
+    pose.legSpread = 10.0f;
+    pose.lean = 8.0f;
+    pose.bob = 0.0f;
+    pose.grip = 1.0f;
+    const float sn = std::sin(facing), cs = std::cos(facing);
+    for (int side = 0; side < 2; ++side)
+    {
+        const Vector3 d = Vector3Subtract(grips[side], feet);
+        pose.gripPoint[side] = { d.x * cs - d.z * sn, d.y, d.x * sn + d.z * cs };
+    }
+    return pose;
+}
+
 Vector3 HumanoidLocalToWorld(Vector3 feet, float facing, Vector3 local)
 {
     const float s = std::sin(facing);

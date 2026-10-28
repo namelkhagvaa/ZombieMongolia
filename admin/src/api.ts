@@ -163,8 +163,6 @@ export interface Settings {
   battle_pair_limit: number;
   stage_daily_limit: number;
   verify_bonus: number;
-  register_per_ip_day: number;
-  block_same_ip: boolean;
   gold_packs: { gold: number; price: number }[];
   cashout_enabled: boolean;
   cashout_min: number;

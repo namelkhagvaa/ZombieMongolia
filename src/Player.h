@@ -13,7 +13,8 @@ enum class RideStyle
     None,   // явган
     Bike,   // мотоцикл, гурван дугуйт: урагш бөхийж сууна
     Saddle, // морь: хөлөө алцайлгаж сууна
-    Hidden  // бүхээгтэй машин: жолооч харагдахгүй
+    Hidden, // бүхээгтэй машин: жолооч харагдахгүй
+    Stand   // хуягт машины пулемётын ард зогсож буудна
 };
 
 // Биеийн байрлал: C суух, Z хэвтэх, Space босох.
@@ -38,6 +39,9 @@ public:
     void StopRiding(Vector3 exitPosition);
     bool IsRiding() const { return rideStyle != RideStyle::None; }
     // Явган үед бусад объект (зогсож буй унаа) түлхэж гаргахад.
+    void SetFacing(float value) { facing = value; } // (хуягт машины пулемётын ард: пулемётын зүгт)
+    // Хуягт машины пулемётын бариулууд (дэлхийн байрлал; RideStyle::Stand үед гар нь эндээс барина)
+    void SetGrips(Vector3 right, Vector3 left) { grips[0] = right; grips[1] = left; }
     void SetHorizontalPosition(float x, float z)
     {
         position.x = x;
@@ -169,6 +173,7 @@ private:
     float reload = -1.0f;
     float recoil = 0.0f;       // 1 = дөнгөж буудсан, 0 руу буурна
     float landing = 0.0f;      // өндрөөс буусны дараа 1 -> 0: өвдгөө нугалж цохилтоо зөөлрүүлнэ
+    Vector3 grips[2] = {};     // (SetGrips)
     float fallPeak = 0.0f;     // агаарт гарснаас хойших хамгийн их өндөр (унасны хохирол: Update)
     float action = 0.0f;       // 1 -> 0: хатгах / шидэх хөдөлгөөний явц
     float actionDuration = 0.3f;

@@ -15,7 +15,9 @@ enum class ZombieType
 {
     Walker, // энгийн: доголж, найгаж алхана
     Runner, // хурдан, сул: урагш бөхийж гүйнэ
-    Brute   // удаан, бат бөх: хүнд алхаатай
+    Brute,  // удаан, бат бөх: хүнд алхаатай
+    Bear    // баавгай (зомби биш): тал нутгаар тэнүүчилнэ, хэт ойртох эсвэл суманд оногдвол хүн, зомби аль алин руу
+            // дайрна. Үеийн тоололд орохгүй (аймаг бүрт 50: Game::SpawnBears)
 };
 
 // Үеийн зомбины нөөц аймгийн даалгавруудад хуваагдана: даалгавар бүрийг өөрийн зомбинууд хамгаална
@@ -90,9 +92,17 @@ struct Zombie
     Vector3 netVelocity = { 0.0f, 0.0f, 0.0f }; // зочин: хоёр snapshot-оос тооцсон хурд (хоцролтыг нөхөж урагш таамаглана)
     bool netAttack = false;                     // зочин: өмнөх snapshot-д довтолж байсан (шинэ цохилтыг нэг л удаа эхлүүлнэ)
 
+    // Баавгай: тэнүүчлэх төв, дараагийн зорилго, уурласан хугацаа (суманд оногдвол хол хөөнө), тайвшрах хугацаа
+    Vector3 home = { 0.0f, 0.0f, 0.0f };
+    Vector3 wanderGoal = { 0.0f, 0.0f, 0.0f };
+    float wanderTimer = 0.0f;
+    float rage = 0.0f;
+    float calmTimer = 0.0f;
+
     bool IsAlive() const { return health > 0.0f; }
-    float Radius() const { return 0.4f * scale; }
-    float Height() const { return 1.92f * scale; } // толгойн оройг оруулаад
+    bool IsBear() const { return type == ZombieType::Bear; }
+    float Radius() const { return (IsBear() ? 0.85f : 0.4f) * scale; }
+    float Height() const { return (IsBear() ? 1.45f : 1.92f) * scale; } // толгойн оройг оруулаад
     Vector3 Chest() const;
 };
 
@@ -112,6 +122,8 @@ public:
     void Spawn(ZombieType type, Vector3 position, const MissionParams& mission, int zone = 0, bool alerted = true, int pool = -1);
     // Аварга зомби: асар их амьтай, том биетэй.
     void SpawnBoss(Vector3 position, const MissionParams& mission, int zone);
+    // Баавгай: тайван (тэнүүчилнэ), бүсгүй, үеийн нөөцөөс бус
+    void SpawnBear(Vector3 position, const MissionParams& mission);
     // Тухайн бүсийн амьд зомбины тоо.
     int AliveInZone(int zone) const;
     // Тухайн бүсийн эхний maxTargets амьд зомбид хохирол учруулна (туршилтын автомат тоглолтод).
@@ -123,7 +135,7 @@ public:
 
     // minDistance-аас ойрхон оногдлыг тооцохгүй (камер, тоглогч хоёрын хоорондох зомби).
     ZombieHit Raycast(Ray ray, float minDistance, float maxDistance) const;
-    int Nearest(Vector3 position, float maxDistance) const; // -1 = байхгүй
+    int Nearest(Vector3 position, float maxDistance) const; // -1 = байхгүй (тайван баавгайг бай гэж тооцохгүй)
     int FindId(uint32_t id) const;                          // амьд зомбины индекс (-1 = байхгүй)
     void Damage(int index, float amount);
     // Бүрэн амины fraction хувийг авна (хутга: зомбины төрлөөс үл хамааран тогтмол тооны цохилт).
@@ -206,6 +218,8 @@ public:
     void Draw(Vector3 viewPosition, float maxDistance, bool showColliders) const;
 
 private:
+    void UpdateBear(Zombie& bear, float dt, World& world, Player& player, SoldierSquad& squad);
+    bool noCredit = false; // баавгай зомби алахад: тоглогчид зоос өгөхгүй (үеийн тоололд орсоор)
     std::vector<Zombie> zombies; // үхсэн нь хэдэн секунд газар хэвтээд арилна
     int pendingCoins = 0;
     int pendingKills = 0;

@@ -45,6 +45,8 @@ const VehicleSpec& SpecFor(VehicleType type)
         /* Hatch */ { "YARIS",      52.5f, 10.0f, 21.0f, 7.0f, 2.15f, 1.35f, 1.00f, 0.62f, 0.35f, 2.0f, 6.0f, true, { 0.0f, 0.85f, 0.0f },  3.5f, 370.0f, 12.0f, 1.05f },
         // Ми-8: нисгэгч (зүүн талын бүхээг) битүү; ~110 км/ц; бензингүй (хөдөлгүүрийн дуу: сэнсний эргэлт)
         /* Heli  */ { "НИСДЭГ ТЭРЭГ", 31.0f, 4.5f, 6.0f, 8.0f, 0.95f, 4.6f, 1.00f, 1.00f, 1.00f, 0.0f, 0.0f, true, { 0.62f, 1.55f, 5.6f }, 15.0f, 2600.0f, 0.0f, 12.0f },
+        // Хуягт машин: хүнд, бат бөх, хээр талд сайн; жолооч битүү бүхээгт, буудагч дээврийн пулемётод
+        /* Armor */ { "ХУЯГТ МАШИН", 36.0f, 6.5f, 16.0f, 6.0f, 1.55f, 2.3f, 1.00f, 0.85f, 0.70f, 1.3f, 14.0f, true, { 0.0f, 1.25f, 0.5f }, 6.0f, 2400.0f, 9.0f, 4.0f },
     };
     return specs[(int)type];
 }
@@ -196,6 +198,45 @@ namespace
         return b;
     }
 
+    // Хуягт машины буудагчийн ташаа (машины орон нутагт): дээврийн пулемётын ард зогсож буудна
+    const Vector3 kArmorTurret = { 0.0f, 3.2f, -0.6f }; // (бүхээгийн дээвэр 2.75 м: хөл нь дээвэр дээр)
+    // Текстуртай загвар (armored.vmesh): ар талын задгай тасгийн шал 1.5 м, пулемётын эргэх тэнхлэг z = 0.14 м;
+    // буудагчийн ташаа буугийн ар талд (пулемёттой хамт тэнхлэгийг тойрон эргэнэ)
+    // Пулемётын эргэх цэг (машины орон нутагт) ба түүнээс амсар хүртэл (хошуу тэгш үед)
+    // (буудагч байрнаасаа хөдлөхгүй тул пулемёт урдаасаа зүүн, баруун тийш kArmorTraverse хүртэл л эргэнэ: Vehicle.h)
+    const Vector3 kArmorModelPivot = { 0.0f, 2.79f, 0.17f };
+    const Vector3 kArmorModelMuzzle = { 0.0f, 0.05f, 1.58f };
+    const Vector3 kArmorPivot = { 0.0f, 2.95f, -0.1f };
+    const Vector3 kArmorMuzzle = { 0.0f, 0.42f, 1.75f };
+    // Буудагчийн ташаа: пулемётын эргэх цэгээс ард (бариулаас барина), тасгийн шалнаас 0.95 м дээр
+    const Vector3 kArmorModelGunner = { 0.0f, 2.45f, -0.78f };
+    // Бариулууд (эргэх цэгээс, буугийн ар төгсгөлд): баруун (-X), зүүн (+X)
+    const Vector3 kArmorModelGrip = { 0.13f, -0.04f, -0.62f };
+    const Vector3 kArmorGrip = { 0.15f, 0.3f, -0.25f };
+    const float kArmorModelPivotZ = kArmorModelPivot.z;
+
+    // Пулемётын цэгийн (эргэх цэгээс) машины орон нутгийн байрлал (эргэлт, хошууны өндрийг тооцсон)
+    Vector3 ArmorPointLocal(float turn, float pitch, bool model, Vector3 m)
+    {
+        const Vector3 pivot = model ? kArmorModelPivot : kArmorPivot;
+        const float cp = std::cos(pitch), sp = std::sin(pitch);
+        const float y = m.y * cp + m.z * sp, z = -m.y * sp + m.z * cp;
+        const float c = std::cos(turn), s = std::sin(turn);
+        return { pivot.x + m.x * c + z * s, pivot.y + y, pivot.z - m.x * s + z * c };
+    }
+
+    // Пулемётын амсрын машины орон нутгийн байрлал (эргэлт, хошууны өндрийг тооцсон)
+    Vector3 ArmorMuzzleLocal(float turn, float pitch, bool model)
+    {
+        const Vector3 pivot = model ? kArmorModelPivot : kArmorPivot;
+        const Vector3 m = model ? kArmorModelMuzzle : kArmorMuzzle;
+        // хошуу: X тэнхлэгээр pitch (дээш), дараа нь Y тэнхлэгээр turn
+        const float cp = std::cos(pitch), sp = std::sin(pitch);
+        const float y = m.y * cp + m.z * sp, z = -m.y * sp + m.z * cp;
+        const float c = std::cos(turn), s = std::sin(turn);
+        return { pivot.x + z * s, pivot.y + y, pivot.z + z * c };
+    }
+
     // ------------------------------------------------------------ Ачааны машин (ЗИЛ-131 маягийн, 6 дугуйтай)
     const float kTruckWheel = 0.55f;
     const float kTruckAxles[3] = { 2.3f, -1.05f, -2.45f }; // урд (жолоотой), хойд хос
@@ -330,6 +371,111 @@ namespace
                 rlPopMatrix();
             }
         }
+    }
+
+    // ------------------------------------------------------------ Хуягт машин (түр зуурын кодоор угсарсан хэлбэр;
+    // assets/cars/armored.vmesh байвал түүгээр)
+    const float kArmorWheel = 0.58f;
+    const float kArmorAxles[2] = { 1.75f, -1.75f };
+
+    const MeshBuilder& ArmoredBody()
+    {
+        static MeshBuilder b;
+        if (!b.Empty()) return b;
+        const Color body = { 74, 80, 60, 255 };   // хуучирсан чидун ногоон
+        const Color dark = ScaleColor(body, 0.7f);
+        const Color mesh = { 40, 42, 40, 255 };
+        // Доод их бие, хаалтууд
+        b.BevelBox({ 0.0f, 1.05f, 0.0f }, { 2.3f, 0.75f, 5.6f }, 0.1f, body);
+        for (float z : kArmorAxles)
+        {
+            for (float x : { -1.12f, 1.12f }) b.BevelBox({ x, 1.42f, z }, { 0.42f, 0.18f, 1.5f }, 0.06f, dark);
+        }
+        // Хөдөлгүүрийн таг (урд), бүхээг (дунд), тэвш (хойд)
+        b.BevelBox({ 0.0f, 1.6f, 1.95f }, { 2.2f, 0.5f, 1.6f }, 0.12f, body);
+        b.BevelBox({ 0.0f, 2.1f, 0.25f }, { 2.25f, 1.3f, 2.0f }, 0.14f, body);
+        b.BevelBox({ 0.0f, 1.6f, -1.85f }, { 2.25f, 0.5f, 2.0f }, 0.08f, dark);
+        // Торон цонхнууд
+        b.Box({ 0.0f, 2.35f, 1.26f }, { 1.8f, 0.6f, 0.04f }, mesh);
+        for (float x : { -1.14f, 1.14f })
+        {
+            b.Box({ x, 2.35f, 0.65f }, { 0.04f, 0.55f, 0.75f }, mesh);
+            b.Box({ x, 2.35f, -0.25f }, { 0.04f, 0.55f, 0.75f }, mesh);
+        }
+        // Бампер, гэрэл, эгнээ гэрэл, сэлбэг дугуй
+        b.BevelBox({ 0.0f, 1.0f, 2.95f }, { 2.4f, 0.35f, 0.3f }, 0.06f, kDark);
+        for (float x : { -0.85f, 0.85f })
+        {
+            b.Tube({ x, 1.55f, 2.74f }, { x, 1.55f, 2.8f }, 0.13f, 0.13f, 12, kLamp);
+        }
+        b.Box({ 0.0f, 2.8f, 1.1f }, { 1.6f, 0.08f, 0.12f }, kLamp);
+        b.Tube({ 0.0f, 1.75f, -2.95f }, { 0.0f, 1.75f, -3.15f }, 0.45f, 0.45f, 14, kDark);
+        // Пулемётын суурь (цамхаг): дээвэр дээр
+        b.Tube({ 0.0f, 2.75f, -0.1f }, { 0.0f, 2.95f, -0.1f }, 0.55f, 0.5f, 14, dark);
+        return b;
+    }
+
+    const MeshBuilder& ArmoredTurret()
+    {
+        // Эргэдэг хэсэг (тэнхлэгийн төвөөс): бамбай, пулемёт (урагш +Z)
+        static MeshBuilder b;
+        if (!b.Empty()) return b;
+        const Color steel = { 60, 64, 58, 255 };
+        b.BevelBox({ 0.0f, 0.25f, 0.15f }, { 0.9f, 0.45f, 0.7f }, 0.06f, steel);
+        b.BevelBox({ 0.0f, 0.5f, 0.55f }, { 1.0f, 0.55f, 0.08f }, 0.03f, ScaleColor(steel, 0.8f)); // бамбай
+        b.Tube({ 0.0f, 0.42f, 0.4f }, { 0.0f, 0.42f, 1.7f }, 0.07f, 0.06f, 10, kDark);              // гол
+        b.Tube({ 0.0f, 0.42f, 1.55f }, { 0.0f, 0.42f, 1.75f }, 0.1f, 0.1f, 10, kDark);              // амсар
+        b.Box({ 0.15f, 0.42f, 0.2f }, { 0.25f, 0.25f, 0.35f }, { 70, 76, 50, 255 });                // сумны хайрцаг
+        return b;
+    }
+
+    const MeshBuilder& ArmoredWheel()
+    {
+        static MeshBuilder b;
+        if (b.Empty()) BuildWheel(b, kArmorWheel, 0.42f, 6, false);
+        return b;
+    }
+
+    void DrawArmored(const Vehicle& v)
+    {
+        // (машины эргэлтийн дотор зурагдана: пулемётын зүгийг машинтай харьцуулна)
+        const float turret = std::remainder(v.turretYaw - v.heading, 2.0f * PI);
+        if (HasVehicleModel(VehicleModelId::Armored))
+        {
+            const Color tint = propMaterial && !modelDepthMaterial ? propMaterial->maps[MATERIAL_MAP_DIFFUSE].color : WHITE;
+            DrawVehicleModel(VehicleModelId::Armored, v.animation, v.steer, modelDepthMaterial, tint, turret, v.turretPitch);
+            if (v.turretRecoil > 0.5f && !modelDepthMaterial)
+            {
+                // Амны гал (пулемётын амсар дээр)
+                DrawSphere(ArmorMuzzleLocal(turret, v.turretPitch, true), 0.1f + 0.08f * v.turretRecoil, { 255, 220, 120, 230 });
+            }
+            return;
+        }
+        DrawProp(ArmoredBody());
+        const float spin = v.animation / kArmorWheel;
+        for (float x : { -1.08f, 1.08f })
+        {
+            for (int axle = 0; axle < 2; ++axle)
+            {
+                rlPushMatrix();
+                rlTranslatef(x, kArmorWheel, kArmorAxles[axle]);
+                if (axle == 0) rlRotatef(-v.steer * 28.0f, 0.0f, 1.0f, 0.0f);
+                rlRotatef(spin * RAD2DEG, 1.0f, 0.0f, 0.0f);
+                DrawProp(ArmoredWheel());
+                rlPopMatrix();
+            }
+        }
+        rlPushMatrix();
+        rlTranslatef(0.0f, 2.95f, -0.1f);
+        rlRotatef(turret * RAD2DEG, 0.0f, 1.0f, 0.0f);
+        rlRotatef(-v.turretPitch * RAD2DEG, 1.0f, 0.0f, 0.0f);
+        DrawProp(ArmoredTurret());
+        if (v.turretRecoil > 0.5f && !modelDepthMaterial)
+        {
+            // Амны гал
+            DrawSphere({ 0.0f, 0.42f, 1.85f }, 0.18f + 0.1f * v.turretRecoil, { 255, 200, 90, 220 });
+        }
+        rlPopMatrix();
     }
 
     // Нэг удаа угсарсан mesh-ийг (x, y, z) байрлалд X тэнхлэгээр spin эргүүлж зурна.
@@ -939,6 +1085,7 @@ namespace
         case VehicleType::Suv: return 1.05f;
         case VehicleType::Hatchback: return 1.25f;
         case VehicleType::Helicopter: return 0.6f;
+        case VehicleType::Armored: return 0.35f;
         }
         return 1.0f;
     }
@@ -956,6 +1103,7 @@ namespace
         case VehicleType::Suv: return { 1.45f, 0.9f };       // 4.69 м урт
         case VehicleType::Hatchback: return { 1.15f, 0.85f }; // 3.94 м урт
         case VehicleType::Helicopter: return { 4.2f, 1.45f }; // их бие (сүүлгүй)
+        case VehicleType::Armored: return { 2.6f, 1.2f };
         }
         return { 1.0f, 0.8f };
     }
@@ -1127,6 +1275,7 @@ int Garage::Raycast(Ray ray, float minDistance, float maxDistance, int skipA, in
         case VehicleType::Suv: halfWidth = 0.95f; halfLength = 2.2f; height = 1.8f; break;
         case VehicleType::Hatchback: halfWidth = 0.85f; halfLength = 1.9f; height = 1.5f; break;
         case VehicleType::Helicopter: halfWidth = 1.6f; halfLength = 7.6f; height = 5.2f; break; // их бие + сүүлний эхлэл
+        case VehicleType::Armored: halfWidth = 1.25f; halfLength = 3.0f; height = 3.2f; break;
         default: break;
         }
         // Туяаг хэрэгслийн орон нутгийн тэнхлэгт (урагш +Z) шилжүүлнэ: зай өөрчлөгдөхгүй.
@@ -1218,6 +1367,10 @@ void Garage::ClearRemote(int index)
     if (index < 0 || index >= Count()) return;
     vehicles[(size_t)index].remote = false;
     vehicles[(size_t)index].occupied = false;
+    // (сүлжээнээс ирсэн сүүлийн хурдаар цааш гулсахгүй: нөгөө тоглогч буусан нисдэг тэрэг хажуугийн байшинд "мөргөж"
+    // сүйрдэг байсан)
+    vehicles[(size_t)index].speed = 0.0f;
+    vehicles[(size_t)index].climb = 0.0f;
 }
 
 void Garage::Dismount()
@@ -1279,6 +1432,13 @@ Vector3 Garage::SeatWorld(int index, bool passenger) const
         case VehicleType::Suv:
         case VehicleType::Hatchback: seat.x = -0.45f; break;                   // жолоочийн эсрэг талын суудал
         case VehicleType::Helicopter: seat = { -0.62f, 1.55f, 5.6f }; break;   // туслах нисгэгчийн суудал
+        case VehicleType::Armored:
+        {
+            // Пулемётын ард: пулемёттой хамт эргэх тэнхлэгийг тойрно
+            // Буудагч пулемётын ард нэг байрандаа зогсоно (пулемёт урд талдаа л эргэнэ, бие нь түүний зүгт эргэнэ)
+            seat = HasVehicleModel(VehicleModelId::Armored) ? kArmorModelGunner : kArmorTurret;
+            break;
+        }
         }
     }
     else if (IsCar(vehicle.type))
@@ -1296,6 +1456,33 @@ Vector3 Garage::SeatWorld(int index, bool passenger) const
         seat.z += 0.12f * gallop;
     }
     return HumanoidLocalToWorld(vehicle.position, vehicle.heading, PitchLocal(vehicle, seat));
+}
+
+Vector3 Garage::TurretMuzzle(int index) const
+{
+    const Vehicle& vehicle = vehicles[(size_t)index];
+    const float turn = std::remainder(vehicle.turretYaw - vehicle.heading, 2.0f * PI);
+    return HumanoidLocalToWorld(vehicle.position, vehicle.heading,
+                                PitchLocal(vehicle, ArmorMuzzleLocal(turn, vehicle.turretPitch, HasVehicleModel(VehicleModelId::Armored))));
+}
+
+Vector3 Garage::TurretGrip(int index, int side) const
+{
+    const Vehicle& vehicle = vehicles[(size_t)index];
+    const bool model = HasVehicleModel(VehicleModelId::Armored);
+    Vector3 grip = model ? kArmorModelGrip : kArmorGrip;
+    if (side == 0) grip.x = -grip.x; // баруун гар (-X)
+    const float turn = std::remainder(vehicle.turretYaw - vehicle.heading, 2.0f * PI);
+    return HumanoidLocalToWorld(vehicle.position, vehicle.heading, PitchLocal(vehicle, ArmorPointLocal(turn, vehicle.turretPitch, model, grip)));
+}
+
+void Garage::AimTurret(int index, float yaw, float pitch, bool fired)
+{
+    Vehicle& vehicle = vehicles[(size_t)index];
+    const float limit = kArmorTraverse;
+    vehicle.turretYaw = vehicle.heading + std::clamp(std::remainder(yaw - vehicle.heading, 2.0f * PI), -limit, limit);
+    vehicle.turretPitch = std::clamp(pitch, -25.0f * DEG2RAD, 35.0f * DEG2RAD);
+    if (fired) vehicle.turretRecoil = 1.0f;
 }
 
 Vector3 Garage::ReinWorld(int index, bool& hasRein) const
@@ -1338,6 +1525,7 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
         Vehicle& vehicle = vehicles[i];
         const VehicleSpec& spec = SpecFor(vehicle.type);
         const bool byPlayer = i == driven;
+        vehicle.turretRecoil = std::max(0.0f, vehicle.turretRecoil - dt * 12.0f);
         if (vehicle.remote && !byPlayer)
         {
             // Сүлжээгээр хөдөлгөгдөж буй хэрэгсэл: байрлалыг зөөлөн дагаж, дугуй эргүүлнэ; жолоодож буй бол зомбийг
@@ -1747,6 +1935,7 @@ void Garage::Draw(Vector3 viewPosition, float maxDistance, const Material* mater
         case VehicleType::Suv:
         case VehicleType::Hatchback: DrawJeep(vehicle); break;
         case VehicleType::Helicopter: DrawHelicopter(vehicle); break;
+        case VehicleType::Armored: DrawArmored(vehicle); break;
         }
         if (tintable) tintable->maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
         rlPopMatrix();
@@ -1812,7 +2001,13 @@ void Garage::UpdateHelicopter(int index, float dt, const World& world, float thr
         v.crashSeverity = std::clamp(impact / 25.0f, 0.2f, 1.0f);
         Audio::Play(Sfx::Explosion, v.position, 1.0f, 0.75f);
     };
-    const float below = groundAt(v.position.x, v.position.z);
+    // Доорх хамгийн өндөр гадаргуу: их биеийн төв, хамар, сүүлний доор (хажууд нь байшин, мод, багана байвал түүний
+    // оройд сууна; хамар нь саадын дээгүүр байхад буухад сүйрдэг байсан)
+    float below = groundAt(v.position.x, v.position.z);
+    for (float along : { 5.5f, -6.5f })
+    {
+        below = std::max(below, groundAt(v.position.x + std::sin(v.heading) * along, v.position.z + std::cos(v.heading) * along));
+    }
 
     if (v.wrecked)
     {
@@ -1838,11 +2033,30 @@ void Garage::UpdateHelicopter(int index, float dt, const World& world, float thr
         return;
     }
 
-    // Нислэгийн өндөр: шууд доорх газраас kHeliCruise (урдаас харж өндөр авахгүй: огцом уул руу хурдтай нисвэл мөргөнө)
+    // Нислэгийн өндөр: хөөрөхдөө сонгоод барина (газраас kHeliCruise, хамгийн өндөр барилгаас kHeliClearance дээгүүр).
+    // Доорх газар kHeliFloor-оос ойртвол (уул) л дээш авч, тэр өндрөө цааш барина.
     const bool flying = v.lift && v.rotorSpeed > 0.9f && piloted;
-    const float targetY = flying ? below + kHeliCruise : below;
-    // Босоо хурд: өгсөх 5, буух 6 м/с хүртэл (газарт ойртох тусам зөөлөн)
-    const float wanted = std::clamp((targetY - v.position.y) * 0.8f, -6.0f, 5.0f);
+    if (!flying)
+    {
+        v.holdY = 0.0f;
+    }
+    else
+    {
+        if (v.holdY <= 0.0f) v.holdY = std::max(below + kHeliCruise, v.position.y);
+        // Урд нисэх замд (хурдаас хамааран 40-200 м) байгаа өндөр барилга, уулнаас өмнө нь дээш авна (буухгүй)
+        const float sign = v.speed >= 0.0f ? 1.0f : -1.0f;
+        const float reach = std::clamp(std::fabs(v.speed) * 5.0f, 40.0f, 200.0f);
+        for (float t : { 0.0f, 0.5f, 1.0f })
+        {
+            const float x = v.position.x + forwardX * reach * t * sign, z = v.position.z + forwardZ * reach * t * sign;
+            v.holdY = std::max(v.holdY, world.TallestNear(x, z, 30.0f) + kHeliClearance);
+            v.holdY = std::max(v.holdY, world.GroundHeight(x, z) + kHeliFloor);
+        }
+        v.holdY = std::max(v.holdY, below + kHeliFloor);
+    }
+    const float targetY = flying ? v.holdY : below;
+    // Босоо хурд: өгсөх 8, буух 6 м/с хүртэл (газарт ойртох тусам зөөлөн)
+    const float wanted = std::clamp((targetY - v.position.y) * 0.8f, -6.0f, 8.0f);
     v.climb += (wanted - v.climb) * std::min(1.0f, 2.5f * dt);
     v.position.y += v.climb * dt;
     if (v.position.y < below)
@@ -1871,8 +2085,9 @@ void Garage::UpdateHelicopter(int index, float dt, const World& world, float thr
         v.position.z = before.z;
         v.speed = 0.0f;
     }
-    // Мөргөлдөөн: хамар, сүүл, их бие уул, байшинд тулбал (нисэж яваа үед) сүйрнэ. Газардах үед (бага хурд, нам) биш.
-    if (v.altitude > 3.0f || std::fabs(v.speed) > 6.0f)
+    // Мөргөлдөөн: хурдтай нисэж яваад хамар, сүүл, их бие уул, байшинд тулбал сүйрнэ. Босоо хөөрөх, буух (бага хурд)
+    // үед биш: доорх саадын оройд сууна (below).
+    if (std::fabs(v.speed) > 6.0f)
     {
         for (float along : { 8.0f, 0.0f, -9.0f })
         {

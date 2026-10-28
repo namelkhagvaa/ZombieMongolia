@@ -225,9 +225,6 @@ def register(name, phone_raw, password, device_id, platform, ip):
         raise GameError("bad_password", f"Нууц үг {MIN_PASSWORD}-аас дээш тэмдэгт байна")
     phone = normalize_phone(phone_raw)
     validate_device(device_id)
-    since = timezone.now() - timedelta(days=1)
-    if ip and Event.objects.filter(kind="registered", ip=ip, created__gte=since).count() >= GameSettings.load().register_per_ip_day:
-        raise GameError("too_many_accounts", "Энэ сүлжээнээс өнөөдөр хэт олон данс нээгдсэн. Маргааш оролдоно уу", 429)
     with transaction.atomic():
         holder = Player.objects.filter(phone=phone).first()
         if holder is not None and not holder.phone_verified:
@@ -638,6 +635,13 @@ def join_room(player, device_id, ip, protocol=0):
                  .exclude(host=locked))
         room = rooms.order_by("created").first()
         if room is None:
+            # Өөр хувилбартай нээлттэй өрөө байвал (нэг нь тоглоомоо шинэчлээгүй) тэрийгээ хэлнэ
+            other = (Room.objects.filter(status=Room.OPEN, pvp=True, guest__isnull=True,
+                                         host_seen__gte=timezone.now() - ROOM_JOINABLE)
+                     .exclude(host=locked).exclude(protocol=_protocol(protocol)).exists())
+            if other:
+                raise GameError("no_rooms", "Нээлттэй өрөө байгаа ч тоглоомын хувилбар нь өөр байна: хоёулаа тоглоомоо "
+                                            "шинэ хувилбараар шинэчилнэ үү", 404)
             raise GameError("no_rooms", "Одоогоор нээлттэй өрөө алга. Дараа дахин оролдоно уу", 404)
         room.guest_fee = _enter_room(locked, room, settings, f"b{room.battle + 1}")
         room.guest = locked
@@ -799,10 +803,7 @@ def _settle(room, winner_role, device_id, ip):
     stake = room.guest_stake if winner_role == "host" else room.host_stake
     winner = Player.objects.select_for_update().get(pk=winner_id)
     loser = Player.objects.select_for_update().get(pk=loser_id)
-    # Нэг сүлжээнээс (нэг гэрийн роутер = ижил IP) тулалдаж болно, гэхдээ Gold шилжихгүй: нэг хүн олон дансаар өөртэйгөө
-    # тулалдаж Gold-оо нэг данс руу цуглуулахаас
-    same_network = settings.block_same_ip and room.host_ip and room.host_ip == room.guest_ip
-    paid = _pair_battles_today(winner, loser) < settings.battle_pair_limit and not same_network
+    paid = _pair_battles_today(winner, loser) < settings.battle_pair_limit
     loser.locked_gold = max(0, loser.locked_gold - stake)
     loser.save(update_fields=["locked_gold"])
     # Утсаа баталгаажуулаагүй тоглогч: Gold хасагдана, нэмэгдэхгүй.
@@ -837,8 +838,7 @@ def _settle(room, winner_role, device_id, ip):
         room.guest_seen = None
     _reset_battle(room)
     room.save()
-    log_event(winner, "battle_won", {"room": room.pk, "battle": room.battle, "opponent": loser.pk, "paid": paid,
-                                     "same_network": bool(same_network)},
+    log_event(winner, "battle_won", {"room": room.pk, "battle": room.battle, "opponent": loser.pk, "paid": paid},
               device_id, ip)
     log_event(loser, "battle_lost", {"room": room.pk, "battle": room.battle, "opponent": winner.pk, "paid": paid})
 

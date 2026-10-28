@@ -85,6 +85,9 @@ public:
     float RoofHeight(float x, float z) const;
     // (x, z) дээрх налуу дээврийн гадаргуугийн өндөр (Structures.h PitchedRoof), байхгүй бол -1e9
     float PitchedRoofAt(float x, float z) const;
+    // (x, z)-ээс radius доторх хамгийн өндөр барилга, байгууламжийн оройн өндөр (дэлхийн y); байхгүй бол -1e9.
+    // Нисдэг тэрэг урд нь байгаа өндөр байшингаас өмнө нь өндөр авна.
+    float TallestNear(float x, float z, float radius) const;
     // Явган хүмүүсийн мөргөлдөх унаанууд (Game frame бүрд: зогсож буй, удаан явж буй унаа)
     void SetVehicleBlockers(std::vector<VehicleBlocker> blockers) { vehicleBlockers = std::move(blockers); }
     const std::vector<WallSegment>& Walls() const { return walls; }

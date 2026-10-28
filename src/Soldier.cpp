@@ -7,6 +7,7 @@
 #include "CharacterModel.h"
 #include "Humanoid.h"
 #include "Team.h"
+#include "Vehicle.h"
 #include "Zombie.h"
 #include "raymath.h"
 
@@ -810,9 +811,11 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
 
         // --- Ойрын, харагдаж буй зомбийг буудах ---
         soldier.fireCooldown -= dt;
-        const float fireRange = sniper ? kSniperRange : teammate ? kFighterRange : kFireRange;
-        const float fireInterval = sniper ? kSniperInterval : teammate ? kFighterInterval : kFireInterval;
-        const float damage = sniper ? kSniperDamage : teammate ? kFighterDamage : kDamage;
+        // (хуягт машины пулемёт: Arsenal-ийн хаалганы пулемёттой ойролцоо)
+        const bool turret = soldier.turret && soldier.riding >= 0;
+        const float fireRange = turret ? 160.0f : sniper ? kSniperRange : teammate ? kFighterRange : kFireRange;
+        const float fireInterval = turret ? 0.09f : sniper ? kSniperInterval : teammate ? kFighterInterval : kFireInterval;
+        const float damage = turret ? 36.0f : sniper ? kSniperDamage : teammate ? kFighterDamage : kDamage;
 
         // Багийн гишүүд удирдаж буй гишүүнээ хамгаална: түүнд хамгийн ойр зомбийг түрүүлж буудна.
         int targetIndex = -1;
@@ -856,9 +859,14 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
             continue;
         }
 
-        const Vector3 muzzle = HumanoidLocalToWorld(pos, soldier.mover.facing,
-                                                    HumanoidMuzzleFor(sniper ? HeldItem::Sniper : HeldItem::Rifle));
+        const Vector3 muzzle = turret ? soldier.turretMuzzle
+                                      : HumanoidLocalToWorld(pos, soldier.mover.facing,
+                                                             HumanoidMuzzleFor(sniper ? HeldItem::Sniper : HeldItem::Rifle));
         const Vector3 chest = human ? human->chest : horde.At(targetIndex).Chest();
+        if (turret && std::fabs(std::remainder(std::atan2(chest.x - pos.x, chest.z - pos.z) - soldier.turretHeading, 2.0f * PI)) > kArmorTraverse)
+        {
+            continue; // пулемёт тийш эргэхгүй (машины ард): жолооч эргэтэл хүлээнэ
+        }
         const Vector3 toTarget = Vector3Subtract(chest, muzzle);
         const float distance = Vector3Length(toTarget);
         if (distance < 0.01f)
@@ -1076,6 +1084,15 @@ void SoldierSquad::Draw(Vector3 viewPosition, bool showColliders) const
             if (soldier.seatStyle == 3 || soldier.seatStyle == 5)
             {
                 continue; // бүхээг дотор: харагдахгүй
+            }
+            if (soldier.seatStyle == 6)
+            {
+                // Хуягт машины пулемётын ард зогсож, хоёр гараараа бариулаас нь барина (өөрийн буу харагдахгүй)
+                look.held = HeldItem::None;
+                const Vector3 feet = { soldier.seat.x, soldier.seat.y - 0.9f, soldier.seat.z };
+                DrawHumanoid(feet, soldier.seatHeading, 1.0f, MakeGunnerPose(feet, soldier.seatHeading, soldier.turretGrips, (float)GetTime()),
+                             look, detailed);
+                continue;
             }
             // Суудлын хэлбэрээс хамаарсан хөл, их биеийн байрлал (гар нь буугаа барьсан хэвээр).
             pose = MakeSoldierPose(0.0f, 0.0f, true, (float)GetTime() + soldier.walkCycle, soldier.recoil, look.held);

@@ -77,6 +77,7 @@ set(GAME_SOURCES
     src/Online.cpp
     src/Airstrike.cpp
     src/Audio.cpp
+    src/Bear.cpp
     src/Campaign.cpp
     src/City.cpp
     src/Splash.cpp
@@ -172,8 +173,6 @@ if(EMSCRIPTEN)
     endforeach()
     file(GLOB files ${CMAKE_SOURCE_DIR}/assets/city/*.bin) # Улаанбаатар, аймгийн төвүүдийн газрын зураг
     file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/city)
-    file(GLOB files ${CMAKE_SOURCE_DIR}/assets/sounds/soldiers/*.wav) # цэргүүдийн яриа
-    file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/sounds/soldiers)
     file(GLOB files ${CMAKE_SOURCE_DIR}/assets/sounds/*.wav)
     file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/sounds)
     file(COPY ${CMAKE_SOURCE_DIR}/android/ui_font.ttf DESTINATION ${WEB_ASSETS})

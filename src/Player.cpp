@@ -606,6 +606,13 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
     HumanoidLook look = this->look;
     look.held = swimming ? HeldItem::None : held; // сэлж байхад буу харагдахгүй
 
+    if (IsRiding() && rideStyle == RideStyle::Stand)
+    {
+        // Пулемётын ард зогсож, хоёр гараараа бариулаас нь барина (хөл нь тасгийн шалан дээр; өөрийн буу харагдахгүй)
+        look.held = HeldItem::None;
+        DrawHumanoid(BodyBase(), facing, 1.0f, MakeGunnerPose(BodyBase(), facing, grips, (float)GetTime()), look);
+        return;
+    }
     if (IsRiding())
     {
         // Гарын байрлал зэвсгээс, хөл ба их биеийн байрлал суудлын хэлбэрээс хамаарна.

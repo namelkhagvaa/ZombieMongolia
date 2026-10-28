@@ -16,20 +16,28 @@ enum class VehicleType
     Truck,      // ачааны машин (ЗИЛ-131): удаан, хүнд, зомбийг бут цохино, багийг тэвшиндээ авч явна
     Suv,        // Nissan X-Trail: жийпээс хөнгөн, хээр талд арай сул
     Hatchback,  // Toyota Yaris: засмал зам дээр хамгийн хурдан, хээр, толгодод муу, эмзэг
-    Helicopter  // Ми-8 (жинхэнэ хэмжээ: их бие 18 м, сэнс 21 м): заставын дэргэд; газрын хэлбэрийг дагаж нам нисэнэ
+    Helicopter, // Ми-8 (жинхэнэ хэмжээ: их бие 18 м, сэнс 21 м): заставын дэргэд; газрын хэлбэрийг дагаж нам нисэнэ
+    Armored     // дээвэр дээрээ пулемёттой хуягт машин: суухдаа жолооч / буудагч сонгоно, нөгөө суудалд AI цэрэг
 };
+constexpr int kVehicleTypeCount = (int)VehicleType::Armored + 1;
+// Хуягт машины пулемёт урдаасаа зүүн, баруун тийш эргэх хязгаар (радиан, 55 градус): буудагч байрнаасаа хөдлөхгүй,
+// гар нь бариулд хүрнэ, ар тал руу буудахгүй
+constexpr float kArmorTraverse = 55.0f * 3.14159265f / 180.0f;
 
-// Нисдэг тэрэг: "өндөр авах" (Garage::SetLift) дарахад kHeliCruise метрт хөөрч, kHeliControl метрээс дээш гарсны
-// дараа л урагш хойш (throttle), эргэлтээр (steer) удирдана. Доорх газрын өндрийг хязгаартай хурдаар (өгсөх 5 м/с)
-// дагана: огцом уул, өндөр байшин руу хурдтай нисвэл мөргөж сүйрнэ (нисгэгч удаашруулж өндөр авах ёстой).
-constexpr float kHeliCruise = 45.0f;  // газар (барилгын орой) дээрх нислэгийн өндөр, м
+// Нисдэг тэрэг: "өндөр авах" (Garage::SetLift) дарахад хөөрч, kHeliControl метрээс дээш гарсны дараа л урагш хойш
+// (throttle), эргэлтээр (steer) удирдана. Нислэгийн өндрөө барина (байшин бүр дээр дээш доош үсрэхгүй): хөөрөхдөө
+// газраас kHeliCruise, урд нисэх замд байгаа барилгаас kHeliClearance, газар (уул)-аас kHeliFloor дээгүүр болтол л дээш
+// авч, буухгүй. Хэт хурдтай нисвэл өндөр авч амжихгүй мөргөж сүйрнэ.
+constexpr float kHeliCruise = 45.0f;    // газар дээрх нислэгийн өндөр, м
+constexpr float kHeliClearance = 15.0f; // хамгийн өндөр барилгын оройгоос дээш, м
+constexpr float kHeliFloor = 15.0f;     // доорх газраас хамгийн багадаа, м
 constexpr float kHeliControl = 6.0f;  // үүнээс өндөр гарсны дараа хөдөлж эхэлнэ
 constexpr int kHeliSeats = 6;         // нисгэгчээс гадна: 2 хаалганы буудагч (баг), 4 бүхээгт (нөгөө тоглогч, түүний баг)
 
 // Бүхээгтэй суудлын машин (жийп, X-Trail, Yaris): жолооч зүүн, зорчигч баруун урд суудалд.
 inline bool IsCar(VehicleType type)
 {
-    return type == VehicleType::Jeep || type == VehicleType::Suv || type == VehicleType::Hatchback;
+    return type == VehicleType::Jeep || type == VehicleType::Suv || type == VehicleType::Hatchback || type == VehicleType::Armored;
 }
 
 // Тээврийн хэрэгслийн онцлог. Хурд нь доорх үзүүлэлт ба газрын гадаргуу, налуугаас хамаарна.
@@ -89,9 +97,14 @@ struct Vehicle
     float rotorSpeed = 0.0f;  // 0..1: сэнс эргэлт (хөдөлгүүр асаахад аажим эргэж эхэлнэ)
     float rotor = 0.0f;       // сэнсний далавчны өнцөг, радиан
     float climb = 0.0f;       // босоо хурд, м/с
+    float holdY = 0.0f;       // нисдэг тэрэг: барьж буй нислэгийн өндөр (дэлхийн y; 0 = газар дээр)
     float altitude = 0.0f;    // доорх газар (барилгын орой) дээрх өндөр, м
     bool crashed = false;     // агаарт эвдэрч унаад газар мөргөсөн (Game: дэлбэрэлт, суусан хүмүүс)
     float crashSeverity = 0.0f; // сүйрлийн хүч 0.2..1 (унасан өндөр, мөргөсөн хурдаар): суусан хүмүүсийн хохирол
+    // Хуягт машин: дээврийн пулемётын харах зүг (дэлхийн, радиан), буудагч (тоглогч, AI) онилсон тийш
+    float turretYaw = 0.0f;
+    float turretPitch = 0.0f;  // хошууны өндөр (радиан, + дээш)
+    float turretRecoil = 0.0f; // 1 = дөнгөж буудсан (амны гал)
 };
 
 inline bool IsHelicopter(VehicleType type) { return type == VehicleType::Helicopter; }
@@ -127,6 +140,13 @@ public:
     int Nearest(Vector3 position, float maxDistance) const;
 
     void Mount(int index) { driven = index; }
+    // Хуягт машины пулемётын амсар (дэлхийн байрлал): сумны мөр, амны гал эндээс
+    Vector3 TurretMuzzle(int index) const;
+    // Пулемётын бариул (дэлхийн байрлал): side 0 баруун, 1 зүүн (буудагчийн гар)
+    Vector3 TurretGrip(int index, int side) const;
+    // Хуягт машины пулемётыг эргүүлнэ: машины урагшаас ±kArmorTraverse (буудагч ард нь нэг байрандаа зогсоно),
+    // хошуу -25..+35 градус; буудсан бол амны гал
+    void AimTurret(int index, float yaw, float pitch, bool fired);
     void Dismount();
     // Нисдэг тэрэг: өндөр авах (true) эсвэл газардах (false)
     void SetLift(int index, bool up) { vehicles[(size_t)index].lift = up; }

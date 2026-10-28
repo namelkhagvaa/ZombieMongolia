@@ -1308,6 +1308,8 @@ namespace Net
         case Msg::Chat:
             e.text = r.Str();
             break;
+        case Msg::MissionLost:
+            break;
         case Msg::Revive:
             break;
         case Msg::BattleOver:
@@ -1425,6 +1427,13 @@ namespace Net
     {
         Writer w;
         w.U8((uint8_t)Msg::GuestKick);
+        Send(w.data, true);
+    }
+
+    void Session::SendMissionLost()
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::MissionLost);
         Send(w.data, true);
     }
 

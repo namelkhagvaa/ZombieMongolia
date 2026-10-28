@@ -53,6 +53,7 @@ struct LaunchOptions
     int crashTest = -1; // туршилт: унаж буй хэрэгслийн урд 25 м-т энэ дугаартай хэрэгслийг хөндлөн тавина
     float rideHeading = -1000.0f; // туршилт: унааны чиглэл (градус), камераас тусдаа (--ride-heading)
     int zombies = 0;  // тоглогчийн урд шууд гаргах зомбины тоо (--zombies N)
+    int bears = 0;    // тоглогчийн урд 14 м-т гаргах баавгайн тоо (--bears N, туршилт; сөрөг бол шууд үхнэ)
     int soldiers = 0; // туршилтад багийн цэргийн тоо (--soldiers N)
     float cameraDistance = 0.0f; // >0 бол камерын зай (--zoom D)
     int weapon = 0;        // 1..5 бол тэр зэвсгийг сонгож, тасралтгүй хэрэглэнэ (--weapon N)
@@ -97,6 +98,7 @@ struct LaunchOptions
     int joinCode = 0;               // газрын зураг дээрээс энэ өрөөнд шууд нэгдэнэ (--join 1234, --campaign --coop-тай)
     bool show = false;              // туршилтын цонхыг дэлгэцэнд харуулна; үгүй бол нуугдмал ажиллана (--show)
     bool thirdPerson = false;       // туршилтыг 3-р этгээдийн камераар эхлүүлнэ: дүрийн бие харагдана (--third)
+    int seat = 0;                   // хуягт машинд суухад (--use-frame-ээр F) 1 жолооч, 2 буудагч гэж сонгоно (--seat N)
     const char* chat = nullptr;     // хамтарсан тоглолтод холбогдсоноос 3 секундын дараа энэ чатын мессежийг илгээнэ (--chat)
     bool heliRoof = false;          // ойрын өндөр байшингийн дээвэр дээр нисдэг тэрэг буулгаж тоглогчийг суулгана:
                                     // баг нь олсоор авирч суух эсэхийг шалгана (--heli-roof)
@@ -140,6 +142,8 @@ private:
     Interaction FindInteraction() const;
 
     void SpawnVehicles();
+    // Аймаг бүрт 50 баавгай: ихэнх нь хээр талд, 10% нь суурин газар дотор (зочинд хостоос ирнэ)
+    void SpawnBears();
     void UpdateVehicles(float dt);
     void UpdateShooting();
     // Дэлгэцийн төвийн хараа туссан ертөнцийн цэг.
@@ -192,6 +196,49 @@ private:
     void EnsureMissionAssets(int provinceIndex);
     void PlaceHelicopterOnRoof(); // туршилт (--heli-roof)
     void ReturnToMap();
+    // Хамтын тоглолт, тулаан дууссаны мэдээ (газрын зураг дээр): юу болсныг хэлээд газрын зураг, дахин тулаан, кодоор
+    // хамт тоглох сонголт
+    struct EndDialog
+    {
+        bool open = false;
+        bool battle = false;
+        std::string title, detail;
+    };
+    EndDialog endDialog;
+    // Хуягт машинд суухад: жолооч уу, буудагч уу (нөгөө суудалд AI цэрэг)
+    int seatChoice = -1;
+    // AI жолооч (хуягт машин): зомбины бөөгнөрөл рүү урдаас нь давшиж (пулемётын хүрээнд), дундуур нь гарч,
+    // цаашаа хэсэг яваад эргэж ирнэ; саад, усыг тойрно
+    float armorThink = 0.0f;           // бай дахин сонгох хүртэл
+    Vector3 armorTarget = { 0.0f, 0.0f, 0.0f };
+    bool armorHasTarget = false;
+    bool armorBoss = false;            // байд аварга зомби: дайрахгүй, хажуугаар нь өнгөрнө
+    bool armorPass = false;            // дундуур нь гарсан: цааш явж байна (дараа нь эргэнэ)
+    float armorAvoid = 1.0f;           // саадыг аль талаар тойрсон (тогтвортой байлгана)
+    // wanted зүгт ойрын саад, гүн ус байвал хамгийн ойрын чөлөөтэй зүгийг буцаана (бүгд хаалттай бол blocked)
+    float SteerClear(const Vehicle& vehicle, float wanted, bool& blocked);
+    bool UpdateSeatChoice(); // цонх нээлттэй бол true (тоглоомын оролтыг хаана)
+    void ChooseSeat(bool driver);
+    Rectangle SeatChoiceButton(int index) const; // 0 жолооч, 1 буудагч
+    void DrawSeatChoice() const;
+    // Шинэ хувилбар (Windows, Android): вэб сайтын download/<платформ>-version.txt дахь build-ийн цаг энэ build-ээс хойш
+    // бол газрын зураг дээр "ТАТАХ" товчтой мөр (хөтөч дээр web/shell.html өөрөө шалгадаг)
+    int updateRequest = -1;
+    bool updateChecked = false;
+    bool updateAvailable = false;
+    bool updateClosed = false;
+    bool UpdateVersionCheck(); // газрын зураг дээр: товшилтыг авсан бол true
+    Rectangle UpdateBannerRect() const;
+    Rectangle UpdateButtonRect() const;
+    Rectangle UpdateCloseRect() const;
+    void DrawUpdateBanner() const;
+    void OpenEndDialog(const std::string& title, const std::string& detail, bool battle);
+    bool EndDialogHasBattle() const;
+    bool EndDialogHasCode() const;
+    Rectangle EndDialogPanel() const;
+    Rectangle EndDialogButton(int index) const; // 0 газрын зураг, 1 дахин тулаан, 2 кодоор хамт
+    void UpdateEndDialog();
+    void DrawEndDialog() const;
     void CloseJournal();
     void OpenPause();
     void ClosePause();
@@ -462,6 +509,8 @@ private:
         uint8_t held = 0, member = 0, flags = 0;
         uint8_t skin = 0;         // тэр тоглогчийн 1-р дайчны дүр
         bool alive = true;
+        float health = 0.0f;      // амь (тулаанд дайсны багийн самбарт)
+        float healthMax = 100.0f; // (дээд хэмжээ илгээгддэггүй: харсан хамгийн их утга)
         uint8_t shots = 0;        // сүүлд харуулсан буудлагын тоолуур
         bool synced = false;      // тоолуурыг анх авсан эсэх (эхний мэдээнд хуучин сумыг зурахгүй)
         float recoil = 0.0f;      // 1 = дөнгөж буудсан
@@ -472,6 +521,10 @@ private:
         int vehicle = -1;         // тоглогч: жолоодож буй унаа (-1 = явган)
         uint8_t seatStyle = 0;    // цэрэг: унаан дээрх суудал (3 = бүхээг, харагдахгүй)
         Vector3 seatOffset = { 0.0f, 0.0f, 0.0f }; // цэрэг: байрлалаас суудал хүртэл
+        // Цэрэг (зочин дээр): сууж буй унаа ба түүний орон нутгийн тэнхлэгт суудал. Зочны өөрийн унааны хуулбар дээр
+        // байрлуулна: сүлжээний хоцролтоор хурдтай нисэж буй нисдэг тэрэгнээс хоцорч агаарт харагдахгүй.
+        int seatVehicle = -1;
+        Vector3 seatLocal = { 0.0f, 0.0f, 0.0f };
         Vector3 velocity = { 0.0f, 0.0f, 0.0f };   // хоёр мэдээнээс тооцсон хурд (хоцролтыг нөхөж урагш таамаглана)
         float sinceUpdate = 0.0f;                   // сүүлийн мэдээнээс хойш
         float sentAt = -1.0f;                       // сүүлийн мэдээг илгээсэн цаг (илгээгчийнх)

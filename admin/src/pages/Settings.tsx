@@ -47,8 +47,6 @@ export default function SettingsPage() {
           battle_pair_limit: v.battle_pair_limit,
           stage_daily_limit: v.stage_daily_limit,
           verify_bonus: v.verify_bonus,
-          register_per_ip_day: v.register_per_ip_day,
-          block_same_ip: v.block_same_ip,
           gold_packs: v.gold_packs,
           cashout_enabled: v.cashout_enabled,
           cashout_min: v.cashout_min,
@@ -214,28 +212,12 @@ export default function SettingsPage() {
                   <InputNumber min={0} max={100000} step={50} style={{ width: 200 }} suffix="Gold" />
                 </Form.Item>
                 <Form.Item
-                  name="register_per_ip_day"
-                  label="Нэг IP-ээс хоногт нээх данс"
-                  extra="Олон данс нээж эхлэлийн Gold цуглуулахаас. Утасны операторууд олон хүнийг нэг IP-аар гаргадаг тул хэт бага бүү тавиарай."
-                  rules={[{ required: true }]}
-                >
-                  <InputNumber min={1} max={1000} style={{ width: 200 }} suffix="данс" />
-                </Form.Item>
-                <Form.Item
                   name="stage_daily_limit"
                   label="Үе шатны шагнал хоногт"
                   extra="Нэг тоглогч хоногт үүнээс олон удаа үе шатны шагнал авахгүй (олборлохоос)."
                   rules={[{ required: true }]}
                 >
                   <InputNumber min={0} max={100} style={{ width: 200 }} suffix="удаа" />
-                </Form.Item>
-                <Form.Item
-                  name="block_same_ip"
-                  label="Ижил IP-тай тоглогчдын тулаанд Gold шилжүүлэхгүй"
-                  extra="Нэг гэрийн роутер (ижил IP) дээрх тоглогчид тулалдаж болно, гэхдээ барьцаа ялагчид очихгүй: нэг хүн олон дансаар Gold цуглуулахаас сэргийлнэ."
-                  valuePropName="checked"
-                >
-                  <Switch />
                 </Form.Item>
               </Card>
             </Col>

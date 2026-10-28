@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "raylib.h"
 
 // Оролт ба дэлгэцийн харагдацын давхарга.
@@ -89,6 +91,14 @@ bool InTouchMode();
 void InBeginFrame(const TouchState& state);
 // Мэдрэгчтэй дэлгэцийн товчлууруудыг зурна (бусад 2D зураглалын дараа).
 void InDrawTouch(const TouchState& state);
+
+// Утасны товчнуудыг тоглогч өөрөө байрлуулна (⚙ цэс -> "ТОВЧ БАЙРЛУУЛАХ"): хөдлөх хүрд, буудах, онилох, үсрэх, суух,
+// хэвтэх, цэнэглэх (явган үеийн). Бусад товч байрандаа. Байрлал нь дэлгэцийн хэмжээнд харьцуулсан тул хадгалсан
+// байрлал өөр хэмжээтэй дэлгэцэд ч ижил газраа.
+void InLayoutLoad(const std::string& text); // хадгалсан мөр ("" = анхны байрлал)
+std::string InLayoutText();                 // хадгалах мөр
+bool InLayoutEditing();                     // байрлуулах цэс нээлттэй (тоглоом зогсоно)
+bool InLayoutTakeSaved();                   // "ХАДГАЛАХ" дарсан бол нэг удаа true (Game хадгална)
 
 bool InKeyDown(int key);
 bool InKeyPressed(int key);

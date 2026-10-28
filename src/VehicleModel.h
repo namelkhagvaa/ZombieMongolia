@@ -15,6 +15,7 @@ enum class VehicleModelId
     Trike,      // гурван дугуйт ачааны мотоцикл (3duguit.glb -> trike.vmesh): урд нэг, хойд хоёр дугуй
     Helicopter, // унадаг Ми-8 (unadag_helicopter.glb -> heli.vmesh): сэнс тусдаа хэсэг (kind 3, 4)
     DropHelicopter, // ачаа буулгадаг нисдэг тэрэг (drop_buulgadag_helicopter.glb -> dropheli.vmesh)
+    Armored,        // хуягт машин (armored.glb -> armored.vmesh): пулемёт тусдаа хэсэг (kind 3, босоо тэнхлэгээр эргэнэ)
     Count
 };
 
@@ -25,7 +26,9 @@ bool HasVehicleModel(VehicleModelId id);
 // Одоогийн rlgl хувиргалтаар (унааны төв, газрын түвшинд) зурна. distance нь явсан зай (дугуйн эргэлт),
 // steer -1..1. depth != nullptr бол сүүдрийн зурагт тэр материалаар зурна. tint нь эвдрэлийн бараан өнгө.
 // rotor: нисдэг тэрэгний сэнсний эргэлт (радиан; сүүлний сэнс 5 дахин хурдан).
-void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Material* depth, Color tint, float rotor = 0.0f);
+// rotor: kind 3 хэсгийн босоо тэнхлэгийн эргэлт (сэнс, хуягт машины пулемёт), pitch: kind 3-ыг дээш (+) доош хазайлгана
+void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Material* depth, Color tint, float rotor = 0.0f,
+                      float pitch = 0.0f);
 float VehicleModelWheelRadius(VehicleModelId id);
 // kind төрлийн эхний хэсгийн эргэх төв (м; байхгүй бол 0): 3 үндсэн сэнсний тэнхлэг, 4 сүүлний сэнс
 Vector3 VehicleModelPivot(VehicleModelId id, unsigned int kind);

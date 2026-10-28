@@ -217,8 +217,6 @@ def settings_json(settings):
         "battle_pair_limit": settings.battle_pair_limit,
         "stage_daily_limit": settings.stage_daily_limit,
         "verify_bonus": settings.verify_bonus,
-        "register_per_ip_day": settings.register_per_ip_day,
-        "block_same_ip": settings.block_same_ip,
         "gold_packs": [{"gold": p["gold"], "price": p["price"]} for p in logic.gold_packs()],
         "cashout_enabled": settings.cashout_enabled,
         "cashout_min": settings.cashout_min,
@@ -630,7 +628,7 @@ def settings_view(request):
                   "coop_daily_limit": (0, 100), "room_fee": (0, 10_000),
                   "room_stake": (0, 10_000), "stage_bonus": (0, 10_000), "stage_min_minutes": (0, 240),
                   "battle_pair_limit": (0, 100), "stage_daily_limit": (0, 100),
-                  "verify_bonus": (0, 100_000), "register_per_ip_day": (1, 1000)}
+                  "verify_bonus": (0, 100_000)}
         before = settings_json(settings)
         for field, (low, high) in limits.items():
             if field in request.json:
@@ -638,10 +636,6 @@ def settings_view(request):
                 if not isinstance(value, int) or not low <= value <= high:
                     raise ManageError("Утга буруу байна")
                 setattr(settings, field, value)
-        if "block_same_ip" in request.json:
-            if not isinstance(request.json["block_same_ip"], bool):
-                raise ManageError("Утга буруу байна")
-            settings.block_same_ip = request.json["block_same_ip"]
         if "cashout_enabled" in request.json:
             if not isinstance(request.json["cashout_enabled"], bool):
                 raise ManageError("Утга буруу байна")

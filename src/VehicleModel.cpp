@@ -28,7 +28,7 @@ namespace
     };
 
     Model3 models[(int)VehicleModelId::Count];
-    const char* kNames[(int)VehicleModelId::Count] = { "gclass", "truck", "xtrail", "yaris", "moto", "trike", "heli", "dropheli" };
+    const char* kNames[(int)VehicleModelId::Count] = { "gclass", "truck", "xtrail", "yaris", "moto", "trike", "heli", "dropheli", "armored" };
 
     Model3 props[(int)PropModelId::Count];
     const char* kPropNames[(int)PropModelId::Count] = { "ak47", "sum", "sniper", "pistol", "shotgun", "knife" };
@@ -175,7 +175,7 @@ Vector3 VehicleModelPivot(VehicleModelId id, unsigned int kind)
     return { 0.0f, 0.0f, 0.0f };
 }
 
-void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Material* depth, Color tint, float rotor)
+void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Material* depth, Color tint, float rotor, float pitch)
 {
     Model3& model = models[(int)id];
     if (!model.loaded) return;
@@ -191,7 +191,11 @@ void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Mate
         }
         rlPushMatrix();
         rlTranslatef(part.pivot.x, part.pivot.y, part.pivot.z);
-        if (part.kind == 3) rlRotatef(rotor * RAD2DEG, 0.0f, 1.0f, 0.0f);             // үндсэн сэнс: босоо тэнхлэг
+        if (part.kind == 3)
+        {
+            rlRotatef(rotor * RAD2DEG, 0.0f, 1.0f, 0.0f);   // үндсэн сэнс, пулемёт: босоо тэнхлэг
+            if (pitch != 0.0f) rlRotatef(-pitch * RAD2DEG, 1.0f, 0.0f, 0.0f); // пулемётын хошуу дээш / доош
+        }
         else if (part.kind == 4) rlRotatef(rotor * 5.0f * RAD2DEG, 1.0f, 0.0f, 0.0f); // сүүлний сэнс: хажуугийн тэнхлэг
         else
         {

@@ -158,6 +158,9 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
                    float action, float aim = 0.0f);
 // 1-р этгээдийн үед сумны мөр, амны гал гарах цэг (ертөнцөд).
 Vector3 ViewModelMuzzle(const Camera3D& camera, HeldItem held, float aim = 0.0f);
+// Хуягт машины пулемётын ард зогсож, хоёр гараараа бариулаас барина (grips: дэлхийн байрлал, [0] баруун, [1] зүүн).
+// feet: хөлийн цэг, facing: биеийн зүг. Гарт өөр зүйл байхгүй (look.held = None).
+HumanoidPose MakeGunnerPose(Vector3 feet, float facing, const Vector3 grips[2], float time);
 
 // Барьж буй зүйлийн амны (сум гарах цэгийн) орон нутгийн байрлал.
 Vector3 HumanoidMuzzleFor(HeldItem held);

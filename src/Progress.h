@@ -44,6 +44,7 @@ struct Progress
     int healthLevel = 0;
     int soldiers = 0;
     bool aimAssist = false;      // утсан дээр автомат онилгоо (тохиргоо)
+    std::string touchLayout;     // утасны товчнуудын тоглогчийн байрлал (InLayoutText; хоосон = анхны)
     bool firstPerson = true;     // анхдагч: 1-р этгээд (зөвхөн зэвсэг харагдана)
     bool fullscreen = true;      // компьютер: бүтэн дэлгэцээр тоглох (F11 / цэс)
     int frameLimit = 0;          // компьютер: FPS хязгаар (Game.cpp kFrameLimits: 0 дэлгэцийн давтамж, 60, 120, 144, хязгааргүй)

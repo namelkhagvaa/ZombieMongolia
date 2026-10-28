@@ -102,6 +102,7 @@ namespace
     bool smsCashout = false; // Sms цонх: Gold татах хүсэлтийг баталгаажуулж байна
     // Өрөө хайх: олдох хүртэл давтана
     bool roomSearching = false;
+    std::string roomSearchLast; // сүүлийн "өрөө алга" хариуны тайлбар (хайлт дуусахад харуулна)
     double roomSearchUntil = 0.0, nextRoomSearch = 0.0;
     std::string roomSearchNote;
     // Нээлттэй өрөө (сервер нээсэн / орсон)
@@ -2091,7 +2092,7 @@ void Account::Tick()
         if (GetTime() > roomSearchUntil)
         {
             roomSearching = false;
-            roomSearchNote = "Одоогоор сул өрөө олдсонгүй. Дараа дахин оролдоно уу";
+            roomSearchNote = roomSearchLast.empty() ? "Одоогоор сул өрөө олдсонгүй. Дараа дахин оролдоно уу" : roomSearchLast;
         }
         else
         {
@@ -2107,7 +2108,11 @@ void Account::Tick()
                     roomJoined = roomRole == Account::RoomRole::Guest;
                     roomSearching = false;
                 }
-                else if (status != 404 && status != 0)
+                else if (status == 404)
+                {
+                    roomSearchLast = reply["message"].Str(); // (хувилбар зөрсөн г.м.: хайлт дуусахад харуулна)
+                }
+                else if (status != 0)
                 {
                     roomSearching = false;
                     if (OfferDeviceForRoom(status, reply)) return;
@@ -2557,6 +2562,7 @@ void Account::JoinRoom()
     roomSearchUntil = GetTime() + 60.0;
     nextRoomSearch = 0.0;
     roomSearchNote.clear();
+    roomSearchLast.clear();
 }
 
 bool Account::SearchingRoom() { return roomSearching; }

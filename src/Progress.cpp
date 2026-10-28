@@ -128,6 +128,14 @@ bool LoadProgress(Progress& progress, int provinceCount)
             }
             continue;
         }
+        if (key == "touchLayout")
+        {
+            std::string rest;
+            std::getline(file, rest);
+            const size_t first = rest.find_first_not_of(' ');
+            progress.touchLayout = first == std::string::npos ? std::string() : rest.substr(first);
+            continue;
+        }
         if (key == "stage")
         {
             // stage <аймгийн индекс> <done> <entities x4> <clearedZones>
@@ -225,6 +233,7 @@ bool SaveProgress(const Progress& progress)
     file << "soldiers " << progress.soldiers << '\n';
     file << "tutorial " << progress.tutorial << '\n';
     file << "aimAssist " << (progress.aimAssist ? 1 : 0) << '\n';
+    if (!progress.touchLayout.empty()) file << "touchLayout " << progress.touchLayout << '\n';
     file << "firstPerson " << (progress.firstPerson ? 1 : 0) << '\n';
     file << "viewVersion 2\n";
     file << "fullscreen " << (progress.fullscreen ? 1 : 0) << '\n';

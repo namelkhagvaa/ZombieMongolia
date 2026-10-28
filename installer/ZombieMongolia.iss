@@ -49,7 +49,6 @@ Source: "..\assets\cars\*_color.png"; DestDir: "{app}\assets\cars"; Flags: ignor
 Source: "..\assets\buu\*.vmesh"; DestDir: "{app}\assets\buu"; Flags: ignoreversion
 Source: "..\assets\buu\*_color.png"; DestDir: "{app}\assets\buu"; Flags: ignoreversion
 Source: "..\assets\sounds\*.wav"; DestDir: "{app}\assets\sounds"; Flags: ignoreversion
-Source: "..\assets\sounds\soldiers\*.wav"; DestDir: "{app}\assets\sounds\soldiers"; Flags: ignoreversion
 Source: "..\assets\trees\*.vmesh"; DestDir: "{app}\assets\trees"; Flags: ignoreversion
 Source: "..\assets\trees\*_color.png"; DestDir: "{app}\assets\trees"; Flags: ignoreversion
 Source: "..\assets\trees\*_far.bin"; DestDir: "{app}\assets\trees"; Flags: ignoreversion

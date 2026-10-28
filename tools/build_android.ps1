@@ -100,8 +100,6 @@ New-Item -ItemType Directory -Force (Join-Path $staging "assets\city") | Out-Nul
 Copy-Item (Join-Path $root "assets\city\*.bin") (Join-Path $staging "assets\city")
 New-Item -ItemType Directory -Force (Join-Path $staging "assets\sounds") | Out-Null
 Copy-Item (Join-Path $root "assets\sounds\*.wav") (Join-Path $staging "assets\sounds")
-New-Item -ItemType Directory -Force (Join-Path $staging "assets\sounds\soldiers") | Out-Null
-Copy-Item (Join-Path $root "assets\sounds\soldiers\*.wav") (Join-Path $staging "assets\sounds\soldiers")
 
 # --- 3. APK: багцлах, native санг нэмэх, зэрэгцүүлэх, гарын үсэг зурах ---
 $unsigned = Join-Path $out "unsigned.apk"
@@ -136,4 +134,11 @@ Run "$tools\apksigner.bat" @("sign", "--ks", $keystore, "--ks-pass", "pass:andro
 Run "$tools\apksigner.bat" @("verify", $apk)
 
 Remove-Item -Force $unsigned, $aligned
+# Вэб сайтаас татах (тоглоом шинэ хувилбарыг download\android-version.txt-ээс шалгаж "ТАТАХ" товч гаргана):
+# build_web\web\download\ хавтсыг вэб сайттай хамт байршуулна
+$download = Join-Path $root "build_web\web\download"
+New-Item -ItemType Directory -Force $download | Out-Null
+Copy-Item $apk $download -Force
+$stamp = [regex]::Match((Get-Content -Raw (Join-Path $root "cmake-build-android-arm64-v8a\generated\BuildStampValue.h")), '"([^"]+)"').Groups[1].Value
+[System.IO.File]::WriteAllText((Join-Path $download "android-version.txt"), $stamp, (New-Object System.Text.UTF8Encoding $false))
 "APK: $apk ($([int]((Get-Item $apk).Length / 1MB)) MB)"
