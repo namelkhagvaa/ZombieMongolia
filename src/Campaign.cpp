@@ -4,6 +4,7 @@
 
 #include "Input.h"
 #include "Platform.h"
+#include "Rank.h"
 #include "ProvinceMap.h"
 #include "UiFont.h"
 #include "UiStyle.h"
@@ -21,15 +22,17 @@
 
 namespace
 {
-    // Газрын зургийн дэлгэц дээрх байрлал (1280x720 цонхонд тааруулсан).
-    const Rectangle kMapRect = { 30.0f, 90.0f, 900.0f, 460.0f };
+    // Газрын зургийн дэлгэц дээрх байрлал (1280x720 цонхонд тааруулсан). Өргөн дэлгэцэд (утас 19:9, 20:9) газрын зураг,
+    // самбарууд голлоно: баруун талд хоосон зай үлдэхгүй (гарчиг, данс нь захдаа хэвээр).
+    int MapShift() { return std::max(0, (ViewWidth() - 1280) / 2); }
+    Rectangle MapRect() { return { 30.0f + (float)MapShift(), 90.0f, 900.0f, 460.0f }; }
     const float kLonMin = 87.0f, kLonMax = 120.5f;
     const float kLatMin = 41.2f, kLatMax = 52.5f;
 
-    const int kPanelX = 950;
+    int PanelX() { return 950 + MapShift(); }
     const int kPanelWidth = 300;
     // Аймгийн картын доорх довтлох товч (Update ба Draw хоёулаа ашиглана)
-    const Rectangle kAttackButton = { (float)kPanelX, 246.0f, (float)kPanelWidth, 46.0f };
+    Rectangle AttackButton() { return { (float)PanelX(), 246.0f, (float)kPanelWidth, 46.0f }; }
 
     const Color kLiberated = { 52, 150, 48, 255 };
     const Color kAvailable = { 238, 176, 28, 255 };
@@ -40,7 +43,8 @@ namespace
     {
         const float u = (lonLat.x - kLonMin) / (kLonMax - kLonMin);
         const float v = (kLatMax - lonLat.y) / (kLatMax - kLatMin);
-        return { kMapRect.x + u * kMapRect.width, kMapRect.y + v * kMapRect.height };
+        const Rectangle map = MapRect();
+        return { map.x + u * map.width, map.y + v * map.height };
     }
 
     // Аймаг бүрийн дэлгэц дээрх дүрс: нэг удаа тооцоод хадгална.
@@ -55,8 +59,11 @@ namespace
     const std::vector<ProvinceArt>& Art()
     {
         static std::vector<ProvinceArt> art;
-        if (art.empty())
+        static int builtShift = -1;
+        if (builtShift != MapShift())
         {
+            art.clear();
+            builtShift = MapShift();
             // Бодит хил (ProvinceMap.cpp); даалгаврын талбарын бүдүүвч (Regions.cpp) биш
             auto toScreen = [](const Polygon& ring) {
                 Polygon out;
@@ -93,7 +100,7 @@ namespace
     // өнгийг холиход яг таарна (бодит хилийн урт нарийн гурвалжнууд туяа шиг харагдахгүй).
     Color ShadeAt(Vector2 p, Color fill)
     {
-        const float t = std::clamp((p.y - kMapRect.y) / kMapRect.height, 0.0f, 1.0f);
+        const float t = std::clamp((p.y - MapRect().y) / MapRect().height, 0.0f, 1.0f);
         const float k = 1.08f - 0.3f * t;
         auto channel = [k](unsigned char c) { return (unsigned char)std::clamp((float)c * k, 0.0f, 255.0f); };
         return { channel(fill.r), channel(fill.g), channel(fill.b), fill.a };
@@ -149,7 +156,7 @@ namespace
     {
         if (InTouchMode()) return -1;
         const Vector2 mouse = InPointer();
-        if (!CheckCollisionPointRec(mouse, kMapRect)) return -1;
+        if (!CheckCollisionPointRec(mouse, MapRect())) return -1;
         for (int i = 0; i < (int)art.size(); ++i)
         {
             if (art[i].shape.Contains(mouse)) return i;
@@ -166,7 +173,7 @@ namespace
         tried = true;
 #if defined(__ANDROID__)
         // APK-ийн assets-ийн үндсэнд байрлана (FileExists нь assets-ийг хардаггүй).
-        texture = LoadTexture("home_back.png");
+        texture = LoadTexture(ImageFile("home_back.png").c_str());
 #else
         const std::string application = GetApplicationDirectory();
         for (const std::string& folder : { std::string("assets/"), application + "assets/", application + "../assets/" })
@@ -484,7 +491,7 @@ MapScreen::Result MapScreen::Update(Progress& progress, bool& progressChanged)
     if (InMousePressed(MOUSE_BUTTON_LEFT))
     {
         const Vector2 mouse = InPointer();
-        attackPressed = CheckCollisionPointRec(mouse, kAttackButton);
+        attackPressed = CheckCollisionPointRec(mouse, AttackButton());
         for (int i = 0; i < count; ++i)
         {
             // Contains нь нүхийг хасдаг тул Төв дотор Улаанбаатарыг товшиход Улаанбаатар сонгогдоно.
@@ -512,7 +519,7 @@ MapScreen::Result MapScreen::Update(Progress& progress, bool& progressChanged)
     // Аймаг эсвэл довтлох товч дээр хулганы заагч "гар" хэлбэртэй
     bool overCard = false;
     for (int i = 0; i < (int)ShopItem::Count; ++i) overCard = overCard || CheckCollisionPointRec(InPointer(), shopCards[i]);
-    const bool pointing = !InTouchMode() && (HoveredProvince(art) >= 0 || overCard || CheckCollisionPointRec(InPointer(), kAttackButton));
+    const bool pointing = !InTouchMode() && (HoveredProvince(art) >= 0 || overCard || CheckCollisionPointRec(InPointer(), AttackButton()));
     SetMouseCursor(pointing ? MOUSE_CURSOR_POINTING_HAND : MOUSE_CURSOR_DEFAULT);
 
     if ((doubleClicked || attackPressed || InKeyPressed(KEY_ENTER)) && IsProvinceUnlocked(progress, selected))
@@ -610,6 +617,28 @@ void MapScreen::Draw(const Progress& progress) const
     Ui::TextShadow(progressText, 32, 56, 16, Ui::kText);
     Ui::Bar({ 42.0f + (float)Ui::Measure(progressText, 16), 62.0f, 200.0f, 7.0f }, (float)liberated / (float)count, kLiberated,
             { 0, 0, 0, 140 });
+    {
+        // Зэрэг (гарчгийн хажууд): цол, зэргийн дугаар, дараагийн зэрэг хүртэлх XP (үе давах +50, тулаанд ялах +25).
+        // Нэвтрээгүй бол 1-р зэрэг: XP зөвхөн данстай үед хадгалагдана.
+        const int rank = Account::Rank();
+        int stars = 0;
+        const char* title = RankTitle(rank, stars);
+        std::string label = std::string(title);
+        if (stars > 0) label += TextFormat(" %d од", stars); // (фонтод ★ байхгүй)
+        // Чөлөөлсөн аймгийн мөрний баруун талд (давхцахгүй)
+        const int x = std::max(30 + Ui::MeasureBold("ZOMBIE MONGOLIA", 38), 42 + Ui::Measure(progressText, 16) + 200) + 30;
+        const int width = 320;
+        const Rectangle badge = { (float)x, 10.0f, (float)width, 58.0f };
+        Ui::Panel(badge, { 10, 13, 19, 196 }, 8.0f);
+        Ui::Outline(badge, kFrame, 1.0f, 8.0f);
+        Ui::TextBold(label.c_str(), x + 12, 16, 17, kGold);
+        const char* level = TextFormat("%d-р зэрэг", rank);
+        Ui::TextBold(level, x + width - 12 - Ui::MeasureBold(level, 15), 18, 15, Ui::kText);
+        const int into = Account::Xp() - RankXp(rank), need = RankXpToNext(rank);
+        Ui::Bar({ (float)x + 12.0f, 44.0f, 150.0f, 8.0f }, std::clamp((float)into / (float)need, 0.0f, 1.0f), kGold, { 0, 0, 0, 140 });
+        const char* xpText = Account::SignedIn() ? TextFormat("%d / %d XP", into, need) : "нэвтэрвэл хадгална";
+        Ui::Text(xpText, x + width - 12 - Ui::Measure(xpText, 13), 40, 13, Ui::kText);
+    }
     // Данс: нэр, үнэгүй үлдсэн аймаг, худалдаж авсан эрх, "Гарах" товч
     Account::DrawBadge(screenWidth - 28, 20, true); // баруун дээд буланд
     if (liberated == count)
@@ -618,7 +647,7 @@ void MapScreen::Draw(const Progress& progress) const
     }
 
     // --- Газрын зургийн хүрээ: бараан шил самбар, алтан хүрээ, булангийн хаалт ---
-    const Rectangle frame = { kMapRect.x - 8.0f, kMapRect.y - 8.0f, kMapRect.width + 16.0f, kMapRect.height + 16.0f };
+    const Rectangle frame = { MapRect().x - 8.0f, MapRect().y - 8.0f, MapRect().width + 16.0f, MapRect().height + 16.0f };
     Ui::Panel(frame, { 10, 13, 19, 96 }, 12.0f);
     Ui::Outline(frame, kFrame, 1.5f, 12.0f);
     {
@@ -738,8 +767,8 @@ void MapScreen::Draw(const Progress& progress) const
         const char* state = progress.liberated[hovered] ? "чөлөөлсөн" : "зомбид эзлэгдсэн";
         const int width = std::max(Ui::MeasureBold(name, 15), Ui::Measure(state, 13) + 14) + 20;
         float tx = mouse.x + 18.0f, ty = mouse.y + 16.0f;
-        if (tx + (float)width > kMapRect.x + kMapRect.width) tx = mouse.x - 12.0f - (float)width;
-        if (ty + 48.0f > kMapRect.y + kMapRect.height) ty = mouse.y - 56.0f;
+        if (tx + (float)width > MapRect().x + MapRect().width) tx = mouse.x - 12.0f - (float)width;
+        if (ty + 48.0f > MapRect().y + MapRect().height) ty = mouse.y - 56.0f;
         Ui::Panel({ tx, ty, (float)width, 46.0f }, { 10, 13, 19, 230 }, 8.0f);
         Ui::TextBold(name, (int)tx + 10, (int)ty + 5, 15, Ui::kText);
         DrawCircle((int)tx + 14, (int)ty + 33, 4.0f, StatusColor(progress, hovered));
@@ -747,12 +776,12 @@ void MapScreen::Draw(const Progress& progress) const
     }
 
     // Луужин
-    DrawCompass({ kMapRect.x + kMapRect.width - 34.0f, kMapRect.y + 46.0f }, 18.0f);
+    DrawCompass({ MapRect().x + MapRect().width - 34.0f, MapRect().y + 46.0f }, 18.0f);
 
     // Тайлбар
     {
-        const int legendY = (int)(kMapRect.y + kMapRect.height) - 34;
-        int legendX = (int)kMapRect.x + 8;
+        const int legendY = (int)(MapRect().y + MapRect().height) - 34;
+        int legendX = (int)MapRect().x + 8;
         const struct { Color color; const char* text; } legend[] = {
             { kLiberated, "чөлөөлсөн" }, { kAvailable, "зомбид эзлэгдсэн" }, { kLocked, "түгжээтэй" } };
         const int entries = Account::Enabled() ? 3 : 2;
@@ -772,7 +801,7 @@ void MapScreen::Draw(const Progress& progress) const
     for (int i = 0; i < objectives; ++i) objectivesDone += (doneMask >> i) & 1u;
     if (free) objectivesDone = objectives;
 
-    const int panelX = kPanelX, panelWidth = kPanelWidth;
+    const int panelX = PanelX(), panelWidth = kPanelWidth;
     int y = 82;
     {
         const Rectangle card = { (float)panelX, (float)y, (float)panelWidth, 152.0f };
@@ -813,7 +842,7 @@ void MapScreen::Draw(const Progress& progress) const
     // Довтлох товч (дарах / 2 товших / ENTER): шар градиент, хөндлөн буу, сум
     if (unlocked)
     {
-        const Rectangle button = kAttackButton;
+        const Rectangle button = AttackButton();
         const bool hover = CheckCollisionPointRec(InPointer(), button);
         const Color top = hover ? Color{ 255, 226, 120, 255 } : Color{ 255, 206, 84, 255 };
         const Color bottom = hover ? Color{ 236, 170, 40, 255 } : Color{ 214, 146, 28, 255 };
@@ -906,7 +935,7 @@ void MapScreen::Draw(const Progress& progress) const
     if (!InTouchMode())
     {
         int x = 30;
-        const int hy = (int)(kMapRect.y + kMapRect.height) + 20;
+        const int hy = (int)(MapRect().y + MapRect().height) + 20;
         x += DrawMouseIcon(x, hy) + 8;
         Ui::TextShadow("аймаг сонгох", x, hy + 3, 15, Ui::kText);
         x += Ui::Measure("аймаг сонгох", 15) + 22;

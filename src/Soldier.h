@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Hitbox.h"
 #include "Mover.h"
 #include "Particles.h"
 #include "Tracers.h"
@@ -40,6 +41,7 @@ struct Soldier
     float tacticTimer = 0.0f;
     Vector3 tacticPoint = { 0.0f, 0.0f, 0.0f };
     bool shifting = false;     // сонгосон байр руугаа шилжиж яваа
+    float retreatTimer = 0.0f; // >0: ухрах цэгээ (tacticPoint) барьсан хэвээр (хамгийн ойрын зомби солигдоход чичигнэхгүй)
     bool fighting = false;     // зомбитой бие даан байлдаж байгаа (тоглогчийг дагахгүй)
     float blockedTime = 0.0f;  // бай харагдахгүй (хана, толгод халхалсан) өнгөрсөн хугацаа
     // Элсүүлсэн цэргийн харуул: удирдагчийн эргэн тойронд сонгосон байр, гадагш ажиглах зүг
@@ -107,6 +109,11 @@ struct HumanTarget
 {
     Vector3 chest;
     int id;
+    // Биеийн байрлал (Hitbox.h): AI толгой, цээж, хөлийн аль нь харагдахыг шалгаж, онох магадлалыг тооцно
+    Vector3 feet = { 0.0f, 0.0f, 0.0f };
+    float facing = 0.0f;
+    BodyPosture posture = BodyPosture::Stand;
+    float speed = 0.0f; // явж буй хурд, м/с (хөдөлж буй байг онох хэцүү)
 };
 struct HumanHit
 {

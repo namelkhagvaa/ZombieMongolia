@@ -459,8 +459,10 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
         const bool mounted = soldier.riding >= 0 || soldier.boarding;
         const bool holding = (soldier.holding && teammate && !mounted) || soldier.waitingRescue;
         soldier.regroupTimer = std::max(0.0f, soldier.regroupTimer - dt);
-        if (!mounted && !holding && soldier.regroupTimer <= 0.0f &&
-            HorizontalDistance(pos, playerPosition) < (teammate ? kTeamLeash : kRecruitLeash))
+        // Удирдагчаас холдсон цэрэг тулаанаа орхиж гүйцнэ; дахин тулалдахдаа заагаас нэлээд дотогш орсон байх ёстой
+        // (заагийн дээр "тулалдаж ухрах <-> гүйж гүйцэх" хооронд кадр бүр солигдож чичигнэхгүй)
+        const float leash = (teammate ? kTeamLeash : kRecruitLeash) * (soldier.fighting ? 1.0f : 0.7f);
+        if (!mounted && !holding && soldier.regroupTimer <= 0.0f && HorizontalDistance(pos, playerPosition) < leash)
         {
             // Элсүүлсэн цэрэг удирдаж буй гишүүнээ хамгаална: түүнд ойртсон зомбийг түрүүлж,
             // дараа нь өөрийнхөө дэргэдэхийг.
@@ -529,12 +531,20 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
             float speed = kWalkSpeed;
             bool move = false;
             soldier.tacticTimer -= dt;
+            soldier.retreatTimer -= dt;
 
-            if (enemyDistance < nearLimit)
+            if (enemyDistance < nearLimit || soldier.retreatTimer > 0.0f)
             {
-                // Хэт ойртсон: зайгаа авч ухарна (бага зэрэг хажуу тийш, нэг шугамаар гүйхгүй).
-                point = { pos.x + away.x * 4.0f + lateral.x * soldier.mover.detourSign * 1.5f, pos.y,
-                          pos.z + away.z * 4.0f + lateral.z * soldier.mover.detourSign * 1.5f };
+                // Хэт ойртсон: зайгаа авч ухарна (бага зэрэг хажуу тийш, нэг шугамаар гүйхгүй). Ухрах цэгээ хагас секунд
+                // барина: хоёр зомбийн аль нь ойр гэдэг кадр бүр солигдоход нааш цааш чичигнэхгүй.
+                if (soldier.retreatTimer <= 0.0f)
+                {
+                    soldier.retreatTimer = 0.5f;
+                    soldier.tacticPoint = { pos.x + away.x * 4.0f + lateral.x * soldier.mover.detourSign * 1.5f, pos.y,
+                                            pos.z + away.z * 4.0f + lateral.z * soldier.mover.detourSign * 1.5f };
+                    soldier.tacticTimer = 0.0f; // (ухарсны дараа шинэ байр сонгоно)
+                }
+                point = soldier.tacticPoint;
                 speed = kCatchUpSpeed;
                 move = true;
                 soldier.shifting = false;
@@ -862,7 +872,29 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
         const Vector3 muzzle = turret ? soldier.turretMuzzle
                                       : HumanoidLocalToWorld(pos, soldier.mover.facing,
                                                              HumanoidMuzzleFor(sniper ? HeldItem::Sniper : HeldItem::Rifle));
-        const Vector3 chest = human ? human->chest : horde.At(targetIndex).Chest();
+        // Хүн: биеийн аль хэсэг (цээж, толгой, хөл) харагдаж байгаагаас (хана, халхавчийн цаана) онилно
+        bool headOnly = false;
+        Vector3 aimPoint = human ? human->chest : horde.At(targetIndex).Chest();
+        if (human)
+        {
+            auto visible = [&](Vector3 point) {
+                const Vector3 to = Vector3Subtract(point, muzzle);
+                const float length = Vector3Length(to);
+                return length < 0.01f || world.RayDistance({ muzzle, Vector3Scale(to, 1.0f / length) }, length) >= length - 0.05f;
+            };
+            const Vector3 chestPoint = BodyPartCenter(human->feet, human->facing, human->posture, 1);
+            const Vector3 headPoint = BodyPartCenter(human->feet, human->facing, human->posture, 0);
+            const Vector3 legPoint = BodyPartCenter(human->feet, human->facing, human->posture, 2);
+            if (visible(chestPoint)) aimPoint = chestPoint;
+            else if (visible(headPoint))
+            {
+                aimPoint = headPoint;
+                headOnly = true;
+            }
+            else if (visible(legPoint)) aimPoint = legPoint;
+            else aimPoint = chestPoint; // бүрэн халхлагдсан: доорх clearShot-оор буудахгүй
+        }
+        const Vector3 chest = aimPoint;
         if (turret && std::fabs(std::remainder(std::atan2(chest.x - pos.x, chest.z - pos.z) - soldier.turretHeading, 2.0f * PI)) > kArmorTraverse)
         {
             continue; // пулемёт тийш эргэхгүй (машины ард): жолооч эргэтэл хүлээнэ
@@ -898,22 +930,45 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
                 soldier.fireCooldown = fireInterval;
                 soldier.recoil = 1.0f;
                 soldier.aimHold = 1.4f;
-                // Хүнд бүх сум тусахгүй (тоглогч зайлж, халхлах боломжтой)
+                // Хүнд: зай, байны хурд, биеийн байрлал (суусан, хэвтсэн, зөвхөн толгой харагдсан), өөрөө явж буй эсэхээс
+                // хамаарсан магадлалаар оногдоно. Оносон хэсгээр хохирол (толгой 4, хөл 0.75 дахин: Hitbox.h).
                 // (мэргэн буудагчийн зомбид зориулсан хохирол хүнийг нэг сумаар унагаахгүй)
-                if (human && GetRandomValue(0, 99) < 45) humanHits.push_back({ human->id, std::min(damage, 40.0f) });
-                else if (!human)
+                bool humanHit = false;
+                if (human)
+                {
+                    float chance = sniper ? std::clamp(0.9f - distance / 400.0f, 0.4f, 0.9f) : std::clamp(0.8f - distance / 90.0f, 0.18f, 0.8f);
+                    if (human->speed > 2.0f) chance *= human->speed > 5.0f ? 0.6f : 0.8f;
+                    if (human->posture == BodyPosture::Crouch) chance *= 0.85f;
+                    if (human->posture == BodyPosture::Prone) chance *= 0.6f;
+                    if (headOnly) chance *= 0.45f;
+                    if (soldier.moving) chance *= 0.7f;
+                    humanHit = (float)GetRandomValue(0, 999) < chance * 1000.0f;
+                    if (humanHit)
+                    {
+                        const int roll = GetRandomValue(0, 99);
+                        const HitZone zone = headOnly || roll < 8 ? HitZone::Head : roll < 24 ? HitZone::Leg : HitZone::Chest;
+                        humanHits.push_back({ human->id, std::min(damage, 40.0f) * HitZoneMultiplier(zone) });
+                    }
+                    else
+                    {
+                        // Алдсан сум байны дэргэдүүр өнгөрнө (цус гарахгүй)
+                        const float a = (float)GetRandomValue(0, 359) * DEG2RAD, r = 0.45f + (float)GetRandomValue(0, 70) / 100.0f;
+                        aimPoint = Vector3Add(aimPoint, { std::cos(a) * r, std::sin(a) * r * 0.6f, std::sin(a) * r });
+                    }
+                }
+                else
                 {
                     const bool wasAlive = horde.At(targetIndex).IsAlive();
                     horde.Damage(targetIndex, damage);
                     if (wasAlive && !horde.At(targetIndex).IsAlive()) ++soldier.kills;
                 }
                 horde.AlertAround(pos, 70.0f); // буун дуунд зомби сэрнэ
-                tracers.Add(muzzle, chest, sniper ? RAYWHITE : ORANGE);
+                tracers.Add(muzzle, aimPoint, sniper ? RAYWHITE : ORANGE);
                 Audio::Play(sniper ? Sfx::Sniper : Sfx::Rifle, muzzle, 0.5f);
                 ++soldier.shots;
-                soldier.shotEnd = chest;
+                soldier.shotEnd = aimPoint;
                 particles.Flash(muzzle, ray.direction);
-                particles.Blood(chest, Vector3Negate(ray.direction), 4);
+                if (!human || humanHit) particles.Blood(aimPoint, Vector3Negate(ray.direction), 4);
             }
         }
     }

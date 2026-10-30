@@ -2,8 +2,15 @@
 
 #include "raylib.h"
 
+#include <cstdio>
 #include <string>
 #include <thread>
+
+#if defined(__ANDROID__)
+#include <android_native_app_glue.h>
+#include <jni.h>
+extern "C" struct android_app* GetAndroidApp(void); // raylib-ийн Android давхаргаас
+#endif
 
 #if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
@@ -44,11 +51,20 @@ namespace
         var sx = rect.width > 0 ? canvas.width / rect.width : 1;
         var sy = rect.height > 0 ? canvas.height / rect.height : 1;
         var count = Math.min(list.length, capacity);
+        // Хурууны дугаар: Safari (iPhone) маш том identifier өгдөг тул int32 руу хөрвөхөд сөрөг болж, тоглоом
+        // (src/Input.cpp) түүнийг "хоосон слот" гэж үзээд хоёр дахь хурууг эхнийх дээр нь бичдэг байсан (хүрдээр
+        // явж байхад нөгөө хуруугаар харах ажиллахгүй). Иймд хуруу бүрт жижиг, давтагдахгүй эерэг дугаар өгнө.
+        var map = Module.zmTouchIds || (Module.zmTouchIds = { next: 1, ids: {} });
+        var live = {};
         for (var i = 0; i < count; i++) {
+            var key = String(list[i].identifier);
+            if (!(key in map.ids)) { map.ids[key] = map.next; map.next = map.next >= 0x3fffffff ? 1 : map.next + 1; }
+            live[key] = map.ids[key];
             HEAPF32[(xy >> 2) + 2 * i] = (list[i].clientX - rect.left) * sx;
             HEAPF32[(xy >> 2) + 2 * i + 1] = (list[i].clientY - rect.top) * sy;
-            HEAP32[(ids >> 2) + i] = list[i].identifier;
+            HEAP32[(ids >> 2) + i] = live[key];
         }
+        if (count === list.length) map.ids = live; // өргөсөн хурууг мартана
         return count;
     });
 
@@ -102,9 +118,10 @@ namespace
         }
         if (input.zmKind !== kind) {
             input.zmKind = kind;
-            // Бүгд энгийн текст талбар: password / tel төрөл Chrome-ийн автоматаар бөглөх (нууц үг, карт, хаяг)
-            // цагаан мөрийг гарын дээр гаргадаг. Талбар үл үзэгдэх тул нууц үгийг тоглоом өөрөө "•"-ээр харуулна.
-            input.type = 'text';
+            // Нууц үг: password төрөл (утасны гар үг таамаглахгүй, латин гараар). Бусад нь энгийн текст: tel төрөл
+            // Chrome-ийн автоматаар бөглөх цагаан мөрийг гаргадаг. Талбар үл үзэгдэх тул нууц үгийг тоглоом "•"-ээр харуулна.
+            input.type = kind === 2 ? 'password' : 'text';
+            input.autocomplete = kind === 2 ? 'new-password' : 'off';
             input.inputMode = kind === 1 || kind === 3 ? 'numeric' : 'text';
             input.name = 'zm-field-' + slot;
             input.maxLength = kind === 1 ? 8 : kind === 3 ? 20 : kind === 2 ? 32 : kind === 4 ? 120 : 30; // 3: дансны дугаар, дүн; 4: чат
@@ -199,7 +216,7 @@ namespace
         function keep(path) {
             return path.indexOf('/assets/huds/') === 0 || path.indexOf('/assets/icons/') === 0 || path === '/assets/home_back.png' || path === '/assets/home_back.jpg' ||
                    path === '/assets/splash.jpg' || path.slice(-8) === '_far.bin' || // (холын мод: газар нутаг бүрд уншина)
-                   path.indexOf('/assets/city/') === 0 ||
+                   path.indexOf('/assets/city/') === 0 || path.indexOf('/assets/sounds/narration/') === 0 || // (мэдэгдлийн дуу: хэрэг болох үед ачаална)
                    (!world && (path.indexOf('/assets/cars/') === 0 || path.indexOf('/assets/trees/') === 0 ||
                                path.indexOf('/assets/pooshig/') === 0));
         }
@@ -312,6 +329,7 @@ int WebFieldPoll(char* buffer, int capacity, bool& enter)
     return slot;
 }
 void WebFieldBlur() { FieldBlur(); }
+void NativeFieldOpen(int, int, int, const char*) {} // (хөтөч: хуруу <input>-д шууд хүрнэ)
 float WebVisibleFraction() { return VisibleFraction(); }
 void WebHideLoader() { HideLoader(); }
 void WebLoadingFinished() { LoadingFinished(); }
@@ -358,6 +376,82 @@ int WebReadTouches(float*, int*, int) { return 0; }
 int WebPromptNumber(const char*) { return 0; }
 void WebFieldPlace(int, float, float, float, float, int, int, const char*) {}
 void WebFieldsEnd() {}
+#if defined(__ANDROID__)
+// Утасны гар: GameActivity (Java)-ийн zm* аргууд. Тоглоомын үндсэн урсгалаас дуудна.
+namespace
+{
+    JNIEnv* GameEnv()
+    {
+        static JNIEnv* env = nullptr;
+        if (!env) GetAndroidApp()->activity->vm->AttachCurrentThread(&env, nullptr);
+        return env;
+    }
+
+    jmethodID GameMethod(JNIEnv* env, const char* name, const char* signature)
+    {
+        jobject activity = GetAndroidApp()->activity->clazz;
+        jclass type = env->GetObjectClass(activity);
+        jmethodID method = env->GetMethodID(type, name, signature);
+        env->DeleteLocalRef(type);
+        if (env->ExceptionCheck())
+        {
+            env->ExceptionClear(); // (хуучин APK: GameActivity алга)
+            return nullptr;
+        }
+        return method;
+    }
+}
+
+void NativeFieldOpen(int slot, int kind, int next, const char* value)
+{
+    JNIEnv* env = GameEnv();
+    static jmethodID open = GameMethod(env, "zmOpen", "(IIILjava/lang/String;)V");
+    if (!open) return;
+    jstring text = env->NewStringUTF(value ? value : "");
+    env->CallVoidMethod(GetAndroidApp()->activity->clazz, open, slot, kind, next, text);
+    env->DeleteLocalRef(text);
+    if (env->ExceptionCheck()) env->ExceptionClear();
+}
+
+int WebFieldPoll(char* buffer, int capacity, bool& enter)
+{
+    if (capacity > 0) buffer[0] = 0;
+    enter = false;
+    JNIEnv* env = GameEnv();
+    static jmethodID slotOf = GameMethod(env, "zmSlot", "()I");
+    static jmethodID textOf = GameMethod(env, "zmText", "()Ljava/lang/String;");
+    static jmethodID takeEnter = GameMethod(env, "zmTakeEnter", "()Z");
+    if (!slotOf || !textOf || !takeEnter) return -1;
+    jobject activity = GetAndroidApp()->activity->clazz;
+    const int slot = env->CallIntMethod(activity, slotOf);
+    enter = env->CallBooleanMethod(activity, takeEnter);
+    if (slot < 0) return -1;
+    jstring text = (jstring)env->CallObjectMethod(activity, textOf);
+    if (text && capacity > 0)
+    {
+        const char* chars = env->GetStringUTFChars(text, nullptr);
+        std::snprintf(buffer, (size_t)capacity, "%s", chars);
+        env->ReleaseStringUTFChars(text, chars);
+    }
+    if (text) env->DeleteLocalRef(text);
+    return slot;
+}
+
+void WebFieldBlur()
+{
+    JNIEnv* env = GameEnv();
+    static jmethodID close = GameMethod(env, "zmClose", "()V");
+    if (close) env->CallVoidMethod(GetAndroidApp()->activity->clazz, close);
+}
+
+float WebVisibleFraction()
+{
+    JNIEnv* env = GameEnv();
+    static jmethodID visible = GameMethod(env, "zmVisible", "()F");
+    return visible ? env->CallFloatMethod(GetAndroidApp()->activity->clazz, visible) : 1.0f;
+}
+#else
+void NativeFieldOpen(int, int, int, const char*) {}
 int WebFieldPoll(char* buffer, int capacity, bool& enter)
 {
     if (capacity > 0) buffer[0] = 0;
@@ -366,6 +460,7 @@ int WebFieldPoll(char* buffer, int capacity, bool& enter)
 }
 void WebFieldBlur() {}
 float WebVisibleFraction() { return 1.0f; }
+#endif
 void WebHideLoader() {}
 void WebLoadingFinished() {}
 void WebReleaseLoadedAssets(bool) {}
@@ -383,7 +478,15 @@ double WebNowMs() { return 0.0; }
 std::string ImageFile(const std::string& pngPath)
 {
 #if defined(__ANDROID__)
-    return pngPath; // APK-д PNG хэвээр (FileExists нь APK-ийн assets-ийг хардаггүй)
+    // APK-д том текстурууд JPG (tools/native_jpg.py); huds/, icons/ доторх тунгалаг дүрсүүд PNG хэвээр.
+    // (FileExists нь APK-ийн assets-ийг хардаггүй тул дүрмээр нь)
+    const size_t n = pngPath.size();
+    if (n < 4 || pngPath.compare(n - 4, 4, ".png") != 0 || pngPath.find("huds/") != std::string::npos ||
+        pngPath.find("icons/") != std::string::npos)
+    {
+        return pngPath;
+    }
+    return pngPath.substr(0, n - 4) + ".jpg";
 #else
     const size_t n = pngPath.size();
     if (n < 4 || pngPath.compare(n - 4, 4, ".png") != 0 || FileExists(pngPath.c_str())) return pngPath;

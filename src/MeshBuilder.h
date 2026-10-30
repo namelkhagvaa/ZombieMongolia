@@ -3,6 +3,7 @@
 #include "Procedural.h"
 #include "raylib.h"
 
+#include <functional>
 #include <vector>
 
 // Том mesh-ийн нэг бүсэд ноогдох хэсэг: зөвхөн камерт ойр, харагдаж байгаа хэсгүүдийг зурна.
@@ -84,6 +85,11 @@ public:
     // Угсарсан гурвалжнуудыг rlgl-ийн одоогийн матрицаар шууд зурна (хөдөлдөг объект: унаа, морь, дугуй).
     // Shader нь ертөнцийн байрлалаас гэрэл тооцдог тул DrawMesh-ийн хувиргалтын оронд үүнийг ашиглана.
     void DrawImmediate() const;
+
+    // Барилгын орой бүрийн доорх газраас дээших өндрийг alpha-д хадгална (0.4 м-ийн нэгжээр, 0..250 = 0..100 м):
+    // shader хананы ёроолыг газраас ~1.4 м хүртэл харанхуйлна (булангийн сүүдэр, World::Draw-ийн aoMode). Нэмэлт
+    // санах ойгүй (оройн өнгөний байт). Тэмдэгтэй орой (alpha < 255: шил 251/252) хөндөгдөхгүй.
+    void EncodeGroundHeight(const std::function<float(float, float)>& ground);
 
     int TriangleCount() const { return (int)(vertices.size() / 9); }
     bool Empty() const { return vertices.empty(); }

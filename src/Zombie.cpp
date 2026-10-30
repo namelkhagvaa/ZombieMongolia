@@ -61,7 +61,7 @@ namespace
         case ZombieType::Runner: return { 35.0f, 4.6f, 0.7f, 0.92f, 0.9f, 1.5f, 8 };
         case ZombieType::Brute: return { 220.0f, 1.9f, 2.0f, 1.32f, 1.28f, 3.2f, 20 }; // хэмнэл: том алхам гулсахгүй
         // Баавгай: том зомбиос 2 дахин хүчтэй (амь, цохилт), дайрахдаа хурдан гүйнэ
-        case ZombieType::Bear: return { 440.0f, 7.5f, 4.0f, 1.45f, 1.0f, 1.0f, 40 }; // том биетэй (урт ~2.9 м)
+        case ZombieType::Bear: return { 440.0f, 9.0f, 4.0f, 1.45f, 1.0f, 1.0f, 40 }; // том биетэй (урт ~2.9 м); дайрахдаа ~7 м/с
         case ZombieType::Walker:
         default: return { 80.0f, 2.6f, 1.0f, 1.0f, 1.0f, 2.1f, 5 }; // 80 амь: анхны буугаар биед 4 сум
         }
@@ -186,7 +186,13 @@ namespace
         zombie.lastPosition = pos;
         const float measured = moved > 15.0f ? 0.0f : moved; // үсрэлт (snapshot, цонх давах) тооцохгүй
         zombie.gaitSpeed += (measured - zombie.gaitSpeed) * std::min(1.0f, 8.0f * dt);
-        if (zombie.gaitSpeed > 0.25f && zombie.IsAlive())
+        if (zombie.IsBear())
+        {
+            // Баавгай: алхам (бүтэн мөчлөг) алхахад ~1.3 м, давхихад ~2.4 м (биеийн хэмжээгээр): хөл газарт гулсахгүй
+            const float stride = (zombie.gaitSpeed > 2.5f ? 2.4f : 1.3f) * zombie.scale;
+            if (zombie.gaitSpeed > 0.12f && zombie.IsAlive()) zombie.walkCycle += dt * 2.0f * PI * zombie.gaitSpeed / stride;
+        }
+        else if (zombie.gaitSpeed > 0.25f && zombie.IsAlive())
         {
             zombie.walkCycle += dt * HumanoidGaitRate(zombie.gaitSpeed / zombie.scale);
         }
@@ -449,7 +455,7 @@ void ZombieHorde::SpawnBoss(Vector3 position, const MissionParams& mission, int 
     boss.missingArm = false;
 }
 
-void ZombieHorde::SpawnBear(Vector3 position, const MissionParams& mission)
+void ZombieHorde::SpawnBear(Vector3 position, const MissionParams& mission, float facing)
 {
     Spawn(ZombieType::Bear, position, mission, -1, false, -1);
     Zombie& bear = zombies.back();
@@ -457,11 +463,13 @@ void ZombieHorde::SpawnBear(Vector3 position, const MissionParams& mission)
     bear.home = position;
     bear.wanderGoal = position;
     bear.wanderTimer = (float)GetRandomValue(0, 60) / 10.0f;
-    bear.mover.facing = (float)GetRandomValue(0, 359) * DEG2RAD;
+    bear.mover.facing = facing < -50.0f ? (float)GetRandomValue(0, 359) * DEG2RAD : facing;
 }
 
 void ZombieHorde::Spawn(ZombieType type, Vector3 position, const MissionParams& mission, int zone, bool alerted, int pool)
 {
+    // Өндөр зэрэгт энгийн зомбины нэг хэсэг нь гүйгч (зочин хостын төрлөөр л: ApplySnapshot)
+    if (!puppet && type == ZombieType::Walker && smartLevel >= 20 && GetRandomValue(0, 99) < 12) type = ZombieType::Runner;
     const TypeStats stats = StatsFor(type);
 
     Zombie zombie;
@@ -484,7 +492,7 @@ void ZombieHorde::Spawn(ZombieType type, Vector3 position, const MissionParams& 
     {
         const int roll = GetRandomValue(0, 99);
         zombie.exploder = roll < 6;
-        zombie.screamer = roll >= 6 && roll < 11;
+        zombie.screamer = roll >= 6 && roll < (smartLevel >= 20 ? 16 : 11); // (20+ зэрэгт орилогч 2 дахин олон)
         if (zombie.exploder)
         {
             zombie.health *= 0.8f;
@@ -642,7 +650,9 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
         if (!zombie.alerted)
         {
             // Тоглогч суусан, хэвтсэн бол (баг нь түүнтэй хамт сэмхэн явна) зомби ойроос л анзаарна.
-            if (targetDistance < kAggroDistance * player.Concealment())
+            // Өндөр зэрэгт хол сонсож, анзаарна (10-р зэргээс 50% хүртэл хол)
+            const float hearing = 1.0f + std::clamp((float)(smartLevel - 9) / 80.0f, 0.0f, 0.5f);
+            if (targetDistance < kAggroDistance * hearing * player.Concealment())
             {
                 zombie.alerted = true;
             }
@@ -752,9 +762,33 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
         // --- Хөдөлгөөн: оногдсон үедээ бараг зогсоно ---
         const float reach = zombie.Radius() + 0.9f;
         const bool detour = moveTarget.x != targetPosition.x || moveTarget.z != targetPosition.z;
+        float boost = 1.0f;
+        if (!detour && smartLevel >= 10)
+        {
+            // Зэргийн ухаан: шууд биш, хажуугаас тойрч (зомби бүр өөр тал), ойртохдоо зигзаглаж (буудахад хэцүү),
+            // хамгийн сүүлд байгаа тойрон бүсэлнэ. Том зомби ойроос давхина.
+            const float dx = targetPosition.x - pos.x, dz = targetPosition.z - pos.z;
+            const float length = std::max(0.01f, std::sqrt(dx * dx + dz * dz));
+            const Vector3 side = { dz / length, 0.0f, -dx / length };
+            const float sign = (zombie.id % 2) ? 1.0f : -1.0f;
+            float lateral = 0.0f;
+            if (targetDistance > 7.0f) lateral += sign * std::min(5.0f, targetDistance * 0.3f);
+            if (smartLevel >= 35 && targetDistance > 5.0f && targetDistance < 30.0f)
+            {
+                lateral += 1.8f * std::sin(navClock * 2.2f + (float)(zombie.id % 17));
+            }
+            moveTarget = Vector3Add(moveTarget, Vector3Scale(side, lateral));
+            if (smartLevel >= 50 && targetDistance < 6.0f && targetDistance > reach)
+            {
+                // Бүслэх: зомби бүр байны эргэн тойронд өөрийн байрлал руу (алтан өнцгөөр тархсан)
+                const float angle = (float)zombie.id * 2.39996f;
+                moveTarget = { targetPosition.x + std::sin(angle) * reach * 0.85f, moveTarget.y, targetPosition.z + std::cos(angle) * reach * 0.85f };
+            }
+            if (smartLevel >= 75 && zombie.type == ZombieType::Brute && targetDistance < 15.0f) boost = 1.5f;
+        }
         if (detour || targetDistance > reach * 0.8f)
         {
-            const float speed = zombie.speed * speedMultiplier * (zombie.stagger > 0.0f ? 0.2f : 1.0f);
+            const float speed = zombie.speed * speedMultiplier * (zombie.stagger > 0.0f ? 0.2f : 1.0f) * boost;
             MoveToward(zombie.mover, moveTarget, speed, dt, world, zombie.Radius(), zombie.Height(), kClimbHeight);
             world.KeepOutOfSafeRooms(pos, zombie.Radius()); // дэлгүүрийн үүдээр орохгүй
             // Хашаанд тулсан (байдаа хөөж явахад): удаан авирч давна (дундуур нь нэвтрэхгүй)
@@ -835,6 +869,10 @@ void ZombieHorde::UpdateBear(Zombie& bear, float dt, World& world, Player& playe
     bear.attackAnim -= dt;
     bear.stagger -= dt;
     bear.rage = std::max(0.0f, bear.rage - dt);
+    bear.screamTimer = std::max(0.0f, bear.screamTimer - dt); // (баавгай: хойд хөл дээрээ босох хугацаа)
+    bear.warnCooldown = std::max(0.0f, bear.warnCooldown - dt);
+    // Хойд хөл дээрээ зөөлөн босож, бууна
+    bear.rear += ((bear.screamTimer > 0.0f && !bear.alerted ? 1.0f : 0.0f) - bear.rear) * std::min(1.0f, 3.0f * dt);
 
     // Хамгийн ойрын амьд биет: тоглогч, цэрэг, зочин, зомби (дэлгүүрт нуугдсан хүнийг үл тооно)
     const int kPlayer = -1, kNone = -2, kRemote = -3, kZombie = -4;
@@ -868,8 +906,21 @@ void ZombieHorde::UpdateBear(Zombie& bear, float dt, World& world, Player& playe
         if (other.IsAlive() && !other.IsBear()) consider(kZombie, other.mover.position, i);
     }
 
+    // Хүн ойртож ирвэл (бодит баавгай шиг) эхлээд зогсож, хойд хөл дээрээ босоод түүн рүү харж, үнэрлэж архирна:
+    // анхааруулга. Тэр үед холдвол тайван үлдэнэ; хэт ойртвол (эсвэл буудвал) дайрна.
+    const bool person = target == kPlayer || target == kRemote || target >= 0;
+    if (!bear.alerted && person && best < 20.0f * bear.scale && bear.warnCooldown <= 0.0f)
+    {
+        bear.screamTimer = 2.6f;
+        bear.warnCooldown = 25.0f;
+        Audio::Play(Sfx::BossRoar, Vector3Add(pos, { 0.0f, 1.8f, 0.0f }), 0.9f, 0.55f);
+    }
     // Хэт ойртвол уурлана; уурласан баавгай байгаа холдвол (эсвэл хэн ч үгүй бол) хэдэн секундын дараа тайвширна
-    if (target != kNone && best < kBearAggro * bear.scale) bear.alerted = true;
+    if (target != kNone && best < kBearAggro * bear.scale)
+    {
+        bear.alerted = true;
+        bear.screamTimer = 0.0f; // доош бууж шууд дайрна
+    }
     const float chase = bear.rage > 0.0f ? kBearRageChase : kBearChase;
     if (bear.alerted && (target == kNone || best > chase))
     {
@@ -914,9 +965,23 @@ void ZombieHorde::UpdateBear(Zombie& bear, float dt, World& world, Player& playe
             else squad.Damage(target, bear.damage);
         }
     }
+    else if (bear.screamTimer > 0.0f)
+    {
+        // Хойд хөл дээрээ зогсоод анхааруулж (эсвэл эргэн тойрноо харж) байна: хөдлөхгүй, хүн рүү харна
+        if (target != kNone && best < 30.0f * bear.scale)
+        {
+            const float want = std::atan2(targetPosition.x - pos.x, targetPosition.z - pos.z);
+            bear.mover.facing += std::remainder(want - bear.mover.facing, 2.0f * PI) * std::min(1.0f, 4.0f * dt);
+        }
+    }
     else
     {
-        // Тайван: төвийнхөө орчимд аажуухан тэнүүчилж, хааяа зогсож амарна (гүн ус руу орохгүй)
+        // Тайван: төвийнхөө орчимд аажуухан тэнүүчилж, хааяа зогсож амарна (гүн ус руу орохгүй). Зогсож байхдаа
+        // хааяа хойд хөл дээрээ босож эргэн тойрноо харна.
+        if (HorizontalDistance(pos, bear.wanderGoal) <= 1.0f && GetRandomValue(0, 9999) < (int)(dt * 10000.0f / 40.0f))
+        {
+            bear.screamTimer = 2.2f;
+        }
         bear.wanderTimer -= dt;
         if (bear.wanderTimer <= 0.0f)
         {
@@ -1207,7 +1272,7 @@ void ZombieHorde::Draw(Vector3 viewPosition, float maxDistance, bool showCollide
             const float dead = zombie.IsAlive() ? 0.0f : std::min(1.0f, zombie.deathTimer / 1.4f); // (баавгай удаан, хүндээр унана)
             const float attack = zombie.attackAnim > 0.0f ? zombie.attackAnim / kAttackAnimTime : 0.0f;
             DrawBear(position, zombie.mover.facing, zombie.scale, zombie.walkCycle, zombie.gaitSpeed, attack, dead,
-                     viewDistance < kSimpleDistance, (float)(zombie.id % 97));
+                     viewDistance < kSimpleDistance, (float)(zombie.id % 97), zombie.rear);
             if (showColliders && zombie.IsAlive())
             {
                 DrawCylinderWires(zombie.mover.position, zombie.Radius(), zombie.Radius(), zombie.Height(), 10, RED);
@@ -1360,7 +1425,12 @@ void ZombieHorde::ApplySnapshot(const std::vector<Net::ZombieState>& states, con
             zombie->deathTimer = 0.0f;
             if (zombie->exploder) exploderBlasts.push_back(zombie->Chest()); // зочин: дэлбэрэлт харагдана (хохирлыг хост)
         }
-        if ((state.type & Net::kZombieScreaming) && zombie->screamTimer <= 0.0f && !zombie->screamed)
+        if (zombie->IsBear())
+        {
+            // Баавгай: хост дээр хойд хөл дээрээ зогсож байна (kZombieScreaming)
+            zombie->screamTimer = (state.type & Net::kZombieScreaming) ? 0.5f : 0.0f;
+        }
+        else if ((state.type & Net::kZombieScreaming) && zombie->screamTimer <= 0.0f && !zombie->screamed)
         {
             zombie->screamed = true;
             zombie->screamTimer = 1.2f;
@@ -1409,6 +1479,12 @@ void ZombieHorde::UpdatePuppets(float dt)
         AdvanceGait(zombie, dt);
         zombie.netSeen += dt;
         zombie.attackAnim -= dt;
+        if (zombie.IsBear())
+        {
+            // Хойд хөл дээрээ босох (хостын мэдээгээр: ApplySnapshot)
+            zombie.screamTimer = std::max(0.0f, zombie.screamTimer - dt);
+            zombie.rear += ((zombie.screamTimer > 0.0f ? 1.0f : 0.0f) - zombie.rear) * std::min(1.0f, 3.0f * dt);
+        }
         Vector3& pos = zombie.mover.position;
         if (!zombie.IsAlive())
         {

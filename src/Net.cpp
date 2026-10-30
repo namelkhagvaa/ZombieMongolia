@@ -67,12 +67,14 @@ namespace Net
             const uint8_t* data;
             size_t size, at = 0;
             bool ok = true;
+            bool finite = true; // NaN, хязгааргүй тоо ирээгүй (ирсэн бол 0 болгосон)
             bool Need(size_t n) { if (at + n > size) ok = false; return ok; }
             uint8_t U8() { if (!Need(1)) return 0; return data[at++]; }
             uint16_t U16() { uint16_t v = 0; Raw(&v, 2); return v; }
             uint32_t U32() { uint32_t v = 0; Raw(&v, 4); return v; }
             int32_t I32() { int32_t v = 0; Raw(&v, 4); return v; }
-            float F() { float v = 0; Raw(&v, 4); return v; }
+            // NaN, хязгааргүй: 0 болгож тэмдэглэнэ (HandlePacket: зочны мессежийг хаяна, хостын snapshot-ыг хүлээж авна)
+            float F() { float v = 0; Raw(&v, 4); if (!std::isfinite(v)) { finite = false; v = 0.0f; } return v; }
             Vector3 V3() { Vector3 v; v.x = F(); v.y = F(); v.z = F(); return v; }
             std::string Str()
             {
@@ -1320,7 +1322,10 @@ namespace Net
         default:
             return;
         }
-        if (r.ok) events.push_back(e);
+        // NaN, хязгааргүй тоотой мессеж (эвдэрсэн эсвэл хуурамч): AI-ийн зорилт, мөргөлдөөнд тархахгүй хаяна. Хостын
+        // snapshot нь энд ирэхгүй (дээр 0 болгосон утгатайгаа хүлээж авна: нэг эвдэрсэн зомбиноос болж бүх дэлгэц
+        // хөлдөхгүй).
+        if (r.ok && r.finite) events.push_back(e);
     }
 
     bool Session::TakeSnapshot(Snapshot& out)

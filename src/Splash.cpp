@@ -31,7 +31,7 @@ namespace
     {
 #if defined(__ANDROID__)
         // APK-ийн assets-ийн үндсэнд байрлана (FileExists нь assets-ийг хардаггүй).
-        texture = LoadTexture("splash.png");
+        texture = LoadTexture(ImageFile("splash.png").c_str());
 #else
         const std::string application = GetApplicationDirectory();
         for (const std::string& folder : { std::string("assets/"), application + "assets/", application + "../assets/" })

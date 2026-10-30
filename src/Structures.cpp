@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <map>
+#include <unordered_set>
 #include <cmath>
 #include <cstring>
 
@@ -28,14 +29,16 @@ namespace
     const Color kWoodGrey = { 124, 118, 108, 255 };
     const Color kConcrete = { 150, 148, 140, 255 };
     const Color kBrick = { 138, 78, 62, 255 };
-    const Color kWindow = { 34, 40, 48, 255 };
+    // Цонхны шил: alpha нь shader-ийн тэмдэг (тэнгэрийн тусгал, нарны гялбаа; 252 бол шөнө гэрэл асна)
+    constexpr unsigned char kGlassTag = 251, kGlassLampTag = 252;
+    const Color kWindow = { 34, 40, 48, kGlassTag };
     const Color kWindowHole = { 14, 15, 17, 255 }; // шилгүй цонхны нүх (цул барилга: дотор нь харанхуй)
     const Color kWindowFrame = { 206, 200, 186, 255 };
     const Color kDoor = { 96, 66, 46, 255 };
     const Color kRust = { 128, 76, 50, 255 };
     const Color kMetal = { 110, 114, 118, 255 };
     const Color kRubber = { 28, 28, 30, 255 };
-    const Color kGlassDark = { 40, 50, 58, 255 };
+    const Color kGlassDark = { 40, 50, 58, kGlassTag };
     const Color kGerFelt = { 226, 220, 204, 255 };
     const Color kGerRoof = { 204, 196, 176, 255 };
     const Color kGerTrim = { 46, 78, 140, 255 };      // дээврийн хаяавчийн хөх хээ
@@ -347,7 +350,8 @@ namespace
     {
         FacePanel(s, cx, cz, w, d, face, along, y, width + 0.18f, height + 0.18f, 0.08f, kWindowFrame);
         // Зарим цонхыг банзаар хадсан
-        const Color pane = s.rng.Chance(0.3f) ? JitterColor(kWood, s.rng, 0.1f) : kWindow;
+        Color pane = s.rng.Chance(0.3f) ? JitterColor(kWood, s.rng, 0.1f) : kWindow;
+        if (pane.a == kGlassTag && s.rng.Chance(0.4f)) pane.a = kGlassLampTag;
         FacePanel(s, cx, cz, w, d, face, along, y, width, height, 0.14f, pane);
     }
 
@@ -2457,7 +2461,7 @@ namespace
         const float w = 40.0f, d = 10.0f, h = 13.0f;
         const Color wall = { 212, 208, 198, 255 };
         const Color stone = { 228, 226, 218, 255 };
-        const Color glass = { 44, 62, 88, 255 };
+        const Color glass = { 44, 62, 88, kGlassTag };
         const float front = cz - d * 0.5f;
 
         s.solid.Box({ cx, (h - 1.5f) * 0.5f, cz }, { w, h + 1.5f, d }, wall);
@@ -4755,7 +4759,9 @@ namespace
         {
             const float mid = start + spacing * (float)k;
             if (framed) WallFace(s, a, c, (mid - half - rim) / length, (mid + half + rim) / length, y - rim, y + height + rim, 0.04f, frame);
-            WallFace(s, a, c, (mid - half) / length, (mid + half) / length, y, y + height, 0.07f, glass);
+            Color pane = glass;
+            pane.a = s.rng.Chance(0.35f) ? kGlassLampTag : kGlassTag; // шөнө зарим цонхонд гэрэл асна
+            WallFace(s, a, c, (mid - half) / length, (mid + half) / length, y, y + height, 0.07f, pane);
         }
     }
 
@@ -5379,7 +5385,12 @@ namespace
                 {
                     const float y = high + 0.9f + floorHeight * (float)f;
                     if (y + 1.4f > top - 0.4f) break;
-                    face(inset, 1.0f - inset, y, y + 1.4f, 0.05f, s.rng.Chance(0.12f) ? Color{ 22, 24, 28, 255 } : window);
+                    // Давхар бүрийн туузан цонх: ихэнх нь шил (тэнгэр тусгана, shader 1.6 м тутам хүрээ зурна, шөнө зарим
+                    // нь гэрэлтэнэ), зарим нь хагарсан харанхуй нүх
+                    Color band = window;
+                    if (s.rng.Chance(0.12f)) band = Color{ 22, 24, 28, 255 };
+                    else if (window.a == 255 && window.r == kWindowHole.r) band = Color{ 46, 56, 66, s.rng.Chance(0.3f) ? kGlassLampTag : kGlassTag };
+                    face(inset, 1.0f - inset, y, y + 1.4f, 0.05f, band);
                 }
             }
             else if (house && length > 3.0f && s.rng.Chance(0.6f))
@@ -6447,8 +6458,12 @@ namespace
     // Гэр хороолол (хашаа, гэр, хувийн байшин) хот бүрт хэдэн мянгаараа байж зураглалыг удаашруулдаг тул
     // хасагдсан: зөвхөн төвийн голлох барилгууд үлдэнэ. Гэр хороолол дотор зөвхөн олон нийтийн барилга
     // (сургууль, засаг захиргаа, сүм хийд, орон сууц, дэлгүүр).
+    // Цөөлсөн барилгууд (ThinCityBuildings): KeepCityBuilding тэднийг хасна
+    std::unordered_set<const CityBuilding*> gThinned;
+
     bool KeepCityBuilding(const CityBuilding& b, const Plan& f)
     {
+        if (gThinned.count(&b)) return false;
         switch (b.type)
         {
         case CityBuildingType::Ger:
@@ -6467,6 +6482,35 @@ namespace
         case CityBuildingType::Commercial: return true;
         default: return false;
         }
+    }
+
+    // Хотыг бодитоор, хөнгөн болгох: үлдэх барилгуудаас Улаанбаатарт 20%, аймгийн төвд 30%-ийг хасна. Хамгийн жижиг
+    // (талбай x давхар) энгийн барилгуудаас эхэлнэ; засаг захиргаа, сургууль, шашны барилга, даалгаврын газрын (POI)
+    // дэргэдэх барилга үлдэнэ. Санамсаргүй биш: нэг аймагт үргэлж ижил барилгууд үлдэнэ.
+    void ThinCityBuildings(const CityData& city, bool capital)
+    {
+        gThinned.clear();
+        std::vector<std::pair<float, const CityBuilding*>> candidates;
+        int kept = 0;
+        for (const CityBuilding& b : city.buildings)
+        {
+            if (b.outline.size() < 3) continue;
+            const Plan f = MeasureFootprint(b.outline);
+            if (!KeepCityBuilding(b, f)) continue;
+            ++kept;
+            if (b.type == CityBuildingType::Government || b.type == CityBuildingType::School || b.type == CityBuildingType::Religious) continue;
+            bool landmark = false;
+            for (const CityPoi& poi : city.pois)
+            {
+                landmark = landmark || Vector2Distance(poi.position, f.center) < 30.0f;
+            }
+            if (landmark) continue;
+            candidates.push_back({ f.area * (float)std::max(1, (int)b.levels), &b });
+        }
+        std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        const int drop = std::min((int)candidates.size(), (int)std::lround((float)kept * (capital ? 0.2f : 0.3f)));
+        for (int i = 0; i < drop; ++i) gThinned.insert(candidates[(size_t)i].second);
+        TraceLog(LOG_INFO, "CITY: %d of %d buildings thinned out (%s)", drop, kept, capital ? "capital 20%" : "town 30%");
     }
 
     bool NearBulganComplex(const Mountain& m, float x, float z);
@@ -6495,6 +6539,7 @@ namespace
             const Vector2 c = b.outline[0];
             ++gTownZones.homes[(size_t)gTownZones.Index(c.x, c.y)];
         }
+        ThinCityBuildings(city, !town);
         if (town)
         {
             // Засаг даргын тамгын газар: талбайд хамгийн ойр засаг захиргааны барилга (эсвэл 200 м доторх том барилга)

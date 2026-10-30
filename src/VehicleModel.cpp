@@ -1,6 +1,7 @@
 #include "VehicleModel.h"
 
 #include "Platform.h"
+#include "UiStyle.h"
 
 #include "raymath.h"
 #include "rlgl.h"
@@ -28,7 +29,157 @@ namespace
     };
 
     Model3 models[(int)VehicleModelId::Count];
-    const char* kNames[(int)VehicleModelId::Count] = { "gclass", "truck", "xtrail", "yaris", "moto", "trike", "heli", "dropheli", "armored" };
+
+    // Улсын дугаарын хавтан: Монгол дугаар (520 x 112 мм). Машин бүрийн текстурыг нэг удаа UI фонтоор (кирилл) зурж,
+    // машины shader-ээр (гэрэл, манан) урд, хойд бампер дээр зурна. Загварын өөрийн (гадаад) дугаарыг хар хүрээгээр хучина.
+    struct PlateSpot
+    {
+        Vector3 center; // загварын орон зай, м (урд нь +Z руу, хойд нь -Z руу харна)
+        float tilt;     // градус: эерэг бол дээд ирмэг нь гадагш (урд талд урагш, хойд талд хойш) хазайна
+        float scale;    // хавтангийн хэмжээ (1 = 52 см)
+        Vector2 holder; // хуучин дугаарыг хучих хар хүрээ (өргөн, өндөр, м; 0 = байхгүй)
+    };
+    struct PlateCar
+    {
+        VehicleModelId model;
+        const char* number;  // "03 10"
+        const char* letters; // "УБО"
+        PlateSpot front, rear;
+    };
+    const PlateCar kPlateCars[] = {
+        { VehicleModelId::Sedan, "03 10", "УБО", { { 0.0f, 0.45f, 2.442f }, -5.0f, 1.0f, {} },
+          { { 0.0f, 0.885f, -2.362f }, -10.0f, 1.0f, {} } },
+        { VehicleModelId::Suv, "72 30", "УНҮ", { { 0.0f, 0.60f, 2.352f }, 0.0f, 1.0f, { 0.57f, 0.18f } },
+          { { 0.0f, 1.083f, -2.245f }, -11.0f, 1.0f, { 0.57f, 0.18f } } },
+        { VehicleModelId::Hatchback, "00 00", "УНА", { { 0.0f, 0.553f, 1.977f }, 0.0f, 1.0f, { 0.59f, 0.155f } },
+          { { 0.0f, 0.97f, -1.876f }, -20.0f, 0.85f, { 0.46f, 0.155f } } },
+        { VehicleModelId::Compact, "58 64", "УКМ", { { 0.0f, 0.48f, 2.024f }, -3.0f, 1.0f, {} },
+          { { 0.0f, 0.87f, -1.952f }, 0.0f, 1.0f, {} } },
+    };
+    constexpr int kPlateCarCount = (int)(sizeof(kPlateCars) / sizeof(kPlateCars[0]));
+
+    struct Plates
+    {
+        RenderTexture2D target[kPlateCarCount] = {};
+        Material material[kPlateCarCount] = {};
+        Material holder = {};
+        Mesh mesh = {};
+        bool loaded = false;
+    };
+    Plates plates;
+
+    // Монгол дугаар: цайвар, нимгэн хар хүрээ, "03 10 (MGL) УБО" бүдүүн хар тэмдэгт. Тэмдэгтийн хэмжээг хавтангийн
+    // өндрөөр сонгож, текстурын өргөнийг тэдгээрт тааруулна: хавтан дээр (52 см) шахагдаж жинхэнэ дугаар шиг өндөр,
+    // нарийн харагдана. Бүдүүн зураас: тэмдэгтийг хажуу тийш шилжүүлж хэд давхарлана.
+    RenderTexture2D DrawPlateTexture(const char* number, const char* letters)
+    {
+        const int height = 112, size = 168, margin = 16, gap = 14, ovalWidth = 104;
+        const int numberWidth = Ui::MeasureBold(number, size);
+        const int lettersWidth = Ui::MeasureBold(letters, size);
+        const int width = margin + numberWidth + gap + ovalWidth + gap + lettersWidth + margin;
+        RenderTexture2D target = LoadRenderTexture(width, height);
+        if (target.id == 0) return target;
+        const Color ink = { 14, 14, 16, 255 }, paper = { 238, 239, 236, 255 };
+        BeginTextureMode(target);
+        ClearBackground(ink);
+        DrawRectangle(5, 4, width - 10, height - 8, paper);
+        const int top = (int)((float)height * 0.5f - (float)size * 0.585f); // цифрийн дунд хавтангийн дунд
+        for (int dx : { -4, -2, 0, 2, 4 })
+        {
+            Ui::TextBold(number, margin + dx, top, size, ink);
+            Ui::TextBold(letters, width - margin - lettersWidth + dx, top, size, ink);
+        }
+        // MGL зууван: дугаар, үсгийн хооронд
+        const float ovalX = (float)(margin + numberWidth + gap) + (float)ovalWidth * 0.5f, ovalY = (float)height * 0.5f;
+        DrawEllipse((int)ovalX, (int)ovalY, (float)ovalWidth * 0.5f, 22.0f, ink);
+        DrawEllipse((int)ovalX, (int)ovalY, (float)ovalWidth * 0.5f - 5.0f, 17.0f, paper);
+        for (int dx : { -1, 0, 1 }) Ui::TextBold("MGL", (int)ovalX - Ui::MeasureBold("MGL", 30) / 2 + dx, (int)ovalY - 19, 30, ink);
+        EndTextureMode();
+        GenTextureMipmaps(&target.texture);
+        SetTextureFilter(target.texture, TEXTURE_FILTER_TRILINEAR);
+        return target;
+    }
+
+    void LoadPlates(Shader shader)
+    {
+        if (plates.loaded) return;
+        for (int i = 0; i < kPlateCarCount; ++i)
+        {
+            plates.target[i] = DrawPlateTexture(kPlateCars[i].number, kPlateCars[i].letters);
+            plates.material[i] = LoadMaterialDefault();
+            plates.material[i].shader = shader;
+            plates.material[i].maps[MATERIAL_MAP_DIFFUSE].texture = plates.target[i].texture;
+        }
+        plates.holder = LoadMaterialDefault(); // (цагаан текстур: өнгийг нь зурахдаа өгнө)
+        plates.holder.shader = shader;
+
+        // Хавтан: XY хавтгайд 1 x 1 м, нүүр +Z (RenderTexture-ийн дээд мөр нь v = 1); зурахдаа хэмжээгээр масштаблана
+        Mesh& mesh = plates.mesh;
+        mesh.vertexCount = 4;
+        mesh.triangleCount = 2;
+        mesh.vertices = (float*)MemAlloc(4 * 3 * sizeof(float));
+        mesh.normals = (float*)MemAlloc(4 * 3 * sizeof(float));
+        mesh.texcoords = (float*)MemAlloc(4 * 2 * sizeof(float));
+        mesh.indices = (unsigned short*)MemAlloc(6 * sizeof(unsigned short));
+        const float corners[4][4] = { { -0.5f, -0.5f, 0.0f, 0.0f }, { 0.5f, -0.5f, 1.0f, 0.0f }, { 0.5f, 0.5f, 1.0f, 1.0f }, { -0.5f, 0.5f, 0.0f, 1.0f } };
+        for (int i = 0; i < 4; ++i)
+        {
+            mesh.vertices[i * 3 + 0] = corners[i][0];
+            mesh.vertices[i * 3 + 1] = corners[i][1];
+            mesh.vertices[i * 3 + 2] = 0.0f;
+            mesh.normals[i * 3 + 0] = 0.0f;
+            mesh.normals[i * 3 + 1] = 0.0f;
+            mesh.normals[i * 3 + 2] = 1.0f;
+            mesh.texcoords[i * 2 + 0] = corners[i][2];
+            mesh.texcoords[i * 2 + 1] = corners[i][3];
+        }
+        const unsigned short order[6] = { 0, 1, 2, 0, 2, 3 };
+        std::memcpy(mesh.indices, order, sizeof(order));
+        UploadMesh(&mesh, false);
+        plates.loaded = true;
+    }
+
+    void UnloadPlates()
+    {
+        if (!plates.loaded) return;
+        UnloadMesh(plates.mesh);
+        for (int i = 0; i < kPlateCarCount; ++i)
+        {
+            UnloadRenderTexture(plates.target[i]);
+            MemFree(plates.material[i].maps); // (shader нь унааны загварынх: энд устгахгүй)
+        }
+        MemFree(plates.holder.maps);
+        plates = Plates();
+    }
+
+    void DrawPlates(VehicleModelId id, Color tint)
+    {
+        if (!plates.loaded) return;
+        for (int i = 0; i < kPlateCarCount; ++i)
+        {
+            if (kPlateCars[i].model != id) continue;
+            plates.material[i].maps[MATERIAL_MAP_DIFFUSE].color = tint;
+            plates.holder.maps[MATERIAL_MAP_DIFFUSE].color = { (unsigned char)(tint.r / 10), (unsigned char)(tint.g / 10),
+                                                               (unsigned char)(tint.b / 10), 255 };
+            for (int back = 0; back < 2; ++back)
+            {
+                const PlateSpot& spot = back ? kPlateCars[i].rear : kPlateCars[i].front;
+                Matrix place = MatrixRotateX(spot.tilt * DEG2RAD);
+                if (back) place = MatrixMultiply(place, MatrixRotateY(PI));
+                place = MatrixMultiply(place, MatrixTranslate(spot.center.x, spot.center.y, spot.center.z));
+                if (spot.holder.x > 0.0f)
+                {
+                    // Хар хүрээ хавтангаас 3 мм ард (хавтантай давхцаж анивчихгүй)
+                    const Matrix holder = MatrixMultiply(MatrixMultiply(MatrixScale(spot.holder.x, spot.holder.y, 1.0f),
+                                                                        MatrixTranslate(0.0f, 0.0f, -0.003f)), place);
+                    DrawMesh(plates.mesh, plates.holder, holder);
+                }
+                DrawMesh(plates.mesh, plates.material[i], MatrixMultiply(MatrixScale(0.52f * spot.scale, 0.112f * spot.scale, 1.0f), place));
+            }
+            return;
+        }
+    }
+    const char* kNames[(int)VehicleModelId::Count] = { "gclass", "truck", "xtrail", "yaris", "moto", "trike", "heli", "dropheli", "armored", "crown", "aqua" };
 
     Model3 props[(int)PropModelId::Count];
     const char* kPropNames[(int)PropModelId::Count] = { "ak47", "sum", "sniper", "pistol", "shotgun", "knife" };
@@ -149,11 +300,13 @@ void LoadVehicleModels(Shader shader)
 #endif
         LoadOne(models[i], mesh, texture, shader);
     }
+    LoadPlates(shader);
 }
 
 void UnloadVehicleModels()
 {
     for (Model3& model : models) UnloadOne(model);
+    UnloadPlates();
 }
 
 bool HasVehicleModel(VehicleModelId id)
@@ -187,6 +340,7 @@ void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Mate
         if (part.kind == 0)
         {
             DrawMesh(part.mesh, material, MatrixIdentity());
+            if (!depth) DrawPlates(id, tint);
             continue;
         }
         rlPushMatrix();

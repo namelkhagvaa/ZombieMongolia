@@ -52,7 +52,7 @@ struct Progress
     bool graphicsAuto = true;    // компьютерт: видео картаар сонгоно (цэснээс сольсон, FPS-ээр бууруулсан бол false)
     bool sound = true;           // дуу асаалттай
     int soundLevel = 0;          // 0 = 100%, 1 = 60%, 2 = 30%
-    int leaderSkin = 0;          // 1-р дайчны дүр (Team.h: 0 цэрэг, 1 Model-1, 2 Model-3)
+    int leaderSkin = 0;          // 1-р дайчны дүр (Team.h: 0 цэрэг, 1 Model-1, 2 Model-3, 3 Demon, 4 Iron, 5 Model-2)
     int tutorial = 0;            // шинэ тоглогчийн заавар: дууссан алхам (kTutorialDone = бүгд)
     int netTag = 0;              // хамтарсан тоглолтод харагдах дугаар (1000..9999)    // камер: 1-р этгээд (зөвхөн гар, буу) эсвэл 3-р этгээд (бүтэн бие)
     std::vector<bool> liberated; // аймаг бүрээр

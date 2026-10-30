@@ -78,6 +78,9 @@ Copy-Item (Join-Path $root "assets\icons\*.png") (Join-Path $staging "assets\ico
 # HUD-ийн иконууд
 New-Item -ItemType Directory -Force (Join-Path $staging "assets\huds") | Out-Null
 Copy-Item (Join-Path $root "assets\huds\*.png") (Join-Path $staging "assets\huds")
+# Байшин, зам, байгалийн бүтэц (CC0, саарал JPG: tools/prep_surfaces.py)
+New-Item -ItemType Directory -Force (Join-Path $staging "assets\surfaces") | Out-Null
+Copy-Item (Join-Path $root "assets\surfaces\*.jpg") (Join-Path $staging "assets\surfaces")
 # Газрын текстурууд (CC0)
 New-Item -ItemType Directory -Force (Join-Path $staging "assets\terrain") | Out-Null
 Copy-Item (Join-Path $root "assets\terrain\*.png") (Join-Path $staging "assets\terrain")
@@ -100,12 +103,27 @@ New-Item -ItemType Directory -Force (Join-Path $staging "assets\city") | Out-Nul
 Copy-Item (Join-Path $root "assets\city\*.bin") (Join-Path $staging "assets\city")
 New-Item -ItemType Directory -Force (Join-Path $staging "assets\sounds") | Out-Null
 Copy-Item (Join-Path $root "assets\sounds\*.wav") (Join-Path $staging "assets\sounds")
+# Мэдэгдлийн дуу хоолой (tools/gen_narration.py)
+New-Item -ItemType Directory -Force (Join-Path $staging "assets\sounds\narration") | Out-Null
+Copy-Item (Join-Path $root "assets\sounds\narration\*.wav") (Join-Path $staging "assets\sounds\narration") -ErrorAction SilentlyContinue
+# Том текстурууд PNG -> JPG (APK ~70 MB багасна; huds, icons PNG хэвээр)
+Run "python" @((Join-Path $root "tools\native_jpg.py"), (Join-Path $staging "assets"))
 
 # --- 3. APK: багцлах, native санг нэмэх, зэрэгцүүлэх, гарын үсэг зурах ---
 $unsigned = Join-Path $out "unsigned.apk"
 $aligned = Join-Path $out "aligned.apk"
 $apk = Join-Path $out "ZombieMongolia.apk"
 Remove-Item -Force -ErrorAction SilentlyContinue $unsigned, $aligned, $apk
+
+# Java: утасны гар (android\java\...\GameActivity.java) -> classes.dex
+$javaOut = Join-Path $out "java"
+if (Test-Path $javaOut) { Remove-Item -Recurse -Force $javaOut }
+New-Item -ItemType Directory -Force (Join-Path $javaOut "classes"), (Join-Path $javaOut "dex") | Out-Null
+$javaSources = @(Get-ChildItem (Join-Path $root "android\java") -Recurse -Filter *.java | ForEach-Object { $_.FullName })
+Run "javac" (@("-source", "8", "-target", "8", "-nowarn", "-encoding", "UTF-8", "-classpath", $androidJar,
+               "-d", (Join-Path $javaOut "classes")) + $javaSources)
+$classFiles = @(Get-ChildItem (Join-Path $javaOut "classes") -Recurse -Filter *.class | ForEach-Object { $_.FullName })
+Run "$tools\d8.bat" (@("--min-api", "24", "--lib", $androidJar, "--output", (Join-Path $javaOut "dex")) + $classFiles)
 
 Run "$tools\aapt.exe" @("package", "-f", "-M", (Join-Path $root "android\AndroidManifest.xml"),
                         "-S", (Join-Path $root "android\res"),
@@ -116,6 +134,12 @@ try {
     foreach ($abi in $Abis) {
         Run "$tools\aapt.exe" @("add", $unsigned, "lib/$abi/libZombieMongolia.so")
     }
+} finally {
+    Pop-Location
+}
+Push-Location (Join-Path $javaOut "dex")
+try {
+    Run "$tools\aapt.exe" @("add", $unsigned, "classes.dex")
 } finally {
     Pop-Location
 }

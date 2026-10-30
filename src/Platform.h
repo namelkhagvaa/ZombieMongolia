@@ -59,6 +59,10 @@ void WebFieldsEnd(); // энэ frame-д байрлуулаагүй талбар�
 // Идэвхтэй (гар нээлттэй) талбарын slot, -1 = алга. buffer-т утгыг нь хуулна; enter = сүүлийн талбарт Enter дарсан.
 int WebFieldPoll(char* buffer, int capacity, bool& enter);
 void WebFieldBlur(); // гарыг хаана
+// Android: утасны өөрийн гарыг (android/java/.../GameActivity.java) үг таамаглахгүй горимоор нээнэ. Хөтчөөс ялгаатай нь
+// талбарт хуруу хүрэхэд тоглоом өөрөө дуудна; дараа нь WebFieldPoll, WebFieldBlur, WebVisibleFraction хөтөчтэй ижил.
+// Бусад платформд юу ч хийхгүй.
+void NativeFieldOpen(int slot, int kind, int next, const char* value);
 // Хөтөч: утасны гар нээгдсэн үед дэлгэцийн харагдах хэсэг (0..1, дээрээс). Бусад платформд 1.
 float WebVisibleFraction();
 

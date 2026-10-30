@@ -8,6 +8,7 @@
 #include "FuelBarrels.h"
 #include "MedKits.h"
 #include "Grenades.h"
+#include "Hitbox.h"
 #include "Input.h"
 #include "Minimap.h"
 #include "Mission.h"
@@ -53,6 +54,7 @@ struct LaunchOptions
     int crashTest = -1; // туршилт: унаж буй хэрэгслийн урд 25 м-т энэ дугаартай хэрэгслийг хөндлөн тавина
     float rideHeading = -1000.0f; // туршилт: унааны чиглэл (градус), камераас тусдаа (--ride-heading)
     int zombies = 0;  // тоглогчийн урд шууд гаргах зомбины тоо (--zombies N)
+    int rank = 0;     // туршилт: зэргийг энэ болгоно (--rank N; 0 = дансны)
     int bears = 0;    // тоглогчийн урд 14 м-т гаргах баавгайн тоо (--bears N, туршилт; сөрөг бол шууд үхнэ)
     int soldiers = 0; // туршилтад багийн цэргийн тоо (--soldiers N)
     float cameraDistance = 0.0f; // >0 бол камерын зай (--zoom D)
@@ -346,7 +348,8 @@ private:
     int TeamAlive(bool hostTeam) const;
     // Сум тулаанд оролцогч хүнд тусав уу: хост буудвал kGuestTarget эсвэл squad-ийн индекс (зочны баг),
     // зочин буудвал Net::kHostPlayer эсвэл hostSoldiers-ийн индекс; тусаагүй бол -1.
-    int RaycastHumans(Ray ray, float minDistance, float maxDistance, float& distance, bool& head) const;
+    // Тулаан: туяа эсрэг багийн хүнд (биеийн байрлалтай тааруулсан онох хүрээ: Hitbox.h) тусвал түүний дугаар, үгүй бол -1
+    int RaycastHumans(Ray ray, float minDistance, float maxDistance, float& distance, HitZone& zone) const;
     int activeMember = 0;
     int missionFrame = 0;        // даалгаврын шинэчлэлтийн тоолуур (туршилтын командуудад)
     int teamVehicle = -1;        // багийн гишүүдийн сонгосон хэрэгсэл (-1 = байхгүй)
@@ -378,6 +381,8 @@ private:
     void GiveCrateReward();
     void DamageGuest(float amount);   // хост: зочныг гэмтээнэ (илгээж, амийг нь давхар тооцно)
     bool AllowGuestHit(float& amount, float cap); // хост: зочны оноолтыг хязгаарлана; хэтэрсэн бол false
+    float GuestHumanDamageCap() const;            // хост: зочны хүнд учруулах нэг сумны дээд хохирол (серверийн түвшнээр)
+    static float WallDt();                        // бодит кадрын хугацаа (сервертэй уялдсан хугацаанд)
     void ApplyGuestSetup();
     int GuestViewVerdict() const;     // зочин: өөрийн харж буй тулааны үр дүн (-1 шийдэгдээгүй, 0 хост, 1 зочин ялсан)
     // Унасан байдал: тоглогч бие биеэ босгох (хамтарсан тоглолт), AI нөхдийн босголт, HUD
@@ -577,6 +582,12 @@ private:
     void OpenCharacterSelect(int province, bool approved);
     bool codeEntryOpen = false;     // өрөөний код оруулах цонх нээлттэй
     std::string codeEntry;          // оруулсан цифрүүд
+    // Тулааны өрөөний жагсаалт (Counter-Strike-ийн сервер жагсаалт шиг): "ТУЛААН ХАЙХ" нээнэ, мөрөөс сонгож орно
+    bool roomBrowserOpen = false;
+    bool roomBrowserJoining = false; // сонгосон өрөөнд орох хүсэлт явж байна
+    int roomBrowserScroll = 0;       // эхний харагдах мөр
+    double roomBrowserRefresh = 0.0; // дараагийн автомат шинэчлэл (GetTime)
+    std::string roomBrowserNote;
     float waitTimer = 0.0f;
     std::string coopStatus;         // газрын зураг: сүүлийн мэдээ ("Татгалзлаа" г.м.)
     std::string noticeText;
@@ -645,6 +656,14 @@ private:
     void UpdateCodeEntry();
     void DrawCodeEntry() const;
     void ForceCodeSubmit(); // оруулсан кодоор нэгдэх хүсэлт илгээнэ
+    void OpenRoomBrowser();
+    void UpdateRoomBrowser();
+    void DrawRoomBrowser() const;
+    Rectangle RoomBrowserPanel() const;
+    Rectangle RoomBrowserRow(int slot) const;    // харагдах мөр (0..RoomBrowserRows()-1)
+    Rectangle RoomBrowserJoin(int slot) const;   // мөрийн "ОРОХ" товч
+    Rectangle RoomBrowserButton(int i) const;    // 0 шинэчлэх, 1 автомат хайлт, 2 хаах, 3/4 дээш/доош гүйлгэх
+    int RoomBrowserRows() const;
     Rectangle CodeKeyRect(int key) const; // 0..11: 1-9, ←, 0, OK
     void ObjectiveTexts(std::string& objective, std::string& detail) const;
     Net::AvatarState LocalAvatar() const;
@@ -652,6 +671,16 @@ private:
     void ShowRemoteShots(RemoteFigure& figure, uint8_t shots, Vector3 shotEnd);
     void AdvanceRemoteFigure(RemoteFigure& figure, float dt) const;
     void DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& look) const;
+    void DrawRemoteWalker(const RemoteFigure& figure, HumanoidLook look) const; // явган (амьд эсвэл үхсэн)
+    // Нөгөө тоглогчийн дүр унаанд сууж яваа бол суудлын хэлбэр (0 = явган; 3, 5 = бүхээгт харагдахгүй, 6 = пулемётын ард
+    // зогссон), суудал (ташаа), бие ба унааны зүг. DrawRemoteFigure ба онох хүрээ ижил байрлалыг ашиглана.
+    int RemoteSeat(const RemoteFigure& figure, Vector3& seat, float& facing, float& seatHeading) const;
+    // Онох хүрээний байрлал: false бол харагдахгүй (бүхээг дотор)
+    bool RemoteBody(const RemoteFigure& figure, Vector3& feet, float& facing, BodyPosture& posture) const;
+    float sprayHeat = 0.0f; // тулаан: дараалсан буудлагын тархалт (сум бүрд өсөж, буудахгүй үед буурна)
+    int zombieRank = 1;     // зомбины хүч, ухааныг тогтоосон зэрэг (өөрийн, хамтын тоглолтод хостын)
+    int shownRank = 0;      // сүүлд харуулсан зэрэг (ахихад мэдэгдэнэ)
+    double sprayShotAt = 0.0; // сүүлд буудсан цаг (GetTime)
     std::vector<ZombieHorde::KillReward> killRewardBuffer;
     void DrawCoinPopups() const;
     bool inTown = false;             // тоглогч аймгийн төвд байгаа (орох үед нэрийг харуулна)

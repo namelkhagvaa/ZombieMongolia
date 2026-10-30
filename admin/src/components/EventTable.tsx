@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Input, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { Button, Input, Select, Space, Table, Tag, Typography } from 'antd';
 import type { TableProps } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { api, EventRow, Page } from '../api';
-import { ago, dateTime, eventLabel, provinceName } from '../format';
+import { ago, eventLabel, exactTime, provinceName } from '../format';
 
 // Логийн мэдээллийг уншигдахуйц болгоно: аймгийн дугаарыг нэрээр
 function describe(data: Record<string, unknown>): string {
@@ -42,11 +42,14 @@ export default function EventTable({ playerId, compact }: { playerId?: number; c
     {
       title: 'Цаг',
       dataIndex: 'created',
-      width: 150,
+      width: 190,
       render: (v) => (
-        <Tooltip title={dateTime(v)}>
-          <span>{ago(v)}</span>
-        </Tooltip>
+        <Space direction="vertical" size={0}>
+          <span className="mono">{exactTime(v)}</span>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {ago(v)}
+          </Typography.Text>
+        </Space>
       ),
     },
     ...(playerId

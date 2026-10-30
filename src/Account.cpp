@@ -1,4 +1,5 @@
 #include "Account.h"
+#include "Rank.h"
 #include "GameLog.h"
 
 #include "Input.h"
@@ -102,14 +103,19 @@ namespace
     bool smsCashout = false; // Sms цонх: Gold татах хүсэлтийг баталгаажуулж байна
     // Өрөө хайх: олдох хүртэл давтана
     bool roomSearching = false;
+    int roomSearchTarget = -1; // жагсаалтаас сонгосон өрөө (-1 = хамгийн эртний сул өрөө)
     std::string roomSearchLast; // сүүлийн "өрөө алга" хариуны тайлбар (хайлт дуусахад харуулна)
     double roomSearchUntil = 0.0, nextRoomSearch = 0.0;
     std::string roomSearchNote;
     // Нээлттэй өрөө (сервер нээсэн / орсон)
     int roomId = -1, roomProvince = -1, roomBattle = 0, roomRecruits = 0;
     int roomGuestSoldiers = -1, roomGuestHealthLevel = -1; // хост: серверийн мэдэх зочны цэрэг, амийн түвшин (-1 = мэдэхгүй)
+    int roomGuestDamageLevel = -1;                          // хост: зочны хохирлын түвшин (мэдэгдлийг хязгаарлахад)
+    int xp = 0, rank = 1;                                   // дансны XP, зэрэг (сервер)
+    int roomHostRank = -1, roomGuestRank = -1;             // өрөөний хост, зочны зэрэг (-1 = мэдэхгүй)
     std::string roomStage, roomCode;
     bool roomPvp = false, roomCoop = false;
+    std::string roomPvpNote;
     // Тулааны мэдэгдэл: ялагч (host/guest), шийдэгдтэл давтана
     std::string battleReport;
     bool battleAbsent = false; // нөгөө тал тасарсан үеийн мэдэгдэл (сервер маргаанд тоолохгүй)
@@ -297,14 +303,23 @@ namespace
 
     int NextField() { return NextAfter(focus); }
 
-    // Хөтөч дээр мэдрэгчтэй горимд дэлгэцийн гарын оронд утасны өөрийн гарыг (Platform: WebField*) хэрэглэнэ.
+    // Утсан дээр (хөтөч мэдрэгчтэй горимд, Android) тоглоомын гарын оронд утасны өөрийн гарыг (Platform: WebField*,
+    // NativeFieldOpen) үг таамаглахгүй горимоор хэрэглэнэ.
     bool UseNativeKeyboard()
     {
 #if defined(__EMSCRIPTEN__)
         return InTouchMode();
+#elif defined(__ANDROID__)
+        return true;
 #else
         return false;
 #endif
+    }
+
+    // Утасны гарын төрөл: 0 текст, 1 утасны дугаар, 2 нууц үг, 3 тоо (Platform.h)
+    int FieldKind(int index)
+    {
+        return index == kPhone ? 1 : index == kPassword ? 2 : index == kAccount || index == kAmount ? 3 : 0;
     }
 
     void EndNativeEdit()
@@ -416,6 +431,8 @@ namespace
         capitalPrice = prices["capital"].Int(capitalPrice);
         maxDevices = account["max_devices"].Int(maxDevices);
         gold = account["gold"].Int(gold);
+        xp = account["xp"].Int(xp);
+        rank = account["rank"].Int(rank);
         goldLocked = account["gold_locked"].Int(goldLocked);
         roomEntry = account["room_entry"].Int(roomEntry);
         skinPrice = account["skin_price"].Int(skinPrice);
@@ -499,12 +516,17 @@ namespace
         roomRecruits = room["recruits"].Int(0);
         roomCode = room["code"].Str();
         roomPvp = room["pvp"].Bool();
+        roomPvpNote = room["pvp_note"].Str();
         roomCoop = room["coop"].Bool();
+        roomHostRank = room["host_rank"].Int(-1);
         nextRoomBeat = GetTime() + 60.0;
     }
 
     // Өрөөний хүсэлт (гарах, дуусгах, дохио): цонхыг хаахгүй, даалгаврын үеэр ч (Tick) хариуг авна.
-    Pending roomRequest, roomBeat, roomStageCall, battleCall, roomSearchCall, soldierLossCall, guestLostCall, logCall;
+    Pending roomRequest, roomBeat, roomStageCall, battleCall, roomSearchCall, soldierLossCall, guestLostCall, logCall, roomListCall;
+    std::vector<Account::RoomListing> roomList;
+    std::string roomListNote, roomListBlocked;
+    double roomListTime = 0.0;
     int guestLostTotal = 0, guestLostBattle = 0; // хост: зочны алдсан Gold-ийн цэрэг (энэ тулаанд, нийт)
     bool guestLostDirty = false;
 
@@ -537,6 +559,8 @@ namespace
             roomCoop = reply["coop"].Bool();
             roomGuestSoldiers = reply["guest_soldiers"].Int(-1);
             roomGuestHealthLevel = reply["guest_health_level"].Int(-1);
+            roomGuestDamageLevel = reply["guest_damage_level"].Int(-1);
+            roomGuestRank = reply["guest_rank"].Int(-1);
         }
     }
 
@@ -1174,8 +1198,7 @@ namespace
         {
             // Утасны гар: талбарын дээр үл үзэгдэх <input> (хуруу шууд түүнд хүрнэ)
             const float w = (float)ViewWidth(), h = (float)ViewHeight();
-            WebFieldPlace(index, area.x / w, area.y / h, area.width / w, area.height / h,
-                          index == kPhone ? 1 : index == kPassword ? 2 : index == kAccount || index == kAmount ? 3 : 0, NextAfter(index),
+            WebFieldPlace(index, area.x / w, area.y / h, area.width / w, area.height / h, FieldKind(index), NextAfter(index),
                           fields[index].c_str());
         }
         if (drawPass)
@@ -1214,6 +1237,7 @@ namespace
         {
             Focus(index);
             if (!UseNativeKeyboard()) keyboardOpen = InTouchMode();
+            NativeFieldOpen(index, FieldKind(index), NextAfter(index), fields[index].c_str()); // (Android: утасны гар)
         }
     }
 
@@ -2035,6 +2059,7 @@ void Account::Tick()
     Finish(soldierLossCall);
     Finish(guestLostCall);
     Finish(logCall);
+    Finish(roomListCall);
     // Тоглолтын лог: мөр бүрт одоогийн өрөө, тулаан, үүрэг; 30 секунд тутам (алхам, алдаа гарвал даруй) серверт
     GameLog::SetRoom(roomId, roomBattle, roomRole == Account::RoomRole::Host ? 'h' : roomRole == Account::RoomRole::Guest ? 'g' : 0);
     GameLog::Persist(GetTime());
@@ -2097,8 +2122,10 @@ void Account::Tick()
         else
         {
             nextRoomSearch = GetTime() + 3.0;
+            const std::string protocol = std::to_string(Net::kProtocolVersion);
             roomSearchCall.id = Online::Send("POST", apiBase + "rooms/join/",
-                                             Obj({ { "protocol", std::to_string(Net::kProtocolVersion) } }), token);
+                                             roomSearchTarget >= 0 ? Obj({ { "protocol", protocol }, { "room", std::to_string(roomSearchTarget) } })
+                                                                   : Obj({ { "protocol", protocol } }), token);
             roomSearchCall.handler = [](int status, const Json& reply) {
                 if (!roomSearching) return; // цуцалсан (сервер өрөөнд оруулсан бол дохиогүй тул 10 минутад гаргана)
                 if (status == 200)
@@ -2107,6 +2134,12 @@ void Account::Tick()
                     SetRoom(reply["room"]);
                     roomJoined = roomRole == Account::RoomRole::Guest;
                     roomSearching = false;
+                }
+                else if (status == 404 && roomSearchTarget >= 0)
+                {
+                    roomSearching = false; // сонгосон өрөө дүүрсэн, хаагдсан: дахин оролдохгүй
+                    const std::string message = reply["message"].Str();
+                    roomSearchNote = message.empty() ? "Энэ өрөөнд орох боломжгүй боллоо" : message;
                 }
                 else if (status == 404)
                 {
@@ -2229,6 +2262,17 @@ bool Account::Update()
                 }
             }
         }
+#if defined(__ANDROID__)
+        // Гарын "Дараах": дараагийн талбарт шилжинэ (хөтөч дээр хуудас өөрөө шилжүүлдэг)
+        if (submit && nativeEdit && NextField() >= 0)
+        {
+            const int next = NextField();
+            Focus(next);
+            nativeText = fields[next];
+            NativeFieldOpen(next, FieldKind(next), NextAfter(next), fields[next].c_str());
+            submit = false;
+        }
+#endif
         if (submit) enter = true; // сүүлийн талбарт гарын Enter: НЭВТРЭХ / БҮРТГҮҮЛЭХ
     }
 
@@ -2246,8 +2290,9 @@ bool Account::Update()
         panelShift = 0.0f;
     }
 
-    // Компьютерийн гар
-    if (focus >= 0)
+    // Компьютерийн гар. Утасны гараар бичиж байхад (nativeEdit) талбарын утгыг дээр хуулсан: тооны гар цифрийг жинхэнэ
+    // товчлуураар ч илгээдэг тул энд дахин нэмбэл "7" -> "77" болдог.
+    if (focus >= 0 && !nativeEdit)
     {
         for (int code = GetCharPressed(); code != 0; code = GetCharPressed()) Insert(code);
         if (IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) EraseLast(fields[focus]);
@@ -2264,10 +2309,10 @@ bool Account::Update()
     }
 
     drawPass = false;
-    const bool tap = tapped;
     Frame();
-    // Утасны гараар бичиж байхад талбараас өөр газар товшвол гарыг хаана
-    if (tap && nativeEdit) EndNativeEdit();
+    // Утасны гараар бичиж байхад талбараас өөр газар товшвол гарыг хаана (талбар, товч авсан товшилт биш: өөр
+    // талбар руу шилжихэд гар хаагдаж, дахин товших шаардлагагүй)
+    if (tapped && nativeEdit) EndNativeEdit();
     // Цонхны гадна (гарын хэсэг биш) товшвол утасны гарыг нууна
     if (tapped && KeyboardVisible()) keyboardOpen = false;
     return Blocking();
@@ -2525,6 +2570,7 @@ const std::string& Account::RoomTicket() { return roomTicket; }
 int Account::RoomProvince() { return roomProvince; }
 const std::string& Account::RoomCode() { return roomCode; }
 bool Account::RoomPvp() { return enabled && roomPvp; }
+const std::string& Account::RoomPvpNote() { return roomPvpNote; }
 bool Account::RoomCoop() { return enabled && roomCoop; }
 
 void Account::JoinCoop(const std::string& code)
@@ -2555,17 +2601,80 @@ bool Account::PremiumSkin(int skin) { return std::find(premiumSkins.begin(), pre
 int Account::SkinPrice(int skin) { return skin >= 0 && skin < 8 ? skinPrices[skin] : skinPrice; }
 int Account::CoopReward() { return coopReward; }
 
-void Account::JoinRoom()
+void Account::JoinRoom(int roomId)
 {
     if (!ServerShop() || roomSearching) return;
     roomSearching = true;
-    roomSearchUntil = GetTime() + 60.0;
+    roomSearchTarget = roomId;
+    roomSearchUntil = GetTime() + (roomId >= 0 ? 15.0 : 60.0);
     nextRoomSearch = 0.0;
     roomSearchNote.clear();
     roomSearchLast.clear();
 }
 
 bool Account::SearchingRoom() { return roomSearching; }
+
+void Account::RequestRoomList()
+{
+    if (!ServerShop() || roomListCall.id >= 0) return;
+    roomListCall.id = Online::Send("GET", apiBase + "rooms/list/?protocol=" + std::to_string(Net::kProtocolVersion), "", token);
+    roomListCall.handler = [](int status, const Json& reply) {
+        if (status != 200)
+        {
+            const std::string message = reply["message"].Str();
+            roomListNote = status == 0     ? "Сервертэй холбогдож чадсангүй. Интернэтээ шалгана уу"
+                           : !message.empty() ? message
+                           : status == 404    ? "Сервер өрөөний жагсаалтгүй хуучин хувилбартай байна. АВТОМАТ ХАЙЛТ-аар орно уу"
+                                              : "Жагсаалтыг татаж чадсангүй";
+            return;
+        }
+        roomListNote.clear();
+        roomListBlocked = reply["blocked"].Str();
+        roomList.clear();
+        const Json& rooms = reply["rooms"];
+        for (size_t i = 0; i < rooms.Size(); ++i)
+        {
+            const Json& row = rooms[i];
+            Account::RoomListing item;
+            item.id = row["id"].Int(-1);
+            item.host = row["host"].Str();
+            item.hostRank = row["host_rank"].Int(1);
+            item.province = row["province"].Int();
+            item.done = row["done"].Int();
+            item.age = row["age"].Int();
+            item.joinable = row["joinable"].Bool();
+            item.reason = row["reason"].Str();
+            if (item.id >= 0) roomList.push_back(item);
+        }
+        roomListTime = GetTime();
+    };
+}
+
+bool Account::RoomListLoading() { return roomListCall.id >= 0; }
+const std::vector<Account::RoomListing>& Account::RoomList() { return roomList; }
+const std::string& Account::RoomListNote() { return roomListNote; }
+const std::string& Account::RoomListBlocked() { return roomListBlocked; }
+double Account::RoomListTime() { return roomListTime; }
+
+void Account::TestRoomList(int count)
+{
+    static const char* const names[] = { "Бат-Эрдэнэ", "Тэмүүжин", "Сараа", "Ганбаатар_Монгол", "Номин", "Дорж", "Хулан", "Off_Road" };
+    roomList.clear();
+    for (int i = 0; i < count; ++i)
+    {
+        Account::RoomListing item;
+        item.id = 100 + i;
+        item.host = names[i % 8];
+        item.hostRank = 3 + i * 4;
+        item.province = (i * 5) % 22;
+        item.done = i % 4;
+        item.age = i * 170;
+        item.joinable = i < 4;
+        item.reason = i == 6 ? "Хувилбар өөр" : i >= 4 ? "Зэрэг зөрүүтэй (1–7)" : "";
+        roomList.push_back(item);
+    }
+    roomListTime = GetTime() + 1.0;
+}
 void Account::CancelRoomSearch() { roomSearching = false; }
 
 bool Account::TakeSearchNote(std::string& text)
@@ -2595,13 +2704,26 @@ void Account::CompleteRoom() { RoomCall("complete"); }
 void Account::ConfirmGuest()
 {
     if (roomId < 0 || roomRole != RoomRole::Host) return;
-    roomGuestSoldiers = roomGuestHealthLevel = -1;
+    roomGuestSoldiers = roomGuestHealthLevel = roomGuestDamageLevel = -1;
     guestConfirmPending = true;
     SendGuestConfirm();
 }
 
 int Account::RoomGuestSoldiers() { return roomGuestSoldiers; }
 int Account::RoomGuestHealthLevel() { return roomGuestHealthLevel; }
+int Account::RoomGuestDamageLevel() { return roomGuestDamageLevel; }
+int Account::Xp() { return SignedIn() ? xp : 0; }
+void Account::TestSignIn(const std::string& name, int testGold, int testXp)
+{
+    enabled = signedIn = true;
+    playerName = name;
+    gold = testGold;
+    xp = testXp;
+    rank = RankLevel(testXp);
+}
+int Account::Rank() { return SignedIn() ? std::max(1, rank) : 1; }
+int Account::RoomHostRank() { return roomHostRank; }
+int Account::RoomGuestRank() { return roomGuestRank; }
 
 void Account::RefreshRoom()
 {

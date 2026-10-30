@@ -112,9 +112,27 @@ void Arsenal::Select(WeaponType type)
     cooldown = std::max(cooldown, 0.2f); // гаргаж ирэх богино хугацаа
 }
 
+namespace
+{
+    float rankDamage = 1.0f;
+}
+
+void SetRankDamageBonus(float multiplier)
+{
+    rankDamage = std::max(1.0f, multiplier);
+}
+
+float WeaponMaxDamage(int damageLevel)
+{
+    // Бүх зэвсгийн хамгийн их нэг сумны хохирол энэ түвшинд (зэрэггүй; суурилуулсан пулемёт 42 нь үүнээс бага)
+    float best = 0.0f;
+    for (int i = 0; i < (int)WeaponType::Count; ++i) best = std::max(best, SpecFor((WeaponType)i).damage);
+    return best * (1.0f + 0.4f * (float)std::clamp(damageLevel, 0, kMaxWeaponLevel));
+}
+
 float Arsenal::Damage() const
 {
-    return Spec().damage * (1.0f + 0.4f * (float)levels.damage);
+    return Spec().damage * (1.0f + 0.4f * (float)levels.damage) * rankDamage;
 }
 
 float Arsenal::Interval() const
@@ -175,7 +193,9 @@ bool Arsenal::TryUse()
         --ammo[(int)current];
     }
 
-    cooldown = Interval();
+    // Илүү гарсан хугацааг (кадрын дотор, -dt..0) дараагийнхад шилжүүлнэ: галын хурд FPS-ээс хамаарахгүй (эс бөгөөс
+    // кадр бүрийн бөөрөнхийлөлтөөс 30 FPS-тэй утас 60 FPS-тэй компьютерээс ~14% удаан буудна)
+    cooldown = std::max(cooldown, -Interval()) + Interval();
     return true;
 }
 

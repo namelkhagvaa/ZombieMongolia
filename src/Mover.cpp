@@ -38,9 +38,15 @@ void MoveToward(Mover& mover, Vector3 target, float speed, float dt, const World
     const Vector3 before = mover.position;
     speed *= world.WadeFactor(mover.position); // усанд удаан (гүнд сэлнэ)
     const float step = std::min(speed * dt, dist); // урт кадр (хөтөч, утас) дээр зорилтоо давж эргэлдэхгүй
-    mover.position.x += dirX * step;
-    mover.position.z += dirZ * step;
-    world.ResolveHorizontal(mover.position, radius, height, stepHeight);
+    // Бага FPS-тэй (утас) үед нэг кадрын алхам урт: хана, хашааны дагуу гулсахдаа нэг дор хол орж, буцаж
+    // түлхэгдээд чичигнэдэг. Жижиг хэсгүүдээр алхаж хэсэг бүрд мөргөлдөөнийг шийднэ.
+    const int pieces = std::clamp((int)std::ceil(step / 0.12f), 1, 6);
+    for (int k = 0; k < pieces; ++k)
+    {
+        mover.position.x += dirX * step / (float)pieces;
+        mover.position.z += dirZ * step / (float)pieces;
+        world.ResolveHorizontal(mover.position, radius, height, stepHeight);
+    }
     mover.wishStep = step;
     mover.moved = HorizontalDistance(before, mover.position);
 

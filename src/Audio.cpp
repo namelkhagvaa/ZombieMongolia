@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -555,6 +556,11 @@ namespace
     std::vector<Sound> voiceLines[3][(int)VoiceLine::Count];
     int lastVariant[3][(int)VoiceLine::Count] = {};
     Sound* talking = nullptr; // одоо ярьж буй (нэг удаад нэг хүн)
+    // Мэдэгдлийн дуу: анх хэрэглэхэд ачаална (олдоогүй бол хоосон дууг санана: дахин хайхгүй)
+    std::map<std::string, Sound> narration;
+    std::map<std::string, double> narrationAt;
+    Sound* narrating = nullptr;
+
 }
 
 namespace Audio
@@ -710,6 +716,12 @@ namespace Audio
             voice.variants.clear();
         }
         talking = nullptr;
+        narrating = nullptr;
+        for (auto& entry : narration)
+        {
+            if (entry.second.frameCount > 0) UnloadSound(entry.second);
+        }
+        narration.clear();
         for (auto& speaker : voiceLines)
         {
             for (std::vector<Sound>& list : speaker)
@@ -774,6 +786,36 @@ namespace Audio
         PlaySound(*chosen);
     }
 
+    void Announce(const char* key)
+    {
+        if (!ready || !enabled || key == nullptr) return;
+        auto found = narration.find(key);
+        if (found == narration.end())
+        {
+            Sound sound = {};
+            const std::string base = SoundFolder() + "narration/" + key;
+            if (!TryLoad(base + ".wav", sound) && !TryLoad(base + ".ogg", sound))
+            {
+                sound = {};
+                TraceLog(LOG_WARNING, "NARRATION: %s not found (%s)", key, base.c_str());
+            }
+            found = narration.emplace(key, sound).first;
+        }
+        Sound& sound = found->second;
+        if (sound.frameCount == 0) return;
+        const double now = GetTime();
+        double& last = narrationAt[key];
+        if (last > 0.0 && now - last < 6.0) return;
+        last = now;
+        if (narrating && narrating != &sound && IsSoundPlaying(*narrating)) StopSound(*narrating);
+        SetSoundVolume(sound, 1.0f);
+        SetSoundPitch(sound, 1.0f);
+        SetSoundPan(sound, 0.5f);
+        PlaySound(sound);
+        narrating = &sound;
+        TraceLog(LOG_INFO, "NARRATION: %s", key);
+    }
+
     bool HasVoice(int speaker, VoiceLine line)
     {
         return ready && speaker >= 0 && speaker < 3 && !voiceLines[speaker][(int)line].empty();
@@ -817,5 +859,35 @@ namespace Audio
         e.throttle.store(std::clamp(throttle, 0.0f, 1.0f));
         e.gain.store(gain * (engineRecorded ? (kind == EngineSound::Truck ? 0.6f : 0.48f) : (kind == EngineSound::Truck ? 0.75f : 0.6f)));
         SetAudioStreamPan(e.stream, pan);
+    }
+
+    void StopAll()
+    {
+        if (!ready) return;
+        for (Engine& e : engines)
+        {
+            e.kind.store((int)EngineSound::Off);
+            e.gain.store(0.0f);
+        }
+        for (Voice3D& voice : bank)
+        {
+            for (Sound& s : voice.variants) StopSound(s);
+            for (auto& list : voice.aliases)
+            {
+                for (Sound& s : list) StopSound(s);
+            }
+        }
+        for (auto& entry : narration)
+        {
+            if (entry.second.frameCount > 0) StopSound(entry.second);
+        }
+        for (auto& speaker : voiceLines)
+        {
+            for (std::vector<Sound>& list : speaker)
+            {
+                for (Sound& s : list) StopSound(s);
+            }
+        }
+        talking = narrating = nullptr;
     }
 }

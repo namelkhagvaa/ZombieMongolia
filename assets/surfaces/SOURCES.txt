@@ -1,0 +1,15 @@
+Zombie Mongolia — гадаргуугийн бүтцийн текстурын эх сурвалж (бүгд CC0 / public domain)
+
+ambientCG (https://ambientcg.com), CC0 1.0, 1K Color -> саарал бүтэц (tools/prep_surfaces.py):
+  plaster.jpg  <- PaintedPlaster017
+  brick.jpg  <- Bricks085
+  concrete.jpg  <- Concrete034
+  planks.jpg  <- WoodFloor043
+  roof_tiles.jpg  <- RoofingTiles013A
+  corrugated.jpg  <- CorrugatedSteel007A
+  asphalt.jpg  <- Asphalt033
+  paving.jpg  <- PavingStones138
+  sand.jpg  <- Ground080
+  gravel.jpg  <- Ground111
+  pebbles.jpg  <- Gravel023
+  cracked.jpg  <- Ground031

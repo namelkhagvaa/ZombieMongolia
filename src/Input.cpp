@@ -38,6 +38,7 @@ namespace
     int scopeZoom = 1; // мэргэн буудагчийн "ДУРАН" товч: 1x -> 2x -> хаах
     bool pointerDown = false, pointerPressed = false;
     Vector2 pointer = { 0.0f, 0.0f };
+    bool testClick = false; // InTestClick
     Vector2 look = { 0.0f, 0.0f };
     Vector2 move = { 0.0f, 0.0f };
     float wheel = 0.0f;
@@ -58,9 +59,6 @@ namespace
     const float kLockDistance = 1.75f;
     bool lockArmed = false, autoRun = false, stickWasActive = false;
     // Хүрдийг хажуу тийш хазайлгахад камер тэр зүг рүү эргэнэ: нэг хуруугаар явж, зүглэж болно.
-    const float kStickTurn = 720.0f;    // бүрэн хазайлтад секундэд эргэх хэмжээ, "хулганы пиксел"-ээр (~125 градус/сек)
-    const float kStickStrafe = 0.35f;   // хүрдээр хажуу тийш алхах хурдны хувь
-    bool stickTurns = false;
     float pinch = 1.0f, pinchDistance = 0.0f; // хоёр хурууны чимхэлт: харьцаа, өмнөх frame-ийн зай
     Vector2 pinchCenter = { 0.0f, 0.0f };            // энэ frame-д хүрд камерыг эргүүлж байгаа эсэх
 
@@ -630,6 +628,7 @@ void InBeginFrame(const TouchState& state)
     fireDown = false;
     pointerPressed = false;
     pointerDown = false;
+    testClick = false;
     look = { 0.0f, 0.0f };
     move = { 0.0f, 0.0f };
     wheel = 0.0f;
@@ -702,7 +701,17 @@ void InBeginFrame(const TouchState& state)
             finger->start = finger->position = position;
 
             const int hit = ButtonAt(position);
-            if (hit >= 0)
+            bool zone = false;
+            for (int z = 0; z < state.tapZoneCount && z < 4 && gameplay; ++z)
+            {
+                zone = zone || CheckCollisionPointRec(position, state.tapZones[z]);
+            }
+            if (zone)
+            {
+                finger->role = Role::Pointer; // HUD-ын товч (ЧАТ г.м.): Game өөрөө InMousePressed-ээр уншина
+                pointerPressed = true;
+            }
+            else if (hit >= 0)
             {
                 finger->role = Role::Button;
                 finger->button = hit;
@@ -846,19 +855,7 @@ void InBeginFrame(const TouchState& state)
     if (!gameplay || state.driving) autoRun = lockArmed = false;
     stickWasActive = stickActive;
     if (lockArmed || (autoRun && !stickActive)) move = { 0.0f, 1.0f };
-
-    // Явган үед хүрдийн хажуу тийш хазайлт камерыг эргүүлнэ (бага хазайлтад зөөлөн, их хазайлтад хурдан).
-    // Унаа жолоодоход хүрд нь жолоо тул камерыг эргүүлэхгүй.
-    stickTurns = gameplay && stickActive && !state.driving;
-    if (stickTurns)
-    {
-        look.x += move.x * std::fabs(move.x) * kStickTurn * GetFrameTime();
-    }
-}
-
-float InStrafeScale()
-{
-    return stickTurns ? kStickStrafe : 1.0f;
+    // (Хүрд зөвхөн хөдөлгөнө: урагш, хойш, хоёр хажуу тийш. Камерыг баруун талын хуруугаар эргүүлнэ.)
 }
 
 namespace
@@ -905,7 +902,13 @@ bool InMousePressed(int button)
     {
         return button == MOUSE_BUTTON_LEFT && (firePressed || pointerPressed);
     }
-    return IsMouseButtonPressed(button);
+    return IsMouseButtonPressed(button) || (testClick && button == MOUSE_BUTTON_LEFT);
+}
+
+void InTestClick(Vector2 at)
+{
+    pointer = at;
+    testClick = true;
 }
 
 Vector2 InLookDelta()

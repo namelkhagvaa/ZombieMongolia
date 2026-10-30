@@ -40,6 +40,8 @@
 //   python tools/glb_extract.py assets/cars/G-class.glb tmp/gclass   (+ текстурыг 1024 px PNG болгох)
 //   vehicleprep build tmp/gclass assets/cars/gclass.vmesh 20000 4.3 1 0.097 0.184 0.302 -0.27
 //   vehicleprep build tmp/truck assets/cars/truck.vmesh 20000 7.4 1 0.086 0.161 0.316 -0.141 -0.334
+//   vehicleprep build tmp/crown assets/cars/crown.vmesh 20000 4.91 1 0.07 0.165 0.309 -0.267   (Toyota Crown, crown.glb)
+//   VPREP_SIDE=0.15 vehicleprep build tmp/aqua assets/cars/aqua.vmesh 20000 4.05 1 0.076 0.187 0.277 -0.327   (Toyota Aqua)
 // Зэвсэг (assets/buu): AK47.glb -> ak47.vmesh (урт 1.15 м = DrawGun-ийн хэмжээ), sum.glb -> sum.vmesh (57 мм)
 //   python tools/glb_extract.py assets/buu/AK47.glb tmp/ak47_raw
 //   python tools/prop_align.py tmp/ak47_raw tmp/ak47          (+ текстурыг 1024 px PNG: assets/buu/ak47_color.png)
@@ -57,6 +59,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -281,7 +284,9 @@ int Build(int argc, char** argv)
                 if (p[0] * side <= 0.0f || std::fabs(p[0] - w.c[0]) > roughRadius * 0.4f || std::fabs(p[2] - z) > roughRadius * 0.5f) continue;
                 ground = std::min(ground, p[1]);
             }
-            float radii = 0.0f, centers = 0.0f;
+            // Медиан: намхан машинд (Crown) дээд хэмжилт их биеийн доод ирмэгт хүрч радиусыг хэт томруулдаг
+            std::vector<float> radii;
+            float centers = 0.0f;
             int samples = 0;
             for (float fraction : { 0.25f, 0.4f, 0.55f })
             {
@@ -299,13 +304,14 @@ int Build(int argc, char** argv)
                 const float a = (zmax - zmin) * 0.5f;
                 const float r = (a * a + h * h) / (2.0f * h);
                 std::printf("    h %.3f: chord %.4f..%.4f -> r %.4f\n", h, zmin, zmax, r);
-                radii += r;
+                radii.push_back(r);
                 centers += (zmin + zmax) * 0.5f;
                 ++samples;
             }
             if (samples > 0)
             {
-                w.r = radii / (float)samples;
+                std::sort(radii.begin(), radii.end());
+                w.r = radii[radii.size() / 2];
                 w.c[2] = centers / (float)samples;
             }
             w.c[1] = ground + w.r;
@@ -353,23 +359,87 @@ int Build(int argc, char** argv)
         for (int a = 0; a < 3; ++a) part.pivot[a] = extras[e].c[a];
         part.kind = extras[e].kind;
     }
-    for (size_t t = 0; t < indices.size(); t += 3)
+    // Гурвалжин бүр: дугуйн цилиндр дотор бол тэр дугуй (эс бөгөөс их бие)
+    const size_t triangleCount = indices.size() / 3;
+    std::vector<int> candidate(triangleCount, 0), strict(triangleCount, 0); // strict: ирмэггүй, радиусын 98% дотор
+    for (size_t t = 0; t < triangleCount; ++t)
     {
         float c[3] = { 0, 0, 0 };
         for (int k = 0; k < 3; ++k)
-            for (int a = 0; a < 3; ++a) c[a] += uv[indices[t + k]].p[a] / 3.0f;
-        int target = 0;
-        if (!labels.empty() && labels[t / 3] > 0 && labels[t / 3] <= extras.size()) target = (int)(wheels.size() + labels[t / 3]);
-        for (size_t w = 0; w < wheels.size() && target == 0; ++w)
+            for (int a = 0; a < 3; ++a) c[a] += uv[indices[t * 3 + k]].p[a] / 3.0f;
+        for (size_t w = 0; w < wheels.size(); ++w)
         {
             const Wheel& wheel = wheels[w];
             const float dy = c[1] - wheel.c[1], dz = c[2] - wheel.c[2];
-            const float margin = wheel.r * 0.04f;
-            const bool inside = dy * dy + dz * dz < (wheel.r + margin) * (wheel.r + margin) && c[0] > wheel.x0 - margin &&
-                                c[0] < wheel.x1 + margin;
-            if (inside) target = (int)(1 + w);
+            // Өргөнийг газарт хүрэх хээнээс хэмжсэн: хажуу хана, обуд түүнээс өргөн загварт (Aqua: VPREP_SIDE=0.15) x-д
+            // илүү зай. Анхдагч 0.04: их бие дугуйг ойроос тойрсон загварт (Crown) хаалтын ирмэг дугуйд орохгүй.
+            static const float side = std::getenv("VPREP_SIDE") ? (float)std::atof(std::getenv("VPREP_SIDE")) : 0.04f;
+            const float margin = wheel.r * 0.04f, sideMargin = wheel.r * side;
+            const bool inside = dy * dy + dz * dz < (wheel.r + margin) * (wheel.r + margin) && c[0] > wheel.x0 - sideMargin &&
+                                c[0] < wheel.x1 + sideMargin;
+            if (!inside) continue;
+            candidate[t] = (int)(1 + w);
+            const float tight = wheel.r * 0.98f;
+            if (dy * dy + dz * dz < tight * tight && c[0] > wheel.x0 - sideMargin && c[0] < wheel.x1 + sideMargin) strict[t] = (int)(1 + w);
+            break;
         }
-        for (int k = 0; k < 3; ++k) parts[target].triangles.push_back(indices[t + k]);
+    }
+    // Холбогдсон хэсгээр нь шийднэ: дугуйг маш ойроос тойрсон хаалтын ирмэг (Crown) цилиндрт ордог ч их биетэйгээ
+    // нэг хэсэг, эсвэл дугуйн гадна захаар нимгэн тусдаа зурвас тул дугуйтай хамт эргэхгүй. Хэсгийн 90%+ нь нэг дугуйд,
+    // тал нь ирмэггүй дотор бол бүхэлдээ тэр дугуй, 10%-иас бага бол
+    // их бие; холимог хэсэгт (дугуй их биетэй нийлсэн загвар) гурвалжин бүрээр, дугуйн ирмэгээс дотогш л.
+    {
+        std::vector<unsigned int> parent(unique);
+        for (size_t i = 0; i < unique; ++i) parent[i] = (unsigned int)i;
+        auto find = [&](unsigned int i) {
+            while (parent[i] != i) i = parent[i] = parent[parent[i]];
+            return i;
+        };
+        for (size_t t = 0; t < triangleCount; ++t)
+        {
+            const unsigned int a = find(indices[t * 3]);
+            for (int k = 1; k < 3; ++k)
+            {
+                const unsigned int b = find(indices[t * 3 + k]);
+                if (a != b) parent[b] = a;
+            }
+        }
+        std::map<unsigned int, std::vector<int>> counts; // хэсэг -> [бүгд, дугуй 1, дугуй 2, ..., strict дотор]
+        for (size_t t = 0; t < triangleCount; ++t)
+        {
+            std::vector<int>& count = counts[find(indices[t * 3])];
+            if (count.empty()) count.assign(2 + wheels.size(), 0);
+            ++count[0];
+            if (candidate[t] > 0) ++count[(size_t)candidate[t]];
+            if (strict[t] > 0) ++count.back();
+        }
+        std::map<unsigned int, int> decided; // -1 холимог
+        int toWheel = 0, toBody = 0, mixed = 0;
+        for (const auto& entry : counts)
+        {
+            const std::vector<int>& count = entry.second;
+            int best = 0, inWheels = 0;
+            for (size_t w = 1; w + 1 < count.size(); ++w)
+            {
+                inWheels += count[w];
+                if (best == 0 || count[w] > count[(size_t)best]) best = (int)w;
+            }
+            if (best > 0 && count[(size_t)best] >= count[0] * 0.9 && count.back() >= count[0] / 2) { decided[entry.first] = best; ++toWheel; }
+            else if (inWheels <= count[0] * 0.1) { decided[entry.first] = 0; ++toBody; }
+            else { decided[entry.first] = -1; ++mixed; }
+        }
+        std::printf("components: %zu (wheel %d, body %d, mixed %d)\n", counts.size(), toWheel, toBody, mixed);
+        for (size_t t = 0; t < triangleCount; ++t)
+        {
+            const int part = decided[find(indices[t * 3])];
+            candidate[t] = part >= 0 ? part : strict[t];
+        }
+    }
+    for (size_t t = 0; t < triangleCount; ++t)
+    {
+        int target = candidate[t];
+        if (!labels.empty() && labels[t] > 0 && labels[t] <= extras.size()) target = (int)(wheels.size() + labels[t]);
+        for (int k = 0; k < 3; ++k) parts[(size_t)target].triangles.push_back(indices[t * 3 + k]);
     }
 
     // Шалгах зураг: хажуугаас, дугуйд орсон оройнууд улаан

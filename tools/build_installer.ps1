@@ -13,6 +13,27 @@ cmake --build (Join-Path $root "cmake-build-release")
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 Copy-Item (Join-Path $root "cmake-build-release\ZombieMongolia.exe") (Join-Path $root "build\ZombieMongolia.exe") -Force
 
+# Суулгагчид орох assets: тоглоомд ачаалагддаг файлууд л (эх загварын том .glb орохгүй), том текстурууд JPG
+# (tools/native_jpg.py: суулгагч ~70 MB багасна). installer\ZombieMongolia.iss энэ хавтсыг бүхэлд нь авна.
+$assets = Join-Path $root "assets"
+$stage = Join-Path $root "build_installer\assets"
+if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+$files = @(
+    @("", "*_mesh.glb"), @("", "*_color.png"), @("", "window_icon.png"), @("", "home_back.png"), @("", "splash.png"),
+    @("icons", "*.png"), @("huds", "*.png"), @("terrain", "*.png"), @("surfaces", "*.jpg"),
+    @("cars", "*.vmesh"), @("cars", "*_color.png"), @("buu", "*.vmesh"), @("buu", "*_color.png"),
+    @("sounds", "*.wav"), @("sounds\narration", "*.wav"), @("trees", "*.vmesh"), @("trees", "*_color.png"), @("trees", "*_far.bin"),
+    @("pooshig", "*.vmesh"), @("pooshig", "*_color.png"), @("city", "*.bin")
+)
+foreach ($entry in $files) {
+    $target = if ($entry[0]) { Join-Path $stage $entry[0] } else { $stage }
+    New-Item -ItemType Directory -Force $target | Out-Null
+    $source = if ($entry[0]) { Join-Path $assets $entry[0] } else { $assets }
+    Copy-Item (Join-Path $source $entry[1]) $target -ErrorAction SilentlyContinue
+}
+python (Join-Path $root "tools\native_jpg.py") $stage
+if ($LASTEXITCODE -ne 0) { throw "JPG conversion failed" }
+
 $iscc = @(
     (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"),
     "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",

@@ -313,6 +313,17 @@ void Player::StopRiding(Vector3 exitPosition)
     fallPeak = position.y;
 }
 
+namespace
+{
+    // Шат, олс: хөдөлгөөний аль хэсэг нь дээд үзүүрийн хэвтээ алхам (өгсөхөд төгсгөлд, буухад эхэнд). Алхам нь өндрөөс
+    // үл хамааран ~0.6 секунд: өндөр байшингийн олсны оройд удаан зогсож (буудуулахад амархан) байхгүй.
+    float LadderSplit(PassageKind kind, float duration)
+    {
+        const float step = std::clamp(0.6f / std::max(0.01f, duration), 0.1f, 0.3f);
+        return kind == PassageKind::LadderUp ? 1.0f - step : step;
+    }
+}
+
 void Player::StartTraverse(const Passage& passage)
 {
     traversing = true;
@@ -418,8 +429,8 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
         float split = 0.5f, moveTime = 1.0f;
         switch (traverse.kind)
         {
-        case PassageKind::LadderUp: via = { from.x, to.y, from.z }; split = 0.8f; break;
-        case PassageKind::LadderDown: via = { to.x, from.y, to.z }; split = 0.2f; break;
+        case PassageKind::LadderUp: via = { from.x, to.y, from.z }; split = LadderSplit(traverse.kind, traverseDuration); break;
+        case PassageKind::LadderDown: via = { to.x, from.y, to.z }; split = LadderSplit(traverse.kind, traverseDuration); break;
         default: break;
         }
         if (IsWindow(traverse.kind))
@@ -437,7 +448,13 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
         else
         {
             const float p = std::min(1.0f, t / moveTime);
-            position = p < split ? Vector3Lerp(from, via, smooth(p / split)) : Vector3Lerp(via, to, smooth((p - split) / (1.0f - split)));
+            // Шат, олсны босоо хэсэг: тогтмол хурдаар (оргилд ойртохдоо удаашрахгүй); алхам, цонх: зөөлөн
+            const bool ladder = traverse.kind == PassageKind::LadderUp || traverse.kind == PassageKind::LadderDown;
+            auto vertical = [&](float x) { return ladder ? std::clamp(x, 0.0f, 1.0f) : smooth(x); };
+            const bool firstVertical = traverse.kind == PassageKind::LadderUp;
+            position = p < split ? Vector3Lerp(from, via, firstVertical ? vertical(p / split) : smooth(p / split))
+                                 : Vector3Lerp(via, to, firstVertical || !ladder ? smooth((p - split) / (1.0f - split))
+                                                                                 : vertical((p - split) / (1.0f - split)));
             facing = traverse.facing;
         }
 
@@ -461,7 +478,7 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
     // Гар (WASD) эсвэл мэдрэгчтэй дэлгэцийн хүрд: хүрдийг бага хазайлгавал удаан алхана.
     const Vector2 axis = InMoveAxis();
     const float inputForward = axis.y;
-    const float inputRight = axis.x * InStrafeScale();
+    const float inputRight = axis.x;
     const float inputStrength = std::min(1.0f, std::sqrt(inputRight * inputRight + inputForward * inputForward));
 
     const Vector3 forward = { std::sin(cameraYaw), 0.0f, std::cos(cameraYaw) };
@@ -662,8 +679,8 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
             const float railTop = std::max(traverse.from.y, traverse.to.y) + 0.75f;
 
             // Дээд үзүүрт тавцан руу гарах алхам (step: 0 = шатан дээр .. 1 = тавцан дээр зогссон).
-            // Update-ийн замтай ижил: өгсөхөд сүүлийн 20%, буухад эхний 20% нь хэвтээ алхам.
-            const float split = up ? 0.8f : 0.2f;
+            // Update-ийн замтай ижил (LadderSplit): өгсөхөд төгсгөлд, буухад эхэнд хэвтээ алхам.
+            const float split = LadderSplit(traverse.kind, traverseDuration);
             const float step = up ? std::clamp((t - split) / (1.0f - split), 0.0f, 1.0f) : std::clamp(1.0f - t / split, 0.0f, 1.0f);
             auto smooth = [](float x) { x = std::clamp(x, 0.0f, 1.0f); return x * x * (3.0f - 2.0f * x); };
             // Гар: эхлээд шатны хоёр хажуугийн модны орой дээр тулж (биеэ түлхэн гаргана), дараа нь аажим суллана.

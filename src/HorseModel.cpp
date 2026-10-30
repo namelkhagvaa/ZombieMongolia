@@ -1,5 +1,6 @@
 #include "HorseModel.h"
 
+#include "CharacterModel.h"
 #include "Platform.h"
 
 #include "raymath.h"
@@ -92,7 +93,7 @@ bool LoadHorseModel(Shader shader)
     std::string meshPath, texturePath;
 #if defined(__ANDROID__)
     meshPath = "horse_mesh.glb";
-    texturePath = "horse_color.png";
+    texturePath = ImageFile("horse_color.png");
 #else
     const std::string application = GetApplicationDirectory();
     for (const std::string& folder : { std::string("assets/"), application + "assets/", application + "../assets/" })
@@ -290,9 +291,6 @@ void DrawHorseModel(float animation, float gait, float steer, float seed, float 
         matrix.m12 = offset.x;
         matrix.m13 = offset.y;
         matrix.m14 = offset.z;
-#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
-        matrix = MatrixTranspose(matrix); // CharacterModel-тэй адил (OpenGL ES)
-#endif
         if (mesh.boneMatrices && bone < mesh.boneCount) mesh.boneMatrices[bone] = matrix;
     }
 
@@ -301,6 +299,7 @@ void DrawHorseModel(float animation, float gait, float steer, float seed, float 
     rlTranslatef(0.0f, 0.0f, kForwardOffset);
     rlScalef(kScale, kScale, kScale);
     rlRotatef(90.0f, 0.0f, 1.0f, 0.0f); // загварын -X (толгой) -> унааны +Z
+    UploadBoneRows(horse.material.shader, mesh.boneMatrices, mesh.boneCount);
     DrawMesh(mesh, horse.material, MatrixIdentity());
     rlPopMatrix();
     // Culling-ийг дахин асаахгүй: дуудагч (Garage::Draw) төгсгөлдөө өөрөө асаана.

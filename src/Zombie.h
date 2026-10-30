@@ -98,6 +98,8 @@ struct Zombie
     float wanderTimer = 0.0f;
     float rage = 0.0f;
     float calmTimer = 0.0f;
+    float warnCooldown = 0.0f; // дахин анхааруулах (хойд хөл дээрээ босох) хүртэл
+    float rear = 0.0f;         // 0..1: хойд хөл дээрээ босоод байгаа (screamTimer > 0 үед өснө; зочинд сүлжээгээр)
 
     bool IsAlive() const { return health > 0.0f; }
     bool IsBear() const { return type == ZombieType::Bear; }
@@ -123,7 +125,7 @@ public:
     // Аварга зомби: асар их амьтай, том биетэй.
     void SpawnBoss(Vector3 position, const MissionParams& mission, int zone);
     // Баавгай: тайван (тэнүүчилнэ), бүсгүй, үеийн нөөцөөс бус
-    void SpawnBear(Vector3 position, const MissionParams& mission);
+    void SpawnBear(Vector3 position, const MissionParams& mission, float facing = -100.0f); // facing < -50: санамсаргүй
     // Тухайн бүсийн амьд зомбины тоо.
     int AliveInZone(int zone) const;
     // Тухайн бүсийн эхний maxTargets амьд зомбид хохирол учруулна (туршилтын автомат тоглолтод).
@@ -164,6 +166,10 @@ public:
 
     // Бүх зомбины хөдөлгөөний хурдны үржүүлэгч (устгасан тоогоор өснө: Game тохируулна).
     void SetSpeedMultiplier(float multiplier) { speedMultiplier = multiplier; }
+    // Тоглогчийн (хамтын тоглолтод хостын) зэрэг: зомбины ухаан шатлалаар нэмэгдэнэ (хүчийг MissionParams-аар):
+    //   10+ хажуугаас тойрч дайрна, хол сонсоно; 20+ гүйгч, орилогч олон; 35+ ойртохдоо хоёр тийш зигзаглана;
+    //   50+ ойрхон ирээд байг тойрон бүсэлнэ; 75+ том зомби ойроос давхиж мөргөнө
+    void SetSmartLevel(int level) { smartLevel = level; }
     float SpeedMultiplier() const { return speedMultiplier; }
 
     // Сүүлд авснаас хойш устгасан зомбины шагналыг авч тэглэнэ.
@@ -220,6 +226,7 @@ public:
 private:
     void UpdateBear(Zombie& bear, float dt, World& world, Player& player, SoldierSquad& squad);
     bool noCredit = false; // баавгай зомби алахад: тоглогчид зоос өгөхгүй (үеийн тоололд орсоор)
+    int smartLevel = 1;    // SetSmartLevel
     std::vector<Zombie> zombies; // үхсэн нь хэдэн секунд газар хэвтээд арилна
     int pendingCoins = 0;
     int pendingKills = 0;

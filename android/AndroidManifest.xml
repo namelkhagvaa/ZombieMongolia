@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Zombie Mongolia: Java кодгүй, бүхэлдээ native (NativeActivity нь libZombieMongolia.so-г ачаална). -->
+<!-- Zombie Mongolia: бараг бүхэлдээ native (NativeActivity нь libZombieMongolia.so-г ачаална). Java-д зөвхөн утасны гар
+     (android/java/.../GameActivity.java). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="mn.zombiemongolia.game"
     android:versionCode="1"
@@ -16,13 +17,14 @@
     <application
         android:label="Zombie Mongolia"
         android:icon="@mipmap/ic_launcher"
-        android:hasCode="false"
+        android:hasCode="true"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
         <activity
-            android:name="android.app.NativeActivity"
+            android:name="mn.zombiemongolia.game.GameActivity"
             android:exported="true"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|keyboard"
+            android:windowSoftInputMode="adjustNothing"
             android:launchMode="singleTask">
             <meta-data android:name="android.app.lib_name" android:value="ZombieMongolia" />
             <intent-filter>

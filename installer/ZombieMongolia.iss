@@ -35,26 +35,20 @@ Name: "desktopicon"; Description: "Ширээний дэлгэц дээр тов
 
 [Files]
 Source: "..\build\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
-; Тоглоомд ачаалагддаг файлууд л (эх загварын том .glb файлууд орохгүй)
-Source: "..\assets\*_mesh.glb"; DestDir: "{app}\assets"; Flags: ignoreversion
-Source: "..\assets\*_color.png"; DestDir: "{app}\assets"; Flags: ignoreversion
-Source: "..\assets\window_icon.png"; DestDir: "{app}\assets"; Flags: ignoreversion
-Source: "..\assets\home_back.png"; DestDir: "{app}\assets"; Flags: ignoreversion
-Source: "..\assets\splash.png"; DestDir: "{app}\assets"; Flags: ignoreversion
-Source: "..\assets\icons\*.png"; DestDir: "{app}\assets\icons"; Flags: ignoreversion
-Source: "..\assets\huds\*.png"; DestDir: "{app}\assets\huds"; Flags: ignoreversion
-Source: "..\assets\terrain\*.png"; DestDir: "{app}\assets\terrain"; Flags: ignoreversion
-Source: "..\assets\cars\*.vmesh"; DestDir: "{app}\assets\cars"; Flags: ignoreversion
-Source: "..\assets\cars\*_color.png"; DestDir: "{app}\assets\cars"; Flags: ignoreversion
-Source: "..\assets\buu\*.vmesh"; DestDir: "{app}\assets\buu"; Flags: ignoreversion
-Source: "..\assets\buu\*_color.png"; DestDir: "{app}\assets\buu"; Flags: ignoreversion
-Source: "..\assets\sounds\*.wav"; DestDir: "{app}\assets\sounds"; Flags: ignoreversion
-Source: "..\assets\trees\*.vmesh"; DestDir: "{app}\assets\trees"; Flags: ignoreversion
-Source: "..\assets\trees\*_color.png"; DestDir: "{app}\assets\trees"; Flags: ignoreversion
-Source: "..\assets\trees\*_far.bin"; DestDir: "{app}\assets\trees"; Flags: ignoreversion
-Source: "..\assets\pooshig\*.vmesh"; DestDir: "{app}\assets\pooshig"; Flags: ignoreversion
-Source: "..\assets\pooshig\*_color.png"; DestDir: "{app}\assets\pooshig"; Flags: ignoreversion
-Source: "..\assets\city\*.bin"; DestDir: "{app}\assets\city"; Flags: ignoreversion
+; Тоглоомд ачаалагддаг файлууд л: tools\build_installer.ps1 build_installer\assets-д бэлтгэнэ (эх загварын том .glb
+; орохгүй, том текстурууд JPG)
+Source: "..\build_installer\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs
+
+; Хуучин хувилбарын PNG текстурууд (одоо JPG): үлдвэл тоглоом хуучин зургийг ачаална
+[InstallDelete]
+Type: files; Name: "{app}\assets\*_color.png"
+Type: files; Name: "{app}\assets\home_back.png"
+Type: files; Name: "{app}\assets\splash.png"
+Type: files; Name: "{app}\assets\terrain\*.png"
+Type: files; Name: "{app}\assets\cars\*_color.png"
+Type: files; Name: "{app}\assets\buu\*_color.png"
+Type: files; Name: "{app}\assets\trees\*_color.png"
+Type: files; Name: "{app}\assets\pooshig\*_color.png"
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"

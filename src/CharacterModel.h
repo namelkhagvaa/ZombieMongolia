@@ -33,10 +33,14 @@ constexpr int kCharacterDoctorWoman = 14; // assets\survivor_doctor_woman
 constexpr int kCharacterStudentBoy = 15;  // assets\survivor_student_boy
 constexpr int kCharacterStudentGirl = 16; // assets\survivor_student_girl
 constexpr int kCharacterMonk = 17;        // assets\survivor_monk
-constexpr int kCharacterCount = 18;
+constexpr int kCharacterModel2 = 18;       // assets\model2 (1-р дайчны сонгож болох дүр)
+constexpr int kCharacterCount = 19;
 
 // shader: текстур, гэрэлтүүлэг, манантай дүрийн shader (Environment::CharacterShader).
 void LoadCharacterModels(Shader shader);
+// Арьслалтын матрицуудыг (mesh.boneMatrices) дүрийн shader-ийн boneRows руу (яс бүр 3 мөр) илгээнэ. DrawMesh-ийн
+// өмнөхөн дуудна (морь, баавгай ч мөн).
+void UploadBoneRows(Shader shader, const Matrix* bones, int count);
 void UnloadCharacterModels();
 bool HasCharacterModel(int id);
 // Туршилт: загваруудыг хөдөлгөөнгүй, анхны (A) зогсолтоор нь зурна (загвар өөрөө ямар байгааг харахад).

@@ -261,6 +261,12 @@
     showError('График (WebGL) тасарлаа. Төхөөрөмжийн санах ой хүрэлцээгүй байж магадгүй — бусад tab, апп-аа хаагаад дахин оролдоно уу.');
   }, false);
   canvas.addEventListener('mousedown', function () { canvas.focus(); });
+  // iPhone Safari: хоёр хуруун хүрэлтийг томруулах / эргүүлэх (gesture) гэж барьж аваад хүрэлтийг цуцалдаг
+  // (хүрдээр явж байхад нөгөө хуруугаар харах тасардаг). Тоглоомын хуудсанд хөтчийн gesture хэрэггүй.
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (type) {
+    document.addEventListener(type, function (e) { e.preventDefault(); }, { passive: false });
+  });
+  canvas.addEventListener('touchmove', function (e) { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
   // Бүтэн дэлгэц. Утсан дээр бүтэн дэлгэц болмогц хэвтээ байрлалд түгжинэ (Android Chrome): хэрэглэгч утсаа
   // эргүүлэх шаардлагагүй, эргэлтийн үеийн хар/гацсан дэлгэц гарахгүй. Түгжиж чадахгүй хөтөч (iPhone Safari)
   // дээр утас эргэхэд дагаж эргэнэ (босоо үед "хэвтээ болго" дэлгэц гарна).

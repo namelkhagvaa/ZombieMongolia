@@ -351,6 +351,19 @@ Mesh MeshBuilder::Upload() const
     return UploadArrays(vertices, colors);
 }
 
+void MeshBuilder::EncodeGroundHeight(const std::function<float(float, float)>& ground)
+{
+    const size_t count = vertices.size() / 3;
+    for (size_t i = 0; i < count; ++i)
+    {
+        unsigned char& alpha = colors[i * 4 + 3];
+        if (alpha != 255) continue;
+        const float* p = &vertices[i * 3];
+        const float height = p[1] - ground(p[0], p[2]);
+        alpha = (unsigned char)std::clamp((int)std::lround(height / 0.4f), 0, 250);
+    }
+}
+
 std::vector<MeshPiece> MeshBuilder::UploadPartitioned(float cellSize) const
 {
     // Гурвалжин бүрийг хүндийн төвийнх нь нүдэнд хийнэ: зөвхөн дугаарыг нь (бүх геометрийг дахин хуулбал

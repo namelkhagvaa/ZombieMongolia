@@ -1,5 +1,6 @@
 #include "Bear.h"
 
+#include "CharacterModel.h"
 #include "MeshBuilder.h"
 #include "Platform.h"
 #include "raymath.h"
@@ -7,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <unordered_map>
@@ -123,6 +125,7 @@ namespace
     // ---------------------------------------------------------------- Ястай загвар
     // Загвар +Z зүг рүү харсан (raylib glTF-ийн зангилааны эргэлтийг хэрэглэсэн), урт ~1 нэгж: тоглоомын баавгайн хэмжээнд (урт ~2.05 м, мөр ~1.2 м) томруулна.
     const float kModelScale = 2.1f;
+    const float kHeadStraighten = -0.6f; // хүзүүг босоо тэнхлэгээр эргүүлж толгойг шулуун урагш харуулна
 
     struct BearModel
     {
@@ -193,27 +196,80 @@ namespace
 
     // Загварын орон зай (raylib ачаалсны дараа): урагш +Z, дээш +Y. -X тэнхлэгийг тойрох эерэг эргэлт доош унжсан
     // ясыг урагш (+Z) савлуулж, урагш харсан толгойг дээш өргөнө.
-    // fold 0..1: үхэхдээ хөл нугарч бие суух, lying 0..1: хажуулдаа хэвтсэн (хөл сулрана)
-    void DrawModel(float phase, float gait, float run, float swipe, float fold, float lying, float seed)
+    // fold 0..1: үхэхдээ хөл нугарч бие суух, lying 0..1: хажуулдаа хэвтсэн (хөл сулрана), rear 0..1: хойд хөл дээрээ
+    // босох (бие гаднаас эргэнэ, энд хөл, толгойг нь тэгшилнэ)
+    //
+    // Бодит хүрэн баавгайн явдал:
+    //  - алхах: хажуугийн дараалал (зүүн хойд, зүүн урд, баруун хойд, баруун урд), хөл бүр мөчлөгийн ~68%-д газарт
+    //    тулж жигд хойш түлхэнэ, үлдсэнд нь хурдан урагш гарна; урд хөл өргөхдөө бугуйгаа хүчтэй нугалж савраа хойш
+    //    эвхэнэ, хойд хөл ул бүтнээрээ гишгэж (plantigrade) түлхэлтийн төгсгөлд өсгийгөө өргөнө;
+    //    толгой нам, урд хөлийн алхамтай давхцан хоёр тийш найгана;
+    //  - давхих (дайрах): эргэлдэх давхилт (зүүн хойд, баруун хойд, баруун урд, зүүн урд), хөл газарт ~38%,
+    //    нуруу нугалж (хойд хөл урагш орох) тэнийнэ (урд хөл урагш сунах), толгой нам, урагш сунасан.
+    void DrawModel(float phase, float gait, float run, float swipe, float fold, float lying, float rear, float seed)
     {
         std::fill(bear.local.begin(), bear.local.end(), QuaternionIdentity());
         std::fill(bear.solved.begin(), bear.solved.end(), 0);
         const Vector3 side = { -1.0f, 0.0f, 0.0f }, up = { 0.0f, 1.0f, 0.0f };
         const float dead = std::max(fold, lying);
+        const float stand = rear * (1.0f - dead); // хойд хөл дээрээ зогссон
 
-        // Алхах (хажуугийн дараалал) -> давхих (хойд хос, урд хос); фаз нь кодоор үүсгэсэн баавгайнхтай ижил
-        const float walkPhase[4] = { 0.25f, 0.75f, 0.0f, 0.5f };   // FL, FR, HL, HR
-        const float gallopPhase[4] = { 0.0f, 0.1f, 0.5f, 0.6f };
+        const float walkPhase[4] = { 0.25f, 0.75f, 0.0f, 0.5f };   // FL, FR, HL, HR (алхах)
+        const float gallopPhase[4] = { 0.62f, 0.5f, 0.0f, 0.12f }; // FL, FR, HL, HR (эргэлдэх давхилт)
+        const float duty = 0.68f - 0.3f * run;                       // газарт тулах хувь
+        const float reach = (0.42f + 0.26f * run) * gait;            // хөлийн савлалт (радиан, урагш/хойш)
         for (int index = 0; index < 4; ++index)
         {
             const ModelLeg& leg = kModelLegs[index];
-            const float offset = walkPhase[index] + (gallopPhase[index] - walkPhase[index]) * run;
-            const float wave = 2.0f * PI * (phase + offset);
-            const float swing = std::sin(wave) * (0.36f + 0.24f * run) * gait;
-            const float lift = std::max(0.0f, std::cos(wave)) * gait * (0.7f + 0.5f * run);
-            Turn(leg.upper, side, swing);
-            Turn(leg.middle, side, leg.hind ? -0.7f * lift : 0.9f * lift);
-            Turn(leg.lower, side, leg.hind ? 0.6f * lift : -0.7f * lift);
+            float p = phase - (walkPhase[index] + (gallopPhase[index] - walkPhase[index]) * run);
+            p -= std::floor(p);
+            float swing = 0.0f, lift = 0.0f, heel = 0.0f;
+            if (p < duty)
+            {
+                // Тулгуур: урдаас хойш жигд (бие урагш явна), сүүлд нь өсгий / сарвуу газраас хөндийрнө
+                const float s = p / duty;
+                swing = reach * (1.0f - 2.0f * s);
+                heel = SmoothStepUnit((s - 0.72f) / 0.28f);
+            }
+            else
+            {
+                // Агаарт: хойноос урагш хурдан (эхэндээ өргөж, төгсгөлд тэнийж газарт тавина)
+                const float s = (p - duty) / (1.0f - duty);
+                swing = reach * (-1.0f + 2.0f * SmoothStepUnit(s));
+                lift = std::sin(PI * std::min(1.0f, s * 1.1f)) * gait;
+            }
+            // Зогсож байхад хааяа нэг хөлөө өргөж байраа солино (хөл бүр өөр хэмнэлтэй)
+            const float idleTime = (float)GetTime() + seed * 3.1f + (float)index * 1.7f;
+            const float shuffle = (1.0f - std::min(1.0f, gait * 2.0f)) * (1.0f - std::min(1.0f, dead + stand)) *
+                                  std::pow(std::max(0.0f, std::sin(idleTime * 0.41f)), 16.0f);
+            lift += 0.6f * shuffle;
+            swing += 0.1f * shuffle;
+            if (leg.hind)
+            {
+                // Хойд хөл: өвдөг бага нугарч, шагай (тахилзуур) өргөхдөө нугарна; өсгий түлхэлтийн төгсгөлд өндийнө
+                Turn(leg.upper, side, swing + 0.1f * lift);
+                Turn(leg.middle, side, -(0.55f + 0.35f * run) * lift - 0.25f * heel);
+                Turn(leg.lower, side, (0.75f + 0.3f * run) * lift + 0.45f * heel);
+            }
+            else
+            {
+                // Урд хөл: тохой бага зэрэг, бугуй хүчтэй нугарч савар хойш эвхэгдэнэ (баавгайн онцлог алхаа)
+                Turn(leg.upper, side, swing);
+                Turn(leg.middle, side, 0.35f * lift);
+                Turn(leg.lower, side, -(1.25f + 0.25f * run) * lift - 0.3f * heel);
+            }
+            if (stand > 0.0f)
+            {
+                // Хойд хөл дээрээ босох: бие ~72 градус өндийх тул хойд хөлийг эсрэг эргүүлж босоо; урд хөл доош
+                // унжиж, тохойгоороо бага зэрэг нугарч савар нь цээжний өмнө сул унжина
+                if (leg.hind) Turn(leg.upper, side, -1.25f * stand);
+                else
+                {
+                    Turn(leg.upper, side, -1.05f * stand);
+                    Turn(leg.middle, side, 0.55f * stand);
+                    Turn(leg.lower, side, -0.45f * stand);
+                }
+            }
             if (dead > 0.0f)
             {
                 // Үхэх: урд хөл тохойгоороо хойш, шуу нь урагш хумигдаж; хойд хөл ташаагаараа урагш, шилбэ хойш нугарна
@@ -225,24 +281,33 @@ namespace
                 Turn(leg.lower, side, amount * (leg.hind ? 0.5f : -0.4f));
             }
         }
-        // Шүүрэх: баруун урд савраа урагш дээш өргөж буулгана, толгойгоо доош урагш
+        // Давхихад нуруу нугалж тэнийнэ: хойд хос газарт буух үед бөхийж, урд хос сунах үед тэнийнэ
+        const float flex = run * gait * std::sin(2.0f * PI * (phase - 0.1f));
+        Turn("Back_0", side, 0.12f * flex);
+        Turn("Back_1", side, 0.1f * flex);
+        // Шүүрэх: баруун урд савраа дээш өргөж (тохой нугалсан) хажуу тийш урагш шүүрнэ; толгой урагш доош хазна
         Turn("FR_Shoulder", side, 1.5f * swipe);
-        Turn("FR_Elbow", side, 0.5f * swipe);
+        Turn("FR_Elbow", side, 0.6f * swipe);
+        Turn("FR_Shoulder", Vector3{ 0.0f, 0.0f, 1.0f }, -0.35f * swipe);
 
         const float time = (float)GetTime() + seed * 7.3f;
         const float idle = (1.0f - std::min(1.0f, gait * 1.5f)) * (1.0f - dead);
         // Толгой (төв нь үргэлж урагш, нэг тийш гацахгүй):
-        //  - зогсож байхад: хэдэн секунд тутам хоёр тийш эргэн тойрноо харж, хааяа доош газар үнэрлэнэ;
-        //  - алхахад: алхам бүрд дохиж, хоёр тийш бага зэрэг найгана; давхихад толгойгоо намдуулж урагш сунгана.
-        const float look = idle * (0.32f * std::sin(time * 0.9f) + 0.14f * std::sin(time * 2.1f + 1.3f));
-        const float sniffWave = std::max(0.0f, std::sin(time * 0.55f + seed));
-        const float sniff = idle * sniffWave * sniffWave * 0.45f;
-        const float sway = gait * (0.1f - 0.05f * run) * std::sin(2.0f * PI * phase);
-        const float nod = gait * (0.09f + 0.06f * run) * std::sin(4.0f * PI * phase + 0.6f);
-        Turn("Neck", up, look + sway);
-        Turn("Neck", side, -sniff + nod - 0.14f * run - 0.25f * swipe - 0.35f * fold + 0.15f * lying); // үхэхэд толгой унжина
-        Turn("Head", side, idle * 0.08f * std::sin(time * 1.7f) + 0.3f * swipe);
-        Turn("Head", up, idle * 0.12f * std::sin(time * 1.3f + 0.7f));
+        //  - зогсож байхад: хэдэн секунд тутам хоёр тийш эргэн тойрноо харж, хааяа доош газар үнэрлэнэ (хамраа
+        //    газарт ойртуулж богино дохино); хойд хөл дээрээ зогсохдоо урагш харж агаар үнэрлэнэ;
+        //  - алхахад: нам барьж, урд хөлийн алхамтай хамт хоёр тийш найгана; давхихад намдуулж урагш сунгана.
+        const float look = idle * (1.0f - stand) * (0.42f * std::sin(time * 0.9f) + 0.16f * std::sin(time * 2.1f + 1.3f));
+        const float sniffWave = std::max(0.0f, std::sin(time * 0.37f + seed));
+        const float sniff = idle * (1.0f - stand) * SmoothStepUnit((sniffWave - 0.35f) / 0.4f);
+        const float sniffNod = sniff * 0.06f * std::sin(time * 9.0f);
+        const float sway = gait * (0.17f - 0.1f * run) * std::sin(2.0f * PI * (phase - 0.25f));
+        const float nod = gait * (0.06f + 0.1f * run) * std::sin(4.0f * PI * phase + 0.6f);
+        const float carry = -0.12f * gait - 0.12f * run; // явахдаа толгой нам
+        // Tripo-гийн загварт толгой анхнаасаа ~35 градус хажуу тийш эргэсэн (хамар биеийн төвөөс 17 см): засна
+        Turn("Neck", up, kHeadStraighten + look + sway);
+        Turn("Neck", side, carry - 0.6f * sniff + sniffNod + nod - 0.25f * swipe - 0.35f * fold + 0.15f * lying - 1.0f * stand);
+        Turn("Head", side, idle * (1.0f - sniff) * 0.1f * std::sin(time * 1.7f) + 0.3f * swipe + 0.25f * stand * std::sin(time * 1.1f));
+        Turn("Head", up, idle * 0.15f * std::sin(time * 1.3f + 0.7f));
         // Сүүл: жижиг, бага зэрэг савлана
         Turn("Tail_0", up, (0.15f * gait + 0.1f * idle) * std::sin(time * 2.0f) * (1.0f - dead));
 
@@ -257,15 +322,13 @@ namespace
             matrix.m12 = offset.x;
             matrix.m13 = offset.y;
             matrix.m14 = offset.z;
-#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
-            matrix = MatrixTranspose(matrix); // CharacterModel-тэй адил (OpenGL ES)
-#endif
             if (mesh.boneMatrices && bone < mesh.boneCount) mesh.boneMatrices[bone] = matrix;
         }
 
         rlDisableBackfaceCulling(); // загвар хоёр талт материалтай
         rlPushMatrix();
         rlScalef(kModelScale, kModelScale, kModelScale);
+        UploadBoneRows(bear.material.shader, mesh.boneMatrices, mesh.boneCount);
         DrawMesh(mesh, bear.material, MatrixIdentity());
         rlPopMatrix();
         rlEnableBackfaceCulling();
@@ -278,7 +341,7 @@ bool LoadBearModel(Shader shader)
     std::string meshPath, texturePath;
 #if defined(__ANDROID__)
     meshPath = "bear_mesh.glb";
-    texturePath = "bear_color.png";
+    texturePath = ImageFile("bear_color.png");
 #else
     const std::string application = GetApplicationDirectory();
     for (const std::string& folder : { std::string("assets/"), application + "assets/", application + "../assets/" })
@@ -341,14 +404,18 @@ void SetBearMaterial(const Material* material, bool shadow)
 }
 
 void DrawBear(Vector3 feet, float facing, float scale, float cycle, float speed, float attack, float dead, bool detailed,
-              float seed)
+              float seed, float rear)
 {
     // Алхах (хажуугийн дараалал: зүүн хойд, зүүн урд, баруун хойд, баруун урд) -> давхих (хойд хос, урд хос)
-    const float gait = dead > 0.0f ? 0.0f : std::clamp(speed / 1.2f, 0.0f, 1.0f);
+    const float gait = dead > 0.0f ? 0.0f : std::clamp(speed / 0.8f, 0.0f, 1.0f); // (тэнүүчлэх 1.1 м/с: бүтэн алхаа)
     const float run = dead > 0.0f ? 0.0f : std::clamp((speed - 2.5f) / 2.5f, 0.0f, 1.0f);
     const float phase = cycle / (2.0f * PI);
-    const float bob = (0.03f + 0.05f * run) * std::sin(4.0f * PI * phase) * gait;
-    const float rock = run * 7.0f * std::sin(2.0f * PI * phase);
+    // Алхахад алхам бүрд дээш доош, мөрөөрөө хоёр тийш найгана; зогсож байхад амьсгалж хэвлий нь хөдөлнө
+    const float breathe = (gait < 0.5f && dead <= 0.0f) ? 0.012f * std::sin((float)GetTime() * 1.7f + seed) : 0.0f;
+    // Бөх (мөр) урд хөл тулгуурын дунд үед өндийнө: алхамд хоёр удаа; мөрөөрөө тулгуур хөл тийшээ найгана
+    const float bob = (0.035f + 0.07f * run) * std::sin(4.0f * PI * phase) * gait + breathe;
+    const float rock = run * 9.0f * std::sin(2.0f * PI * (phase - 0.1f));
+    const float sway = (3.5f - 2.0f * run) * std::sin(2.0f * PI * (phase - 0.25f)) * gait;
     const float swipe = attack > 0.0f ? std::sin(PI * (1.0f - attack)) : 0.0f; // 0 -> 1 -> 0
 
     rlPushMatrix();
@@ -373,14 +440,19 @@ void DrawBear(Vector3 feet, float facing, float scale, float cycle, float speed,
         rlTranslatef(0.0f, -kLegTop, -kHindZ);
     }
     rlTranslatef(0.0f, bob, 0.0f);
+    rlTranslatef(0.0f, kLegTop, 0.0f);
+    rlRotatef(sway, 0.0f, 0.0f, 1.0f); // мөрөөрөө найгах
+    rlTranslatef(0.0f, -kLegTop, 0.0f);
     // Давхихад ба шүүрэхэд хойд хөлөө тулгуур болгон урдаа өндийнө
+    // Хойд хөл дээрээ босох (анхааруулах, эргэн тойрноо харах): ташааг тойрон ~72 градус өндийнө
+    const float stand = dead > 0.0f ? 0.0f : SmoothStepUnit(rear);
     rlTranslatef(0.0f, kLegTop, kHindZ);
-    rlRotatef(-rock - swipe * 16.0f, 1.0f, 0.0f, 0.0f);
+    rlRotatef(-rock - swipe * 16.0f - 72.0f * stand, 1.0f, 0.0f, 0.0f);
     rlTranslatef(0.0f, -kLegTop, -kHindZ);
 
     if (bear.loaded && !shadowPass)
     {
-        DrawModel(phase - std::floor(phase), gait, run, swipe, fold, tip, seed);
+        DrawModel(phase - std::floor(phase), gait, run, swipe, fold, tip, stand, seed);
         rlPopMatrix();
         return;
     }

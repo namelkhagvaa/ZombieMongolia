@@ -92,6 +92,7 @@ void World::BuildStatic()
     staticInteriorCount = interiors.size();
     staticDoorCount = doors.size();
 
+    solidBuilder.EncodeGroundHeight([&](float x, float z) { return terrain.HeightAt(x, z); });
     structures = solidBuilder.UploadPartitioned(kPieceSize);
     shadows = shadowBuilder.UploadPartitioned(kPieceSize);
     glass = glassBuilder.UploadPartitioned(kPieceSize);
@@ -319,6 +320,7 @@ void World::BuildSettlements(int variant)
     settlementSceneryPieces = UploadScenery(sceneryBuilder, placements, true);
     settlementFences = ExtractFences(solidBuilder, staticPanelCount, true);
 
+    solidBuilder.EncodeGroundHeight([&](float x, float z) { return terrain.HeightAt(x, z); });
     settlementStructures = solidBuilder.UploadPartitioned(kPieceSize);
     settlementShadows = shadowBuilder.UploadPartitioned(kPieceSize);
     settlementGlass = glassBuilder.UploadPartitioned(kPieceSize);
@@ -1540,6 +1542,23 @@ float World::RayDistance(Ray ray, float maxDistance) const
 
 // ---------------------------------------------------------------- Зураглал
 
+namespace
+{
+    void SetAoMode(const Material& material, bool on)
+    {
+        static unsigned int shaderId = 0;
+        static int location = -1;
+        if (shaderId != material.shader.id)
+        {
+            shaderId = material.shader.id;
+            location = GetShaderLocation(material.shader, "aoMode");
+        }
+        if (location < 0) return;
+        const float value = on ? 1.0f : 0.0f;
+        SetShaderValue(material.shader, location, &value, SHADER_UNIFORM_FLOAT);
+    }
+}
+
 void World::Draw(const Camera3D& camera, const Material& material, const Material& groundMaterial,
                  const Material& detailMaterial, float detailDistance, bool realShadows) const
 {
@@ -1549,8 +1568,11 @@ void World::Draw(const Camera3D& camera, const Material& material, const Materia
     rlDisableBackfaceCulling();
 
     terrain.Draw(camera, groundMaterial, detailMaterial, detailDistance);
+    // Барилгын оройн alpha нь газраас дээших өндөр (EncodeGroundHeight): shader хананы ёроолыг харанхуйлна
+    SetAoMode(material, true);
     DrawPieces(structures, material, view, kStructureDistance);
     DrawPieces(settlementStructures, material, view, kStructureDistance);
+    SetAoMode(material, false);
     DrawPieces(fences, material, view, kStructureDistance);
     DrawPieces(settlementFences, material, view, kStructureDistance);
     DrawPieces(sceneryPieces, material, view, kStructureDistance);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { App as AntApp, Button, Card, Checkbox, Empty, Input, Select, Space, Table, Tag, Typography } from 'antd';
 import type { TableProps } from 'antd';
@@ -38,6 +38,8 @@ export default function GameLogsPage() {
   const [data, setData] = useState<LogResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Хүснэгтэд сүүлд үүссэн нь эхэндээ (хуулах текст цагийн дарааллаараа үлдэнэ)
+  const newestFirst = useMemo(() => [...(data?.rows ?? [])].reverse(), [data]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -147,7 +149,7 @@ export default function GameLogsPage() {
             rowKey="id"
             size="small"
             columns={columns}
-            dataSource={data?.rows ?? []}
+            dataSource={newestFirst}
             loading={loading}
             scroll={{ x: 900 }}
             pagination={{ pageSize: 200, showSizeChanger: false }}

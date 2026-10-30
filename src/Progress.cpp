@@ -14,6 +14,7 @@ extern "C" struct android_app* GetAndroidApp(void); // raylib-ийн Android д�
 #include "raylib.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -214,9 +215,28 @@ bool LoadProgress(Progress& progress, int provinceCount)
     return !file.bad();
 }
 
+#if defined(_WIN32)
+// windows.h-ийг оруулахгүй (raylib-ийн нэрстэй давхцана)
+extern "C" __declspec(dllimport) int __stdcall MoveFileExA(const char* existing, const char* replacement, unsigned long flags);
+#endif
+
+namespace
+{
+    // Түр файлыг жинхэнэ хадгалалтын оронд нэг алхмаар солино (дутуу бичигдсэн файл хэзээ ч үлдэхгүй)
+    bool ReplaceFile(const std::string& from, const std::string& to)
+    {
+#if defined(_WIN32)
+        return MoveFileExA(from.c_str(), to.c_str(), 0x1 /* REPLACE_EXISTING */ | 0x8 /* WRITE_THROUGH */) != 0;
+#else
+        return std::rename(from.c_str(), to.c_str()) == 0;
+#endif
+    }
+}
+
 bool SaveProgress(const Progress& progress)
 {
-    std::ofstream file(SavePath(), std::ios::trunc);
+    const std::string path = SavePath(), temporary = path + ".tmp";
+    std::ofstream file(temporary, std::ios::trunc);
     if (!file)
     {
         return false;
@@ -275,9 +295,27 @@ bool SaveProgress(const Progress& progress)
         file << '\n';
     }
 
+    file.flush();
+    const bool written = !file.fail();
     file.close();
-    WebPersistFile(SavePath().c_str()); // хөтөч: localStorage-д хадгална
-    return !file.fail();
+    if (!written || file.fail())
+    {
+        std::remove(temporary.c_str()); // (хуучин хадгалалт хэвээр)
+        return false;
+    }
+    if (!ReplaceFile(temporary, path))
+    {
+        // Солиж чадсангүй (антивирус файлыг түр түгжсэн г.м.): өмнөх шигээ шууд бичнэ (хадгалалт алдагдахгүй)
+        std::ifstream from(temporary, std::ios::binary);
+        std::ofstream to(path, std::ios::trunc | std::ios::binary);
+        to << from.rdbuf();
+        to.close();
+        from.close();
+        std::remove(temporary.c_str());
+        if (to.fail()) return false;
+    }
+    WebPersistFile(path.c_str()); // хөтөч: localStorage-д хадгална
+    return true;
 }
 
 std::string StageText(const StageSave& stage)

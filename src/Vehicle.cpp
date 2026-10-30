@@ -47,6 +47,10 @@ const VehicleSpec& SpecFor(VehicleType type)
         /* Heli  */ { "НИСДЭГ ТЭРЭГ", 31.0f, 4.5f, 6.0f, 8.0f, 0.95f, 4.6f, 1.00f, 1.00f, 1.00f, 0.0f, 0.0f, true, { 0.62f, 1.55f, 5.6f }, 15.0f, 2600.0f, 0.0f, 12.0f },
         // Хуягт машин: хүнд, бат бөх, хээр талд сайн; жолооч битүү бүхээгт, буудагч дээврийн пулемётод
         /* Armor */ { "ХУЯГТ МАШИН", 36.0f, 6.5f, 16.0f, 6.0f, 1.55f, 2.3f, 1.00f, 0.85f, 0.70f, 1.3f, 14.0f, true, { 0.0f, 1.25f, 0.5f }, 6.0f, 2400.0f, 9.0f, 4.0f },
+        // Crown: X-Trail-аас хурдан, Yaris-аас хүнд, тогтвортой; намхан тул хээр, толгодод муу
+        /* Sedan */ { "CROWN",      51.0f, 10.0f, 22.0f, 7.0f, 1.9f, 1.5f, 1.00f, 0.60f, 0.35f, 1.9f, 7.0f, true, { 0.0f, 0.85f, 0.0f },  4.0f, 430.0f, 11.0f, 1.5f },
+        // Aqua: гибрид (бензин хамгийн удаан дуусна), Yaris-тай ойролцоо хөнгөн, хээр талд муу
+        /* Compa */ { "AQUA",       49.5f, 9.5f, 21.0f, 7.0f, 2.1f, 1.4f, 1.00f, 0.60f, 0.35f, 2.0f, 6.0f, true, { 0.0f, 0.85f, 0.0f },  3.5f, 380.0f, 20.0f, 1.1f },
     };
     return specs[(int)type];
 }
@@ -490,9 +494,11 @@ namespace
 
     void DrawJeep(const Vehicle& v)
     {
-        // Текстуртай загвар (G-Class, X-Trail, Yaris) байвал түүгээр; эс бөгөөс кодоор угсарсан УАЗ
+        // Текстуртай загвар (G-Class, X-Trail, Yaris, Crown, Aqua) байвал түүгээр; эс бөгөөс кодоор угсарсан УАЗ
         const VehicleModelId model = v.type == VehicleType::Suv         ? VehicleModelId::Suv
                                      : v.type == VehicleType::Hatchback ? VehicleModelId::Hatchback
+                                     : v.type == VehicleType::Sedan     ? VehicleModelId::Sedan
+                                     : v.type == VehicleType::Compact   ? VehicleModelId::Compact
                                                                         : VehicleModelId::Jeep;
         if (HasVehicleModel(model))
         {
@@ -1086,6 +1092,8 @@ namespace
         case VehicleType::Hatchback: return 1.25f;
         case VehicleType::Helicopter: return 0.6f;
         case VehicleType::Armored: return 0.35f;
+        case VehicleType::Sedan: return 1.15f;
+        case VehicleType::Compact: return 1.2f;
         }
         return 1.0f;
     }
@@ -1104,6 +1112,8 @@ namespace
         case VehicleType::Hatchback: return { 1.15f, 0.85f }; // 3.94 м урт
         case VehicleType::Helicopter: return { 4.2f, 1.45f }; // их бие (сүүлгүй)
         case VehicleType::Armored: return { 2.6f, 1.2f };
+        case VehicleType::Sedan: return { 1.55f, 0.9f };     // 4.91 м урт
+        case VehicleType::Compact: return { 1.2f, 0.85f };   // 4.05 м урт
         }
         return { 1.0f, 0.8f };
     }
@@ -1276,6 +1286,8 @@ int Garage::Raycast(Ray ray, float minDistance, float maxDistance, int skipA, in
         case VehicleType::Hatchback: halfWidth = 0.85f; halfLength = 1.9f; height = 1.5f; break;
         case VehicleType::Helicopter: halfWidth = 1.6f; halfLength = 7.6f; height = 5.2f; break; // их бие + сүүлний эхлэл
         case VehicleType::Armored: halfWidth = 1.25f; halfLength = 3.0f; height = 3.2f; break;
+        case VehicleType::Sedan: halfWidth = 0.9f; halfLength = 2.45f; height = 1.45f; break;
+        case VehicleType::Compact: halfWidth = 0.85f; halfLength = 2.03f; height = 1.45f; break;
         default: break;
         }
         // Туяаг хэрэгслийн орон нутгийн тэнхлэгт (урагш +Z) шилжүүлнэ: зай өөрчлөгдөхгүй.
@@ -1430,6 +1442,8 @@ Vector3 Garage::SeatWorld(int index, bool passenger) const
         case VehicleType::Horse: seat = { 0.0f, 1.5f, -0.52f }; break;        // сундлана
         case VehicleType::Truck: seat = { -0.5f, 1.75f, -1.6f }; break;       // тэвшин дээр
         case VehicleType::Suv:
+        case VehicleType::Sedan:
+        case VehicleType::Compact:
         case VehicleType::Hatchback: seat.x = -0.45f; break;                   // жолоочийн эсрэг талын суудал
         case VehicleType::Helicopter: seat = { -0.62f, 1.55f, 5.6f }; break;   // туслах нисгэгчийн суудал
         case VehicleType::Armored:
@@ -1895,7 +1909,10 @@ void Garage::Draw(Vector3 viewPosition, float maxDistance, const Material* mater
             const Vector3 below = { vehicle.position.x, vehicle.position.y - vehicle.altitude, vehicle.position.z };
             if (vehicle.altitude < 40.0f) DrawBlobShadow(below, 5.5f);
         }
-        else DrawBlobShadow(vehicle.position, SpecFor(vehicle.type).radius * 1.15f);
+        else if (vehicle.type == VehicleType::Horse || vehicle.type == VehicleType::Motorcycle)
+        {
+            DrawBlobShadow(vehicle.position, SpecFor(vehicle.type).radius * 1.15f);
+        }
 
         // Морины загвар зурсны дараа culling дахин асдаг: машин бүрийн өмнө унтраана
         // (эс бөгөөс эсрэг эргэлттэй талууд алга болж машин нэвт харагдана).
@@ -1906,6 +1923,28 @@ void Garage::Draw(Vector3 viewPosition, float maxDistance, const Material* mater
         rlRotatef(vehicle.heading * RAD2DEG, 0.0f, 1.0f, 0.0f);
         rlRotatef(-vehicle.pitch * RAD2DEG, 1.0f, 0.0f, 0.0f); // өгсүүрт хошуу дээшилнэ
         rlRotatef(vehicle.roll * RAD2DEG, 0.0f, 0.0f, 1.0f);   // хажуу налууд хазайна
+
+        if (!shadowPass && !IsHelicopter(vehicle.type) && vehicle.type != VehicleType::Horse && vehicle.type != VehicleType::Motorcycle)
+        {
+            // Газарт наалдсан бараан ул мөр: их биеийн хэлбэртэй тэгш өнцөгт, зах руугаа цайна (3 давхар). Найман
+            // өнцөгт дугуй толбо цасан дээр машинаас хол гарч тод харагддаг байсан.
+            const Vector2 capsule = CapsuleOf(vehicle.type);
+            const float halfLength = capsule.x + capsule.y, halfWidth = capsule.y;
+            rlDrawRenderBatchActive();
+            rlBegin(RL_QUADS);
+            for (float grow : { 1.08f, 0.96f, 0.84f })
+            {
+                const float x = halfWidth * grow, z = halfLength * (0.94f + grow * 0.06f);
+                rlColor4ub(10, 12, 22, 34);
+                rlNormal3f(0.0f, 1.0f, 0.0f);
+                rlVertex3f(-x, 0.04f, -z);
+                rlVertex3f(-x, 0.04f, z);
+                rlVertex3f(x, 0.04f, z);
+                rlVertex3f(x, 0.04f, -z);
+            }
+            rlEnd();
+            rlDrawRenderBatchActive();
+        }
 
         // Эвдрэл: гэмтэх тусам бараан, эвдэрсэн бол шатсан хар. Үхсэн морь хажуугаараа хэвтэнэ.
         const float condition = vehicle.health / SpecFor(vehicle.type).maxHealth;
@@ -1933,6 +1972,8 @@ void Garage::Draw(Vector3 viewPosition, float maxDistance, const Material* mater
         case VehicleType::Horse: DrawHorse(vehicle); break;
         case VehicleType::Truck: DrawTruck(vehicle); break;
         case VehicleType::Suv:
+        case VehicleType::Sedan:
+        case VehicleType::Compact:
         case VehicleType::Hatchback: DrawJeep(vehicle); break;
         case VehicleType::Helicopter: DrawHelicopter(vehicle); break;
         case VehicleType::Armored: DrawArmored(vehicle); break;

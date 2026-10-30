@@ -92,7 +92,7 @@ public:
     bool TryUse();
     void Reload();
 
-    float Damage() const;       // сайжруулалтыг тооцсон нэг сумны хохирол
+    float Damage() const;       // сайжруулалт, зэргийг (SetRankDamageBonus) тооцсон нэг сумны хохирол
     float Interval() const;
     int Ammo() const;           // хутганд 0; гранатад үлдсэн тоо
     int MagazineSize() const;
@@ -119,3 +119,9 @@ private:
     bool mounted = false;
     WeaponType beforeMounted = WeaponType::Rifle;
 };
+
+// Тоглогчийн зэргийн давуу тал (src/Rank.h RankBonus): бүх зэвсгийн хохиролд үржигдэнэ
+void SetRankDamageBonus(float multiplier);
+// Хохирлын энэ түвшинд аль ч зэвсгийн нэг сумны дээд хохирол (зэрэг, биеийн хэсгийг тооцоогүй): хост зочны
+// мэдэгдлийг хязгаарлахад
+float WeaponMaxDamage(int damageLevel);

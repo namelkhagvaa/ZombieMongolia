@@ -20,6 +20,7 @@ const char* LeaderSkinName(int skin)
     case 2: return "MODEL-3";
     case 3: return "DEMON";
     case 4: return "IRON";
+    case 5: return "MODEL-2";
     default: return "ЦЭРЭГ";
     }
 }
@@ -38,7 +39,7 @@ HumanoidLook TeamMemberLook(int member, int leaderSkin)
     {
     case 0: // хөх дээл, улаан оройтой малгай (assets\fighter1 загвар байвал түүгээр зурагдана)
         look.model = leaderSkin == 1 ? kCharacterModel1 : leaderSkin == 2 ? kCharacterModel3 : leaderSkin == 3 ? kCharacterDemon
-                   : leaderSkin == 4 ? kCharacterIron : kCharacterFighter1;
+                   : leaderSkin == 4 ? kCharacterIron : leaderSkin == 5 ? kCharacterModel2 : kCharacterFighter1;
         look.body = { 40, 70, 150, 255 };
         look.trim = { 230, 150, 30, 255 };
         look.hat = { 160, 34, 34, 255 };

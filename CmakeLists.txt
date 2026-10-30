@@ -36,10 +36,9 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(raylib)
-if(EMSCRIPTEN)
-    # Хөтөч: том текстуруудыг JPG болгож багасгадаг (tools/pack_web.py)
-    target_compile_definitions(raylib PRIVATE SUPPORT_FILEFORMAT_JPG=1)
-endif()
+# Том текстуруудыг багцлахдаа JPG болгодог: хөтөч (tools/pack_web.py), Android ба Windows-ийн суулгагч
+# (tools/native_jpg.py). Хөгжүүлэлтийн хувилбар assets-ийн PNG-г шууд уншина.
+target_compile_definitions(raylib PRIVATE SUPPORT_FILEFORMAT_JPG=1)
 
 # raylib-ийн үндсэн vertex shader (DrawTriangle3D, DrawCube, DrawLine3D г.м.) OpenGL ES дээр mediump: олон утасны GPU
 # үүнийг 16 битээр тооцдог тул мянган метрийн ертөнцийн координатад ~2 м нарийвчлалтай болж, хөтлөгч сум, сумны мөр
@@ -78,6 +77,8 @@ set(GAME_SOURCES
     src/Airstrike.cpp
     src/Audio.cpp
     src/Bear.cpp
+    src/Hitbox.cpp
+    src/Rank.cpp
     src/Campaign.cpp
     src/City.cpp
     src/Splash.cpp
@@ -167,6 +168,8 @@ if(EMSCRIPTEN)
         file(GLOB files ${CMAKE_SOURCE_DIR}/assets/${sub}/*.png)
         file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/${sub})
     endforeach()
+    file(GLOB files ${CMAKE_SOURCE_DIR}/assets/surfaces/*.jpg) # байшин, зам, байгалийн бүтэц (саарал JPG)
+    file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/surfaces)
     foreach(sub cars buu trees pooshig)
         file(GLOB files ${CMAKE_SOURCE_DIR}/assets/${sub}/*.vmesh ${CMAKE_SOURCE_DIR}/assets/${sub}/*_color.png ${CMAKE_SOURCE_DIR}/assets/${sub}/*_far.bin)
         file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/${sub})
@@ -175,6 +178,10 @@ if(EMSCRIPTEN)
     file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/city)
     file(GLOB files ${CMAKE_SOURCE_DIR}/assets/sounds/*.wav)
     file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/sounds)
+    file(GLOB files ${CMAKE_SOURCE_DIR}/assets/sounds/narration/*.wav) # мэдэгдлийн дуу хоолой (tools/gen_narration.py)
+    if(files)
+        file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/sounds/narration)
+    endif()
     file(COPY ${CMAKE_SOURCE_DIR}/android/ui_font.ttf DESTINATION ${WEB_ASSETS})
 
     set_target_properties(ZombieMongolia PROPERTIES SUFFIX ".html")

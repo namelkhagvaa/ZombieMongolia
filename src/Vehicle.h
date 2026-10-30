@@ -17,9 +17,11 @@ enum class VehicleType
     Suv,        // Nissan X-Trail: жийпээс хөнгөн, хээр талд арай сул
     Hatchback,  // Toyota Yaris: засмал зам дээр хамгийн хурдан, хээр, толгодод муу, эмзэг
     Helicopter, // Ми-8 (жинхэнэ хэмжээ: их бие 18 м, сэнс 21 м): заставын дэргэд; газрын хэлбэрийг дагаж нам нисэнэ
-    Armored     // дээвэр дээрээ пулемёттой хуягт машин: суухдаа жолооч / буудагч сонгоно, нөгөө суудалд AI цэрэг
+    Armored,    // дээвэр дээрээ пулемёттой хуягт машин: суухдаа жолооч / буудагч сонгоно, нөгөө суудалд AI цэрэг
+    Sedan,      // Toyota Crown: урт, намхан суудлын машин; засмал зам дээр хурдан, тогтвортой, хээр талд муу
+    Compact     // Toyota Aqua: жижиг гибрид; бензин хамгийн удаан дуусна, хээр талд муу
 };
-constexpr int kVehicleTypeCount = (int)VehicleType::Armored + 1;
+constexpr int kVehicleTypeCount = (int)VehicleType::Compact + 1;
 // Хуягт машины пулемёт урдаасаа зүүн, баруун тийш эргэх хязгаар (радиан, 55 градус): буудагч байрнаасаа хөдлөхгүй,
 // гар нь бариулд хүрнэ, ар тал руу буудахгүй
 constexpr float kArmorTraverse = 55.0f * 3.14159265f / 180.0f;
@@ -34,10 +36,11 @@ constexpr float kHeliFloor = 15.0f;     // доорх газраас хамги�
 constexpr float kHeliControl = 6.0f;  // үүнээс өндөр гарсны дараа хөдөлж эхэлнэ
 constexpr int kHeliSeats = 6;         // нисгэгчээс гадна: 2 хаалганы буудагч (баг), 4 бүхээгт (нөгөө тоглогч, түүний баг)
 
-// Бүхээгтэй суудлын машин (жийп, X-Trail, Yaris): жолооч зүүн, зорчигч баруун урд суудалд.
+// Бүхээгтэй суудлын машин (жийп, X-Trail, Yaris, Crown, Aqua): жолооч зүүн, зорчигч баруун урд суудалд.
 inline bool IsCar(VehicleType type)
 {
-    return type == VehicleType::Jeep || type == VehicleType::Suv || type == VehicleType::Hatchback || type == VehicleType::Armored;
+    return type == VehicleType::Jeep || type == VehicleType::Suv || type == VehicleType::Hatchback || type == VehicleType::Armored ||
+           type == VehicleType::Sedan || type == VehicleType::Compact;
 }
 
 // Тээврийн хэрэгслийн онцлог. Хурд нь доорх үзүүлэлт ба газрын гадаргуу, налуугаас хамаарна.

@@ -181,8 +181,24 @@ def province_start(request):
 @api(["POST"])
 def room_join(request):
     player = request.token.player
-    room = logic.join_room(player, request.token.device_id, client_ip(request), request.json.get("protocol", 0))
+    room_id = request.json.get("room")
+    room_id = int(room_id) if isinstance(room_id, int) or (isinstance(room_id, str) and room_id.isdigit()) else None
+    try:
+        room = logic.join_room(player, request.token.device_id, client_ip(request), request.json.get("protocol", 0), room_id)
+    except GameError as error:
+        # Өрөөнд оруулаагүй шалтгаан (зэрэг, хувилбар, Gold, маргаан, өрөө алга): админы тоглогчийн үйл явдалд харагдана
+        logic.log_event(player, "room_join_refused", {"reason": error.code, "message": error.message[:200], "room": room_id,
+                                                      "protocol": request.json.get("protocol", 0)},
+                        request.token.device_id, client_ip(request))
+        raise
     return ok(room=logic.room_json(room, player), account=account(request.token))
+
+
+@api(["GET"])
+def room_list(request):
+    """?protocol=16: тулааны нээлттэй өрөөнүүд (жагсаалтаас сонгож орно)."""
+    protocol = request.GET.get("protocol", "0")
+    return ok(**logic.list_rooms(request.token.player, int(protocol) if protocol.isdigit() else 0))
 
 
 @api(["POST"])

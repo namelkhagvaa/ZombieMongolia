@@ -1,9 +1,16 @@
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
+import timezone from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
 import 'dayjs/locale/mn';
 
 dayjs.extend(relativeTime);
+dayjs.extend(utc);
+dayjs.extend(timezone);
 dayjs.locale('mn');
+
+// Бүх цагийг Улаанбаатарын цагаар (UTC+8) харуулна: админы компьютерын цагийн бүсээс үл хамаарна
+export const TIME_ZONE = 'Asia/Ulaanbaatar';
 
 // Тоглоомын аяны дараалал (src/CampaignData.cpp): 0-оос эхэлсэн дугаар
 export const PROVINCES = [
@@ -21,7 +28,12 @@ export function money(value: number | null | undefined): string {
 }
 
 export function dateTime(value: string | null | undefined): string {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '—';
+  return value ? dayjs(value).tz(TIME_ZONE).format('YYYY-MM-DD HH:mm') : '—';
+}
+
+// Лог: секундтэй яг цаг
+export function exactTime(value: string | null | undefined): string {
+  return value ? dayjs(value).tz(TIME_ZONE).format('YYYY-MM-DD HH:mm:ss') : '—';
 }
 
 export function ago(value: string | null | undefined): string {
@@ -72,6 +84,8 @@ export const EVENT_LABEL: Record<string, { text: string; color: string }> = {
   battle_disputed: { text: 'Тулааны үр дүн зөрсөн', color: 'red' },
   battle_void: { text: 'Тулаан хүчингүй (тасарсан, тэнцсэн)', color: 'orange' },
   room_join_failed: { text: 'Өрөөнд холбогдож чадаагүй', color: 'orange' },
+  room_join_refused: { text: 'Тулаанд оруулаагүй (сервер)', color: 'volcano' },
+  battle_join_failed: { text: 'Тулаанд холбогдож чадаагүй (тоглоом)', color: 'volcano' },
   coop_join_failed: { text: 'Найзын код буруу', color: 'orange' },
   phone_verified: { text: 'Утас баталгаажуулсан', color: 'green' },
   phone_released: { text: 'Дугаарыг жинхэнэ эзэн авсан', color: 'orange' },

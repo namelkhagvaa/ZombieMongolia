@@ -116,6 +116,8 @@ private:
     Material terrainMaterial = {};
     Texture2D terrainTextures[4] = {}; // өвс, өвс+шороо, шороо, хад (assets/terrain)
     void LoadTerrainTextures();
+    Texture2D surfaceTextures[3] = {}; // гадаргуугийн бүтэц: хана, дээвэр/зам, байгаль (assets/surfaces)
+    void LoadSurfaceTextures();
     Material detailMaterial = {};
     Material depthMaterial = {};
     Mesh mountains = {};

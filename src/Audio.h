@@ -90,4 +90,12 @@ namespace Audio
     // Ярьсан бол true (бичлэг байхгүй, өөр хүн ярьж байгаа, хэт хол бол false).
     bool Say(int speaker, VoiceLine line, Vector3 position, float pitch = 1.0f, bool urgent = false);
     bool HasVoice(int speaker, VoiceLine line);
+
+    // Мэдэгдлийн дуу хоолой (assets/sounds/narration/<key>.wav|.ogg, tools/gen_narration.py): дэлгэцэд гарах мэдэгдлийг
+    // уншина. 3D биш (бүтэн чанга). Шинэ нь өмнөхийг тасална; нэг мэдэгдлийг 6 секундийн дотор давтахгүй.
+    // Файл байхгүй бол юу ч хийхгүй.
+    void Announce(const char* key);
+
+    // Бүх дууг зогсооно (хөдөлгүүр, буудлага, мэдэгдэл, яриа): тоглолтоос газрын зураг руу гарахад
+    void StopAll();
 }

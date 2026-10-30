@@ -26,6 +26,7 @@ namespace
     const Color kSunCore = { 255, 250, 236, 255 };
     const float kFogDensity = 0.0011f;   // 300 м-т ~10%, 600 м-т ~35%, 1000 м-т ~70% манан
     const int kShadowSlot = 9;           // сүүдрийн зургийн текстурын нэгж (материалын map-уудаас хол)
+    const int kSurfaceSlot = 13;         // гадаргуугийн бүтэц: 13 хана, 14 дээвэр/зам, 15 байгаль (MAX_MATERIAL_MAPS-аас хол)
 
     // ------------------------------------------------------------ Shader-ууд
 
@@ -51,6 +52,11 @@ uniform float snowCover;
 uniform float wetness;
 uniform float dryness;
 uniform float exposure;
+uniform vec3 skyZenith;    // тэнгэрийн оргилын өнгө (шил, ус, нойтон замын тусгалд)
+uniform float nightLight;  // 0 өдөр .. 1 шөнө (цонхны гэрэл)
+uniform float cloudShadow; // газар дээгүүр гүйх үүлний сүүдрийн хүч (0 = унтраастай)
+uniform float time;
+uniform vec2 wind;
 
 // Кино маягийн өнгөний шилжилт (ACES, Narkowicz): тод хэсэг зөөлөн цайрч "шатахгүй", бараан хэсэг гүн.
 // Гэрлийг 1-ээс их болгож болно (хүчтэй нар) - эцсийн өнгө 0..1 хооронд үлдэнэ.
@@ -97,6 +103,34 @@ float SunShadow(vec3 pos, float ndl)
     return mix(mix(1.0, lit, shadowStrength), 1.0, fade);
 }
 
+// Газар дээгүүр салхинд гүйх үүлний сүүдэр (тэнгэрийн үүлтэй ойролцоо хэмжээ, хурдтай)
+float CloudHash(vec2 p)
+{
+    p = fract(p * vec2(234.34, 435.35));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+}
+float CloudNoise(vec2 p)
+{
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(CloudHash(i), CloudHash(i + vec2(1.0, 0.0)), u.x), mix(CloudHash(i + vec2(0.0, 1.0)), CloudHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float CloudShade(vec3 pos)
+{
+    if (cloudShadow <= 0.0) return 1.0;
+    vec2 p = pos.xz * 0.0045 + wind * (time * 0.02);
+    float n = CloudNoise(p) * 0.65 + CloudNoise(p * 2.3 + 7.1) * 0.35;
+    return 1.0 - cloudShadow * smoothstep(0.48, 0.68, n);
+}
+
+// Тусгал: харах чиглэлийн ойлтоор тэнгэр (хаяа -> оргил) эсвэл газар
+vec3 SkyReflection(vec3 r)
+{
+    return r.y >= 0.0 ? mix(fogColor, skyZenith, sqrt(r.y)) : mix(fogColor, groundLight, min(1.0, -r.y * 3.0));
+}
+
 vec3 Shade(vec3 albedo, vec3 normal, vec3 pos)
 {
     // Цас: дээш харсан гадаргуу (газар, дээвэр) цайрна; бороо: нойтон, бараан
@@ -106,7 +140,7 @@ vec3 Shade(vec3 albedo, vec3 normal, vec3 pos)
     float ndl = max(dot(normal, sunDirection), 0.0);
     float shadow = SunShadow(pos, ndl);
     vec3 ambient = mix(groundLight, ambientLight, normal.y * 0.5 + 0.5);
-    return albedo * (ambient + sunLight * (ndl * shadow));
+    return albedo * (ambient + sunLight * (ndl * shadow * CloudShade(pos)));
 }
 
 vec3 ApplyFog(vec3 color, vec3 pos)
@@ -143,6 +177,13 @@ void main()
 in vec4 fragColor;
 uniform vec4 colDiffuse;
 uniform float surfaceDetail; // 0 = жигд өнгө (хөдөлдөг унаа), 1 = ойрын гадаргуугийн бүтэц
+uniform float surfaceBump;   // 1 = ханын бүтэц товгор (нарны зүг рүү харсан ирмэг гэрэлтэй, эсрэг тал нь сүүдэртэй)
+// Бодит гадаргуугийн бүтэц (assets/surfaces, CC0): саарал, дундаж 0.5. Өнгө нь оройн өнгөнөөс, ширхэг нь эндээс.
+uniform sampler2D wallDetail;  // R шавардлага, G тоосго, B бетон, A банз
+uniform sampler2D roofDetail;  // R вааран дээвэр, G атираат төмөр, B асфальт, A хавтан зам
+uniform float surfaceTextures; // 0 = текстургүй (файл олдоогүй)
+// 1 бол оройн alpha нь газраас дээших өндөр (MeshBuilder::EncodeGroundHeight, 0.4 м-ийн нэгж): барилга
+uniform float aoMode;
 out vec4 finalColor;
 
 float SurfaceHash(vec2 p)
@@ -171,6 +212,48 @@ vec3 SurfaceDetail(vec3 albedo, vec3 normal, vec3 pos)
     if (near <= 0.0) return albedo;
     vec3 an = abs(normal);
     vec2 uv = an.y > 0.7 ? pos.xz : (an.x > an.z ? pos.zy : pos.xy);
+    if (surfaceTextures > 0.5)
+    {
+        // Материалыг өнгө, чиглэлээр нь танина: хана (улаан = тоосго, хүрэн бараан = банз, саарал = бетон, бусад =
+        // шавардлага), налуу дээвэр (улаан хүрэн = вааран, бусад = атираат төмөр), хэвтээ (бараан саарал = асфальт,
+        // цайвар саарал = хавтан). Зурагнаас нэг л удаа уншина (4 материал нэг текстурт).
+        float lumC = dot(albedo, vec3(0.333));
+        float satC = max(albedo.r, max(albedo.g, albedo.b)) - min(albedo.r, min(albedo.g, albedo.b));
+        float red = albedo.r / max(albedo.g, 0.02);
+        float grayW = 1.0 - smoothstep(0.05, 0.14, satC);
+        float brick = smoothstep(1.22, 1.42, red) * (1.0 - grayW);
+        float wood = smoothstep(1.04, 1.16, red) * (1.0 - smoothstep(1.3, 1.45, red)) * (1.0 - smoothstep(0.36, 0.5, lumC)) * (1.0 - grayW);
+        float d = 0.5, mask = 0.0;
+        if (an.y < 0.3)
+        {
+            vec4 t = texture(wallDetail, uv * 0.6);
+            vec4 w = vec4(0.0, brick, grayW, wood);
+            w.x = max(0.0, 1.0 - w.y - w.z - w.w);
+            w /= max(1.0, w.x + w.y + w.z + w.w);
+            d = dot(t, w);
+            mask = 1.0;
+            if (surfaceBump > 0.5 && near > 0.3)
+            {
+                // Товгор: нарны чиглэлийг ханын хавтгай дээр буулгаж, тэр зүгт ~1 см-ийн цаадах бүтэцтэй харьцуулна
+                vec2 toSun = an.x > an.z ? vec2(sunDirection.z, sunDirection.y) : vec2(sunDirection.x, sunDirection.y);
+                float ahead = dot(texture(wallDetail, (uv + toSun * 0.025) * 0.6), w);
+                albedo *= 1.0 + clamp((d - ahead) * 2.2, -0.25, 0.25) * near * max(dot(normal, sunDirection), 0.0);
+            }
+        }
+        else if (an.y < 0.85)
+        {
+            vec4 t = texture(roofDetail, pos.xz * 0.5);
+            d = mix(t.g, t.r, smoothstep(1.15, 1.35, red) * (1.0 - grayW));
+            mask = 1.0;
+        }
+        else
+        {
+            vec4 t = texture(roofDetail, pos.xz * 0.45);
+            d = mix(t.b, t.a, smoothstep(0.38, 0.5, lumC));
+            mask = grayW;
+        }
+        albedo *= 1.0 + (d - 0.5) * 1.3 * near * mask;
+    }
     float broad = SurfaceNoise(uv * 0.35);
     float fine = SurfaceNoise(uv * 3.1);
     albedo *= 1.0 + near * ((broad - 0.5) * 0.18 + (fine - 0.5) * 0.08);
@@ -195,13 +278,85 @@ vec3 SurfaceDetail(vec3 albedo, vec3 normal, vec3 pos)
     return albedo;
 }
 
+// Шил (цонх, бүхээг) ба усны гадаргуу: Fresnel-ээр тэнгэрийг тусгана (налуу харахад толь шиг), нарны тод гялбаа.
+// lamp: шөнө дотроос гэрэл асна (цонх бүрийн өнгө, тод нь өөр).
+vec3 Reflective(vec3 lit, vec3 n, vec3 pos, float base, float strength, bool lamp)
+{
+    vec3 view = normalize(viewPos - pos);
+    if (dot(n, view) < 0.0) n = -n;
+    float fresnel = base + (1.0 - base) * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0);
+    vec3 r = reflect(-view, n);
+    float ndl = max(dot(n, sunDirection), 0.0);
+    float glint = pow(max(dot(r, sunDirection), 0.0), 240.0) * SunShadow(pos, max(ndl, 0.05)) * CloudShade(pos);
+    vec3 color = mix(lit, SkyReflection(r), clamp(fresnel * strength, 0.0, 0.92)) + sunLight * glint * 3.0;
+    if (lamp && nightLight > 0.0)
+    {
+        // ~3 м-ийн нүд бүрт санамсаргүй: зарим цонх л гэрэлтэнэ (туузан цонхтой барилгад бүтэн давхар биш)
+        float v = fract(sin(dot(floor(pos * 0.35), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+        if (v > 0.45)
+        {
+            vec3 lampColor = mix(vec3(1.0, 0.66, 0.34), vec3(0.78, 0.84, 1.0), step(0.88, v)) * (0.55 + 0.5 * v);
+            color = mix(color, lampColor, nightLight * 0.85);
+        }
+    }
+    return color;
+}
+
+// Нойтон асфальт, бетон (бороо): тэнгэр, нарыг бүдэг тусгана
+vec3 WetSheen(vec3 lit, vec3 vertexAlbedo, vec3 n, vec3 pos)
+{
+    float lum = dot(vertexAlbedo, vec3(0.333));
+    float sat = max(vertexAlbedo.r, max(vertexAlbedo.g, vertexAlbedo.b)) - min(vertexAlbedo.r, min(vertexAlbedo.g, vertexAlbedo.b));
+    // Асфальт (бараан) бүрэн, цайвар хавтан зам, талбай сулхан
+    float paved = step(0.85, n.y) * (1.0 - smoothstep(0.05, 0.12, sat)) * (1.0 - 0.6 * smoothstep(0.4, 0.6, lum));
+    if (paved <= 0.0) return lit;
+    float puddle = smoothstep(0.45, 0.75, CloudNoise(pos.xz * 0.35 + 4.0)); // шалбааг илүү тод
+    return mix(lit, Reflective(lit, n, pos, 0.02, 1.0, false), paved * wetness * (0.35 + 0.5 * puddle));
+}
+
+// Хананы ёроол газартай нийлэх хэсэг харанхуй (булангийн сүүдэр): height нь газраас дээших өндөр, м
+float GroundOcclusion(float height, vec3 n)
+{
+    float wall = 1.0 - smoothstep(0.35, 0.7, abs(n.y));
+    return mix(1.0, mix(0.6, 1.0, smoothstep(0.0, 1.4, height)), wall);
+}
+
 void main()
 {
     // Гадаргуугийн чиглэл: хөрш пикселүүдийн байрлалын зөрүүгээс (камер руу харсан тал).
     vec3 normal = normalize(cross(dFdx(fragPosition), dFdy(fragPosition)));
-    vec3 albedo = SurfaceDetail(fragColor.rgb * colDiffuse.rgb, normal, fragPosition);
+    // Оройн alpha-ийн тэмдэг: 251 шил, 252 шөнө гэрэл асдаг шил, 190 ус (хагас тунгалаг)
+    float tag = floor(fragColor.a * 255.0 + 0.5);
+    bool glass = tag > 250.5 && tag < 252.5;
+    bool water = aoMode < 0.5 && abs(tag - 190.0) < 0.5;
+    vec3 vertexAlbedo = fragColor.rgb * colDiffuse.rgb;
+    vec3 albedo = glass ? vertexAlbedo : SurfaceDetail(vertexAlbedo, normal, fragPosition);
     vec3 lit = Shade(albedo, normal, fragPosition);
-    finalColor = vec4(ApplyFog(lit, fragPosition), fragColor.a * colDiffuse.a);
+    float alpha = fragColor.a * colDiffuse.a;
+    if (glass)
+    {
+        // Цонхны хүрээ: хэвтээ чиглэлд 1.6 м тутам нарийн бараан босоо зураас (туузан цонх тусдаа цонхнууд болно)
+        float along = abs(normal.x) > abs(normal.z) ? fragPosition.z : fragPosition.x;
+        float frame = step(0.93, fract(along / 1.6)) * (1.0 - smoothstep(0.5, 0.8, abs(normal.y)));
+        lit = Reflective(lit, normal, fragPosition, 0.08, 0.85, tag > 251.5);
+        lit = mix(lit, Shade(vec3(0.22, 0.22, 0.23), normal, fragPosition), frame);
+        alpha = colDiffuse.a;
+    }
+    else if (water)
+    {
+        lit = Reflective(lit, normal, fragPosition, 0.05, 0.9, false);
+        alpha = mix(alpha, 1.0, 0.5); // тусгал ихтэй тул бараг тунгалаг бус
+    }
+    else
+    {
+        if (aoMode > 0.5)
+        {
+            lit *= GroundOcclusion(fragColor.a * 255.0 * 0.4, normal);
+            alpha = colDiffuse.a;
+        }
+        if (wetness > 0.0) lit = WetSheen(lit, vertexAlbedo, normal, fragPosition);
+    }
+    finalColor = vec4(ApplyFog(lit, fragPosition), alpha);
 }
 )";
 
@@ -252,6 +407,9 @@ uniform sampler2D texture1; // өвс + шороо
 uniform sampler2D texture2; // хуурай шороо
 uniform sampler2D texture3; // хад
 uniform float terrainTextures; // 0 = текстургүй (файл олдоогүй)
+// Хуурай газрын нэмэлт бүтэц (assets/surfaces, CC0, саарал): R элс, G хайрга, B жижиг чулуу, A хагарсан хөрс
+uniform sampler2D natureDetail;
+uniform float natureTextures;
 uniform vec3 terrainMean[4];   // текстур бүрийн дундаж өнгө (ачаалахдаа нэг удаа тооцно)
 // Алсын газар (60 м тор): камерын ойр, тоглох талбай дотор ойрын нарийн газар зурагддаг тул энд зурахгүй.
 // Бүдүүн тор нь тэгшилсэн бүс, голын сав дээр ойрын газраас дээгүүр гарч тоглогчийг "газар доор" харагдуулдаг.
@@ -285,6 +443,22 @@ void main()
             vec2 side = abs(normal.x) > abs(normal.z) ? fragPosition.zy : fragPosition.xy;
             detail = mix(detail, TerrainDetail(texture3, side * 0.12, terrainMean[3]), steep);
             albedo = mix(albedo, vec3(0.42, 0.40, 0.37), steep * 0.55);
+        }
+        if (natureTextures > 0.5)
+        {
+            // Хуурай газар (ногоон биш): шаргал цайвар газар элс, бусад нь толбо толбоор хагарсан хөрс, хайрга,
+            // жижиг чулуу ээлжилнэ (том хэмжээний толбоор: давталт харагдахгүй)
+            vec4 n = texture(natureDetail, p * 0.22);
+            float lumT = dot(albedo, vec3(0.333));
+            float sandy = smoothstep(0.42, 0.6, lumT) * clamp(((albedo.r + albedo.g) * 0.5 - albedo.b) * 5.0, 0.0, 1.0);
+            float zone = TerrainNoise(p * 0.028 + 21.0), zone2 = TerrainNoise(p * 0.041 - 9.0);
+            float cracked = (1.0 - sandy) * smoothstep(0.55, 0.72, zone);
+            float pebbles = (1.0 - sandy) * (1.0 - cracked) * smoothstep(0.52, 0.7, zone2);
+            float gravel = (1.0 - sandy) * (1.0 - cracked) * (1.0 - pebbles) * 0.6;
+            float rest = max(0.0, 1.0 - sandy - cracked - pebbles - gravel);
+            float nd = dot(n, vec4(sandy, gravel, pebbles, cracked)) + 0.5 * rest;
+            float fade = 1.0 - smoothstep(60.0, 220.0, dist);
+            detail *= 1.0 + (nd - 0.5) * 1.4 * (1.0 - green) * fade;
         }
         // Бүтцийг тодруулна (зургийн дундаж өнгөнөөс зөрүүг 1.6 дахин)
         detail = max(mix(vec3(1.0), detail, 1.6), vec3(0.2));
@@ -372,21 +546,26 @@ in vec4 vertexBoneIds;
 in vec4 vertexBoneWeights;
 uniform mat4 mvp;
 uniform mat4 matModel;
-uniform mat4 boneMatrices[72];
+// Яс бүрийн хувиргалт 3 мөрөөр (affine 3x4): 72 яс = 216 вектор. mat4-өөр (288) бол Adreno GPU-ийн (Samsung,
+// Xiaomi г.м.) vertex shader-ийн 256 векторын хязгаараас хэтэрч shader ачаалагдахгүй, дүрс хөдөлгөөнгүй болдог.
+// Мөрүүдийг UploadBoneRows (CharacterModel.cpp) илгээнэ.
+uniform vec4 boneRows[216];
 out vec3 fragPosition;
 out vec2 fragTexCoord;
 out vec3 fragNormal;
 void main()
 {
     // Арьслалт: орой бүр дөрөв хүртэлх ясны хувиргалтын жигнэсэн нийлбэрээр хөдөлнө.
-    mat4 skin = vertexBoneWeights.x * boneMatrices[int(vertexBoneIds.x)] +
-                vertexBoneWeights.y * boneMatrices[int(vertexBoneIds.y)] +
-                vertexBoneWeights.z * boneMatrices[int(vertexBoneIds.z)] +
-                vertexBoneWeights.w * boneMatrices[int(vertexBoneIds.w)];
-    vec4 position = skin * vec4(vertexPosition, 1.0);
+    ivec4 b = ivec4(vertexBoneIds) * 3;
+    vec4 w = vertexBoneWeights;
+    vec4 r0 = w.x * boneRows[b.x] + w.y * boneRows[b.y] + w.z * boneRows[b.z] + w.w * boneRows[b.w];
+    vec4 r1 = w.x * boneRows[b.x + 1] + w.y * boneRows[b.y + 1] + w.z * boneRows[b.z + 1] + w.w * boneRows[b.w + 1];
+    vec4 r2 = w.x * boneRows[b.x + 2] + w.y * boneRows[b.y + 2] + w.z * boneRows[b.z + 2] + w.w * boneRows[b.w + 2];
+    vec4 p = vec4(vertexPosition, 1.0);
+    vec4 position = vec4(dot(r0, p), dot(r1, p), dot(r2, p), 1.0);
     fragPosition = vec3(matModel * position);
     fragTexCoord = vertexTexCoord;
-    fragNormal = mat3(matModel) * (mat3(skin) * vertexNormal);
+    fragNormal = mat3(matModel) * vec3(dot(r0.xyz, vertexNormal), dot(r1.xyz, vertexNormal), dot(r2.xyz, vertexNormal));
     gl_Position = mvp * position;
 }
 )";
@@ -403,7 +582,7 @@ void main()
     if (!gl_FrontFacing) normal = -normal; // хоёр талт гадаргуугийн ар тал
     // Сүүдэр талыг бүр харлуулахгүй: нарны эсрэг тал ч бага зэрэг гэрэлтэнэ.
     float ndl = max(dot(normal, sunDirection), 0.0);
-    float diffuse = ndl * 0.85 * SunShadow(fragPosition, ndl) + 0.15 * (0.5 + 0.5 * normal.y);
+    float diffuse = ndl * 0.85 * SunShadow(fragPosition, ndl) * CloudShade(fragPosition) + 0.15 * (0.5 + 0.5 * normal.y);
     vec3 albedo = texture(texture0, fragTexCoord).rgb * colDiffuse.rgb;
     vec3 ambient = mix(groundLight, ambientLight, normal.y * 0.5 + 0.5);
     vec3 lit = albedo * (ambient + sunLight * diffuse);
@@ -540,7 +719,8 @@ void main()
     vec3 haze = mix(horizon, fogSunColor, pow(s, 6.0) * 0.7);
     vec3 sky = mix(haze, zenith, pow(clamp(e, 0.0, 1.0), 0.5));
     sky = mix(sky, haze, 1.0 - smoothstep(0.0, 0.2, e));
-    sky += fogSunColor * (pow(s, 24.0) * 0.35 + pow(s, 300.0) * 0.6) * (1.0 - night);
+    sky += fogSunColor * (pow(s, 4.0) * 0.1 + pow(s, 24.0) * 0.35 + pow(s, 300.0) * 0.6) * (1.0 - night);
+    sky += haze * 0.12 * pow(1.0 - clamp(abs(e), 0.0, 1.0), 10.0) * (1.0 - night); // хаяаны цайвар бүс
     sky = mix(sky, sunCore, smoothstep(0.99925, 0.9996, s) * (1.0 - night));
 
     // Үүл: тэнгэрийн хавтгай дээрх fbm, салхинд аажим шилжинэ
@@ -568,10 +748,35 @@ uniform float saturation;
 uniform float contrast;
 uniform vec3 tint;
 uniform float vignette;
+uniform float fxaa;  // 1 = ирмэг толийлгох (дээд график)
+uniform vec2 texel;  // нэг пикселийн хэмжээ (сцений текстурт)
 out vec4 finalColor;
+
+// FXAA (Lottes-ийн хялбаршуулсан): тодролын ялгаанаас ирмэгийн чиглэлийг олж, түүний дагуу бүдгэрүүлнэ
+vec3 Fxaa(vec2 uv)
+{
+    const vec3 L = vec3(0.299, 0.587, 0.114);
+    vec3 m = texture(texture0, uv).rgb;
+    float lNW = dot(texture(texture0, uv + vec2(-1.0, -1.0) * texel).rgb, L);
+    float lNE = dot(texture(texture0, uv + vec2(1.0, -1.0) * texel).rgb, L);
+    float lSW = dot(texture(texture0, uv + vec2(-1.0, 1.0) * texel).rgb, L);
+    float lSE = dot(texture(texture0, uv + vec2(1.0, 1.0) * texel).rgb, L);
+    float lM = dot(m, L);
+    float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
+    float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+    if (lMax - lMin < max(0.0312, lMax * 0.125)) return m; // ирмэг биш: хэмнэнэ
+    vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), (lNW + lSW) - (lNE + lSE));
+    float reduce = max((lNW + lNE + lSW + lSE) * 0.03125, 1.0 / 128.0);
+    dir = clamp(dir / (min(abs(dir.x), abs(dir.y)) + reduce), -8.0, 8.0) * texel;
+    vec3 a = 0.5 * (texture(texture0, uv - dir * (1.0 / 6.0)).rgb + texture(texture0, uv + dir * (1.0 / 6.0)).rgb);
+    vec3 b = a * 0.5 + 0.25 * (texture(texture0, uv - dir * 0.5).rgb + texture(texture0, uv + dir * 0.5).rgb);
+    float lB = dot(b, L);
+    return (lB < lMin || lB > lMax) ? a : b;
+}
+
 void main()
 {
-    vec3 color = texture(texture0, fragTexCoord).rgb;
+    vec3 color = fxaa > 0.5 ? Fxaa(fragTexCoord) : texture(texture0, fragTexCoord).rgb;
     if (bloomStrength > 0.0) color += texture(bloomTexture, fragTexCoord).rgb * bloomStrength;
     color = (color - 0.5) * contrast + 0.5;
     float luma = dot(color, vec3(0.299, 0.587, 0.114));
@@ -813,6 +1018,7 @@ Environment::Environment()
     terrainShader = LoadVersionedShader(kTerrainVertexShader, kTerrainFragmentShader);
     terrainMaterial = MaterialWith(terrainShader);
     LoadTerrainTextures();
+    LoadSurfaceTextures();
     detailShader = LoadVersionedShader(kDetailVertexShader, kDetailFragmentShader);
     detailMaterial = MaterialWith(detailShader);
     characterShader = LoadVersionedShader(kCharacterVertexShader, kCharacterFragmentShader);
@@ -917,9 +1123,83 @@ void Environment::LoadTerrainTextures()
     TraceLog(LOG_INFO, "ENVIRONMENT: %d of 4 terrain textures loaded", loaded);
 }
 
+// Гадаргуугийн бүтэц (assets/surfaces, tools/prep_surfaces.py): саарал 4 зургийг нэг RGBA текстурт нийлүүлнэ
+// (shader нэг уншилтаар 4 материалын бүтцийг авна). Утас, хөтөчид 512 px (видео санах ой 4 дахин бага).
+void Environment::LoadSurfaceTextures()
+{
+    static const char* const kSets[3][4] = {
+        { "plaster", "brick", "concrete", "planks" },
+        { "roof_tiles", "corrugated", "asphalt", "paving" },
+        { "sand", "gravel", "pebbles", "cracked" },
+    };
+#if defined(__ANDROID__)
+    const std::string folder = "surfaces/";
+#else
+    std::string folder = "assets/surfaces/";
+    const std::string application = GetApplicationDirectory();
+    for (const std::string& candidate : { std::string("assets/surfaces/"), application + "assets/surfaces/", application + "../assets/surfaces/" })
+    {
+        if (DirectoryExists(candidate.c_str())) { folder = candidate; break; }
+    }
+#endif
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
+    const int size = 512;
+#else
+    const int size = 1024;
+#endif
+    int loaded = 0;
+    for (int set = 0; set < 3; ++set)
+    {
+        Image packed = GenImageColor(size, size, { 128, 128, 128, 128 });
+        ImageFormat(&packed, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        unsigned char* out = (unsigned char*)packed.data;
+        bool complete = true;
+        for (int channel = 0; channel < 4; ++channel)
+        {
+            Image gray = LoadImage((folder + kSets[set][channel] + ".jpg").c_str());
+            if (gray.data == nullptr)
+            {
+                complete = false;
+                continue;
+            }
+            ImageFormat(&gray, PIXELFORMAT_UNCOMPRESSED_GRAYSCALE);
+            if (gray.width != size || gray.height != size) ImageResize(&gray, size, size);
+            const unsigned char* in = (const unsigned char*)gray.data;
+            for (int k = 0; k < size * size; ++k) out[k * 4 + channel] = in[k];
+            UnloadImage(gray);
+        }
+        if (!complete)
+        {
+            UnloadImage(packed);
+            continue;
+        }
+        Texture2D texture = LoadTextureFromImage(packed);
+        UnloadImage(packed);
+        if (texture.id == 0) continue;
+        GenTextureMipmaps(&texture);
+        SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
+        SetTextureFilter(texture, TEXTURE_FILTER_ANISOTROPIC_8X);
+        SetTextureWrap(texture, TEXTURE_WRAP_REPEAT);
+        surfaceTextures[set] = texture;
+        ++loaded;
+    }
+    const bool buildings = surfaceTextures[0].id != 0 && surfaceTextures[1].id != 0;
+    SetInt(shader, "wallDetail", kSurfaceSlot);
+    SetInt(shader, "roofDetail", kSurfaceSlot + 1);
+    SetFloat(shader, "surfaceTextures", buildings ? 1.0f : 0.0f);
+    SetInt(terrainShader, "natureDetail", kSurfaceSlot + 2);
+    SetFloat(terrainShader, "natureTextures", surfaceTextures[2].id != 0 ? 1.0f : 0.0f);
+    TraceLog(LOG_INFO, "ENVIRONMENT: %d of 3 surface detail textures loaded (%d px)", loaded, size);
+}
+
 Environment::~Environment()
 {
     for (Texture2D& texture : terrainTextures)
+    {
+        if (texture.id != 0) UnloadTexture(texture);
+        texture = {};
+    }
+    for (Texture2D& texture : surfaceTextures)
     {
         if (texture.id != 0) UnloadTexture(texture);
         texture = {};
@@ -977,6 +1257,12 @@ void Environment::SetQuality(int level)
         bloomB = {};
     }
     SetFloat(postShader, "bloomStrength", bloomEnabled ? 0.55f : 0.0f);
+    // (Туршилт ZM_FX=1: бага графикийн зурагт дээд түвшний ертөнцийн эффектийг харуулна: далд цонхонд post-тай зураг
+    // авагддаггүй)
+    const bool fxTest = std::getenv("ZM_FX") != nullptr;
+    SetFloat(postShader, "fxaa", quality >= 2 ? 1.0f : 0.0f);
+    SetFloat(shader, "surfaceBump", quality >= 2 || fxTest ? 1.0f : 0.0f);
+    lastApplied = -1.0f; // (үүлний сүүдэр түвшнээс хамаарна: SetTimeOfDay дахин тооцно)
 }
 
 void Environment::SetMountainScale(float scale)
@@ -1087,6 +1373,12 @@ void Environment::SetTimeOfDay(float t)
         break;
     }
 
+    // Газар дээгүүр гүйх үүлний сүүдэр: цэлмэг, үүлэрхэг өдөр (бороо, цас, шөнө бүрэн бүрхэг/харанхуй тул үгүй;
+    // хамгийн бага графикт зардал хэмнэнэ)
+    float cloudShade = quality == 0 && !std::getenv("ZM_FX") ? 0.0f
+                     : weather == WeatherKind::Clear ? 0.28f : weather == WeatherKind::Cloudy ? 0.42f
+                     : weather == WeatherKind::Dust ? 0.15f : 0.0f;
+    cloudShade *= 1.0f - night;
     skyZenith = ToColor(zenith);
     skyHorizon = ToColor(horizon);
     sunHaze = haze;
@@ -1101,6 +1393,9 @@ void Environment::SetTimeOfDay(float t)
         SetVec3(s, "fogSunColor", haze);
         SetFloat(s, "fogDensity", fogDensity);
         SetFloat(s, "exposure", exposure);
+        SetVec3(s, "skyZenith", zenith);
+        SetFloat(s, "nightLight", night);
+        SetFloat(s, "cloudShadow", cloudShade);
     }
     SetFloat(skyShader, "exposure", exposure);
     SetVec3(skyShader, "zenith", zenith);
@@ -1198,13 +1493,20 @@ void Environment::DrawSky(const Camera3D& camera) const
 
 void Environment::Begin(const Camera3D& camera) const
 {
-    const float strength = shadowReady && ShadowsEnabled() ? dayShadow : 0.0f;
-    if (strength > 0.0f)
+    // Гадаргуугийн бүтэц: материалын map-уудаас тусдаа нэгжүүдэд байнга (хөдөлдөггүй геометр бүгд нэг материалтай)
+    for (int i = 0; i < 3; ++i)
     {
-        rlActiveTextureSlot(kShadowSlot);
-        rlEnableTexture(shadowMap.depth.id);
-        rlActiveTextureSlot(0);
+        if (surfaceTextures[i].id == 0) continue;
+        rlActiveTextureSlot(kSurfaceSlot + i);
+        rlEnableTexture(surfaceTextures[i].id);
     }
+    rlActiveTextureSlot(0);
+    const float strength = shadowReady && ShadowsEnabled() ? dayShadow : 0.0f;
+    // Сүүдэргүй үед ч (бага график, шөнө, бороо) нэгжид жинхэнэ текстур байна: хоосон нэгжээс уншдаг shader-ийг
+    // зарим драйвер (Intel) удаан замаар ажиллуулж, эхэндээ хэдэн секунд гацдаг байв (кадр 2.5 дахин удаан).
+    rlActiveTextureSlot(kShadowSlot);
+    rlEnableTexture(strength > 0.0f ? shadowMap.depth.id : rlGetTextureIdDefault());
+    rlActiveTextureSlot(0);
     const float texel = 1.0f / (float)std::max(1, shadowSize);
     // Ортографын гүн шугаман: near..far (Game: rlSetClipPlanes) → 0..1. ~15 см-ийн хазайлт.
     const float bias = 0.15f / (float)(rlGetCullDistanceFar() - rlGetCullDistanceNear());
@@ -1222,8 +1524,12 @@ void Environment::Begin(const Camera3D& camera) const
             SetFloat(s, "shadowBias", bias);
         }
     }
-    SetFloat(detailShader, "time", time);
-    SetVec2(detailShader, "wind", wind);
+    for (Shader s : { shader, terrainShader, detailShader, characterShader, propShader, vehicleShader })
+    {
+        if (s.id == 0) continue;
+        SetFloat(s, "time", time);
+        SetVec2(s, "wind", wind);
+    }
     BeginShaderMode(shader);
 }
 
@@ -1405,6 +1711,7 @@ void Environment::DrawScene() const
     const float w = (float)scene.texture.width, h = (float)scene.texture.height;
     if (sceneShaded)
     {
+        SetVec2(postShader, "texel", { 1.0f / w, 1.0f / h });
         BeginShaderMode(postShader);
         if (bloomEnabled && bloomA.id)
         {

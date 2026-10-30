@@ -14,5 +14,6 @@ void SetBearMaterial(const Material* material, bool shadow = false);
 // feet: биеийн доорх газрын цэг, facing: харах зүг (+Z = 0), cycle: алхааны үе (Zombie::walkCycle, радиан),
 // speed: бодит хурд м/с (алхах -> давхих), attack 1..0: савраар шүүрэх, dead 0..1: хажуу тийшээ хөмрөх.
 // detailed = false бол нүд, хумс зэрэг жижиг хэсгийг зурахгүй (хол). seed: баавгай бүрийн зогсолтын хөдөлгөөн.
+// rear 0..1: хойд хөл дээрээ босох (анхааруулах, эргэн тойрноо харах).
 void DrawBear(Vector3 feet, float facing, float scale, float cycle, float speed, float attack, float dead, bool detailed,
-              float seed = 0.0f);
+              float seed = 0.0f, float rear = 0.0f);

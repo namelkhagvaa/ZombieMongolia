@@ -111,6 +111,7 @@ class Player(models.Model):
     soldiers = models.PositiveSmallIntegerField("Цэргийн тоо", default=0)
     # Тоглолтод алдсан (шууд хасагдсан) Gold-ийн цэргийн нийт тоо: дахин авахад худалдааны ref давхцахгүй
     soldiers_lost = models.PositiveIntegerField("Алдсан цэрэг", default=0)
+    xp = models.PositiveIntegerField("Туршлага (XP): үе давах, тулаанд ялах", default=0)
     progress = models.TextField("Тоглоомын хадгалалт", blank=True)
     progress_updated = models.DateTimeField("Хадгалалт шинэчлэгдсэн", null=True, blank=True)
     created = models.DateTimeField("Бүртгүүлсэн", auto_now_add=True)

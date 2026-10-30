@@ -47,9 +47,11 @@ MIN_PASSWORD = 6
 ROOM_TIMEOUT = timedelta(minutes=10)  # дохио (beat) ийм хугацаанд ирээгүй бол холболт тасарсан (шийтгэлгүй)
 ROOM_JOINABLE = timedelta(minutes=3)  # зочныг зөвхөн сүүлд дохио өгсөн хостын өрөөнд оруулна
 TICKET_TTL = 6 * 3600               # тасалбар: relay руу (дахин) холбогдох хугацаа, секунд
+SILENT_AFTER = timedelta(seconds=150)  # дохио (60 с тутам) ийм удаан ирээгүй тал апп-аа хаасан гэж үзнэ
 BATTLE_WAIT = timedelta(seconds=60)   # нэг тал л мэдэгдвэл (нөгөө нь тасарсан, AI тулалдсан) хүлээх хугацаа
 MAX_STAGE = 2000                      # өрөөний даалгаврын ахицын мөрийн урт
 UNCONFIRMED_TIMEOUT = timedelta(minutes=3)  # орсон зочин тоглоомоор холбогдохгүй бол (төлбөр буцааж) гаргана
+JOIN_FAILURES = 3                     # 10 минутад ийм олон удаа өрөөнд ороод холбогдоогүй бол түр орохгүй
 DISPUTE_LIMIT = 3                     # 7 хоногт ийм олон маргаантай тулаан: нээлттэй (тулаант) өрөөнд оруулахгүй
 DISPUTE_WINDOW = timedelta(days=7)
 MIN_STAGE_UPDATES = 3                 # үе шатны шагнал: даалгаврын ахиц ядаж ийм олон удаа өөрчлөгдсөн байх
@@ -143,6 +145,47 @@ def revoke_other_sessions(player, keep=None):
     return others.update(revoked=True)
 
 
+# ---------------------------------------------------------------- Зэрэг (rank)
+# XP зөвхөн үе давах (хамтын тоглолтод хоёулаа), тулаанд ялахад. Зэрэг хязгааргүй; дараагийн зэрэгт хүрэх XP нь
+# зэрэг ахих тусам өснө: round((150 + 25 * (зэрэг - 1)) / 3) — 1->2: 50, 10->11: 125. Тоглоомд ижил томьёо (src/Rank.cpp).
+XP_STAGE = 50
+XP_BATTLE = 25
+RANK_BAND = 0.15  # тулаан: зэргийн зөрүү ±max(3, 15%)
+
+
+def xp_to_next(level):
+    return round((150 + 25 * (level - 1)) / 3)
+
+
+def rank_level(xp):
+    level = 1
+    while xp >= xp_to_next(level):
+        xp -= xp_to_next(level)
+        level += 1
+    return level
+
+
+def rank_xp(level):
+    """Энэ зэрэгт хүрэх нийт XP."""
+    return sum(xp_to_next(k) for k in range(1, max(1, level)))
+
+
+def rank_band(level):
+    reach = max(3, round(level * RANK_BAND))
+    return max(1, level - reach), level + reach
+
+
+def add_xp(locked, amount, reason, ref):
+    """locked: transaction.atomic() дотор түгжсэн тоглогч."""
+    before = rank_level(locked.xp)
+    locked.xp += amount
+    locked.save(update_fields=["xp"])
+    after = rank_level(locked.xp)
+    log_event(locked, "xp", {"amount": amount, "reason": reason, "ref": ref, "xp": locked.xp, "level": after})
+    if after > before:
+        log_event(locked, "rank_up", {"level": after})
+
+
 def account_state(player, device_id):
     settings = GameSettings.load()
     if expire_cashouts(player):
@@ -158,6 +201,8 @@ def account_state(player, device_id):
         "credits": 0,
         "gold": player.gold,
         "gold_locked": player.locked_gold,
+        "xp": player.xp,
+        "rank": rank_level(player.xp),
         "gold_packs": gold_packs(),
         "cashout": cashout_info(player),
         "room_entry": settings.room_fee + settings.room_stake,
@@ -449,10 +494,27 @@ def maybe_expire_rooms():
     gamelog.purge()
 
 
+def _dispute_opponents(player_id):
+    """Сүүлийн 7 хоногт энэ тоглогчтой үр дүн нь зөрсөн өрсөлдөгчид (давтагдахгүй) ба өрсөлдөгчгүй (хуучин) бичлэгийн тоо."""
+    opponents, legacy = set(), 0
+    for data in Event.objects.filter(player_id=player_id, kind="battle_disputed",
+                                     created__gte=timezone.now() - DISPUTE_WINDOW).values_list("data", flat=True):
+        opponent = data.get("opponent") if isinstance(data, dict) else None
+        if isinstance(opponent, int):
+            opponents.add(opponent)
+        else:
+            legacy += 1
+    return opponents, legacy
+
+
 def disputes_recent(player):
-    """Сүүлийн 7 хоногийн маргаантай (хоёр тал өөр ялагч мэдэгдсэн) тулааны тоо. Сүлжээ тасарсан, шийдэгдээгүй (тэнцээ,
-    хоёр дэлгэц зөрсөн) хүчингүй тулаан (battle_void) тоологдохгүй."""
-    return Event.objects.filter(player=player, kind="battle_disputed", created__gte=timezone.now() - DISPUTE_WINDOW).count()
+    """Сүүлийн 7 хоногт хэдэн өөр өрсөлдөгчтэй тулааны үр дүн зөрсөн (хоёр тал өөр ялагч мэдэгдсэн). Нэг луйварчин
+    шударга тоглогчийг дахин дахин маргаанд оруулж тулаанаас хасуулахгүй: нэг өрсөлдөгч нэг л удаа тоологдоно, өөрөө
+    олон хүнтэй маргалддаг (DISPUTE_LIMIT-ээс олон өөр хүнтэй) өрсөлдөгчтэй зөрсөн нь тоологдохгүй. Сүлжээ тасарсан,
+    шийдэгдээгүй (тэнцээ, хоёр дэлгэц зөрсөн) хүчингүй тулаан (battle_void) тоологдохгүй."""
+    opponents, legacy = _dispute_opponents(player.pk)
+    counted = sum(1 for opponent in opponents if len(_dispute_opponents(opponent)[0]) < DISPUTE_LIMIT)
+    return counted + legacy
 
 
 def start_province(player, device_id, province, ip, skin=0, protocol=0):
@@ -513,11 +575,29 @@ def room_ticket(room, player, role):
     return f"{body}.{signature}"
 
 
+def battle_block(player, protocol=None):
+    """Тулаанд (нээлттэй өрөө нээх, өөр өрөөнд орох) яагаад оролцож чадахгүй: хоосон бол болно."""
+    settings = GameSettings.load()
+    entry = settings.room_fee + settings.room_stake
+    if disputes_recent(player) >= DISPUTE_LIMIT:
+        return "Сүүлийн 7 хоногт олон тулааны үр дүн зөрсөн тул тулаанд түр орох боломжгүй"
+    if protocol is not None and _protocol(protocol) < MIN_PROTOCOL:
+        return "Тулаанд орохын тулд тоглоомоо шинэ хувилбараар шинэчилнэ үү"
+    if player.gold - player.locked_gold < entry:
+        return f"Тулаанд {entry} Gold хэрэгтэй (танд {max(0, player.gold - player.locked_gold)})"
+    return ""
+
+
 def room_json(room, player):
     role = "host" if room.host_id == player.pk else "guest"
-    return {"id": room.pk, "province": room.province, "role": role, "host": room.host.name, "battle": room.battle,
+    data = {"id": room.pk, "province": room.province, "role": role, "host": room.host.name, "battle": room.battle,
+            "host_rank": rank_level(room.host.xp),
             "ticket": room_ticket(room, player, role), "stage": room.stage_state, "recruits": room.recruits,
             "code": room.code, "pvp": room.pvp, "coop": room.guest_coop}
+    if role == "host" and not room.pvp:
+        # Хост: өрөө яагаад тулаангүй (зөвхөн найзын кодоор) болсон (жагсаалтад харагдахгүй)
+        data["pvp_note"] = battle_block(room.host, room.protocol) or "Өрөө зөвхөн найзын кодоор"
+    return data
 
 
 def _enter_room(locked, room, settings, seat):
@@ -577,8 +657,33 @@ def _drop_guest(room, refund=False):
     room.save()
 
 
+def _resolve_reported(room, device_id="", ip=None):
+    """Нэг л тал үр дүнгээ мэдэгдээд BATTLE_WAIT өнгөрсөн тулаан: тэр үр дүнгээр шийднэ ("none" бол хүчингүй)."""
+    reported = room.host_report or room.guest_report
+    if reported == "none":
+        _dispute(room, device_id, ip)
+        return "void"
+    _settle(room, reported, device_id, ip)
+    return reported
+
+
 def expire_rooms():
-    """Дохио тасарсан өрөө, зочдыг шийтгэлгүй гаргана (холболт тасрахыг санаатай гарсанд тооцохгүй)."""
+    """Дохио тасарсан өрөө, зочдыг шийтгэлгүй гаргана (холболт тасрахыг санаатай гарсанд тооцохгүй). Харин нэг тал
+    үр дүнгээ мэдэгдсэн тулааныг эхлээд шийднэ: ялагдах гэж буй тал апп-аа хаавал, эсвэл ялагч мэдэгдээд апп-аа
+    хаавал (дахин мэдэгдэх хүнгүй) үр дүн алга болдог байв."""
+    # Мэдэгдээгүй тал үнэхээр алга болсон (SILENT_AFTER дохиогүй, эсвэл зочин санаатай гарсан) үед л: тоглож байгаа
+    # талыг (тулаан дуусаагүй) урьдчилсан хуурамч "ялсан" мэдэгдлээр ялагдуулахгүй.
+    waited, silent = timezone.now() - BATTLE_WAIT, timezone.now() - SILENT_AFTER
+    for room in Room.objects.select_for_update().filter(status=Room.OPEN, guest__isnull=False, guest_coop=False,
+                                                        guest_confirmed=True, report_at__lt=waited):
+        if bool(room.host_report) == bool(room.guest_report):
+            continue
+        if room.host_report:
+            gone = room.guest_left or (room.guest_seen is not None and room.guest_seen < silent)
+        else:
+            gone = room.host_seen < silent
+        if gone:
+            _resolve_reported(room)
     stale = timezone.now() - ROOM_TIMEOUT
     for room in Room.objects.select_for_update().filter(status=Room.OPEN, host_seen__lt=stale):
         _close(room, "timeout")
@@ -610,8 +715,39 @@ def _own_room(player, room_id):
     return room
 
 
-def join_room(player, device_id, ip, protocol=0):
-    """Урилгагүй орох: сүүлд дохио өгсөн, зочингүй, ижил хувилбартай нээлттэй өрөөг (өөрийнхөөс бусад) сонгоно."""
+def _stage_done(stage):
+    """Хостын даалгаврын ахиц ("1 <done> ..."): хэдэн даалгавар биелсэн (уншиж чадахгүй бол 0)."""
+    parts = (stage or "").split()
+    return int(parts[1]) if len(parts) > 1 and parts[0] == "1" and parts[1].isdigit() else 0
+
+
+def list_rooms(player, protocol=0, limit=40):
+    """Тулааны өрөөний жагсаалт (Counter-Strike-ийн сервер жагсаалт шиг): одоо орж болох нээлттэй өрөөнүүд.
+    Зэргийн хүрээнээс гадуурх, өөр хувилбартай өрөөнүүд ч харагдана (саарал, шалтгаантай)."""
+    level = rank_level(player.xp)
+    low, high = rank_band(level)
+    now = timezone.now()
+    rooms = (Room.objects.filter(status=Room.OPEN, pvp=True, guest__isnull=True, host_seen__gte=now - ROOM_JOINABLE)
+             .exclude(host=player).select_related("host").order_by("created")[:limit])
+    result = []
+    for room in rooms:
+        host_rank = rank_level(room.host.xp)
+        reason = ""
+        if room.protocol != _protocol(protocol):
+            reason = "Хувилбар өөр"
+        elif not low <= host_rank <= high:
+            reason = f"Зэрэг зөрүүтэй ({low}–{high})"
+        result.append({"id": room.pk, "host": room.host.name, "host_rank": host_rank, "province": room.province,
+                       "done": _stage_done(room.stage_state), "age": int((now - room.created).total_seconds()),
+                       "joinable": not reason, "reason": reason})
+    # Орж болохууд эхэнд, дараа нь зэргээрээ ойрхон нь
+    result.sort(key=lambda r: (not r["joinable"], abs(r["host_rank"] - level)))
+    return {"rooms": result, "rank": level, "band": [low, high], "blocked": battle_block(player, protocol)}
+
+
+def join_room(player, device_id, ip, protocol=0, room_id=None):
+    """Урилгагүй орох: сүүлд дохио өгсөн, зочингүй, ижил хувилбартай нээлттэй өрөөг (өөрийнхөөс бусад) сонгоно.
+    room_id: жагсаалтаас сонгосон өрөө (тэр л өрөө, ижил шалгалттай); байхгүй бол хамгийн эртний нь."""
     settings = GameSettings.load()
     if not device_ok(player, device_id):
         raise GameError("device_change_required", "Энэ төхөөрөмж дээр тоглохын тулд төхөөрөмж солих төлбөр төлнө", 402)
@@ -629,12 +765,32 @@ def join_room(player, device_id, ip, protocol=0):
         if disputes_recent(locked) >= DISPUTE_LIMIT:
             raise GameError("disputes", "Сүүлийн долоо хоногт олон тулааны үр дүн зөрсөн тул тулаант өрөөнд түр орох боломжгүй",
                             403)
+        # Ороод тоглоомоор холбогдоогүй (төлбөр нь буцдаг тул үнэгүй) оролдлого бүр хостыг 150 с хүлээлгэдэг
+        failures = Event.objects.filter(player=locked, kind="room_join_failed",
+                                        created__gte=timezone.now() - timedelta(minutes=10)).count()
+        if failures >= JOIN_FAILURES:
+            raise GameError("too_many_joins", "Сүүлийн 10 минутад олон удаа тулаанд ороод холбогдож чадсангүй. Сүлжээ, "
+                                              "тоглоомын хувилбараа шалгаад хэдэн минутын дараа оролдоно уу", 429)
+        # Ойролцоо зэрэгтэй хосттой л тулалдана (хэт давуу байдал үүсэхгүй): ±max(3, 15%)
+        low, high = rank_band(rank_level(locked.xp))
         rooms = (Room.objects.select_for_update()
                  .filter(status=Room.OPEN, pvp=True, guest__isnull=True, host_seen__gte=timezone.now() - ROOM_JOINABLE,
-                         protocol=_protocol(protocol))
+                         protocol=_protocol(protocol), host__xp__gte=rank_xp(low), host__xp__lt=rank_xp(high + 1))
                  .exclude(host=locked))
-        room = rooms.order_by("created").first()
+        if room_id is not None:
+            room = rooms.filter(pk=room_id).first()
+            if room is None:
+                raise GameError("room_gone", "Энэ өрөөнд орох боломжгүй боллоо (өөр тоглогч орсон эсвэл хаагдсан). "
+                                             "Жагсаалтаа шинэчилнэ үү", 404)
+        else:
+            room = rooms.order_by("created").first()
         if room is None:
+            other_rank = (Room.objects.filter(status=Room.OPEN, pvp=True, guest__isnull=True,
+                                              host_seen__gte=timezone.now() - ROOM_JOINABLE, protocol=_protocol(protocol))
+                          .exclude(host=locked).exists())
+            if other_rank:
+                raise GameError("no_rooms", f"Таны зэрэгтэй ойролцоо ({low}–{high}) тоглогчийн нээлттэй өрөө алга. "
+                                            "Дараа дахин оролдоно уу", 404)
             # Өөр хувилбартай нээлттэй өрөө байвал (нэг нь тоглоомоо шинэчлээгүй) тэрийгээ хэлнэ
             other = (Room.objects.filter(status=Room.OPEN, pvp=True, guest__isnull=True,
                                          host_seen__gte=timezone.now() - ROOM_JOINABLE)
@@ -766,7 +922,8 @@ def room_state(room):
             "guest": room.guest.name if room.guest_id else None, "coop": room.guest_coop}
     if room.guest_id:
         # Хост зочны мэдэгдсэн цэрэг, амийг серверийнхтэй тулгана (тоглоомын хуурамч мэдэгдлээс)
-        data.update(guest_soldiers=room.guest.soldiers, guest_health_level=room.guest.health_level)
+        data.update(guest_soldiers=room.guest.soldiers, guest_health_level=room.guest.health_level,
+                    guest_damage_level=room.guest.damage, guest_rank=rank_level(room.guest.xp))
     return data
 
 
@@ -838,6 +995,7 @@ def _settle(room, winner_role, device_id, ip):
         room.guest_seen = None
     _reset_battle(room)
     room.save()
+    add_xp(winner, XP_BATTLE, "battle", f"battle:{room.pk}:{room.battle}")
     log_event(winner, "battle_won", {"room": room.pk, "battle": room.battle, "opponent": loser.pk, "paid": paid},
               device_id, ip)
     log_event(loser, "battle_lost", {"room": room.pk, "battle": room.battle, "opponent": winner.pk, "paid": paid})
@@ -855,9 +1013,10 @@ def _dispute(room, device_id, ip):
     kind = "battle_disputed" if counted else "battle_void"
     gamelog.server(room, "void", f"ХҮЧИНГҮЙ ({'маргаан' if counted else 'тасарсан/шийдэгдээгүй'}): хост={room.host_report or '-'} "
                                  f"зочин={room.guest_report or '-'}")
-    log_event(room.host, kind, data, device_id, ip)
+    # opponent: маргааныг өрсөлдөгчөөр тоолоход (disputes_recent)
+    log_event(room.host, kind, {**data, "opponent": room.guest_id}, device_id, ip)
     if room.guest_id:
-        log_event(room.guest, kind, data)
+        log_event(room.guest, kind, {**data, "opponent": room.host_id})
     _drop_guest(room)
 
 
@@ -908,18 +1067,14 @@ def report_battle(player, device_id, room_id, battle, winner, ip, absent=False):
             _settle(room, room.host_report, device_id, ip)
             return True, winner, room
         if timezone.now() - room.report_at >= BATTLE_WAIT:
-            reported = room.host_report or room.guest_report
-            if reported == "none":
-                _dispute(room, device_id, ip)
-                return True, "void", room
-            _settle(room, reported, device_id, ip)
-            return True, reported, room
+            return True, _resolve_reported(room, device_id, ip), room
     return False, None, room
 
 
 def leave_room(player, device_id, room_id, ip):
     """Санаатай гарах. Тулааны үеэр (зочин байгаа): хост гарвал зочин ялна (шинэ хост болно); зочин гарвал түүний багийг
-    AI тулалдуулж, үр дүнг хост мэдэгдэнэ. Тулаангүй үед хост гарвал ялагдал: барьцаа нь хэнд ч очихгүй шатна."""
+    AI тулалдуулж, үр дүнг хост мэдэгдэнэ. Холбогдож амжаагүй зочин орсон үед хост гарвал барьцаа нь шатна (тулаанаас
+    зугтсан). Зочингүй үед хост гарвал шийтгэлгүй: барьцаа суллагдана."""
     with transaction.atomic():
         room = _own_room(player, room_id)
         gamelog.server(room, "left", f"{player.name} өрөөнөөс гарах хүсэлт ({'хост' if room.host_id == player.pk else 'зочин'})", player)
@@ -940,6 +1095,7 @@ def leave_room(player, device_id, room_id, ip):
             room.save(update_fields=["guest_left"])
             log_event(player, "room_left", {"room": room.pk, "battle": room.battle}, device_id, ip)
             return
+        fleeing = bool(room.guest_id)  # зочин орсон (холбогдож амжаагүй ч): тулаанаас зугтаж байна
         if room.guest_id and not room.guest_confirmed:
             _drop_guest(room, refund=True)  # (зочин холбогдоогүй: тулаан биш, доорх дүрмээр хост гарна)
         if room.guest_id:
@@ -949,7 +1105,11 @@ def leave_room(player, device_id, room_id, ip):
         locked = Player.objects.select_for_update().get(pk=player.pk)
         if room.host_id == locked.pk:
             stake = room.host_stake
-            if stake:
+            if stake and not fleeing:
+                _release(locked.pk, stake)  # зочингүй: шийтгэлгүй (хүчээр хаасантай адил)
+                locked.refresh_from_db()
+                room.host_stake = 0
+            elif stake:
                 locked.locked_gold = max(0, locked.locked_gold - stake)
                 locked.save(update_fields=["locked_gold"])
                 change_gold(locked, -min(stake, locked.gold), GoldTransaction.ROOM_LEAVE, f"leave:{room.pk}:{locked.pk}",
@@ -985,6 +1145,11 @@ def complete_room(player, device_id, room_id, ip):
             change_gold(locked, settings.stage_bonus, GoldTransaction.STAGE_COMPLETE, f"complete:{room.pk}", {"room": room.pk})
             if not locked.phone_verified:
                 missed += settings.stage_bonus
+        if played:
+            # Зэрэг: үе давсан (хамт давсан бол хоёуланд нь)
+            add_xp(locked, XP_STAGE, "stage", f"complete:{room.pk}")
+            if room.guest_id and room.guest_coop and room.guest_confirmed:
+                add_xp(Player.objects.select_for_update().get(pk=room.guest_id), XP_STAGE, "stage", f"complete:{room.pk}")
         if room.guest_id and room.guest_coop and room.guest_confirmed and played and settings.coop_reward:
             # Найзтайгаа хамт давсан: хоёуланд нь (урамшуулал), тоглогч бүр өдөрт coop_daily_limit удаа хүртэл
             since = timezone.now() - timedelta(days=1)

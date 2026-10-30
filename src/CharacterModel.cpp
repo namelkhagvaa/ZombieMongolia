@@ -19,7 +19,8 @@ namespace
                                                   "zombie_runner", "zombie_brute",  "giant_zombie",
                                                   "model-1",       "model-3",       "demon",
                                                   "iron",          "survivor_doctor_man", "survivor_doctor_woman",
-                                                  "survivor_student_boy", "survivor_student_girl", "survivor_monk" };
+                                                  "survivor_student_boy", "survivor_student_girl", "survivor_monk",
+                                                  "model2" };
 
     // Загварын өндөр тоглоомын хүний өндөртэй (~1.9 м) таарахаар томруулна. Аврах иргэд бодит харьцаагаар:
     // эрэгтэй цэргээс бага зэрэг намхан, эмэгтэй, сурагч (15 настай) нь түүнээс намхан.
@@ -619,11 +620,6 @@ namespace
             matrix.m12 = offset.x;
             matrix.m13 = offset.y;
             matrix.m14 = offset.z;
-#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
-            // raylib нь OpenGL ES дээр матрицын массивыг хөрвүүлэлгүй (transpose хийлгүй) илгээдэг:
-            // компьютер дээрхтэй ижил үр дүн гарахын тулд энд урьдчилж хөрвүүлнэ.
-            matrix = MatrixTranspose(matrix);
-#endif
 
             for (int index = 0; index < c.model.meshCount; ++index)
             {
@@ -647,6 +643,30 @@ namespace
     }
 }
 
+void UploadBoneRows(Shader shader, const Matrix* bones, int count)
+{
+    if (!bones || count <= 0) return;
+    static std::vector<Vector4> rows;
+    static unsigned int cachedShader = 0;
+    static int location = -1;
+    if (shader.id != cachedShader)
+    {
+        cachedShader = shader.id;
+        location = GetShaderLocation(shader, "boneRows");
+    }
+    if (location < 0) return;
+    count = std::min(count, 72);
+    rows.resize((size_t)count * 3);
+    for (int i = 0; i < count; ++i)
+    {
+        const Matrix& m = bones[i];
+        rows[(size_t)i * 3 + 0] = { m.m0, m.m4, m.m8, m.m12 };
+        rows[(size_t)i * 3 + 1] = { m.m1, m.m5, m.m9, m.m13 };
+        rows[(size_t)i * 3 + 2] = { m.m2, m.m6, m.m10, m.m14 };
+    }
+    SetShaderValueV(shader, location, rows.data(), SHADER_UNIFORM_VEC4, count * 3);
+}
+
 void LoadCharacterModels(Shader shader)
 {
     for (int id = 0; id < kCharacterCount; ++id)
@@ -667,7 +687,7 @@ void LoadCharacterModels(Shader shader)
 #if defined(__ANDROID__)
         // APK-ийн assets-ийн үндсэнд байрлана (FileExists нь assets-ийг хардаггүй тул шууд ачаална).
         meshPath = std::string(kNames[id]) + "_mesh.glb";
-        texturePath = std::string(kNames[id]) + "_color.png";
+        texturePath = ImageFile(std::string(kNames[id]) + "_color.png");
 #else
         if (!FileExists(meshPath.c_str()) || !FileExists(texturePath.c_str()))
         {
@@ -1354,7 +1374,9 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
     for (int index = 0; index < c.model.meshCount; ++index)
     {
         const bool light = lowDetail && index < (int)c.lod.size() && c.lod[(size_t)index].vertexCount > 0;
-        DrawMesh(light ? c.lod[(size_t)index] : c.model.meshes[index], c.material, MatrixIdentity());
+        const Mesh& mesh = light ? c.lod[(size_t)index] : c.model.meshes[index];
+        UploadBoneRows(c.material.shader, mesh.boneMatrices, mesh.boneCount);
+        DrawMesh(mesh, c.material, MatrixIdentity());
     }
     rlPopMatrix();
     rlEnableBackfaceCulling();

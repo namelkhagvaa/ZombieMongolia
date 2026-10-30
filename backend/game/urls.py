@@ -22,6 +22,7 @@ urlpatterns = [
     path("cashouts/<int:cashout_id>/", views.cashout_status),
     path("cashouts/<int:cashout_id>/cancel/", views.cashout_cancel),
     path("rooms/join/", views.room_join),
+    path("rooms/list/", views.room_list),
     path("rooms/coop/", views.room_coop),
     path("rooms/<int:room_id>/beat/", views.room_beat),
     path("rooms/<int:room_id>/accept/", views.room_accept),

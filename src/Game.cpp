@@ -18,6 +18,8 @@
 #include "HorseModel.h"
 #include "Hud.h"
 #include "Humanoid.h"
+#include "Hitbox.h"
+#include "Rank.h"
 #include "Minimap.h"
 #include "UiFont.h"
 #include "Shop.h"
@@ -31,6 +33,7 @@
 #include <cmath>
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <unordered_map>
 
 namespace
@@ -146,7 +149,12 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
     InSetTouchMode(true);
     ViewInit(720);
 #else
-    InitWindow(config.screenWidth, config.screenHeight, "Zombie Mongolia");
+    {
+        // Туршилт: өөр дэлгэцийн хэмжээ (ZM_WINDOW=1600x720 — 20:9 утас ViewInit(720)-тэй ижил)
+        int width = config.screenWidth, height = config.screenHeight;
+        if (const char* size = benchmark ? std::getenv("ZM_WINDOW") : nullptr) std::sscanf(size, "%dx%d", &width, &height);
+        InitWindow(width, height, "Zombie Mongolia");
+    }
     // Цонхны икон (tools\make_icons.ps1 үүсгэнэ): exe-ийн хажуу эсвэл төслийн assets хавтсаас
     const std::string installed = std::string(GetApplicationDirectory()) + "assets/window_icon.png";
     for (const char* path : { "assets/window_icon.png", "../assets/window_icon.png", installed.c_str() })
@@ -165,6 +173,7 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
     SetTargetFPS(0); // хөтөч: кадрын хурдыг requestAnimationFrame тогтооно (FrameYield)
 #else
     SetTargetFPS(benchmark ? 0 : config.targetFps); // хэмжилтийн үед FPS-ийг хязгаарлахгүй
+    if (const char* fps = benchmark ? std::getenv("ZM_FPS") : nullptr) SetTargetFPS(std::atoi(fps)); // туршилт: утас шиг бага FPS
 #endif
     SetExitKey(KEY_NULL); // ESC-ийг өөрсдөө боловсруулна: эхлээд нээлттэй цонхыг хаана, дараа нь л гарна
     LoadUiFont();
@@ -233,6 +242,18 @@ Game::Game(const LaunchOptions& launchOptions)
     mapScreen.Preload(); // дэвсгэр зураг, аймгуудын дүрс: эхний кадрыг гацаахгүй
     // Данс (нэвтрэх, аймгийн эрх, төлбөр): туршилтын горимд идэвхгүй (--api заасан бол идэвхтэй)
     Account::Init(!options.screenshotPath || options.apiBase, options.apiBase ? options.apiBase : "");
+    // Туршилт: нэвтэрсэн мэт (ZM_FAKE_ACCOUNT=<XP>): данс, Gold-ын товч, зэргийн харагдацыг шалгахад
+    if (options.screenshotPath)
+    {
+        if (const char* fake = std::getenv("ZM_FAKE_ACCOUNT")) Account::TestSignIn("Лхагваа", 12450, std::atoi(fake));
+        if (const char* rooms = std::getenv("ZM_FAKE_ROOMS"))
+        {
+            // Тулааны өрөөний жагсаалтын харагдац (сервергүй)
+            Account::TestRoomList(std::atoi(rooms));
+            roomBrowserOpen = true;
+            roomBrowserRefresh = 1e9;
+        }
+    }
     GameLog::Init(!options.screenshotPath || options.apiBase); // (туршилт: локал сервертэй үед л)
     Splash::Finish();
 }
@@ -399,7 +420,7 @@ void Game::Run()
             const Vector3 origin = player.Position();
             Vector3 position = { origin.x + std::sin(angle) * 14.0f, 0.0f, origin.z + std::cos(angle) * 14.0f };
             position.y = world.GroundHeight(position.x, position.z);
-            horde.SpawnBear(position, params);
+            horde.SpawnBear(position, params, angle + PI * 0.5f); // (туршилт: хажуугаараа харагдана)
             if (options.bears < 0) horde.Damage(horde.Count() - 1, 1.0e6f);
         }
         for (int i = 0; i < 6 && options.zombies > 0 && options.weapon == 0; ++i)
@@ -480,6 +501,22 @@ void Game::Run()
         // Мэдрэгчтэй дэлгэцийн товчлуурууд ба гар, хулганы оролтыг нэгтгэнэ.
         touchState = MakeTouchState();
         InBeginFrame(touchState);
+        if (options.screenshotPath)
+        {
+            // Туршилт: ZM_CLICKS="кадр:x:y,..." (дэлгэцийн координат) тэр кадрт хулганаар дарна
+            static const char* clicks = std::getenv("ZM_CLICKS");
+            for (const char* at = clicks; at && *at;)
+            {
+                int clickFrame = 0, x = 0, y = 0;
+                if (std::sscanf(at, "%d:%d:%d", &clickFrame, &x, &y) == 3 && clickFrame == frame)
+                {
+                    TraceLog(LOG_INFO, "TEST: click %d,%d at frame %d", x, y, frame);
+                    InTestClick({ (float)x, (float)y });
+                }
+                at = std::strchr(at, ',');
+                if (at) ++at;
+            }
+        }
         // Данс: өөр төхөөрөмж дээр нэвтэрсэн бол (нэг зэрэг нэг л төхөөрөмж) даалгаврыг зогсоож газрын зураг руу
         Account::Tick();
         {
@@ -515,6 +552,10 @@ void Game::Run()
             else if (codeEntryOpen)
             {
                 codeEntryOpen = false; // өрөөний код оруулах цонх
+            }
+            else if (roomBrowserOpen && !roomBrowserJoining)
+            {
+                roomBrowserOpen = false; // тулааны өрөөний жагсаалт
             }
             else if (characterSelectOpen)
             {
@@ -756,6 +797,11 @@ void Game::UpdateMap()
     if (codeEntryOpen)
     {
         UpdateCodeEntry(); // газрын зургийн товч (1-5, Enter) кодын цифртэй давхцахгүй
+        return;
+    }
+    if (roomBrowserOpen)
+    {
+        UpdateRoomBrowser();
         return;
     }
     if (!mapScreen.DialogOpen()) UpdateCoopMap(); // сайжруулалтын цонх нээлттэй үед доорх самбар товшигдохгүй
@@ -1005,6 +1051,7 @@ void Game::ReturnToMap()
     Save();
     horde.Clear();
     tracers.Clear();
+    Audio::StopAll(); // (унааны хөдөлгүүр, мэдэгдэл газрын зураг дээр үргэлжлэхгүй)
     mapScreen.SelectNextTarget(progress);
     EnableCursor();
     state = GameState::Map;
@@ -1121,6 +1168,17 @@ void Game::StartMission(int index, StageSave* stageOverride)
     provinceIndex = index;
     params = MissionFor(index);
     ShopSync(progress);       // байнгын сайжруулалт: серверийнх
+    // Зэрэг: тоглогчийн хохирол, амь; зомбины хүч, ухаан (хамтын тоглолтод хостын зэргээр)
+    {
+        const int own = options.rank > 0 ? options.rank : Account::Rank(); // (--rank: туршилт)
+        const int hostRank = Account::CurrentRoomRole() == Account::RoomRole::Guest ? Account::RoomHostRank() : -1;
+        zombieRank = hostRank > 0 ? hostRank : own;
+        SetRankDamageBonus(RankBonus(own));
+        params.healthScale *= ZombieRankScale(zombieRank);
+        params.zombieDamage *= ZombieRankScale(zombieRank);
+        horde.SetSmartLevel(zombieRank);
+        TraceLog(LOG_INFO, "RANK: player %d (x%.2f), zombies %d (x%.2f)", own, RankBonus(own), zombieRank, ZombieRankScale(zombieRank));
+    }
     progress.coins = 0;       // тоглолтын зоос шинээр
     ammoReserve = kStartAmmo;
 
@@ -1145,7 +1203,8 @@ void Game::StartMission(int index, StageSave* stageOverride)
     lastReward = 0;
     helpedHost = false;
 
-    player.Reset(config.playerBaseHealth + kHealthPerLevel * (float)progress.healthLevel);
+    player.Reset((config.playerBaseHealth + kHealthPerLevel * (float)progress.healthLevel) *
+                 RankBonus(options.rank > 0 ? options.rank : Account::Rank()));
     if (world.CityActive())
     {
         if (index == kUlaanbaatarProvince) player.Teleport({ 0.0f, 0.0f, -14.0f }); // Сүхбаатарын хөшөөний урд
@@ -1403,6 +1462,7 @@ bool Game::SwitchMember(int target, bool leaveDead)
         body.riding = toGunner;
         driverStuck = driverReverse = 0.0f;
         SetNotice(std::string(TeamMemberName(body.member)) + " жолоодож байна — та буудна. Буцааж солих: Tab", 3.0f);
+        Audio::Announce(TextFormat("member_drives_%d", std::clamp(body.member, 0, 2)));
     }
     else if (toDriver >= 0)
     {
@@ -1414,6 +1474,7 @@ bool Game::SwitchMember(int target, bool leaveDead)
         carGunner = index;
         body.riding = toDriver;
         SetNotice("Та жолоодож байна — " + std::string(TeamMemberName(body.member)) + " буудна", 2.5f);
+        Audio::Announce(TextFormat("you_drive_%d", std::clamp(body.member, 0, 2)));
     }
     return true;
 }
@@ -1496,10 +1557,10 @@ void Game::ShowWorldEvent(int kind, Vector3 position)
     (void)position;
     switch (kind)
     {
-    case kEventAirdrop: SetNotice("НИСЭХ ОНГОЦ АЧАА ХАЯЛАА! — сум, гранат, эм (ногоон утаа)", 4.0f); break;
-    case kEventCrash: SetNotice("СҮЙРСЭН МАШИН урд талд — ачааг нь ав!", 4.0f); break;
-    case kEventHorde: SetNotice("УРД ЗОМБИЙН БӨӨГНӨРӨЛ! — болгоомжтой", 4.0f); break;
-    case kEventSurvivor: SetNotice("АВРАХ ХҮН БАЙНА! — газрын зураг дээрх тэмдэг рүү оч", 4.0f); break;
+    case kEventAirdrop: SetNotice("НИСЭХ ОНГОЦ АЧАА ХАЯЛАА! — сум, гранат, эм (ногоон утаа)", 4.0f); Audio::Announce("airdrop"); break;
+    case kEventCrash: SetNotice("СҮЙРСЭН МАШИН урд талд — ачааг нь ав!", 4.0f); Audio::Announce("crash"); break;
+    case kEventHorde: SetNotice("УРД ЗОМБИЙН БӨӨГНӨРӨЛ! — болгоомжтой", 4.0f); Audio::Announce("horde"); break;
+    case kEventSurvivor: SetNotice("АВРАХ ХҮН БАЙНА! — газрын зураг дээрх тэмдэг рүү оч", 4.0f); Audio::Announce("survivor"); break;
     default: break;
     }
 }
@@ -1657,6 +1718,7 @@ void Game::GiveCrateReward()
     player.Heal(player.MaxHealth() * 0.4f);
     Audio::Play(Sfx::Reload, player.Position(), 0.9f);
     SetNotice("АЧАА АВЛАА: +300 сум, +2 гранат, +40% амь", 3.0f);
+    Audio::Announce("crate");
 }
 
 void Game::UpdateWorldEvents(float dt)
@@ -1695,6 +1757,7 @@ void Game::UpdateWorldEvents(float dt)
             survivor.waitingRescue = false;
             progress.coins += 25;
             SetNotice("АВРАГДЛАА! — танай багт нэгдэв (+25 зоос)", 3.0f);
+                Audio::Announce("rescued");
             rescueSoldiers.erase(rescueSoldiers.begin() + (long)i);
             continue;
         }
@@ -2293,11 +2356,24 @@ void Game::FireGun(Ray aim, float cameraDistance)
     const Vector3 side = Vector3Normalize(Vector3CrossProduct(aim.direction, { 0.0f, 1.0f, 0.0f }));
     const Vector3 up = Vector3CrossProduct(side, aim.direction);
 
+    // Тулаан (Counter-Strike шиг): анхны сум зогсож байхад нарийн; явж, гүйж, үсэрч байхад, олон сум дараалан
+    // буудахад (буудахгүй хэсэг байхад буурна) тархалт өснө. Дурангүй мэргэн буу оногдохгүй шахам.
+    float spread = spec.spread * player.SpreadScale();
+    if (battleActive && !arsenal.Mounted())
+    {
+        const float moving = std::clamp(player.HorizontalSpeed() / config.walkSpeed, 0.0f, 1.0f);
+        spread += (spec.pellets > 1 ? 0.01f : 0.045f) * moving * player.SpreadScale();
+        if (!player.IsGrounded()) spread += 0.09f;
+        if (spec.pellets == 1) spread += 0.0028f * std::min(sprayHeat, 10.0f) * player.SpreadScale();
+        if (arsenal.Current() == WeaponType::Sniper && !camera.IsScoped()) spread += 0.05f;
+        sprayHeat += 1.0f;
+        sprayShotAt = GetTime();
+    }
     for (int pellet = 0; pellet < spec.pellets; ++pellet)
     {
         const float angle = (float)GetRandomValue(0, 359) * DEG2RAD;
         // Суусан, хэвтсэн үед буу тогтвортой: тархалт багасна.
-        const float offset = spec.spread * player.SpreadScale() * std::sqrt((float)GetRandomValue(0, 1000) / 1000.0f);
+        const float offset = spread * std::sqrt((float)GetRandomValue(0, 1000) / 1000.0f);
         Vector3 direction = aim.direction;
         direction = Vector3Add(direction, Vector3Scale(side, std::cos(angle) * offset));
         direction = Vector3Add(direction, Vector3Scale(up, std::sin(angle) * offset));
@@ -2330,14 +2406,38 @@ void Game::FireGun(Ray aim, float cameraDistance)
         if (battleActive)
         {
             float humanDistance = 0.0f;
-            bool humanHead = false;
-            const int human = RaycastHumans(ray, cameraDistance * 0.9f,
-                                            vehicle >= 0 ? vehicleDistance : hit.index >= 0 ? hit.distance : wallDistance,
-                                            humanDistance, humanHead);
+            HitZone zone = HitZone::None;
+            int human = RaycastHumans(ray, cameraDistance * 0.9f,
+                                      vehicle >= 0 ? vehicleDistance : hit.index >= 0 ? hit.distance : wallDistance,
+                                      humanDistance, zone);
             if (human != -1)
             {
-                // Толгойд оновол их хохирол (4 дахин)
-                const float damage = arsenal.Damage() * (humanHead ? 4.0f : 1.0f);
+                // 3-р этгээдийн камер мөрөн дээгүүр харж байгаа ч сум тоглогчийн нүднээс (буу) гарна: хооронд нь хана,
+                // булан байвал сум тэнд тусна (булангаас толгой гаргалгүй буудаж болохгүй). Нүднээс: буу хананд
+                // наалдсан үед амсар хананы цаана гарч болно.
+                const Vector3 at = Vector3Add(ray.position, Vector3Scale(ray.direction, humanDistance));
+                const Vector3 from = Vector3Add(player.Position(), { 0.0f, 1.55f - player.CameraDrop(), 0.0f });
+                const float span = Vector3Distance(from, at);
+                if (span > 0.3f && !camera.IsFirstPerson() && !camera.IsScoped())
+                {
+                    const Ray line = { from, Vector3Scale(Vector3Subtract(at, from), 1.0f / span) };
+                    const float blocked = world.RayDistance(line, span);
+                    if (blocked < span - 0.25f)
+                    {
+                        const Vector3 wall = Vector3Add(from, Vector3Scale(line.direction, blocked));
+                        tracers.Add(muzzle, wall, YELLOW);
+                        if (pellet == 0) localShotEnd = wall;
+                        particles.Dust(wall);
+                        continue;
+                    }
+                }
+            }
+            if (human != -1)
+            {
+                // Хаана оносноос: толгой 4, гэдэс 1.25, цээж, гар 1, хөл 0.75 дахин
+                const bool humanHead = zone == HitZone::Head;
+                const float damage = arsenal.Damage() * HitZoneMultiplier(zone);
+                if (options.screenshotPath) TraceLog(LOG_INFO, "HIT: player -> human %d zone %d damage %.1f at %.1f m", human, (int)zone, damage, humanDistance);
                 // (хүн хоорондын хохирол: зочны оноолтыг хост өсгөнө, хост өөрийнхийг энд)
                 if (coopGuest) net.SendHitHuman((uint32_t)human, damage);
                 else if (human == kGuestTarget) DamageGuest(damage * kPvpDamageScale);
@@ -2485,6 +2585,8 @@ void Game::SpawnVehicles()
     place(VehicleType::Truck, 22.0f, -14.0f, 90.0f); // ачааны машин: шатахуун түгээх газрын дэргэд
     place(VehicleType::Hatchback, -12.0f, -7.0f, 90.0f); // Yaris: жийпийн ард
     place(VehicleType::Suv, -19.0f, -7.0f, 90.0f);       // X-Trail
+    place(VehicleType::Sedan, -26.0f, -7.0f, 90.0f);     // Crown
+    place(VehicleType::Compact, -17.0f, 6.8f, 90.0f);    // Aqua: замын нөгөө талд, гурван дугуйтын ард
 
     // Нисдэг тэрэг (Ми-8): заставын (-48, 17) дэргэд 35-80 м-т, их бие (18 м) багтах чөлөөт газар (барилга, хашаа,
     // модгүй 8 м радиус); заставаас холдох зүг рүү харна
@@ -2535,13 +2637,13 @@ void Game::SpawnVehicles()
         ++index;
     }
 
-    // Улаанбаатарын хот: гудамжны захаар тархсан унаж болох машинууд (Yaris, X-Trail, жийп, ачааны машин, мотоцикл)
+    // Улаанбаатарын хот: гудамжны захаар тархсан унаж болох машинууд (Yaris, X-Trail, Crown, Aqua, жийп, ачааны машин, мотоцикл)
     // ба ШТС бүрийн дэргэд нэг машин
     if (world.CityActive())
     {
-        static const VehicleType kCityVehicles[] = { VehicleType::Hatchback, VehicleType::Suv, VehicleType::Jeep, VehicleType::Hatchback,
+        static const VehicleType kCityVehicles[] = { VehicleType::Hatchback, VehicleType::Suv, VehicleType::Jeep, VehicleType::Compact,
                                                      VehicleType::Suv, VehicleType::Motorcycle, VehicleType::Truck, VehicleType::Hatchback,
-                                                     VehicleType::Suv, VehicleType::Jeep };
+                                                     VehicleType::Sedan, VehicleType::Jeep };
         int k = 0;
         for (const Vector3& spot : CityVehicleSpots())
         {
@@ -2556,12 +2658,13 @@ void Game::SpawnVehicles()
         }
     }
 
-    // Жижиг суурин бүрд: гудамжинд жийп, Yaris, гурван дугуйт, X-Trail ээлжлэн
+    // Жижиг суурин бүрд: гудамжинд жийп, Yaris, гурван дугуйт, X-Trail, Crown, Aqua ээлжлэн
     index = 0;
-    static const VehicleType kHamletVehicles[] = { VehicleType::Jeep, VehicleType::Hatchback, VehicleType::Trike, VehicleType::Suv };
+    static const VehicleType kHamletVehicles[] = { VehicleType::Jeep, VehicleType::Hatchback, VehicleType::Trike, VehicleType::Suv,
+                                                   VehicleType::Sedan, VehicleType::Compact };
     for (const Vector2& hamlet : world.GetLayout().hamlets)
     {
-        place(kHamletVehicles[index % 4], hamlet.x - 30.0f, hamlet.y - 5.0f, 180.0f);
+        place(kHamletVehicles[index % 6], hamlet.x - 30.0f, hamlet.y - 5.0f, 180.0f);
         ++index;
     }
 
@@ -2570,8 +2673,8 @@ void Game::SpawnVehicles()
     // (snapshot-ын унааны дугаар 8 бит).
     {
         const int limit = std::min(200, garage.Count() + 70);
-        static const VehicleType kRoadVehicles[] = { VehicleType::Jeep, VehicleType::Truck, VehicleType::Suv, VehicleType::Motorcycle,
-                                                     VehicleType::Hatchback, VehicleType::Trike, VehicleType::Jeep, VehicleType::Suv };
+        static const VehicleType kRoadVehicles[] = { VehicleType::Compact, VehicleType::Truck, VehicleType::Suv, VehicleType::Motorcycle,
+                                                     VehicleType::Hatchback, VehicleType::Trike, VehicleType::Sedan, VehicleType::Suv };
         uint32_t seed = (uint32_t)(provinceIndex + 1) * 2654435761u;
         auto random = [&]() {
             seed = seed * 1664525u + 1013904223u;
@@ -2935,6 +3038,7 @@ void Game::UpdateVehicles(float dt)
         if (garage.IsDriving() && garage.Airborne(garage.Driven()))
         {
             SetNotice(InTouchMode() ? "Эхлээд ГАЗАРДАХ товчоор газардана уу" : "Эхлээд газардана уу (Space)", 2.5f);
+                Audio::Announce("land_first");
         }
         else if (garage.IsDriving())
         {
@@ -2954,7 +3058,11 @@ void Game::UpdateVehicles(float dt)
         }
         else if (heliPassenger >= 0)
         {
-            if (garage.Airborne(heliPassenger)) SetNotice("Нисгэгч газардтал хүлээнэ үү", 2.0f);
+            if (garage.Airborne(heliPassenger))
+            {
+                SetNotice("Нисгэгч газардтал хүлээнэ үү", 2.0f);
+                Audio::Announce("wait_pilot");
+            }
             else LeaveHelicopterCrew(false);
         }
         else
@@ -2969,6 +3077,7 @@ void Game::UpdateVehicles(float dt)
                 garage.HelicopterSeat(heliPassenger, 2, doorFacing);
                 camera.SetView(doorFacing, 0.6f); // хаалганаас гадагш, доош газар луу
                 SetNotice("Нисдэг тэргэнд буудагчаар суулаа — нисгэгчийг дагана", 3.0f);
+                Audio::Announce("heli_gunner");
             }
             else if (target.vehicle >= 0 && garage.At(target.vehicle).type == VehicleType::Armored && !coopGuest)
             {
@@ -2983,6 +3092,7 @@ void Game::UpdateVehicles(float dt)
                     garage.SetLift(target.vehicle, false);
                     SetNotice(InTouchMode() ? "НИСДЭГ ТЭРЭГ: ӨНДӨР АВАХ товч, дараа нь хүрдээр жолоодно"
                                             : "НИСДЭГ ТЭРЭГ: Space — өндөр авах / газардах, W S урагш хойш, A D эргэх", 5.0f);
+                    Audio::Announce("heli_controls");
                 }
             }
             else if (target.door >= 0)
@@ -3125,6 +3235,7 @@ void Game::UpdateVehicles(float dt)
         {
             // Агаарт оногдсон нисдэг тэрэг: газар мөргөтөл дотор нь (сүйрвэл HelicopterCrashed буулгана)
             SetNotice("НИСДЭГ ТЭРЭГ ОНОГДЛОО — унаж байна!", 0.5f);
+                Audio::Announce("heli_hit");
         }
         else if (vehicle.wrecked)
         {
@@ -3134,12 +3245,13 @@ void Game::UpdateVehicles(float dt)
             exit.y = world.GroundHeight(exit.x, exit.z);
             garage.Dismount();
             player.StopRiding(exit);
-            SetNotice(vehicle.type == VehicleType::Horse ? "Морь үхлээ!" : std::string(SpecFor(vehicle.type).name) + " эвдэрлээ!", 3.0f);
+            SetNotice(vehicle.type == VehicleType::Horse ? "Морь үхлээ!" : std::string(SpecFor(vehicle.type).name) + " эвдэрлээ!", 3.0f); Audio::Announce(vehicle.type == VehicleType::Horse ? "horse_dead" : "vehicle_broken");
         }
         else if (SpecFor(vehicle.type).fuelRange > 0.0f && vehicle.fuel <= 0.0f && !fuelWarned)
         {
             fuelWarned = true;
             SetNotice("Бензин дууслаа! Шатахуун түгээх газарт очиж бензин хийнэ үү", 4.0f);
+            Audio::Announce("fuel_out");
         }
         else if (vehicle.fuel > 0.02f)
         {
@@ -3286,7 +3398,7 @@ void Game::UpdateVehicles(float dt)
         if (vehicle.wrecked)
         {
             LeaveGunnerSeat();
-            SetNotice(vehicle.type == VehicleType::Horse ? "Морь үхлээ!" : std::string(SpecFor(vehicle.type).name) + " эвдэрлээ!", 3.0f);
+            SetNotice(vehicle.type == VehicleType::Horse ? "Морь үхлээ!" : std::string(SpecFor(vehicle.type).name) + " эвдэрлээ!", 3.0f); Audio::Announce(vehicle.type == VehicleType::Horse ? "horse_dead" : "vehicle_broken");
         }
         else
         {
@@ -3337,7 +3449,7 @@ void Game::LeaveHelicopterCrew(bool hurt)
     if (hurt)
     {
         particles.Explosion(heli.position);
-        SetNotice("НИСДЭГ ТЭРЭГ СҮЙРЛЭЭ!", 3.5f);
+        SetNotice("НИСДЭГ ТЭРЭГ СҮЙРЛЭЭ!", 3.5f); Audio::Announce("heli_crash");
         player.TakeDamage(player.MaxHealth() * kTeamToughness * 0.7f * severity);
     }
     // Хамт суусан багийн гишүүд (суудал 3, 4) ч бууна
@@ -3491,7 +3603,7 @@ void Game::HelicopterCrashed(int index)
     particles.Explosion(Vector3Add(at, { 0.0f, 2.0f, 2.0f }));
     horde.Explode(at, 9.0f, 900.0f);
     barrels.Blast(at, 9.0f);
-    SetNotice("НИСДЭГ ТЭРЭГ СҮЙРЛЭЭ!", 3.5f);
+    SetNotice("НИСДЭГ ТЭРЭГ СҮЙРЛЭЭ!", 3.5f); Audio::Announce("heli_crash");
     TraceLog(LOG_INFO, "VEHICLES: helicopter %d crashed at (%.0f, %.0f) driven %d", index, at.x, at.z, garage.Driven());
     if (garage.Driven() == index)
     {
@@ -3537,6 +3649,17 @@ void Game::UpdateTeamRiding(float dt)
         if (heliRoofLog <= 0.0f) heliRoofLog = 2.0f;
     }
 
+    if (options.screenshotPath && std::getenv("ZM_TRACE_SQUAD"))
+    {
+        // Туршилт: цэрэг бүрийн байрлал, зүг, хурд кадр бүрээр (чичиргээ хайх)
+        for (const Soldier& s : all)
+        {
+            TraceLog(LOG_INFO, "SQ %d %.3f %.3f %.3f face %.3f speed %.2f aim %.2f detour %.2f path %d/%d player %.2f %.2f", (int)s.id,
+                     s.mover.position.x, s.mover.position.y, s.mover.position.z, s.mover.facing, s.speed, s.aimPose, s.mover.detourTimer,
+                     s.pathIndex, (int)s.path.size(), player.Position().x, player.Position().z);
+        }
+    }
+
     // Үхсэн гишүүн унаанаас унана.
     for (Soldier& soldier : all)
     {
@@ -3570,6 +3693,7 @@ void Game::UpdateTeamRiding(float dt)
         {
             LeaveGunnerSeat();
             SetNotice("Жолооч унаснаас унаанаас буулаа", 2.5f);
+            Audio::Announce("driver_down");
             return;
         }
         int slot = 0;
@@ -3661,6 +3785,7 @@ void Game::UpdateTeamRiding(float dt)
                 gunner.boarding = false;
                 gunner.riding = driven;
                 SetNotice(std::string(TeamMemberName(gunner.member)) + " буудагчаар суулаа. Жолоо солих: Tab", 3.0f);
+            Audio::Announce(TextFormat("gunner_seated_%d", std::clamp(gunner.member, 0, 2)));
             }
         }
         if (carGunner >= 0 && all[(size_t)carGunner].riding == driven)
@@ -4017,6 +4142,7 @@ void Game::AdvanceDay(float dt)
     if (isNight != wasNight && state == GameState::Playing)
     {
         recruitNotice = isNight ? "ШӨНӨ БОЛЛОО — болгоомжтой" : "ҮҮР ЦАЙЛАА";
+        Audio::Announce(isNight ? "night" : "dawn");
         recruitNoticeTimer = 2.5f;
     }
     wasNight = isNight;
@@ -4024,6 +4150,19 @@ void Game::AdvanceDay(float dt)
 
 void Game::UpdateMission(float dt)
 {
+    // Зэрэг ахисан (үе давсан, тулаанд ялсан: сервер XP нэмсэн)
+    if (Account::SignedIn())
+    {
+        const int rank = Account::Rank();
+        if (shownRank > 0 && rank > shownRank)
+        {
+            int stars = 0;
+            const char* title = RankTitle(rank, stars);
+            SetNotice(TextFormat("ЗЭРЭГ АХИЛАА!  %s · %d-р зэрэг", title, rank), 4.0f);
+            Audio::Announce("rank_up");
+        }
+        shownRank = rank;
+    }
     squad.SetLeaderSkins(progress.leaderSkin, guestFigure.skin); // 1-р дайчны дүр (өөрийн ба зочны баг)
     navigator.Update(world, player.Position(), dt);
     if (navigator.TakeArrived()) SetNotice("ОЧИХ ГАЗАРТАА ХҮРЛЭЭ", 2.5f);
@@ -4217,6 +4356,8 @@ void Game::UpdateMission(float dt)
     arsenal.SetMounted(heliPassenger >= 0 || (gunnerVehicle >= 0 && garage.At(gunnerVehicle).type == VehicleType::Armored));
     arsenal.Update(dt);
     player.SetReload(arsenal.ReloadProgress());
+    // Дараалсан буудлагын тархалт: буудахаа больсны дараа хурдан, буудсаар байхад аажим буурна
+    sprayHeat = std::max(0.0f, sprayHeat - dt * (GetTime() - sprayShotAt > 0.25 ? 10.0f : 2.0f));
     if (!enclosed)
     {
         UpdateShooting(); // бүхээгтэй машин дотроос буудаж болохгүй
@@ -4306,6 +4447,7 @@ void Game::UpdateMission(float dt)
         if (multiplier > horde.SpeedMultiplier() + 0.01f && state == GameState::Playing && missionFrame > 2)
         {
             recruitNotice = multiplier >= kMaxZombieSpeedMultiplier ? "ЗОМБИНУУД ХАМГИЙН ХУРДАН БОЛЛОО!" : "ЗОМБИНУУД ХУРДСАЛАА!";
+            Audio::Announce(multiplier >= kMaxZombieSpeedMultiplier ? "fastest" : "faster");
             recruitNoticeTimer = 2.5f;
         }
         // Нэг тоглолтын дотор зөвхөн өснө (тоо түр буурвал хурд буурч дахин өсөх бүрд мэдэгдэл анивчдаг байв).
@@ -4324,6 +4466,7 @@ void Game::UpdateMission(float dt)
         {
             medKits.Drop(world, reward.position);
             recruitNotice = "ЭМНЭЛЭГ УНАЛАА! — газрын зураг дээрх улаан загалмай";
+            Audio::Announce("medkit");
             recruitNoticeTimer = 3.0f;
         }
     }
@@ -4332,6 +4475,7 @@ void Game::UpdateMission(float dt)
     {
         if (coopGuest) net.SendPickup(pickedKit);
         recruitNotice = "АМЬ 100% БОЛЛОО";
+            Audio::Announce("full_health");
         recruitNoticeTimer = 2.0f;
     }
     for (CoinPopup& popup : coinPopups) popup.age += dt;
@@ -4795,6 +4939,14 @@ void Game::DrawMissionScene() const
     if (cinematic || (!camera.IsScoped() && !camera.IsFirstPerson()))
     {
         player.Draw(config, showDebug); // дуран хараа, 1-р этгээдийн үед өөрийн бие харагдахгүй
+        if (options.screenshotPath && std::getenv("ZM_HITBOX"))
+        {
+            // Туршилт: тоглогчийн онох хүрээг дүрстэй нь харьцуулна
+            const BodyPosture posture = player.IsDowned() ? BodyPosture::Downed
+                                      : player.GetStance() == Stance::Prone  ? BodyPosture::Prone
+                                      : player.GetStance() == Stance::Crouch ? BodyPosture::Crouch : BodyPosture::Stand;
+            DrawBodyHitbox(player.Position(), player.Facing(), posture);
+        }
     }
     airstrike.Draw();
     barrels.Draw(view.position);
@@ -5420,6 +5572,13 @@ TouchState Game::MakeTouchState() const
         touch.screen = TouchScreen::Result;
         return touch;
     }
+    if (seatChoice >= 0 || chatOpen)
+    {
+        // Тоглолтын дундах цонх (хуягт машины суудал, чат): товшилт камер эргүүлэхгүй, цонхны товчинд очно
+        touch.screen = TouchScreen::Pause;
+        return touch;
+    }
+    if (ChatAvailable()) touch.tapZones[touch.tapZoneCount++] = ChatButtonRect();
     touch.screen = journalOpen ? TouchScreen::Journal
                  : shopOpen    ? TouchScreen::Shop
                  : fullMap.IsOpen() ? TouchScreen::FullMap : TouchScreen::Gameplay;
@@ -5569,6 +5728,7 @@ void Game::Draw() const
         DrawUpdateBanner();
         if (endDialog.open) DrawEndDialog();
         if (codeEntryOpen) DrawCodeEntry();
+        if (roomBrowserOpen) DrawRoomBrowser();
         if (characterSelectOpen) DrawCharacterSelect();
         Account::Draw();
         // Хувилбар: build хийсэн цаг (аль хувилбар ажиллаж байгааг ялгахад; build бүрд шинэчлэгдэнэ)
@@ -5765,36 +5925,9 @@ void Game::DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& base
     look.held = (HeldItem)figure.held;
     HumanoidPose pose;
     // Унаан дээр: суудал дээр сууна (бүхээгтэй унаанд харагдахгүй).
-    int seatStyle = figure.seatStyle;
-    Vector3 seat = Vector3Add(figure.position, figure.seatOffset);
-    float facing = figure.facing;
-    float seatHeading = facing;
-    if (figure.alive && seatStyle > 0 && figure.seatVehicle >= 0 && figure.seatVehicle < garage.Count())
-    {
-        // Цэрэг: өөрийн унааны хуулбар дээрх суудал (хоцролтгүй)
-        const Vehicle& vehicle = garage.At(figure.seatVehicle);
-        seat = HumanoidLocalToWorld(vehicle.position, vehicle.heading, figure.seatLocal);
-        // (нисдэг тэрэгний хаалганы буудагч гадагш харж сууна: бие бүхэлдээ харах зүгт)
-        seatHeading = IsHelicopter(vehicle.type) ? figure.facing : vehicle.heading;
-        facing = seatHeading + std::clamp(std::remainder(figure.facing - seatHeading, 2.0f * PI), -2.1f, 2.1f);
-    }
-    else if (figure.alive && figure.vehicle >= 0 && figure.vehicle < garage.Count())
-    {
-        const Vehicle& vehicle = garage.At(figure.vehicle);
-        seatStyle = SpecFor(vehicle.type).enclosed ? 3 : vehicle.type == VehicleType::Horse ? 2 : 1;
-        seat = garage.SeatWorld(figure.vehicle, (figure.flags & Net::kPassenger) != 0);
-        seatHeading = vehicle.heading;
-        if (IsHelicopter(vehicle.type) && (figure.flags & Net::kPassenger))
-        {
-            seatStyle = 1; // нисдэг тэрэгний буудагч: хажуугийн хаалганд харагдана
-            seat = garage.HelicopterSeat(figure.vehicle, 2, seatHeading);
-        }
-        if (vehicle.type == VehicleType::Armored && (figure.flags & Net::kPassenger)) seatStyle = 6; // пулемётын ард
-        // Онилж буудаж байвал бие тэр зүг рүү (±120 градус), үгүй бол суудлын зүгт.
-        const bool aiming = figure.aiming || figure.aimTimer > 0.0f;
-        facing = aiming ? seatHeading + std::clamp(std::remainder(figure.facing - seatHeading, 2.0f * PI), -2.1f, 2.1f)
-                        : seatHeading;
-    }
+    Vector3 seat;
+    float facing = 0.0f, seatHeading = 0.0f;
+    const int seatStyle = RemoteSeat(figure, seat, facing, seatHeading);
     if (figure.alive && seatStyle == 6)
     {
         // Хуягт машины пулемётын ард зогсож, хоёр гараараа бариулаас нь барина (өөрийн буу харагдахгүй)
@@ -5841,6 +5974,74 @@ void Game::DrawRemoteFigure(const RemoteFigure& figure, const HumanoidLook& base
         DrawHumanoid({ seat.x, seat.y - 0.9f, seat.z }, facing, 1.0f, pose, look, true);
         return;
     }
+    DrawRemoteWalker(figure, look);
+}
+
+int Game::RemoteSeat(const RemoteFigure& figure, Vector3& seat, float& facing, float& seatHeading) const
+{
+    int seatStyle = figure.seatStyle;
+    seat = Vector3Add(figure.position, figure.seatOffset);
+    facing = figure.facing;
+    seatHeading = facing;
+    if (!figure.alive) return 0;
+    if (seatStyle > 0 && figure.seatVehicle >= 0 && figure.seatVehicle < garage.Count())
+    {
+        // Цэрэг: өөрийн унааны хуулбар дээрх суудал (хоцролтгүй)
+        const Vehicle& vehicle = garage.At(figure.seatVehicle);
+        seat = HumanoidLocalToWorld(vehicle.position, vehicle.heading, figure.seatLocal);
+        // (нисдэг тэрэгний хаалганы буудагч гадагш харж сууна: бие бүхэлдээ харах зүгт)
+        seatHeading = IsHelicopter(vehicle.type) ? figure.facing : vehicle.heading;
+        facing = seatHeading + std::clamp(std::remainder(figure.facing - seatHeading, 2.0f * PI), -2.1f, 2.1f);
+    }
+    else if (figure.alive && figure.vehicle >= 0 && figure.vehicle < garage.Count())
+    {
+        const Vehicle& vehicle = garage.At(figure.vehicle);
+        seatStyle = SpecFor(vehicle.type).enclosed ? 3 : vehicle.type == VehicleType::Horse ? 2 : 1;
+        seat = garage.SeatWorld(figure.vehicle, (figure.flags & Net::kPassenger) != 0);
+        seatHeading = vehicle.heading;
+        if (IsHelicopter(vehicle.type) && (figure.flags & Net::kPassenger))
+        {
+            seatStyle = 1; // нисдэг тэрэгний буудагч: хажуугийн хаалганд харагдана
+            seat = garage.HelicopterSeat(figure.vehicle, 2, seatHeading);
+        }
+        if (vehicle.type == VehicleType::Armored && (figure.flags & Net::kPassenger)) seatStyle = 6; // пулемётын ард
+        // Онилж буудаж байвал бие тэр зүг рүү (±120 градус), үгүй бол суудлын зүгт.
+        const bool aiming = figure.aiming || figure.aimTimer > 0.0f;
+        facing = aiming ? seatHeading + std::clamp(std::remainder(figure.facing - seatHeading, 2.0f * PI), -2.1f, 2.1f)
+                        : seatHeading;
+    }
+    return seatStyle;
+}
+
+bool Game::RemoteBody(const RemoteFigure& figure, Vector3& feet, float& facing, BodyPosture& posture) const
+{
+    Vector3 seat;
+    float seatHeading = 0.0f;
+    const int style = RemoteSeat(figure, seat, facing, seatHeading);
+    if (style == 3 || style == 5) return false; // бүхээг дотор: сум унаанд тусна
+    if (style > 0)
+    {
+        feet = { seat.x, seat.y - 0.9f, seat.z };
+        posture = BodyPosture::Seated;
+        if (style == 6)
+        {
+            posture = BodyPosture::Stand; // хуягт машины пулемётын ард зогссон
+            const int gunVehicle = figure.seatVehicle >= 0 ? figure.seatVehicle : figure.vehicle;
+            if (gunVehicle >= 0 && gunVehicle < garage.Count()) facing = garage.At(gunVehicle).turretYaw;
+        }
+        return true;
+    }
+    feet = figure.position;
+    facing = figure.facing;
+    posture = (figure.flags & Net::kDowned) ? BodyPosture::Downed
+            : (figure.flags & Net::kProne)  ? BodyPosture::Prone
+            : (figure.flags & Net::kCrouch) ? BodyPosture::Crouch : BodyPosture::Stand;
+    return true;
+}
+
+void Game::DrawRemoteWalker(const RemoteFigure& figure, HumanoidLook look) const
+{
+    HumanoidPose pose;
     if (!figure.alive)
     {
         pose = MakeSoldierPose(0.0f, 0.0f, true, (float)GetTime(), 0.0f, look.held);
@@ -5985,10 +6186,16 @@ std::string Game::CoopResumeTicket() const
     return saved.substr(0, bar);
 }
 
+namespace
+{
+    // Газрын зургийн дэлгэц өргөн дэлгэцэд голлоно (src/Campaign.cpp MapShift-тэй ижил): хамтын тоглолтын самбар ч хамт
+    float MapScreenShift() { return (float)std::max(0, (ViewWidth() - 1280) / 2); }
+}
+
 Rectangle Game::ResumeButtonRect() const
 {
     // Газрын зургийн доод хэсэгт (тэмдэглэгээний хажууд), тод
-    return { 330.0f, 514.0f, 560.0f, 36.0f };
+    return { 330.0f + MapScreenShift(), 514.0f, 560.0f, 36.0f };
 }
 
 void Game::LeaveCoop(bool leaveRoom)
@@ -6022,6 +6229,8 @@ void Game::UpdateNetwork(float dt)
             waitTimer -= dt;
             if (waitTimer <= 0.0f)
             {
+                TraceLog(LOG_INFO, "STEP: join_failed no_reply: the host did not answer in time (relay %s)",
+                         net.Connected() ? "connected" : "not connected");
                 LeaveCoop();
                 coopStatus = "Хариу ирсэнгүй";
             }
@@ -6120,6 +6329,10 @@ void Game::UpdateNetwork(float dt)
             }
             break;
         case Net::Msg::GuestState:
+            // Газрын зургаас хэт хол (хуурамч): хаяна
+            if (std::fabs(event.avatar.position.x) > 1.0e5f || std::fabs(event.avatar.position.z) > 1.0e5f ||
+                event.avatar.position.y < -2000.0f || event.avatar.position.y > 10000.0f)
+                break;
             guestHealth = event.avatar.health;
             if (battleActive)
             {
@@ -6237,6 +6450,8 @@ void Game::UpdateNetwork(float dt)
             waitingForReply = false;
             if (event.version != Net::kProtocolVersion)
             {
+                TraceLog(LOG_INFO, "STEP: join_failed version: host protocol %d, this game %d", (int)event.version,
+                         (int)Net::kProtocolVersion);
                 LeaveCoop();
                 coopStatus = "Хостын тоглоомын хувилбар өөр — хоёр төхөөрөмждөө шинэ хувилбар суулгана уу";
             }
@@ -6247,6 +6462,7 @@ void Game::UpdateNetwork(float dt)
             }
             else
             {
+                TraceLog(LOG_INFO, "STEP: join_failed rejected: the host refused the request");
                 LeaveCoop();
                 coopStatus = "Хүсэлтийг татгалзлаа";
             }
@@ -6340,7 +6556,7 @@ void Game::UpdateNetwork(float dt)
                 guestHumanTokens -= 1.0f;
                 float amount = event.amount;
                 if (!(amount == amount)) break; // NaN
-                amount = std::clamp(amount, -2100.0f, 2100.0f);
+                amount = std::clamp(amount, -2100.0f, GuestHumanDamageCap());
                 if (amount < 0.0f) amount = std::max(amount, -0.5f);
                 else amount *= kPvpDamageScale; // хүн хоорондын хохирол (Team.h)
                 const bool share = amount < 0.0f;
@@ -6552,6 +6768,7 @@ void Game::UpdateNetwork(float dt)
             }
             else if (waitingForReply)
             {
+                TraceLog(LOG_INFO, "STEP: join_failed disconnected: %s", event.text.empty() ? "connection closed" : event.text.c_str());
                 LeaveCoop();
                 coopStatus = event.text.empty() ? "Холбогдож чадсангүй" : event.text;
             }
@@ -6576,6 +6793,22 @@ void Game::DamageGuest(float amount)
     }
 }
 
+float Game::WallDt()
+{
+    // Бодит цаг (кадрын dt нь 1/30 с-ээр хязгаарлагдсан тул удаан төхөөрөмж дээр тоглоомын цаг удааширдаг): сервертэй
+    // уялдсан хугацаанд. Түр зогсолт, ачааллын урт кадрыг 1 с-ээр хязгаарлана.
+    return std::min(GetFrameTime(), 1.0f);
+}
+
+float Game::GuestHumanDamageCap() const
+{
+    // Зочны хамгийн хүчтэй зэвсгийн нэг сум, толгойд (серверийн мэдэх хохирлын түвшин, зэргээр). Мэдэхгүй бол хуучин
+    // ерөнхий хязгаар (2100: дурантай буу, дээд түвшин, толгойд). 5% сүлжээний бөөрөнхийлөлтийн зөрүү.
+    const int level = Account::RoomGuestDamageLevel(), rank = Account::RoomGuestRank();
+    if (level < 0 || rank <= 0) return 2100.0f;
+    return std::min(2100.0f, WeaponMaxDamage(level) * RankBonus(rank) * HitZoneMultiplier(HitZone::Head) * 1.05f);
+}
+
 bool Game::AllowGuestHit(float& amount, float cap)
 {
     // Хамгийн хурдан зэвсгийн давтамжаас (үрлэн буу 8 үрэл, автомат ~10/с) их бол хуурамч мэдэгдэл
@@ -6590,8 +6823,10 @@ void Game::ApplyGuestSetup()
 {
     // Зочны мэдэгдсэн амь, Gold-ийн цэргийг серверийн мэдээгээр хязгаарлана (тоглоомоо өөрчилж нэмэхээс)
     const int serverSoldiers = Account::RoomGuestSoldiers(), serverLevel = Account::RoomGuestHealthLevel();
-    const float maxHealth = config.playerBaseHealth +
-                            kHealthPerLevel * (float)(serverLevel >= 0 ? serverLevel : ShopMaxLevel(ShopItem::Health));
+    const int guestRank = Account::RoomGuestRank();
+    const float maxHealth = (config.playerBaseHealth +
+                             kHealthPerLevel * (float)(serverLevel >= 0 ? serverLevel : ShopMaxLevel(ShopItem::Health))) *
+                            RankBonus(guestRank > 0 ? guestRank : 1);
     guestMemberHealth = std::clamp(guestSetup.health, 50.0f, maxHealth);
     for (Soldier& soldier : squad.All())
     {
@@ -6646,46 +6881,44 @@ int Game::TeamAlive(bool hostTeam) const
     return alive;
 }
 
-int Game::RaycastHumans(Ray ray, float minDistance, float maxDistance, float& distance, bool& head) const
+int Game::RaycastHumans(Ray ray, float minDistance, float maxDistance, float& distance, HitZone& zone) const
 {
-    // Бие (цээж) ба толгойг бөмбөлгөөр ойролцоолно
+    // Дэлгэц дээр харагдаж буй байрлалаар (буудагчийн дэлгэц үнэн: нөгөө талын дүр 0.1 с хоцорч жигд харагддаг),
+    // биеийн байрлалтай тааруулсан толгой, цээж, гэдэс, гар, хөлийн хүрээгээр (Hitbox.h)
     int best = -1;
     distance = maxDistance;
-    auto test = [&](Vector3 feet, int code) {
-        const struct { Vector3 center; float radius; bool head; } parts[] = {
-            { Vector3Add(feet, { 0.0f, 1.62f, 0.0f }), 0.2f, true },
-            { Vector3Add(feet, { 0.0f, 1.05f, 0.0f }), 0.42f, false },
-        };
-        for (const auto& part : parts)
-        {
-            const RayCollision hit = GetRayCollisionSphere(ray, part.center, part.radius);
-            if (hit.hit && hit.distance > minDistance && hit.distance < distance)
-            {
-                distance = hit.distance;
-                head = part.head;
-                best = code;
-            }
-        }
+    auto test = [&](Vector3 feet, float facing, BodyPosture posture, int code) {
+        if (RaycastBody(ray, feet, facing, posture, minDistance, distance, zone)) best = code;
+    };
+    auto testFigure = [&](const RemoteFigure& figure, int code) {
+        Vector3 feet;
+        float facing = 0.0f;
+        BodyPosture posture = BodyPosture::Stand;
+        if (figure.alive && RemoteBody(figure, feet, facing, posture)) test(feet, facing, posture, code);
     };
     if (!coopGuest)
     {
-        if (remoteActive && guestFigure.alive) test(guestFigure.position, kGuestTarget);
+        if (remoteActive) testFigure(guestFigure, kGuestTarget);
         for (int i = 0; i < squad.Total(); ++i)
         {
             const Soldier& soldier = squad.All()[(size_t)i];
-            if (soldier.alive && soldier.guestTeam && soldier.member >= 0) test(soldier.mover.position, i);
+            if (!soldier.alive || !soldier.guestTeam || soldier.member < 0) continue;
+            if (soldier.riding >= 0)
+            {
+                if (soldier.seatStyle == 3 || soldier.seatStyle == 5) continue; // бүхээг дотор
+                test({ soldier.seat.x, soldier.seat.y - 0.9f, soldier.seat.z }, soldier.seatStyle == 6 ? soldier.seatHeading : soldier.mover.facing,
+                     soldier.seatStyle == 6 ? BodyPosture::Stand : BodyPosture::Seated, i);
+            }
+            else test(soldier.mover.position, soldier.mover.facing, soldier.downed ? BodyPosture::Downed : BodyPosture::Stand, i);
         }
     }
     else
     {
         // Зочин: хостын цэргийг тогтвортой дугаараар нь (Soldier::id) мэдэгдэнэ: хост дээр жагсаалт өөрчлөгдсөн ч зөв цэрэгт
-        if (hostFigure.alive) test(hostFigure.position, (int)Net::kHostPlayer);
+        testFigure(hostFigure, (int)Net::kHostPlayer);
         for (size_t i = 0; i < hostSoldiers.size() && i < hostSoldierSide.size() && i < guestView.soldiers.size(); ++i)
         {
-            if (hostSoldierSide[i] == 1 && hostSoldiers[i].alive && guestView.soldiers[i].id != 0)
-            {
-                test(hostSoldiers[i].position, (int)guestView.soldiers[i].id);
-            }
+            if (hostSoldierSide[i] == 1 && guestView.soldiers[i].id != 0) testFigure(hostSoldiers[i], (int)guestView.soldiers[i].id);
         }
     }
     return best;
@@ -7100,17 +7333,44 @@ void Game::UpdateBattle(float dt)
     if (coopGuest) return; // доорх нь хостын тооцоо
 
     // AI дайчдын бай: хоёр багийн үндсэн дайчид (элсүүлсэн цэрэг биш)
+    // Бай бүрийн биеийн байрлал: AI зөвхөн харагдаж буй хэсэг рүү (цээж, толгой, хөл) онилж, суусан, хэвтсэн, хөдөлж
+    // буй хүнийг онох магадлал бага
     std::vector<HumanTarget> hostSide, guestSide;
-    if (player.IsAlive()) hostSide.push_back({ Vector3Add(player.Position(), { 0.0f, 1.3f, 0.0f }), kHostTarget });
+    auto target = [](Vector3 feet, float facing, BodyPosture posture, float speed, int id) {
+        HumanTarget t;
+        t.chest = BodyPartCenter(feet, facing, posture, 1);
+        t.id = id;
+        t.feet = feet;
+        t.facing = facing;
+        t.posture = posture;
+        t.speed = speed;
+        return t;
+    };
+    const bool enclosed = garage.IsDriving() && SpecFor(garage.At(garage.Driven()).type).enclosed; // бүхээг дотор: харагдахгүй
+    if (player.IsAlive() && !enclosed)
+    {
+        const BodyPosture posture = player.IsRiding() ? BodyPosture::Stand
+                                  : player.IsDowned() ? BodyPosture::Downed
+                                  : player.GetStance() == Stance::Prone  ? BodyPosture::Prone
+                                  : player.GetStance() == Stance::Crouch ? BodyPosture::Crouch : BodyPosture::Stand;
+        hostSide.push_back(target(player.Position(), player.Facing(), posture, player.HorizontalSpeed(), kHostTarget));
+    }
     for (int i = 0; i < squad.Total(); ++i)
     {
         const Soldier& soldier = squad.All()[(size_t)i];
         if (!soldier.alive || soldier.member < 0) continue;
-        (soldier.guestTeam ? guestSide : hostSide).push_back({ Vector3Add(soldier.mover.position, { 0.0f, 1.3f, 0.0f }), i });
+        if (soldier.riding >= 0 && (soldier.seatStyle == 3 || soldier.seatStyle == 5)) continue; // бүхээг дотор
+        const Vector3 feet = soldier.riding >= 0 ? Vector3{ soldier.seat.x, soldier.seat.y - 0.9f, soldier.seat.z } : soldier.mover.position;
+        const BodyPosture posture = soldier.riding >= 0 ? (soldier.seatStyle == 6 ? BodyPosture::Stand : BodyPosture::Seated)
+                                  : soldier.downed ? BodyPosture::Downed : BodyPosture::Stand;
+        (soldier.guestTeam ? guestSide : hostSide).push_back(target(feet, soldier.mover.facing, posture, soldier.speed, i));
     }
     if (remoteActive && guestFigure.alive)
     {
-        guestSide.push_back({ Vector3Add(guestFigure.position, { 0.0f, 1.3f, 0.0f }), kGuestTarget });
+        Vector3 feet;
+        float facing = 0.0f;
+        BodyPosture posture = BodyPosture::Stand;
+        if (RemoteBody(guestFigure, feet, facing, posture)) guestSide.push_back(target(feet, facing, posture, guestFigure.speed, kGuestTarget));
     }
     squad.SetBattle(true, std::move(hostSide), std::move(guestSide));
 
@@ -7133,7 +7393,7 @@ void Game::UpdateBattle(float dt)
     // зочинд мэдэгдэж гаргана (сервер түүнийг холбогдоогүй гэж тооцож төлбөрийг буцаана), тулаан болохгүй.
     if (!guestTeamSpawned)
     {
-        battleWaitTimer += dt;
+        battleWaitTimer += WallDt();
         if (battleWaitTimer > 150.0f && !remoteActive)
         {
             TraceLog(LOG_INFO, "BATTLE: guest never arrived, sent away");
@@ -7150,7 +7410,7 @@ void Game::UpdateBattle(float dt)
     // Тасарсан хостын багийг AI тулалдуулж буй (энэ тоглогч серверт зочин): бүгд унавал эсвэл 5 минут өнгөрвөл ялна
     if (takeoverBattle)
     {
-        takeoverTimer -= dt;
+        takeoverTimer -= WallDt();
         if (takeoverCooldown <= 0.0f && (TeamAlive(false) == 0 || takeoverTimer <= 0.0f))
         {
             TraceLog(LOG_INFO, "BATTLE: absent host's team %s", takeoverTimer <= 0.0f ? "timed out" : "down");
@@ -7719,8 +7979,10 @@ void Game::DrawCoopOverlay() const
         // Найзын код (үргэлж), нээлттэй (тулаан) эсэх: Gold хүрэлцээгүй бол шалтгаан
         const char* label = "НАЙЗЫН КОД";
         const char* code = Account::RoomCode().c_str();
-        const char* note = Account::RoomPvp() ? "·  нээлттэй өрөө: өөр тоглогч орж ирж магадгүй"
-                                              : TextFormat("·  тулаанд %d Gold хэрэгтэй (танд %d)", Account::RoomEntry(), Account::GoldAvailable());
+        const char* note = Account::RoomPvp()                ? "·  нээлттэй өрөө: өөр тоглогч орж ирж магадгүй"
+                           : !Account::RoomPvpNote().empty() ? TextFormat("·  тулаангүй: %s", Account::RoomPvpNote().c_str())
+                                                             : TextFormat("·  тулаанд %d Gold хэрэгтэй (танд %d)", Account::RoomEntry(),
+                                                                          Account::GoldAvailable());
         const int labelWidth = Ui::Measure(label, 13), codeWidth = Ui::MeasureBold(code, 20), noteWidth = Ui::Measure(note, 13);
         const int chipWidth = labelWidth + codeWidth + noteWidth + 48;
         const Rectangle chip = { (float)(width - chipWidth) / 2.0f, 54.0f, (float)chipWidth, 30.0f };
@@ -7872,11 +8134,7 @@ void Game::UpdateCoopMap()
         if ((click && CheckCollisionPointRec(pointer, CodeButtonRect())) || InKeyPressed(KEY_J))
         {
             if (Account::SearchingRoom()) Account::CancelRoomSearch();
-            else if (Account::GoldAvailable() >= Account::RoomEntry())
-            {
-                coopStatus.clear();
-                Account::JoinRoom(); // сул өрөө олдтол хайна
-            }
+            else if (Account::GoldAvailable() >= Account::RoomEntry()) OpenRoomBrowser(); // өрөөнүүдээс сонгоно
             else coopStatus = TextFormat("Тулаанд %d Gold хэрэгтэй (танд %d). Найзтайгаа кодоор үнэгүй тоглоорой",
                                          Account::RoomEntry(), Account::GoldAvailable());
         }
@@ -7886,6 +8144,7 @@ void Game::UpdateCoopMap()
     {
         if ((click && CheckCollisionPointRec(pointer, CoopButtonRect(0))) || InKeyPressed(KEY_J))
         {
+            TraceLog(LOG_INFO, "STEP: join_failed cancelled: the player stopped waiting");
             LeaveCoop();
             coopStatus = "Цуцаллаа";
         }
@@ -7927,19 +8186,19 @@ void Game::UpdateCoopMap()
 Rectangle Game::CoopButtonRect(int row) const
 {
     // Дотоод сүлжээнд олдсон тоглолтуудын "НЭГДЭХ" (0 нь хүлээж байхад "ЦУЦЛАХ")
-    return { 790.0f, 634.0f + 30.0f * (float)row, 120.0f, 26.0f };
+    return { 790.0f + MapScreenShift(), 634.0f + 30.0f * (float)row, 120.0f, 26.0f };
 }
 
 Rectangle Game::CodeButtonRect() const
 {
     // Дотоод сүлжээтэй бол доод мөрөнд, хөтөч дээр дээд мөрөнд. Данстай: доод мөрөнд "ТУЛААН ХАЙХ"
-    return { 750.0f, net.HasLan() || Account::ServerShop() ? 664.0f : 634.0f, 160.0f, 26.0f };
+    return { 750.0f + MapScreenShift(), net.HasLan() || Account::ServerShop() ? 664.0f : 634.0f, 160.0f, 26.0f };
 }
 
 Rectangle Game::FriendButtonRect() const
 {
     // Данстай: дээд мөрөнд найзын кодоор нэгдэх
-    return { 750.0f, 634.0f, 160.0f, 26.0f };
+    return { 750.0f + MapScreenShift(), 634.0f, 160.0f, 26.0f };
 }
 
 void Game::OpenCodeEntry()
@@ -8067,6 +8326,249 @@ void Game::DrawCodeEntry() const
     }
 }
 
+void Game::OpenRoomBrowser()
+{
+    roomBrowserOpen = true;
+    roomBrowserJoining = false;
+    roomBrowserScroll = 0;
+    roomBrowserNote.clear();
+    coopStatus.clear();
+    Account::RequestRoomList();
+    roomBrowserRefresh = GetTime() + 5.0;
+}
+
+Rectangle Game::RoomBrowserPanel() const
+{
+    const float w = std::min((float)ViewWidth() - 32.0f, 860.0f), h = std::min((float)ViewHeight() - 40.0f, 540.0f);
+    return { ((float)ViewWidth() - w) * 0.5f, ((float)ViewHeight() - h) * 0.5f, w, h };
+}
+
+int Game::RoomBrowserRows() const
+{
+    return std::max(1, (int)((RoomBrowserPanel().height - 100.0f - 84.0f) / 48.0f));
+}
+
+Rectangle Game::RoomBrowserRow(int slot) const
+{
+    const Rectangle panel = RoomBrowserPanel();
+    return { panel.x + 16.0f, panel.y + 96.0f + (float)slot * 48.0f, panel.width - 32.0f - 42.0f, 44.0f };
+}
+
+Rectangle Game::RoomBrowserJoin(int slot) const
+{
+    const Rectangle row = RoomBrowserRow(slot);
+    return { row.x + row.width - 112.0f, row.y + 7.0f, 104.0f, 30.0f };
+}
+
+Rectangle Game::RoomBrowserButton(int i) const
+{
+    const Rectangle panel = RoomBrowserPanel();
+    if (i >= 3)
+    {
+        // Гүйлгэх сум: мөрүүдийн баруун талд
+        const Rectangle first = RoomBrowserRow(0), last = RoomBrowserRow(RoomBrowserRows() - 1);
+        return { first.x + first.width + 6.0f, i == 3 ? first.y : last.y, 36.0f, 44.0f };
+    }
+    const float w = std::min(190.0f, (panel.width - 64.0f) / 3.0f), gap = 12.0f;
+    const float left = panel.x + (panel.width - (w * 3.0f + gap * 2.0f)) * 0.5f;
+    return { left + (float)i * (w + gap), panel.y + panel.height - 52.0f, w, 36.0f };
+}
+
+void Game::UpdateRoomBrowser()
+{
+    if (roomBrowserJoining)
+    {
+        if (Account::SearchingRoom()) return;
+        roomBrowserJoining = false;
+        std::string note;
+        if (!Account::TakeSearchNote(note))
+        {
+            roomBrowserOpen = false; // орж чадлаа: UpdateCoopMap-ийн TakeJoinedRoom хостод холбоно
+            return;
+        }
+        roomBrowserNote = note; // өрөө дүүрсэн г.м.: жагсаалтаа шинэчилнэ
+        Account::RequestRoomList();
+        roomBrowserRefresh = GetTime() + 5.0;
+    }
+    if (GetTime() >= roomBrowserRefresh)
+    {
+        Account::RequestRoomList(); // өрөөнүүд нээгдэж, дүүрэх тул 5 секунд тутам
+        roomBrowserRefresh = GetTime() + 5.0;
+    }
+    const std::vector<Account::RoomListing>& rooms = Account::RoomList();
+    const int rows = RoomBrowserRows();
+    const int maxScroll = std::max(0, (int)rooms.size() - rows);
+    const float wheel = InWheel();
+    if (wheel != 0.0f) roomBrowserScroll += wheel > 0.0f ? -1 : 1;
+    if (InKeyPressed(KEY_UP)) --roomBrowserScroll;
+    if (InKeyPressed(KEY_DOWN)) ++roomBrowserScroll;
+    if (InKeyPressed(KEY_R) || InKeyPressed(KEY_F5)) Account::RequestRoomList();
+    const Vector2 pointer = InPointer();
+    if (InMousePressed(MOUSE_BUTTON_LEFT))
+    {
+        if (CheckCollisionPointRec(pointer, RoomBrowserButton(3))) --roomBrowserScroll;
+        if (CheckCollisionPointRec(pointer, RoomBrowserButton(4))) ++roomBrowserScroll;
+        roomBrowserScroll = std::clamp(roomBrowserScroll, 0, maxScroll);
+        if (CheckCollisionPointRec(pointer, RoomBrowserButton(0)))
+        {
+            roomBrowserNote.clear();
+            Account::RequestRoomList();
+            roomBrowserRefresh = GetTime() + 5.0;
+        }
+        else if (CheckCollisionPointRec(pointer, RoomBrowserButton(1)) && !roomBrowserJoining)
+        {
+            // Хуучин шиг: таарах сул өрөө олдтол 60 секунд хайна (газрын зургийн самбарт эргэдэг нум)
+            roomBrowserOpen = false;
+            coopStatus.clear();
+            Account::JoinRoom();
+            return;
+        }
+        else if (!roomBrowserJoining &&
+                 (CheckCollisionPointRec(pointer, RoomBrowserButton(2)) || !CheckCollisionPointRec(pointer, RoomBrowserPanel())))
+        {
+            roomBrowserOpen = false;
+            return;
+        }
+        for (int slot = 0; !roomBrowserJoining && slot < rows && roomBrowserScroll + slot < (int)rooms.size(); ++slot)
+        {
+            const Account::RoomListing& room = rooms[(size_t)(roomBrowserScroll + slot)];
+            if (!room.joinable || !CheckCollisionPointRec(pointer, RoomBrowserJoin(slot))) continue;
+            if (!Account::RoomListBlocked().empty())
+            {
+                roomBrowserNote = Account::RoomListBlocked(); // (сервер ч татгалзана)
+                break;
+            }
+            if (Account::GoldAvailable() < Account::RoomEntry())
+            {
+                roomBrowserNote = TextFormat("Тулаанд %d Gold хэрэгтэй (танд %d)", Account::RoomEntry(), Account::GoldAvailable());
+                break;
+            }
+            TraceLog(LOG_INFO, "STEP: room_browser_join %d", room.id);
+            roomBrowserNote = room.host + "-ийн өрөөнд орж байна...";
+            roomBrowserJoining = true;
+            Account::JoinRoom(room.id);
+            break;
+        }
+    }
+    roomBrowserScroll = std::clamp(roomBrowserScroll, 0, maxScroll);
+}
+
+void Game::DrawRoomBrowser() const
+{
+    const Rectangle panel = RoomBrowserPanel();
+    DrawRectangle(0, 0, ViewWidth(), ViewHeight(), { 0, 0, 0, 150 });
+    Ui::PanelAccent(panel, Ui::kInfo, { 10, 13, 19, 245 });
+    const std::vector<Account::RoomListing>& rooms = Account::RoomList();
+    const int x = (int)panel.x, y = (int)panel.y;
+    Ui::TextBold("ТУЛААНЫ ӨРӨӨНҮҮД", x + 20, y + 14, 20, Ui::kInfo);
+    {
+        // Өөрийн цол, тулалдаж болох зэргийн хүрээ (сервертэй ижил: ±max(3, 15%))
+        int stars = 0;
+        const int rank = Account::Rank();
+        const char* title = RankTitle(rank, stars);
+        const int reach = std::max(3, (int)std::lround((float)rank * 0.15f));
+        const char* info = TextFormat("Та: %s · %d-р зэрэг   ·   Тулалдах зэрэг: %d–%d   ·   Орох: 20 Gold · ялагдвал 50 Gold", title,
+                                      rank, std::max(1, rank - reach), rank + reach);
+        Ui::Text(info, x + 20, y + 42, 13, Ui::kTextDim);
+    }
+    // Багана: хост | цол | аймаг | ахиц | нээсэн | товч
+    const Rectangle head = RoomBrowserRow(0);
+    const float cHost = head.x + 12.0f, cRank = head.x + head.width * 0.25f, cProv = head.x + head.width * 0.47f,
+                cDone = head.x + head.width * 0.62f, cAge = head.x + head.width * 0.75f;
+    const int headY = (int)head.y - 20;
+    Ui::Text("ХОСТ", (int)cHost, headY, 12, Ui::kTextDim);
+    Ui::Text("ЦОЛ · ЗЭРЭГ", (int)cRank, headY, 12, Ui::kTextDim);
+    Ui::Text("АЙМАГ", (int)cProv, headY, 12, Ui::kTextDim);
+    Ui::Text("АХИЦ", (int)cDone, headY, 12, Ui::kTextDim);
+    Ui::Text("НЭЭСЭН", (int)cAge, headY, 12, Ui::kTextDim);
+
+    const int rows = RoomBrowserRows();
+    const Vector2 pointer = InPointer();
+    for (int slot = 0; slot < rows && roomBrowserScroll + slot < (int)rooms.size(); ++slot)
+    {
+        const Account::RoomListing& room = rooms[(size_t)(roomBrowserScroll + slot)];
+        const Rectangle row = RoomBrowserRow(slot);
+        const bool hover = CheckCollisionPointRec(pointer, row);
+        DrawRectangleRounded(row, 0.2f, 6, { 255, 255, 255, (unsigned char)(hover ? 26 : (slot % 2 ? 10 : 16)) });
+        const Color main = room.joinable ? Ui::kText : Ui::kTextDim;
+        const int textY = (int)row.y + 13;
+        std::string host = room.host;
+        while (host.size() > 4 && Ui::MeasureBold(host.c_str(), 15) > (int)(cRank - cHost) - 16)
+        {
+            host.pop_back();
+            while (!host.empty() && ((unsigned char)host.back() & 0xC0) == 0x80) host.pop_back(); // UTF-8 тэмдэгтээр
+        }
+        if (host.size() < room.host.size()) host += "..";
+        Ui::TextBold(host.c_str(), (int)cHost, textY, 15, main);
+        int stars = 0;
+        const char* title = RankTitle(room.hostRank, stars);
+        Ui::Text(TextFormat("%s · %d", title, room.hostRank), (int)cRank, textY + 1, 13, main);
+        const char* province = room.province >= 0 && room.province < (int)Provinces().size() ? Provinces()[(size_t)room.province].name : "?";
+        Ui::Text(province, (int)cProv, textY + 1, 13, main);
+        Ui::Text(TextFormat("%d даалгавар", room.done), (int)cDone, textY + 1, 13, main);
+        const int minutes = room.age / 60;
+        Ui::Text(minutes >= 60 ? TextFormat("%d цаг", minutes / 60) : minutes > 0 ? TextFormat("%d мин", minutes) : "дөнгөж",
+                 (int)cAge, textY + 1, 13, Ui::kTextDim);
+        const Rectangle join = RoomBrowserJoin(slot);
+        if (room.joinable)
+        {
+            const float alpha = roomBrowserJoining || !Account::RoomListBlocked().empty() ? 0.35f : CheckCollisionPointRec(pointer, join) ? 1.0f : 0.85f;
+            DrawRectangleRounded(join, 0.5f, 6, Fade(Ui::kInfo, alpha));
+            Ui::TextBold("ОРОХ", (int)(join.x + (join.width - (float)Ui::MeasureBold("ОРОХ", 14)) / 2.0f), (int)join.y + 7, 14,
+                         { 10, 20, 30, 255 });
+        }
+        else
+        {
+            // Орж болохгүй: шалтгаан (зэрэг зөрүүтэй, хувилбар өөр)
+            const int w = Ui::Measure(room.reason.c_str(), 12);
+            Ui::Text(room.reason.c_str(), (int)(join.x + join.width) - w, (int)join.y + 8, 12, Ui::kDanger);
+        }
+    }
+    if (rooms.empty())
+    {
+        const char* empty = Account::RoomListTime() <= 0.0 && Account::RoomListLoading()
+                                ? "Жагсаалтыг татаж байна..."
+                                : "Одоогоор нээлттэй тулааны өрөө алга. Шинэчилж үзээрэй, эсвэл АВТОМАТ ХАЙЛТ хийгээрэй";
+        Ui::Text(empty, (int)(panel.x + (panel.width - (float)Ui::Measure(empty, 15)) / 2.0f), (int)head.y + 60, 15, Ui::kTextDim);
+    }
+    if ((int)rooms.size() > rows)
+    {
+        // Гүйлгэх сум (утсан дээр хуруугаар дарна)
+        for (int i = 3; i <= 4; ++i)
+        {
+            const Rectangle r = RoomBrowserButton(i);
+            const bool active = i == 3 ? roomBrowserScroll > 0 : roomBrowserScroll < (int)rooms.size() - rows;
+            DrawRectangleRounded(r, 0.3f, 6, { 255, 255, 255, (unsigned char)(active ? 34 : 12) });
+            const Vector2 c = { r.x + r.width * 0.5f, r.y + r.height * 0.5f };
+            const Color tint = active ? Ui::kText : Ui::kTextDim;
+            if (i == 3) DrawTriangle({ c.x, c.y - 7.0f }, { c.x - 8.0f, c.y + 6.0f }, { c.x + 8.0f, c.y + 6.0f }, tint);
+            else DrawTriangle({ c.x - 8.0f, c.y - 6.0f }, { c.x, c.y + 7.0f }, { c.x + 8.0f, c.y - 6.0f }, tint);
+        }
+        const char* range = TextFormat("%d–%d / %d", roomBrowserScroll + 1, std::min((int)rooms.size(), roomBrowserScroll + rows),
+                                       (int)rooms.size());
+        Ui::Text(range, (int)(panel.x + panel.width) - 20 - Ui::Measure(range, 12), y + 18, 12, Ui::kTextDim);
+    }
+    // Мэдээ: орж байна, өрөө дүүрсэн, холбогдож чадсангүй
+    const std::string& note = !roomBrowserNote.empty()             ? roomBrowserNote
+                              : !Account::RoomListBlocked().empty() ? Account::RoomListBlocked()
+                                                                    : Account::RoomListNote();
+    if (!note.empty())
+    {
+        Ui::Text(note.c_str(), (int)(panel.x + (panel.width - (float)Ui::Measure(note.c_str(), 13)) / 2.0f),
+                 (int)(panel.y + panel.height) - 76, 13, Ui::kAccent);
+    }
+    static const char* const labels[3] = { "ШИНЭЧЛЭХ", "АВТОМАТ ХАЙЛТ", "ХААХ" };
+    for (int i = 0; i < 3; ++i)
+    {
+        const Rectangle r = RoomBrowserButton(i);
+        const bool dim = (i == 0 && Account::RoomListLoading()) || (i > 0 && roomBrowserJoining);
+        const Color fill = i == 0 ? Ui::kInfo : i == 1 ? Ui::kGood : Color{ 255, 255, 255, 40 };
+        DrawRectangleRounded(r, 0.5f, 6, i == 2 ? fill : Fade(fill, dim ? 0.45f : 0.85f));
+        Ui::TextBold(labels[i], (int)(r.x + (r.width - (float)Ui::MeasureBold(labels[i], 14)) / 2.0f), (int)r.y + 10, 14,
+                     i == 2 ? Ui::kText : Color{ 10, 20, 30, 255 });
+    }
+}
+
 void Game::DrawCoopMap() const
 {
     if (!net.Available()) return;
@@ -8079,7 +8581,7 @@ void Game::DrawCoopMap() const
         Ui::TextBold(label, (int)(button.x + (button.width - (float)Ui::MeasureBold(label, 15)) / 2.0f), (int)button.y + 8, 15,
                      { 10, 20, 30, 255 });
     }
-    const Rectangle panel = { 430.0f, 598.0f, 500.0f, 114.0f };
+    const Rectangle panel = { 430.0f + MapScreenShift(), 598.0f, 500.0f, 114.0f };
     Ui::PanelAccent(panel, Ui::kInfo, { 10, 13, 19, 205 });
     Ui::Outline(panel, { 96, 196, 236, 70 }, 1.0f, 10.0f);
     const char* title = Account::ServerShop()                ? "ХАМТ ТОГЛОХ · ТУЛААН  (интернэт)"
@@ -8119,7 +8621,7 @@ void Game::DrawCoopMap() const
         }
         else
         {
-            Ui::Text("Тулаан: өөр тоглогчийн өрөөнд орно", (int)panel.x + 18, 666, 15, Ui::kText);
+            Ui::Text("Тулаан: нээлттэй өрөөнүүдээс сонгож орно", (int)panel.x + 18, 666, 15, Ui::kText);
             Ui::Text(enough ? "Орох: 20 Gold · ялагдвал 50 Gold"
                             : TextFormat("Тулаанд %d Gold хэрэгтэй (танд %d)", Account::RoomEntry(), Account::GoldAvailable()),
                      (int)panel.x + 18, 684, 12, enough ? Ui::kTextDim : Ui::kDanger);
@@ -8342,6 +8844,8 @@ bool Game::UpdateChat(float dt)
     if (chatDraft.size() > kChatMaxBytes) chatDraft.resize(kChatMaxBytes);
     if (tapped)
     {
+        // Android: бичих мөрийг товшвол утасны гар (үг таамаглахгүй) нээгдэнэ (хөтөч дээр хуруу <input>-д шууд хүрнэ)
+        if (touch && CheckCollisionPointRec(pointer, ChatBarRect())) NativeFieldOpen(kChatField, 4, -1, chatDraft.c_str());
         for (int i = 0; i < kChatPhraseCount; ++i)
         {
             if (!CheckCollisionPointRec(pointer, ChatPhraseRect(i))) continue;
@@ -8484,8 +8988,7 @@ void Game::UpdateEndDialog()
         endDialog.open = false;
         if (Account::GoldAvailable() >= Account::RoomEntry())
         {
-            coopStatus.clear();
-            Account::JoinRoom(); // сул өрөө олдтол хайна (UpdateCoopMap-ийн "ТУЛААН ХАЙХ"-тай ижил)
+            OpenRoomBrowser(); // UpdateCoopMap-ийн "ТУЛААН ХАЙХ"-тай ижил: өрөөнүүдээс сонгоно
         }
         else
         {
@@ -8667,6 +9170,7 @@ void Game::ChooseSeat(bool driver)
         garage.ClearRemote(index);
         garage.Mount(index);
         SetNotice("ХУЯГТ МАШИН: та жолоодно — ойрын цэрэг пулемётод сууна", 3.0f);
+        Audio::Announce("armor_drive");
         return;
     }
     // Тоглогч буудагч: хамгийн ойрын багийн гишүүн жолоодож, ойрын зомбинууд руу явна
@@ -8686,6 +9190,7 @@ void Game::ChooseSeat(bool driver)
     if (best < 0)
     {
         SetNotice("Жолоодох цэрэг ойролцоо алга — жолоочоор сууна уу", 3.0f);
+        Audio::Announce("armor_no_driver");
         return;
     }
     TraceLog(LOG_INFO, "VEHICLES: armored %d, player is the gunner, member %d drives", index, all[(size_t)best].member);
@@ -8697,6 +9202,7 @@ void Game::ChooseSeat(bool driver)
     camera.SetView(garage.At(index).heading, 0.25f);
     SetNotice(std::string("ХУЯГТ МАШИН: та пулемётод — ") + TeamMemberName(all[(size_t)best].member) +
               " жолоодож ойрын зомби руу явна. Буух: F", 3.5f);
+    Audio::Announce(TextFormat("armor_gunner_%d", std::clamp(all[(size_t)best].member, 0, 2)));
 }
 
 Rectangle Game::SeatChoiceButton(int index) const

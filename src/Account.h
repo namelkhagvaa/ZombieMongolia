@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 // Тоглогчийн данс: бүртгэл, аймгийн эрх, төлбөр (backend/: Django API, сүлжээ нь Online.h).
 //
@@ -16,6 +17,8 @@ namespace Account
 {
     // enabled = false (туршилтын горим): бүх аймаг нээлттэй, цонх гарахгүй. apiBase хоосон бол Online::DefaultApiBase().
     void Init(bool enabled, const std::string& apiBase);
+    // Туршилт (дэлгэцийн зураг): сервергүйгээр нэвтэрсэн мэт харагдуулна (нэр, Gold, XP)
+    void TestSignIn(const std::string& name, int gold, int xp);
     bool Enabled();
     bool SignedIn();
     // Бүртгэлтэй нэр (хамтарсан тоглолтод харагдана); нэвтрээгүй бол хоосон.
@@ -80,6 +83,7 @@ namespace Account
     // зочин нь) найзын кодоор орсон хамт тоглолт эсэх
     const std::string& RoomCode();
     bool RoomPvp();
+    const std::string& RoomPvpNote(); // хост: өрөө яагаад тулаангүй болсон (серверээс; хоосон = мэдэхгүй)
     bool RoomCoop();
     // Найзын кодоор нэгдэх: хамт тоглолт (тулаангүй, төлбөргүй). Амжилттай бол TakeJoinedRoom, эс бөгөөс
     // TakeSearchNote-д шалтгаан.
@@ -87,7 +91,25 @@ namespace Account
     int GoldAvailable(); // барьцаалаагүй Gold
     int RoomEntry();
     // Сул өрөө олдох хүртэл (60 секунд) хайж, олдмогц оруулна; CancelRoomSearch-ээр зогсоно.
-    void JoinRoom();
+    // roomId >= 0: жагсаалтаас сонгосон тэр өрөөнд нэг л удаа оролдоно (болохгүй бол TakeSearchNote-д шалтгаан).
+    void JoinRoom(int roomId = -1);
+    // Тулааны өрөөний жагсаалт (Counter-Strike-ийн сервер жагсаалт шиг): RequestRoomList серверээс татна,
+    // RoomListLoading хариу хүлээж байна. Зэргийн хүрээнээс гадуурх өрөө joinable=false, шалтгаантай.
+    struct RoomListing
+    {
+        int id = -1;
+        std::string host;
+        int hostRank = 1, province = 0, done = 0, age = 0; // done: биелсэн даалгавар, age: нээгдээд хэдэн секунд
+        bool joinable = false;
+        std::string reason;
+    };
+    void RequestRoomList();
+    bool RoomListLoading();
+    const std::vector<RoomListing>& RoomList();
+    const std::string& RoomListNote(); // татаж чадаагүй шалтгаан (хоосон = болсон)
+    const std::string& RoomListBlocked(); // энэ тоглогч яагаад тулаанд орж чадахгүй (хоосон = болно)
+    double RoomListTime();             // сүүлд амжилттай татсан GetTime() (0 = хараахан)
+    void TestRoomList(int count);      // туршилт: сервергүй жишээ мөрүүд
     bool SearchingRoom();
     void CancelRoomSearch();
     bool TakeSearchNote(std::string& text); // нэг удаа: хайлтын үр дүн ("өрөө олдсонгүй" г.м.)
@@ -107,6 +129,13 @@ namespace Account
     void ConfirmGuest();
     int RoomGuestSoldiers();
     int RoomGuestHealthLevel();
+    int RoomGuestDamageLevel(); // хост: зочны зэвсгийн хохирлын түвшин (-1 = мэдэхгүй)
+    // Зэрэг (src/Rank.h): дансны XP, зэрэг (нэвтрээгүй бол 0 XP, 1-р зэрэг). Өрөөний хост, зочны зэрэг (-1 = мэдэхгүй):
+    // хамтын тоглолтод зомбины хүч хостын зэргээр, хост зочны амийг серверийн мэдэх зэргээр хязгаарлана.
+    int Xp();
+    int Rank();
+    int RoomHostRank();
+    int RoomGuestRank();
     int RoomBattle();
     // Хост: даалгаврын ахиц, амьд элсүүлсэн цэргийн тоог серверт хадгална (зочин ялбал тэр үргэлжлүүлнэ).
     void UploadStage(const std::string& stage, int recruits);

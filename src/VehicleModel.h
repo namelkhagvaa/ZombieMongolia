@@ -16,6 +16,8 @@ enum class VehicleModelId
     Helicopter, // унадаг Ми-8 (unadag_helicopter.glb -> heli.vmesh): сэнс тусдаа хэсэг (kind 3, 4)
     DropHelicopter, // ачаа буулгадаг нисдэг тэрэг (drop_buulgadag_helicopter.glb -> dropheli.vmesh)
     Armored,        // хуягт машин (armored.glb -> armored.vmesh): пулемёт тусдаа хэсэг (kind 3, босоо тэнхлэгээр эргэнэ)
+    Sedan,          // Toyota Crown (crown.glb -> crown.vmesh)
+    Compact,        // Toyota Aqua (aqua.glb -> aqua.vmesh)
     Count
 };
 

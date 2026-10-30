@@ -12,7 +12,7 @@ from datetime import timezone as dt_timezone
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import GameLog, Player, Room
+from .models import Event, GameLog, Player, Room
 
 KEEP_DAYS = 14
 MAX_ENTRIES = 200            # нэг хүсэлтэд
@@ -77,6 +77,14 @@ def store(player, payload):
                             step=match.group(1) if match else "", text=text,
                             at=datetime.fromtimestamp(stamp / 1000.0, tz=dt_timezone.utc)))
     GameLog.objects.bulk_create(rows)
+    # Тулаанд холбогдож чадаагүй шалтгаан (тоглоомын "STEP: join_failed <шалтгаан>: <тайлбар>"): админы тоглогчийн
+    # үйл явдлын түүхэнд шууд харагдана
+    Event.objects.bulk_create([
+        Event(player=player, kind="battle_join_failed", data={
+            "reason": (row.text[len("STEP: join_failed "):].split(":", 1)[0] or "?")[:24],
+            "detail": row.text.split(":", 2)[2].strip()[:200] if row.text.count(":") >= 2 else "",
+            "room": row.room_id, "platform": row.source, "build": row.build})
+        for row in rows if row.step == "join_failed"])
     return len(rows)
 
 
