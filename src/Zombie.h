@@ -35,10 +35,15 @@ struct Zombie
     float scale = 1.0f;
     float attackCooldown = 0.0f;
     float attackAnim = 0.0f; // >0: гараа савж цохиж байна
-    float stagger = 0.0f;
+    float stagger = 0.0f;    // >0: суманд оногдоод цочсон, удааширна
     // Зураглалын нарийвчлал (0 бүтэн загвар, 1 хөнгөн, 2 маш хөнгөн): зайгаар, хоцролттой (хил дээр анивчихгүй).
     // Зөвхөн зурахад: симуляц, сүлжээ, оногдолд нөлөөгүй.
-    mutable unsigned char drawLod = 1;    // >0: суманд оногдоод цочсон, удааширна
+    mutable unsigned char drawLod = 1;
+    // Дайралтын байр: өмнөх кадрын бай ба түүн хүртэлх зай; engaged = бай руу ойртож дайрах эрхтэй
+    // (бай бүрт хамгийн ойрын хэд нь л), бусад нь эргэн тойронд нь зайтай эргэлдэж хүлээнэ.
+    int chaseTarget = -2;
+    float chaseDistance = 1e9f;
+    bool engaged = true;
     float deathTimer = 0.0f; // үхсэнээс хойших хугацаа
     bool airborne = false;   // машинд мөргүүлээд агаарт шидэгдсэн
     Vector3 flight = { 0.0f, 0.0f, 0.0f }; // шидэгдсэн үеийн хурд

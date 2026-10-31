@@ -38,6 +38,11 @@ namespace
     const float kSimpleDistance = 85.0f;  // үүнээс хол (манан дунд) кодоор үүсгэсэн хамгийн хөнгөн дүрсээр
 #endif
     const float kAggroDistance = 60.0f; // ийм зайд бай орж ирэхэд зомби сэрэмжилж хөөнө
+    // Тархалт: бай бүрийг нэгэн зэрэг хамгийн ойрын kEngageSlots зомби л дайрна; бусад нь kWaitRing орчим зайд
+    // тойрон эргэлдэж, урд талынх нь үхэх эсвэл холдоход орж ирнэ (бөөн овоо болж шахалдахгүй).
+    const int kEngageSlots = 6;
+    const float kWaitRing = 4.5f;
+    const float kCrowdGap = 0.3f;       // амьд зомбинуудын хоорондох нэмэлт зай (биеийн өргөн дээр)
     // Баавгай: ийм ойр хүн / зомби ирвэл дайрна; уурласан үед хөөх зай; тэнүүчлэх хурд, хүрээ
     const float kBearAggro = 9.0f;
     const float kBearChase = 40.0f;
@@ -548,6 +553,22 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
     navClock += dt;
     const float kClimbTime = 1.1f; // цонхоор авирч орох хугацаа
 
+    // Дайралтын байр (өмнөх кадрын бай, зайгаар): бай бүрт хамгийн ойрын kEngageSlots нь, мөн аль хэдийн
+    // хүрч очсон нь дайрна. Аварга үргэлж дайрна.
+    for (Zombie& zombie : zombies)
+    {
+        zombie.engaged = true;
+        if (!zombie.IsAlive() || !zombie.alerted || zombie.IsBear() || zombie.boss || zombie.chaseTarget == -2) continue;
+        if (zombie.chaseDistance < zombie.BodyRadius() + 1.0f) continue;
+        int closer = 0;
+        for (const Zombie& other : zombies)
+        {
+            if (&other == &zombie || !other.IsAlive() || !other.alerted || other.IsBear() || other.chaseTarget != zombie.chaseTarget) continue;
+            if (other.chaseDistance < zombie.chaseDistance && ++closer >= kEngageSlots) break;
+        }
+        zombie.engaged = closer < kEngageSlots;
+    }
+
     for (Zombie& zombie : zombies)
     {
         Vector3& pos = zombie.mover.position;
@@ -634,6 +655,8 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
             }
         }
 
+        zombie.chaseTarget = target;
+        zombie.chaseDistance = targetDistance;
         zombie.attackCooldown -= dt;
         zombie.attackAnim -= dt;
         zombie.stagger -= dt;
@@ -813,6 +836,14 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
             }
             if (smartLevel >= 75 && zombie.type == ZombieType::Brute && targetDistance < 15.0f) boost = 1.5f;
         }
+        const float waitRing = kWaitRing + (float)(zombie.id % 3) * 0.9f; // хүлээх тойрог: 4.5-6.3 м (давхарлагдахгүй)
+        if (!detour && !zombie.engaged && targetDistance < waitRing + 2.5f)
+        {
+            // Ээлжээ хүлээх: байнаас зайтай тойрог дээр аажуухан хажуу тийш эргэлдэнэ (шууд шахалдахгүй)
+            const float angle = std::atan2(pos.x - targetPosition.x, pos.z - targetPosition.z) + ((zombie.id % 2) ? 0.35f : -0.35f);
+            moveTarget = { targetPosition.x + std::sin(angle) * waitRing, moveTarget.y, targetPosition.z + std::cos(angle) * waitRing };
+            boost = 0.55f;
+        }
         if (detour || targetDistance > reach * 0.8f)
         {
             // Цочилт: эхэндээ бараг зогсоно, дараа нь аажим хурдална (огцом зогсоод огцом гүйхгүй)
@@ -878,7 +909,7 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
                 Vector3& a = zombies[i].mover.position;
                 Vector3& b = zombies[j].mover.position;
                 if (std::fabs(a.y - b.y) > 1.5f) continue; // өөр давхарт
-                const float minDistance = zombies[i].BodyRadius() + zombies[j].BodyRadius();
+                const float minDistance = zombies[i].BodyRadius() + zombies[j].BodyRadius() + kCrowdGap;
                 const float dx0 = a.x - b.x, dz0 = a.z - b.z;
                 if (std::fabs(dx0) > minDistance || std::fabs(dz0) > minDistance) continue;
                 const float distance = std::sqrt(dx0 * dx0 + dz0 * dz0);
