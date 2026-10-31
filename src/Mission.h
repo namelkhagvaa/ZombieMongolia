@@ -166,8 +166,8 @@ private:
     MissionParams params = {};
     int province = 0;
     std::vector<ObjectiveState> states;
-    int quotaSmall = 1000;  // алхагч + гүйгч
-    int quotaBig = 200;     // том зомби
+    int quotaSmall = 1500;  // алхагч + гүйгч
+    int quotaBig = 300;     // том зомби
     int aliveSmall = 0;     // одоо амьд байгаа (frame бүрд шинэчлэгдэнэ)
     int aliveBig = 0;
     int alivePool[kHordePools][2] = {}; // даалгавар бүрийн нөөцөөс одоо амьд: [0] жижиг, [1] том
