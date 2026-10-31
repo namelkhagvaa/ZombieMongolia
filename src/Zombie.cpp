@@ -23,7 +23,11 @@ namespace
     const float kCorpseTime = 4.5f;  // цогцос алга болох хүртэлх хугацаа
     const float kSinkTime = 1.0f;    // төгсгөлд газарт шингэх хугацаа
     const float kSpeedScale = 0.8f;  // бүх зомбины үндсэн хурдыг 20% удаашруулна
-    const float kModelDistance = 60.0f;   // үүнээс хол зомбийг загварын хөнгөн хувилбараар зурна
+    // Бүтэн загвар (~18.7 мянган гурвалжин) зөвхөн ойрын зомбид: 12 м-ээс ойртоход бүтэн, 15 м-ээс холдоход хөнгөн
+    // (~2.2 мянга) болно (хоцролт: хил дээр анивчихгүй). Хэмжилт: 40 зомбитой үед дүрийн GPU ачаалал хамгийн их байв.
+    const float kModelDistance = 12.0f;
+    const float kModelExitDistance = 15.0f;
+    const float kSimpleExitGap = 6.0f;    // маш хөнгөн хувилбараас буцахдаа kSimpleDistance-ээс ийм ойр ирэхэд
     // Зэрэг харагдах зомби олон тул зөвхөн хамгийн ойрын хэдийг нь олон гурвалжинтай загвараар зурна
     // (утсан дээр цөөн). Бусад нь хөнгөн дүрсээр зурагдана.
 #if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
@@ -1292,8 +1296,8 @@ int ZombieHorde::AliveCount() const
 
 void ZombieHorde::Draw(Vector3 viewPosition, float maxDistance, bool showColliders) const
 {
-    // Загвараар зурах зайн хязгаар: хамгийн ойрын kModelBudget зомбины хамгийн холынх хүртэл.
-    float modelDistance = kModelDistance;
+    // Бүтэн загварын тооны хязгаар: хамгийн ойрын kModelBudget зомбины хамгийн холынх хүртэл (12/15 м-ийн шатнаас гадна).
+    float modelDistance = 1.0e9f;
     if ((int)zombies.size() > kModelBudget)
     {
         static std::vector<float> distances;
@@ -1303,7 +1307,7 @@ void ZombieHorde::Draw(Vector3 viewPosition, float maxDistance, bool showCollide
             distances.push_back(HorizontalDistance(viewPosition, zombie.mover.position));
         }
         std::nth_element(distances.begin(), distances.begin() + kModelBudget, distances.end());
-        modelDistance = std::min(modelDistance, distances[(size_t)kModelBudget]);
+        modelDistance = distances[(size_t)kModelBudget];
     }
 
     for (const Zombie& zombie : zombies)
@@ -1353,13 +1357,22 @@ void ZombieHorde::Draw(Vector3 viewPosition, float maxDistance, bool showCollide
             pose.knee[1] = 30.0f;
         }
         HumanoidLook look = LookFor(zombie);
-        if (viewDistance >= kSimpleDistance)
+        // Нарийвчлалын шат: хоцролттой (орох, гарах зай өөр)
+        int lod = zombie.drawLod;
+        if (lod == 0 && viewDistance > kModelExitDistance) lod = 1;
+        if (lod >= 1 && viewDistance < kModelDistance) lod = 0;
+        if (lod <= 1 && viewDistance >= kSimpleDistance) lod = 2;
+        if (lod == 2 && viewDistance < kSimpleDistance - kSimpleExitGap) lod = viewDistance < kModelDistance ? 0 : 1;
+        zombie.drawLod = (unsigned char)lod;
+        // (бүтэн загварын тооны дээд хязгаар: олон зомби ойрхон бөөгнөрвөл хамгийн ойрын kModelBudget нь л)
+        if (lod == 0 && viewDistance >= modelDistance) lod = 1;
+        if (lod == 2)
         {
             // Маш хол (манан дунд жижиг): загварын маш хөнгөн хувилбар (кодоор үүсгэсэн хайрцган дүрс бусдаас ялгардаг байв)
             look.lowDetail = HasCharacterModel(look.model) ? 2 : 0;
             if (!HasCharacterModel(look.model)) look.model = -1;
         }
-        else if (viewDistance >= modelDistance)
+        else if (lod == 1)
         {
             look.lowDetail = 1; // холын зомби: загварын хөнгөн хувилбар (дөрвөлжин дүрс биш)
         }

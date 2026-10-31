@@ -1124,7 +1124,12 @@ void SoldierSquad::Draw(Vector3 viewPosition, bool showColliders) const
             soldier.member >= 0 ? TeamMemberLook(soldier.member, soldier.guestTeam ? guestLeaderSkin : leaderSkin) : recruitLook;
         HumanoidLook look = memberLook;
         if (soldier.swimming && soldier.riding < 0) look.held = HeldItem::None; // сэлж байхад буу харагдахгүй
-        const bool detailed = HorizontalDistance(viewPosition, soldier.mover.position) < kHumanoidDetailDistance;
+        const float viewDistance = HorizontalDistance(viewPosition, soldier.mover.position);
+        const bool detailed = viewDistance < kHumanoidDetailDistance;
+        // Бүтэн загвар (~18.7 мянган гурвалжин) зөвхөн ойр: зомбины адил 15 м-ээс хол хөнгөн, 12 м-ээс ойр бүтэн (хоцролттой)
+        if (viewDistance > 15.0f) soldier.lightModel = true;
+        else if (viewDistance < 12.0f) soldier.lightModel = false;
+        if (soldier.lightModel) look.lowDetail = 1;
         Profile::Token poseTiming = Profile::Begin(PROFILE_CHARACTER_NAME("char 1 pose"));
         HumanoidPose pose = MakeSoldierPose(soldier.walkCycle, soldier.moving ? soldier.moveAmount : 0.0f, true,
                                             (float)GetTime() + soldier.walkCycle, soldier.recoil, look.held);
