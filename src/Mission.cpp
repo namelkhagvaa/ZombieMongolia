@@ -935,9 +935,9 @@ void Mission::DrawBanner() const
     const int screenWidth = ViewWidth(), screenHeight = ViewHeight();
     const float width = std::min(640.0f, (float)screenWidth - 40.0f), height = 96.0f;
     const Rectangle card = { ((float)screenWidth - width) * 0.5f, (float)screenHeight * 0.25f + slide, width, height };
-    Ui::Panel(card, Fade({ 12, 16, 22, 255 }, 0.9f * alpha), 14.0f);
+    Ui::Panel(card, Fade({ 20, 30, 43, 255 }, 0.9f * alpha), 14.0f);
     Ui::Outline(card, Fade(accent, 0.75f * alpha), 2.0f, 14.0f);
-    DrawRectangleRounded({ card.x, card.y + 10.0f, 5.0f, card.height - 20.0f }, 1.0f, 4, Fade(accent, alpha));
+    Ui::Fill({ card.x, card.y + 10.0f, 5.0f, card.height - 20.0f }, Fade(accent, alpha));
 
     const Vector2 badge = { card.x + 52.0f, card.y + card.height * 0.5f };
     if (banner->completed) DrawCheckBadge(badge, 28.0f, alpha);
@@ -977,20 +977,20 @@ void Mission::DrawBriefing() const
     const int goalLines = 2;
     const float height = std::min((float)screenHeight - 24.0f, 150.0f + 24.0f * (float)goalLines + row * (float)count + 64.0f);
     const Rectangle card = { ((float)screenWidth - width) * 0.5f, ((float)screenHeight - height) * 0.5f, width, height };
-    Ui::Panel(card, Fade({ 14, 18, 26, 255 }, 0.95f * alpha), 18.0f);
+    Ui::Panel(card, Fade({ 20, 30, 43, 255 }, 0.95f * alpha), 18.0f);
     Ui::Outline(card, Fade(kMarker, 0.6f * alpha), 2.0f, 18.0f);
 
     const int left = (int)card.x + 28;
     int y = (int)card.y + 20;
     Ui::TextBold(TextFormat("АЙМАГ %d / %d", province + 1, (int)Provinces().size()), left, y, 15, Fade(kMarker, alpha));
     y += 22;
-    Ui::TextBold(stage->provinceName, left, y, 40, Fade(Ui::kText, alpha));
+    Ui::TextDisplay(stage->provinceName, left, y, 42, Fade(Ui::kText, alpha), 0.06f);
     y += 50;
     y += 24 * DrawWrapped(stage->goal, left, y, 20, (int)card.width - 56, Fade(Ui::kTextDim, alpha));
     y += 10;
     DrawLine(left, y, (int)(card.x + card.width) - 28, y, Fade(kMarker, 0.4f * alpha));
     y += 12;
-    Ui::TextBold("ДААЛГАВРУУД", left, y, 15, Fade(Ui::kTextDim, alpha));
+    Ui::TextDisplay("ДААЛГАВРУУД", left, y, 15, Fade(Ui::kTextDim, alpha), 0.14f);
     y += 24;
 
     for (int i = 0; i < count && (float)y + row < card.y + card.height - 48.0f; ++i)
@@ -1016,8 +1016,7 @@ void Mission::DrawBriefing() const
     const int bottom = (int)(card.y + card.height) - 34;
     Ui::Text(hint, (int)(card.x + (card.width - (float)hintWidth) * 0.5f), bottom, 16, Fade(Ui::kTextDim, alpha));
     const float left_frac = std::clamp(briefingTimer / 12.0f, 0.0f, 1.0f);
-    DrawRectangleRounded({ card.x + 28.0f, card.y + card.height - 10.0f, (card.width - 56.0f) * left_frac, 3.0f }, 1.0f, 4,
-                         Fade(kMarker, 0.7f * alpha));
+    Ui::Fill({ card.x + 28.0f, card.y + card.height - 10.0f, (card.width - 56.0f) * left_frac, 3.0f }, Fade(kMarker, 0.7f * alpha));
 }
 
 bool Mission::InClearedZone(Vector3 position) const
@@ -1567,10 +1566,10 @@ void Mission::DrawJournal() const
     const Color dim = Ui::kTextDim;
 
     DrawRectangle(0, 0, screenWidth, screenHeight, Fade({ 6, 8, 12, 255 }, 0.7f));
-    Ui::Panel({ (float)left, (float)top, (float)width, (float)height }, { 14, 18, 26, 235 }, 18.0f);
+    Ui::Panel({ (float)left, (float)top, (float)width, (float)height }, { 20, 30, 43, 235 }, 18.0f);
 
     int y = top + 20;
-    Ui::TextBold("ДААЛГАВРЫН ЖУРНАЛ", left + 28, y, 30, text);
+    Ui::TextDisplay("ДААЛГАВРЫН ЖУРНАЛ", left + 28, y, 30, text, 0.06f);
     DrawRectangle(left + 28, y + 40, 60, 3, kMarker);
     char header[128];
     std::snprintf(header, sizeof(header), "%s \xE2\x80\x94 ҮЕ %02d / %02d", stage->provinceName, province + 1,

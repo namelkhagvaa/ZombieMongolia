@@ -2,29 +2,57 @@
 
 #include "raylib.h"
 
-// Тоглоомын UI-ийн нэгдсэн хэв маяг: бөөрөнхий булантай хагас тунгалаг "шил" самбар, товчны тэмдэг,
-// бөөрөнхий явцын зурвас. HUD, мэдрэгчтэй товчлуур, газрын зургийн дэлгэц бүгд эндээс өнгө, хэлбэрээ авна.
+// Тоглоомын UI-ийн нэгдсэн дизайн систем (2026): бараан хөх цэргийн командын самбар — нимгэн хүрээ, бага
+// бөөрөнхий (тактикийн) булан, алтан / улбар шар онцлол, хяналттай гэрэлтэлт. HUD, мэдрэгчтэй товчлуур, газрын
+// зургийн дэлгэц, цонх бүгд өнгө, хэлбэрээ эндээс авна (дэлгэц бүр өнгөө өөрөө бичихгүй).
 namespace Ui
 {
-    // --- Өнгө ---
-    inline constexpr Color kPanel = { 12, 16, 22, 178 };       // самбарын дэвсгэр
-    inline constexpr Color kPanelSoft = { 12, 16, 22, 120 };
-    inline constexpr Color kBorder = { 255, 255, 255, 34 };    // самбарын нимгэн хүрээ
-    inline constexpr Color kText = { 242, 240, 234, 255 };
-    inline constexpr Color kTextDim = { 178, 184, 192, 255 };
-    inline constexpr Color kAccent = { 255, 192, 64, 255 };    // алтан шар: идэвхтэй, онцлох
-    inline constexpr Color kAccentDark = { 120, 86, 20, 200 };
-    inline constexpr Color kDanger = { 255, 92, 76, 255 };
-    inline constexpr Color kGood = { 112, 214, 132, 255 };
-    inline constexpr Color kInfo = { 96, 196, 236, 255 };
+    // --- Өнгөний токенууд ---
+    inline constexpr Color kBgDeep = { 8, 13, 22, 255 };        // #080D16 үндсэн дэвсгэр
+    inline constexpr Color kBg = { 16, 24, 36, 255 };           // #101824 хоёрдогч дэвсгэр
+    inline constexpr Color kPanelSolid = { 20, 30, 43, 255 };   // #141E2B самбар
+    inline constexpr Color kElevated = { 26, 38, 53, 255 };     // #1A2635 өргөгдсөн (карт, мөр)
+    inline constexpr Color kPanel = { 20, 30, 43, 214 };        // HUD-ын хагас тунгалаг самбар
+    inline constexpr Color kPanelSoft = { 20, 30, 43, 150 };
+    inline constexpr Color kBorder = { 255, 255, 255, 26 };     // rgba(255,255,255,0.10)
+    inline constexpr Color kBorderStrong = { 255, 255, 255, 52 };
+    inline constexpr Color kText = { 244, 246, 250, 255 };      // #F4F6FA
+    inline constexpr Color kTextDim = { 154, 167, 183, 255 };   // #9AA7B7
+    inline constexpr Color kAccent = { 255, 181, 27, 255 };     // #FFB51B алт: үндсэн үйлдэл, идэвхтэй
+    inline constexpr Color kOrange = { 244, 123, 32, 255 };     // #F47B20 улбар шар: хоёрдогч онцлол
+    inline constexpr Color kAccentDark = { 96, 64, 10, 215 };   // сонгогдсон мөрийн дэвсгэр
+    inline constexpr Color kDanger = { 240, 68, 68, 255 };      // #F04444
+    inline constexpr Color kGood = { 57, 200, 121, 255 };       // #39C879
+    inline constexpr Color kInfo = { 72, 190, 236, 255 };       // мэдээлэл, хамтын тоглолт
+    inline constexpr float kRadius = 4.0f;                      // бүх самбар, товчны булан (тактикийн, бага бөөрөнхий)
 
     // Шил самбар: бөөрөнхий булан, нимгэн цайвар хүрээ. accent > 0 бол зүүн ирмэгт өнгөт зураас.
     void Panel(Rectangle area, Color fill = kPanel, float radius = 10.0f);
     void PanelAccent(Rectangle area, Color accent, Color fill = kPanel, float radius = 10.0f);
     void Outline(Rectangle area, Color color, float thickness = 2.0f, float radius = 10.0f);
 
-    // Бөөрөнхий явцын зурвас (амь, цэнэглэлт). ratio 0..1.
+    // Явцын зурвас (амь, цэнэглэлт, XP): хурц булантай, 10%-ийн хуваалттай, дүүргэлтийн үзүүрт гэрэлтэлт. ratio 0..1.
     void Bar(Rectangle area, float ratio, Color fill, Color back = { 255, 255, 255, 30 });
+
+    // Товч: үндсэн (алтан градиент, бараан бичиг, гэрэлтэлт), хоёрдогч (өргөгдсөн, хүрээтэй), аюултай, ил (хүрээгүй).
+    enum class ButtonKind { Primary, Secondary, Danger, Ghost };
+    void Button(Rectangle area, const char* label, ButtonKind kind = ButtonKind::Secondary, bool hover = false, int size = 18);
+    // Энгийн дүүргэлт / хүрээ дизайн системийн булангаар (дэлгэцүүдийн шууд зурдаг товч, шошго, нүд): бараан саарал
+    // өнгийг самбарын өнгө рүү шилжүүлнэ.
+    void Fill(Rectangle area, Color color);
+    void Stroke(Rectangle area, float thickness, Color color);
+    // Цэсийн мөр / карт: энгийн (өргөгдсөн), hover / сонгогдсон (алтан градиент, зүүн ирмэгт алтан зураас, алтан
+    // хүрээ), аюултай мөр hover үед улаан.
+    void MenuRow(Rectangle area, bool hover, bool danger = false, bool selected = false);
+    // Цонхны ард: дэлгэцийг бараан хөхөөр бүдгэрүүлж, захыг харанхуйлна (vignette).
+    void Backdrop(float alpha = 0.72f);
+    // Самбарын толгой: гарчиг (гарчгийн фонт), доор нь нимгэн алтан зураас; дэд гарчиг (бүдэг) сонголттой.
+    void Header(float x, float y, float width, const char* title, const char* subtitle = nullptr, int size = 26);
+    // Тактикийн булангийн хаалт (дөрвөн буланд L): онцлох самбар, сонгогдсон карт.
+    void CornerBrackets(Rectangle area, Color color, float length = 12.0f, float thickness = 2.0f);
+    // Гарчгийн фонт (Bahnschrift; байхгүй бол тод)
+    void TextDisplay(const char* text, int x, int y, int size, Color color, float tracking = 0.04f);
+    int MeasureDisplay(const char* text, int size, float tracking = 0.04f);
 
     // Товчны тэмдэг: "F", "Q", "1" гэх мэт. Зүүн дээд булангаас нь зурна; өргөнийг буцаана.
     int KeyBadge(const char* key, int x, int y, int size, Color color = kText);

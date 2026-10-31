@@ -2,6 +2,7 @@
 
 #include "MeshBuilder.h"
 #include "Platform.h"
+#include "Profile.h"
 
 #include "raymath.h"
 #include "rlgl.h"
@@ -21,7 +22,7 @@ namespace
                                                   "model-1",       "model-3",       "demon",
                                                   "iron",          "survivor_doctor_man", "survivor_doctor_woman",
                                                   "survivor_student_boy", "survivor_student_girl", "survivor_monk",
-                                                  "model2",        "woman_zombie" };
+                                                  "model2",        "woman_zombie", "fp_arms" };
 
     // Загварын өндөр тоглоомын хүний өндөртэй (~1.9 м) таарахаар томруулна. Аврах иргэд бодит харьцаагаар:
     // эрэгтэй цэргээс бага зэрэг намхан, эмэгтэй, сурагч (15 настай) нь түүнээс намхан.
@@ -79,6 +80,7 @@ namespace
         std::vector<float> matrices;      // яс бүрийн 3x4 матриц (арьслахад)
         std::vector<Mesh> lod;            // хөнгөн хувилбар (холын дүрд): ясны матрицыг үндсэн mesh-тэй хуваалцана
         std::vector<Mesh> lodFar;         // маш хөнгөн (манан дунд жижиг харагдах дүрд)
+        std::vector<Mesh> arms;           // зөвхөн гарын гурвалжнууд (1-р этгээд): ясны матрицыг үндсэн mesh-тэй хуваалцана
     };
 
     Character characters[kCharacterCount];
@@ -569,6 +571,85 @@ void UploadBoneRows(Shader shader, const Matrix* bones, int count)
     SetShaderValueV(shader, location, rows.data(), SHADER_UNIFORM_VEC4, count * 3);
 }
 
+namespace
+{
+    // bone нь root эсвэл түүний удам мөн эсэх
+    bool UnderBone(const Model& model, int bone, int root)
+    {
+        for (int b = bone; b >= 0; b = model.bones[b].parent)
+        {
+            if (b == root) return true;
+        }
+        return false;
+    }
+
+    // Гурвалжны гурван орой бүгд гарын (мөрнөөс доош) ясанд голлон жинлэгдсэн бол үлдээж, шинэ mesh үүсгэнэ.
+    // Ясны матрицыг үндсэн mesh-тэй хуваалцана (Skin нэг удаа бичнэ).
+    Mesh ExtractArms(const Model& model, const Mesh& source, int rightArm, int leftArm)
+    {
+        Mesh arms = {};
+        if (!source.boneIds || !source.boneWeights || source.vertexCount <= 0) return arms;
+        auto armVertex = [&](int v) {
+            float weight = 0.0f;
+            for (int k = 0; k < 4; ++k)
+            {
+                const int bone = source.boneIds[v * 4 + k];
+                if (bone < model.boneCount && (UnderBone(model, bone, rightArm) || UnderBone(model, bone, leftArm)))
+                    weight += source.boneWeights[v * 4 + k];
+            }
+            return weight > 0.6f;
+        };
+        std::vector<int> remap((size_t)source.vertexCount, -1);
+        std::vector<int> used;
+        std::vector<unsigned short> indices;
+        for (int t = 0; t < source.triangleCount; ++t)
+        {
+            int corner[3];
+            bool keep = true;
+            for (int k = 0; k < 3; ++k)
+            {
+                corner[k] = source.indices ? source.indices[t * 3 + k] : t * 3 + k;
+                keep = keep && armVertex(corner[k]);
+            }
+            if (!keep) continue;
+            for (int k = 0; k < 3; ++k)
+            {
+                int& slot = remap[(size_t)corner[k]];
+                if (slot < 0)
+                {
+                    slot = (int)used.size();
+                    used.push_back(corner[k]);
+                }
+                indices.push_back((unsigned short)slot);
+            }
+        }
+        const int vertices = (int)used.size();
+        if (indices.empty() || vertices >= 65535) return arms;
+        arms.vertexCount = vertices;
+        arms.triangleCount = (int)indices.size() / 3;
+        arms.vertices = (float*)MemAlloc((unsigned int)vertices * 3 * sizeof(float));
+        if (source.texcoords) arms.texcoords = (float*)MemAlloc((unsigned int)vertices * 2 * sizeof(float));
+        if (source.normals) arms.normals = (float*)MemAlloc((unsigned int)vertices * 3 * sizeof(float));
+        arms.boneIds = (unsigned char*)MemAlloc((unsigned int)vertices * 4);
+        arms.boneWeights = (float*)MemAlloc((unsigned int)vertices * 4 * sizeof(float));
+        for (int i = 0; i < vertices; ++i)
+        {
+            const int v = used[(size_t)i];
+            std::memcpy(arms.vertices + i * 3, source.vertices + v * 3, 3 * sizeof(float));
+            if (arms.texcoords) std::memcpy(arms.texcoords + i * 2, source.texcoords + v * 2, 2 * sizeof(float));
+            if (arms.normals) std::memcpy(arms.normals + i * 3, source.normals + v * 3, 3 * sizeof(float));
+            std::memcpy(arms.boneIds + i * 4, source.boneIds + v * 4, 4);
+            std::memcpy(arms.boneWeights + i * 4, source.boneWeights + v * 4, 4 * sizeof(float));
+        }
+        arms.indices = (unsigned short*)MemAlloc((unsigned int)indices.size() * sizeof(unsigned short));
+        std::memcpy(arms.indices, indices.data(), indices.size() * sizeof(unsigned short));
+        arms.boneCount = source.boneCount;
+        arms.boneMatrices = source.boneMatrices;
+        UploadMesh(&arms, false);
+        return arms;
+    }
+}
+
 void LoadCharacterModels(Shader shader)
 {
     for (int id = 0; id < kCharacterCount; ++id)
@@ -671,6 +752,17 @@ void LoadCharacterModels(Shader shader)
         }
         int farTriangles = 0;
         for (const Mesh& mesh : c.lodFar) farTriangles += mesh.triangleCount;
+        if (id == kCharacterFpArms)
+        {
+            // 1-р этгээдийн гарын тусгай загвар: зөвхөн гарын хэсгийг тусгаарлана
+            int armTriangles = 0;
+            for (int index = 0; index < c.model.meshCount; ++index)
+            {
+                c.arms.push_back(ExtractArms(c.model, c.model.meshes[index], c.joints[RightArm], c.joints[LeftArm]));
+                armTriangles += c.arms.back().triangleCount;
+            }
+            TraceLog(LOG_INFO, "CHARACTER: %s first-person arms %d triangles", kNames[id], armTriangles);
+        }
         TraceLog(LOG_INFO, "CHARACTER: %s low-detail version %d triangles, far %d", kNames[id], lodTriangles, farTriangles);
         {
             // Алхааны өргөн загвар бүрд өөр: ташаа өргөн, өмд бүдүүн (анхны зогсолтод өвдөг ташаанаас илүү
@@ -704,7 +796,7 @@ void UnloadCharacterModels()
             c.material.maps[MATERIAL_MAP_ALBEDO].texture = {};
             UnloadMaterial(c.material);
             UnloadTexture(c.texture);
-            for (std::vector<Mesh>* list : { &c.lod, &c.lodFar })
+            for (std::vector<Mesh>* list : { &c.lod, &c.lodFar, &c.arms })
             {
                 for (Mesh& mesh : *list)
                 {
@@ -731,6 +823,81 @@ void SetCharacterBindPose(bool enabled)
 bool HasCharacterModel(int id)
 {
     return id >= 0 && id < kCharacterCount && characters[id].loaded;
+}
+
+bool HasCharacterArms(int id)
+{
+    if (!HasCharacterModel(id)) return false;
+    for (const Mesh& mesh : characters[id].arms)
+    {
+        if (mesh.vertexCount > 0) return true;
+    }
+    return false;
+}
+
+Vector3 CharacterEye(int id)
+{
+    if (!HasCharacterModel(id)) return { 0.0f, 1.62f, 0.08f };
+    const Character& c = characters[id];
+    const Vector3 neck = Vector3Scale(c.bind[(size_t)c.joints[Neck]], c.scale);
+    return { 0.0f, neck.y + 0.1f, neck.z + 0.09f };
+}
+
+Vector3 CharacterRightShoulder(int id)
+{
+    if (!HasCharacterModel(id)) return { -0.18f, 1.45f, 0.0f };
+    const Character& c = characters[id];
+    return Vector3Scale(c.bind[(size_t)c.joints[RightArm]], c.scale);
+}
+
+void DrawCharacterArms(int id, const Matrix& bodyToWorld, const ViewArmTarget targets[2], Color tint)
+{
+    if (!HasCharacterArms(id)) return;
+    Character& c = characters[id];
+    const float s = c.scale;
+    const Matrix worldToBody = MatrixInvert(bodyToWorld);
+    auto point = [&](Vector3 p) { return Vector3Scale(Vector3Transform(p, worldToBody), 1.0f / s); }; // -> загварын нэгж
+    auto direction = [&](Vector3 d) {
+        return Vector3Normalize(Vector3Subtract(Vector3Transform(d, worldToBody), Vector3Transform({ 0.0f, 0.0f, 0.0f }, worldToBody)));
+    };
+
+    // Анхны (bind) байрлалаас эхэлнэ: бие хөдөлгөөнгүй, зөвхөн гар IK-аар
+    std::fill(c.solved.begin(), c.solved.end(), 0);
+    for (int bone = 0; bone < c.model.boneCount; ++bone) Follow(c, bone);
+    Unsolve(c, RightArm);
+    Unsolve(c, LeftArm);
+    for (int side = 0; side < 2; ++side)
+    {
+        const Joint upper = side == 0 ? RightArm : LeftArm;
+        const Joint lower = side == 0 ? RightForeArm : LeftForeArm;
+        const Joint hand = side == 0 ? RightHand : LeftHand;
+        const ViewArmTarget& target = targets[side];
+        if (!target.active)
+        {
+            // Хэрэглэхгүй гар: доош унжина (дэлгэцэнд харагдахгүй)
+            Aim(c, upper, lower, { side == 0 ? -0.15f : 0.15f, -1.0f, 0.05f });
+            Aim(c, lower, hand, { 0.0f, -1.0f, 0.15f });
+            continue;
+        }
+        Reach(c, upper, lower, hand, point(target.palm), direction(target.pole), 0.08f / s);
+        FacePalm(c, side, direction(target.facing));
+        CurlFingers(c, side, target.curl);
+    }
+    Skin(c);
+
+    c.material.maps[MATERIAL_MAP_ALBEDO].color = tint;
+    rlDisableBackfaceCulling();
+    rlPushMatrix();
+    rlMultMatrixf(MatrixToFloat(bodyToWorld));
+    rlScalef(s, s, s);
+    for (const Mesh& mesh : c.arms)
+    {
+        if (mesh.vertexCount <= 0) continue;
+        UploadBoneRows(c.material.shader, mesh.boneMatrices, mesh.boneCount);
+        DrawMesh(mesh, c.material, MatrixIdentity());
+    }
+    rlPopMatrix();
+    rlEnableBackfaceCulling();
 }
 
 namespace
@@ -786,6 +953,7 @@ namespace
 //  - Зэвсэг бүр "бэлэн" ба "онилсон" хоёр байрлалтай; хутгаар дайрах, гранат шидэх нь бүтэн биеийн хөдөлгөөн.
 CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem held, bool direct, Color tint, int lowDetail)
 {
+    Profile::Token ikTiming = Profile::Begin(PROFILE_CHARACTER_NAME("char 2 ik")); // (Skin хүртэлх бүх байрлалын тооцоо)
     Character& c = characters[id];
     std::fill(c.solved.begin(), c.solved.end(), 0);
     const float s = c.scale;
@@ -1271,7 +1439,11 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
             c.solved[bone] = 1;
         }
     }
-    Skin(c);
+    Profile::End(ikTiming);
+    {
+        PROFILE_CHARACTER("char 3 skin");
+        Skin(c);
+    }
     c.material.maps[MATERIAL_MAP_ALBEDO].color = tint;
 
     // Tripo-гийн загварууд хоёр талт материалтай: нөмрөг, малгайн хүрээ, хувцасны захууд нэг давхар
@@ -1284,7 +1456,11 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         const std::vector<Mesh>& level = lowDetail >= 2 ? c.lodFar : c.lod;
         const bool light = lowDetail > 0 && index < (int)level.size() && level[(size_t)index].vertexCount > 0;
         const Mesh& mesh = light ? level[(size_t)index] : c.model.meshes[index];
-        UploadBoneRows(c.material.shader, mesh.boneMatrices, mesh.boneCount);
+        {
+            PROFILE_CHARACTER("char 4 bone upload");
+            UploadBoneRows(c.material.shader, mesh.boneMatrices, mesh.boneCount);
+        }
+        PROFILE_CHARACTER("char 5 drawmesh");
         DrawMesh(mesh, c.material, MatrixIdentity());
     }
     rlPopMatrix();

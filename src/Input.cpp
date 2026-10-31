@@ -258,7 +258,7 @@ namespace
     void DrawLayoutEdit()
     {
         const float w = (float)ViewWidth(), h = (float)ViewHeight();
-        DrawRectangle(0, 0, (int)w, (int)h, { 0, 0, 0, 150 });
+        Ui::Backdrop(0.59f);
         const char* hint = "Товчнуудыг хуруугаараа чирж хүссэн газраа тавиад ХАДГАЛАХ дарна уу";
         Ui::Text(hint, (int)((w - (float)Ui::Measure(hint, 16)) * 0.5f), 84, 16, Ui::kText);
         for (int item = 0; item < kLayoutCount; ++item)
@@ -266,7 +266,7 @@ namespace
             const Vector2 c = CenterOf(item, editAt, editSet);
             const float r = kLayoutRadius[item];
             const bool active = item == dragItem;
-            DrawCircleV(c, r, active ? Color{ 60, 46, 14, 220 } : Color{ 12, 16, 22, 200 });
+            DrawCircleV(c, r, active ? Color{ 96, 64, 10, 220 } : Color{ 20, 30, 43, 200 });
             DrawRing(c, r - 2.5f, r, 0.0f, 360.0f, 48, active ? Ui::kAccent : Color{ 255, 255, 255, 140 });
             const int size = item == kLayoutStick || item == kLayoutFire ? 18 : 14;
             Ui::TextBold(kLayoutNames[item], (int)(c.x - (float)Ui::MeasureBold(kLayoutNames[item], size) * 0.5f),
@@ -276,7 +276,7 @@ namespace
         for (int i = 0; i < 3; ++i)
         {
             const Rectangle r = LayoutButton(i);
-            DrawRectangleRounded(r, 0.3f, 8, i == 0 ? Ui::kAccent : Color{ 12, 16, 22, 230 });
+            DrawRectangleRounded(r, 0.3f, 8, i == 0 ? Ui::kAccent : Color{ 20, 30, 43, 230 });
             Ui::Outline(r, i == 0 ? Ui::kAccent : Color{ 255, 255, 255, 90 }, 1.5f, 10.0f);
             Ui::TextBold(labels[i], (int)(r.x + (r.width - (float)Ui::MeasureBold(labels[i], 17)) * 0.5f), (int)r.y + 16, 17,
                          i == 0 ? Color{ 20, 16, 8, 255 } : Ui::kText);
@@ -982,8 +982,8 @@ void InDrawTouch(const TouchState& state)
         return;
     }
 
-    const Color fill = { 12, 16, 22, 140 };
-    const Color fillActive = { 60, 46, 14, 190 };
+    const Color fill = { 20, 30, 43, 140 };
+    const Color fillActive = { 96, 64, 10, 190 };
     const Color edge = { 255, 255, 255, 60 };
     const Color accent = Ui::kAccent;
     const Color text = Ui::kText;
@@ -995,7 +995,7 @@ void InDrawTouch(const TouchState& state)
         {
             // Жижиг газрын зураг өөрөө зурагдсан: баруун доод буланд нь "томруулах" тэмдэг л нэмнэ
             const Vector2 corner = { button.area.x + button.area.width - 4.0f, button.area.y + button.area.height - 4.0f };
-            DrawCircleV(corner, 17.0f, { 12, 16, 22, 230 });
+            DrawCircleV(corner, 17.0f, { 20, 30, 43, 230 });
             DrawRing(corner, 15.5f, 17.0f, 0.0f, 360.0f, 32, { 120, 190, 255, 200 });
             if (!Ui::DrawIcon(Ui::Icon::Fullscreen, { corner.x - 10.0f, corner.y - 10.0f, 20.0f, 20.0f }))
             {
@@ -1187,7 +1187,7 @@ void InDrawTouch(const TouchState& state)
             const Vector2 lockAt = { stickCenter.x, stickCenter.y - kStickRadius * kLockDistance };
             const bool lit = lockArmed || autoRun;
             DrawLineEx({ stickCenter.x, stickCenter.y - kStickRadius }, { lockAt.x, lockAt.y + 26.0f }, 2.0f, { 255, 255, 255, 50 });
-            DrawCircleV(lockAt, 26.0f, lit ? Color{ 60, 46, 14, 200 } : Color{ 10, 12, 16, 120 });
+            DrawCircleV(lockAt, 26.0f, lit ? Color{ 96, 64, 10, 200 } : Color{ 10, 12, 16, 120 });
             DrawRing(lockAt, 24.0f, 26.0f, 0.0f, 360.0f, 40, lit ? accent : edge);
             // Дээш харсан давхар сум ("гүйх")
             for (float dy : { -6.0f, 4.0f })
@@ -1207,7 +1207,7 @@ void InDrawTouch(const TouchState& state)
         {
             knob = { stickCenter.x + move.x * kStickRadius, stickCenter.y - move.y * kStickRadius };
         }
-        DrawCircleV(stickCenter, kStickRadius, { 12, 16, 22, 80 });
+        DrawCircleV(stickCenter, kStickRadius, { 20, 30, 43, 80 });
         DrawRing(stickCenter, kStickRadius - 2.0f, kStickRadius, 0.0f, 360.0f, 64, InSprint() ? accent : edge);
         // Чиглэлийн жижиг сумнууд
         for (int i = 0; i < 4; ++i)

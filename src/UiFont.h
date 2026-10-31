@@ -19,3 +19,7 @@ int UiMeasure(const char* text, int size);
 // Тод (semibold) фонт: гарчиг, тоо. Олдохгүй бол энгийн фонтоор зурна.
 void UiTextBold(const char* text, int x, int y, int size, Color color);
 int UiMeasureBold(const char* text, int size);
+// Гарчгийн фонт (компьютер: Bahnschrift — DIN маягийн нарийн, цэргийн самбарын үсэг; монгол Ө, Ү, ₮-тэй).
+// tracking: үсэг хоорондын нэмэлт зай (хэмжээний хувь). Олдохгүй бол тод фонтоор.
+void UiTextDisplay(const char* text, int x, int y, int size, Color color, float tracking = 0.04f);
+int UiMeasureDisplay(const char* text, int size, float tracking = 0.04f);

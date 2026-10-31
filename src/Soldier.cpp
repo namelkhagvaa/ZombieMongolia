@@ -1,4 +1,5 @@
 #include "Player.h"
+#include "Profile.h"
 #include "Navigation.h"
 #include "ViewCull.h"
 #include "Soldier.h"
@@ -1124,8 +1125,10 @@ void SoldierSquad::Draw(Vector3 viewPosition, bool showColliders) const
         HumanoidLook look = memberLook;
         if (soldier.swimming && soldier.riding < 0) look.held = HeldItem::None; // сэлж байхад буу харагдахгүй
         const bool detailed = HorizontalDistance(viewPosition, soldier.mover.position) < kHumanoidDetailDistance;
+        Profile::Token poseTiming = Profile::Begin(PROFILE_CHARACTER_NAME("char 1 pose"));
         HumanoidPose pose = MakeSoldierPose(soldier.walkCycle, soldier.moving ? soldier.moveAmount : 0.0f, true,
                                             (float)GetTime() + soldier.walkCycle, soldier.recoil, look.held);
+        Profile::End(poseTiming);
         pose.aim = soldier.aimPose;
         pose.speed = soldier.moving ? soldier.moveAmount * kWalkSpeed : 0.0f;
         if (soldier.swimming && soldier.riding < 0)

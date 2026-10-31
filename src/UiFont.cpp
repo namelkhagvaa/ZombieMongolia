@@ -8,6 +8,8 @@ namespace
     bool loaded = false;
     Font boldFont = {};
     bool boldLoaded = false;
+    Font displayFont = {};
+    bool displayLoaded = false;
     const int kBaseSize = 40; // ачаалах хэмжээ; жижиг томоор зурахад гөлгөр шүүлтээр масштаблагдана
 
     float Spacing(int size)
@@ -42,6 +44,16 @@ void LoadUiFont()
     const bool checkExists = true;
 #endif
 #if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
+    // Гарчгийн фонт: Bahnschrift (Windows 10+), нарийн DIN үсэг
+    if (FileExists("C:/Windows/Fonts/bahnschrift.ttf"))
+    {
+        displayFont = LoadFontEx("C:/Windows/Fonts/bahnschrift.ttf", 48, codepoints.data(), (int)codepoints.size());
+        if (displayFont.texture.id != 0 && displayFont.glyphCount > 100)
+        {
+            SetTextureFilter(displayFont.texture, TEXTURE_FILTER_BILINEAR);
+            displayLoaded = true;
+        }
+    }
     // Тод фонт: Segoe UI Semibold, эсвэл Bold
     for (const char* path : { "C:/Windows/Fonts/seguisb.ttf", "C:/Windows/Fonts/segoeuib.ttf", "C:/Windows/Fonts/arialbd.ttf" })
     {
@@ -87,6 +99,11 @@ void UnloadUiFont()
         UnloadFont(boldFont);
         boldLoaded = false;
     }
+    if (displayLoaded)
+    {
+        UnloadFont(displayFont);
+        displayLoaded = false;
+    }
 }
 
 bool UiHasCyrillic()
@@ -118,6 +135,25 @@ void UiTextBold(const char* text, int x, int y, int size, Color color)
         return;
     }
     DrawTextEx(boldFont, text, { (float)x, (float)y }, (float)size, 0.0f, color);
+}
+
+void UiTextDisplay(const char* text, int x, int y, int size, Color color, float tracking)
+{
+    if (!displayLoaded)
+    {
+        UiTextBold(text, x, y, size, color);
+        return;
+    }
+    // Bahnschrift-ийн үсгийн өндөр Segoe-оос бага: ижил хэмжээнд харагдуулахаар бага зэрэг томруулна
+    const float scaled = (float)size * 1.08f;
+    DrawTextEx(displayFont, text, { (float)x, (float)y - (float)size * 0.04f }, scaled, scaled * tracking, color);
+}
+
+int UiMeasureDisplay(const char* text, int size, float tracking)
+{
+    if (!displayLoaded) return UiMeasureBold(text, size);
+    const float scaled = (float)size * 1.08f;
+    return (int)MeasureTextEx(displayFont, text, scaled, scaled * tracking).x;
 }
 
 int UiMeasureBold(const char* text, int size)

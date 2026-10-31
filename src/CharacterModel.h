@@ -35,7 +35,11 @@ constexpr int kCharacterStudentGirl = 16; // assets\survivor_student_girl
 constexpr int kCharacterMonk = 17;        // assets\survivor_monk
 constexpr int kCharacterModel2 = 18;       // assets\model2 (1-р дайчны сонгож болох дүр)
 constexpr int kCharacterZombieWoman = 19;  // assets\woman_zombie (гүйгч зомбины тал нь)
-constexpr int kCharacterCount = 20;
+// 1-р этгээдийн гар (заавал биш): Mixamo нэршилтэй, хурууны ястай хүний загвар (бүтэн бие байж болно: зөвхөн гарыг
+// нь зурна). tools\prepare_character.ps1 -Name fp_arms -> assets/fp_arms_mesh.glb, assets/fp_arms_color.png.
+// Байхгүй бол кодоор угсарсан бээлийтэй гар (Humanoid.cpp: BuildFist).
+constexpr int kCharacterFpArms = 20;
+constexpr int kCharacterCount = 21;
 
 // shader: текстур, гэрэлтүүлэг, манантай дүрийн shader (Environment::CharacterShader).
 void LoadCharacterModels(Shader shader);
@@ -46,6 +50,26 @@ void UnloadCharacterModels();
 bool HasCharacterModel(int id);
 // Туршилт: загваруудыг хөдөлгөөнгүй, анхны (A) зогсолтоор нь зурна (загвар өөрөө ямар байгааг харахад).
 void SetCharacterBindPose(bool enabled);
+
+// --- 1-р этгээдийн гар (viewmodel) ---
+// Загварын зөвхөн гарын хэсгийг (мөр, шуу, сарвуу, хуруу) ачаалахдаа тусгаарласан mesh-ээр, IK-аар бариул руу хүргэж
+// зурна: жинхэнэ загварын ханцуй, бээлий, хуруу (Tripo-гийн загвар, хурууны ястай).
+// Орон зай: "бие" = загварын орон зай метрээр (хөл нь эх, +Y дээш, +Z урагш, +X дүрийн зүүн тал).
+struct ViewArmTarget
+{
+    bool active = false;
+    Vector3 palm = { 0.0f, 0.0f, 0.0f };   // алганы төв хүрэх цэг (ертөнцийн орон зай)
+    Vector3 facing = { 0.0f, 0.0f, 1.0f }; // алганы харах зүг (бариул руу), ертөнц
+    Vector3 pole = { 0.0f, -1.0f, 0.0f };  // тохойн хазайх зүг, ертөнц
+    float curl = 70.0f;                    // хуруу нугалах өнцөг (градус)
+};
+bool HasCharacterArms(int id);
+// Нүдний байрлал биеийн орон зайд (метр): камерыг энд тавина.
+Vector3 CharacterEye(int id);
+// Баруун мөр (RightArm яс) биеийн орон зайд (метр): 1-р этгээдийн биеийг зэвсгийн бөгс / бариулаар бэхлэхэд.
+Vector3 CharacterRightShoulder(int id);
+// bodyToWorld: биеийн орон зай (метр) -> ертөнц. targets[0] баруун, [1] зүүн гар; идэвхгүй гар доош унжина.
+void DrawCharacterArms(int id, const Matrix& bodyToWorld, const ViewArmTarget targets[2], Color tint);
 
 struct CharacterFrames
 {

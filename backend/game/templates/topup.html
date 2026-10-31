@@ -4,48 +4,73 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gold цэнэглэх — Zombie Mongolia</title>
-<meta name="theme-color" content="#0a0c12">
+<meta name="theme-color" content="#080D16">
 <style>
-  /* Тоглоомын цонхтой ижил өнгө: бараан самбар, алтан хүрээ, алтан үндсэн товч (src/Account.cpp) */
-  :root { --bg: #0a0c12; --panel: rgba(12,16,22,.96); --frame: rgba(255,200,90,.43); --gold: rgb(242,178,48);
-          --gold-hi: rgb(255,218,110); --ink: rgb(34,24,6); --text: rgb(242,240,234); --dim: rgba(242,240,234,.62);
-          --danger: rgb(235,90,80); --good: rgb(110,200,120); }
+  /* Тоглоомын дизайн систем (src/UiStyle.h, web/shell.html-тэй ижил токенууд) */
+  :root { --bg: #080D16; --bg-2: #101824; --panel: rgba(20,30,43,.97); --elevated: #1A2635; --frame: rgba(255,255,255,.10);
+          --frame-strong: rgba(255,255,255,.20); --gold: #FFB51B; --orange: #F47B20; --ink: #1A1204; --text: #F4F6FA;
+          --dim: #9AA7B7; --danger: #F04444; --good: #39C879; --radius: 4px;
+          --display: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Segoe UI", Roboto, Arial, sans-serif; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
-               font-family: "Segoe UI", Roboto, Arial, sans-serif; }
-  body { display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
-  .card { width: min(440px, 100%); padding: 26px 26px 28px; border-radius: 14px; background: var(--panel);
-          border: 1.5px solid var(--frame); box-shadow: 0 10px 40px rgba(0,0,0,.6); }
-  h1 { margin: 0 0 4px; font-size: 24px; letter-spacing: .5px; }
+  html, body { margin: 0; min-height: 100%; color: var(--text); font-family: "Segoe UI", Roboto, Arial, sans-serif;
+               background: radial-gradient(ellipse at top, #16233a 0%, var(--bg) 60%) fixed, var(--bg); }
+  body { display: flex; align-items: center; justify-content: center; padding: 24px 16px;
+         background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+                           linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+         background-size: 40px 40px; }
+  .card { position: relative; width: min(440px, 100%); padding: 26px 26px 28px; border-radius: var(--radius); background: var(--panel);
+          border: 1px solid var(--frame); box-shadow: 0 18px 50px rgba(0,0,0,.6); animation: zm-in .25s ease-out; }
+  .card::before { content: ""; position: absolute; inset: -1px; pointer-events: none;
+    background: linear-gradient(var(--gold), var(--gold)) top left / 16px 2px no-repeat,
+                linear-gradient(var(--gold), var(--gold)) top left / 2px 16px no-repeat,
+                linear-gradient(var(--gold), var(--gold)) top right / 16px 2px no-repeat,
+                linear-gradient(var(--gold), var(--gold)) top right / 2px 16px no-repeat,
+                linear-gradient(var(--gold), var(--gold)) bottom left / 16px 2px no-repeat,
+                linear-gradient(var(--gold), var(--gold)) bottom left / 2px 16px no-repeat,
+                linear-gradient(var(--gold), var(--gold)) bottom right / 16px 2px no-repeat,
+                linear-gradient(var(--gold), var(--gold)) bottom right / 2px 16px no-repeat; }
+  @keyframes zm-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  h1 { margin: 0 0 4px; font-family: var(--display); font-size: 26px; letter-spacing: 2px; }
   h1 b { color: var(--gold); }
-  .sub { margin: 0 0 20px; color: var(--dim); font-size: 14px; }
-  label { display: block; margin: 12px 0 6px; font-size: 14px; color: var(--dim); }
-  input { width: 100%; height: 48px; padding: 0 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,.25);
-          background: rgba(0,0,0,.5); color: var(--text); font-size: 17px; outline: none; }
-  input:focus { border-color: var(--gold); }
-  button { width: 100%; height: 52px; margin-top: 18px; border: 1.5px solid rgba(255,240,190,.78); border-radius: 14px;
-           background: var(--gold); color: var(--ink); font-size: 18px; font-weight: 700; cursor: pointer; }
-  button:hover { background: var(--gold-hi); }
-  button:disabled { opacity: .6; cursor: default; }
-  button.secondary { background: rgba(255,255,255,.08); color: var(--text); border-color: rgba(255,255,255,.25); }
+  h1::after { content: ""; display: block; width: 44px; height: 3px; margin-top: 8px; background: var(--gold); }
+  .sub { margin: 10px 0 20px; color: var(--dim); font-size: 14px; }
+  label { display: block; margin: 12px 0 6px; font-size: 13px; color: var(--dim); letter-spacing: .3px; }
+  input { width: 100%; height: 48px; padding: 0 14px; border-radius: var(--radius); border: 1px solid var(--frame-strong);
+          background: var(--bg); color: var(--text); font-size: 17px; outline: none; transition: border-color .15s, box-shadow .15s; }
+  input:focus { border-color: var(--gold); box-shadow: inset 0 -2px 0 var(--gold); }
+  button { width: 100%; height: 52px; margin-top: 18px; border: 1px solid rgba(255,220,140,.55); border-radius: var(--radius);
+           background: linear-gradient(180deg, var(--gold), var(--orange)); color: var(--ink); font-family: var(--display);
+           font-size: 19px; font-weight: 700; letter-spacing: 1px; cursor: pointer;
+           transition: box-shadow .15s ease, transform .1s ease, filter .15s ease; }
+  button:hover { filter: brightness(1.08); box-shadow: 0 0 0 3px rgba(255,181,27,.18); }
+  button:active { transform: translateY(1px); }
+  button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  button:disabled { opacity: .55; cursor: default; filter: none; box-shadow: none; }
+  button.secondary { background: var(--elevated); color: var(--text); border-color: var(--frame-strong); }
+  button.secondary:hover { border-color: var(--gold); }
   .who { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; font-size: 15px; }
-  .who .gold { color: var(--gold); font-weight: 700; font-size: 18px; }
+  .who .gold { color: var(--gold); font-weight: 700; font-size: 18px; font-family: var(--display); }
   .packs { display: grid; gap: 10px; }
-  .pack { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-radius: 12px;
-          border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.04); cursor: pointer; }
-  .pack:hover, .pack.selected { border-color: var(--gold); background: rgba(242,178,48,.12); }
-  .pack .g { font-size: 20px; font-weight: 700; color: var(--gold); }
+  .pack { position: relative; display: flex; justify-content: space-between; align-items: center; padding: 14px 16px;
+          border-radius: var(--radius); border: 1px solid var(--frame); background: var(--elevated); cursor: pointer;
+          transition: border-color .15s, background .15s; }
+  .pack:hover, .pack.selected { border-color: var(--gold); background: linear-gradient(90deg, rgba(255,181,27,.16), rgba(255,181,27,0) 70%), var(--elevated); }
+  .pack.selected::before { content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; width: 3px; background: var(--gold); }
+  .pack .g { font-size: 20px; font-weight: 700; color: var(--gold); font-family: var(--display); }
   .pack .p { font-size: 16px; }
-  .qr { display: block; width: 220px; height: 220px; margin: 8px auto 12px; border-radius: 10px; background: #fff; }
+  .qr { display: block; width: 220px; height: 220px; margin: 8px auto 12px; border-radius: var(--radius); background: #fff; }
   .banks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
-  .banks a { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; border-radius: 10px;
-             background: rgba(255,255,255,.06); color: var(--text); text-decoration: none; font-size: 12px; text-align: center; }
-  .banks img { width: 40px; height: 40px; border-radius: 10px; }
+  .banks a { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; border-radius: var(--radius);
+             background: var(--elevated); border: 1px solid var(--frame); color: var(--text); text-decoration: none; font-size: 12px;
+             text-align: center; transition: border-color .15s; }
+  .banks a:hover { border-color: var(--gold); }
+  .banks img { width: 40px; height: 40px; border-radius: var(--radius); }
   .msg { margin-top: 14px; min-height: 20px; font-size: 14px; color: var(--dim); text-align: center; }
   .msg.error { color: var(--danger); }
   .msg.ok { color: var(--good); font-weight: 600; }
   .hidden { display: none; }
   .link { display: block; margin-top: 14px; text-align: center; color: var(--gold); font-size: 14px; cursor: pointer; }
+  @media (max-width: 380px) { .card { padding: 22px 18px; } .banks { grid-template-columns: repeat(2, 1fr); } }
 </style>
 </head>
 <body>

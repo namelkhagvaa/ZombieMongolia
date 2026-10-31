@@ -355,8 +355,8 @@ namespace
                     const char* text = TextFormat("%s  ·  %s", marker.title, DistanceText(meters));
                     const int w = Ui::MeasureBold(text, 15);
                     const Rectangle pill = { p.x + radius + 6.0f, p.y - 11.0f, (float)w + 16.0f, 22.0f };
-                    DrawRectangleRounded(pill, 0.5f, 8, Fade({ 14, 16, 22, 255 }, chosen ? 0.95f : 0.8f));
-                    if (chosen) DrawRectangleRoundedLinesEx(pill, 0.5f, 8, 1.5f, WHITE);
+                    Ui::Fill(pill, Fade({ 20, 30, 43, 255 }, chosen ? 0.95f : 0.8f));
+                    if (chosen) Ui::Stroke(pill, 1.5f, WHITE);
                     Ui::TextBold(text, (int)(pill.x + 8.0f), (int)pill.y + 3, 15, marker.objective >= 0 ? color : Ui::kText);
                 }
             }
@@ -398,7 +398,7 @@ namespace
         // Цүнх: бие ба бариул
         const Color ink = { 40, 26, 6, 255 };
         const Rectangle bag = { p.x - r * 0.5f, p.y - r * 0.2f, r, r * 0.7f };
-        DrawRectangleRounded(bag, 0.25f, 4, ink);
+        Ui::Fill(bag, ink);
         DrawRing({ p.x, bag.y }, r * 0.24f, r * 0.36f, 180.0f, 360.0f, 12, ink);
     }
 
@@ -591,8 +591,8 @@ namespace
     {
         const int w = Ui::MeasureBold(name, 15);
         const Rectangle pill = { p.x - (float)w * 0.5f - 9.0f, p.y - 11.0f, (float)w + 18.0f, 22.0f };
-        DrawRectangleRounded(pill, 0.5f, 8, { 16, 18, 22, 210 });
-        DrawRectangleRoundedLinesEx(pill, 0.5f, 8, 1.0f, Fade(color, 0.35f));
+        Ui::Fill(pill, { 16, 18, 22, 210 });
+        Ui::Stroke(pill, 1.0f, Fade(color, 0.35f));
         Ui::TextBold(name, (int)(pill.x + 9.0f), (int)pill.y + 3, 15, color);
     }
 
@@ -948,8 +948,8 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     if (rows > 0)
     {
         const Rectangle list = ObjectiveList(rows);
-        DrawRectangleRounded(list, 0.08f, 8, { 14, 16, 22, 225 });
-        DrawRectangleRoundedLinesEx(list, 0.08f, 8, 1.0f, Fade(kFrame, 0.3f));
+        Ui::Fill(list, { 20, 30, 43, 225 });
+        Ui::Stroke(list, 1.0f, Fade(kFrame, 0.3f));
         Ui::TextBold("ДААЛГАВРУУД", (int)list.x + 14, (int)list.y + 10, 15, kObjective);
         const char* tip = "дарж чиглэл авах";
         Ui::Text(tip, (int)(list.x + list.width) - 14 - Ui::Measure(tip, 13), (int)list.y + 12, 13, Fade(kFrame, 0.6f));
@@ -962,9 +962,9 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
             const bool hover = !InTouchMode() && CheckCollisionPointRec(mouse, r);
             if (chosen || hover || marker.focus)
             {
-                DrawRectangleRounded(r, 0.3f, 6, Fade(MarkerColor(marker.kind), chosen ? 0.28f : hover ? 0.16f : 0.08f));
+                Ui::Fill(r, Fade(MarkerColor(marker.kind), chosen ? 0.28f : hover ? 0.16f : 0.08f));
             }
-            if (chosen) DrawRectangleRoundedLinesEx(r, 0.3f, 6, 1.5f, WHITE);
+            if (chosen) Ui::Stroke(r, 1.5f, WHITE);
             DrawMarkerBadge(marker.kind, { r.x + 18.0f, r.y + r.height * 0.5f }, 13.0f);
             const float meters = Vector2Distance({ from.x, from.z }, { marker.position.x, marker.position.z });
             const char* right = DistanceText(meters);
@@ -997,8 +997,8 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     }
 
     // Гарчиг, томруулалт, удирдлага (дээд мөрөнд), тайлбар (доод мөрөнд)
-    Ui::TextBold("ГАЗРЫН ЗУРАГ", (int)view.area.x, 18, 28, Ui::kText);
-    Ui::Text(title, (int)view.area.x + Ui::MeasureBold("ГАЗРЫН ЗУРАГ", 28) + 16, 26, 20, Ui::kAccent);
+    Ui::TextDisplay("ГАЗРЫН ЗУРАГ", (int)view.area.x, 18, 28, Ui::kText, 0.08f);
+    Ui::Text(title, (int)view.area.x + Ui::MeasureDisplay("ГАЗРЫН ЗУРАГ", 28, 0.08f) + 16, 26, 20, Ui::kAccent);
     const char* zoomText = TextFormat("%d%%", (int)std::round(zoom * 100.0f));
     Ui::Chip(zoomText, width - (int)view.area.x, 18, Ui::kText, Ui::kInfo, true);
     const char* help = InTouchMode() ? "Даалгавар дээр товш: чиглэл   Чир: зөөх   Чимх: томруулах"
@@ -1018,7 +1018,7 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
 
     const int legendY = height - 36;
     const Rectangle bar = { view.area.x, (float)legendY - 9.0f, view.area.width, 36.0f };
-    DrawRectangleRounded(bar, 0.4f, 8, { 16, 18, 22, 200 });
+    Ui::Fill(bar, { 16, 18, 22, 200 });
     int x = (int)view.area.x + 14;
     {
         // Та: тоглогчийн тэмдэг (газрын зураг дээрхтэй ижил сум)

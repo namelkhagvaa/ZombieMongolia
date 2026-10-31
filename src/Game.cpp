@@ -137,7 +137,8 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
     if (config.msaa4x || options.forceMsaa) flags |= FLAG_MSAA_4X_HINT;
     if (config.vsync && !benchmark) flags |= FLAG_VSYNC_HINT;
     // Туршилтын цонх идэвхгүй нээгдэнэ: хэрэглэгчийн ажиллаж буй програмаас гарын оролтыг булаахгүй.
-    if (benchmark) flags |= FLAG_WINDOW_UNFOCUSED;
+    // (--show: харагдах, идэвхтэй цонх — нуугдмал цонхны хэмжилттэй харьцуулахад)
+    if (benchmark && !options.show) flags |= FLAG_WINDOW_UNFOCUSED;
     // Туршилт анхнаасаа нуугдмал цонхонд ажиллана (дэлгэцэнд гарч хэрэглэгчийн ажилд саад болохгүй).
     // Нуугдсан цонхны дэлгэцийн buffer найдваргүй тул зураглалыг дотоод зурагт хийж, дэлгэцийн зургийг тэндээс авна.
     const bool hidden = benchmark && !options.show;
@@ -175,6 +176,7 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
     SetTargetFPS(benchmark ? 0 : config.targetFps); // хэмжилтийн үед FPS-ийг хязгаарлахгүй
     if (const char* fps = benchmark ? std::getenv("ZM_FPS") : nullptr) SetTargetFPS(std::atoi(fps)); // туршилт: утас шиг бага FPS
 #endif
+    if (benchmark) TraceLog(LOG_INFO, "BENCH: window %s", hidden ? "hidden and unfocused" : "visible and focused (--show)");
     SetExitKey(KEY_NULL); // ESC-ийг өөрсдөө боловсруулна: эхлээд нээлттэй цонхыг хаана, дараа нь л гарна
     LoadUiFont();
     Splash::Begin(!benchmark); // туршилтын горимд эхлэлийн дэлгэцгүй
@@ -242,6 +244,7 @@ Game::Game(const LaunchOptions& launchOptions)
     mapScreen.Preload(); // дэвсгэр зураг, аймгуудын дүрс: эхний кадрыг гацаахгүй
     // Данс (нэвтрэх, аймгийн эрх, төлбөр): туршилтын горимд идэвхгүй (--api заасан бол идэвхтэй)
     Account::Init(!options.screenshotPath || options.apiBase, options.apiBase ? options.apiBase : "");
+    if (const char* screen = options.screenshotPath ? std::getenv("ZM_ACCOUNT_SCREEN") : nullptr) Account::TestScreen(screen); // туршилт
     // Туршилт: нэвтэрсэн мэт (ZM_FAKE_ACCOUNT=<XP>): данс, Gold-ын товч, зэргийн харагдацыг шалгахад
     if (options.screenshotPath)
     {
@@ -288,7 +291,19 @@ void Game::Run()
     // --- Хөгжүүлэлтийн горим: орчныг автоматаар шалгах ---
     const bool benchmark = options.screenshotPath != nullptr;
     Profile::Enable(benchmark); // туршилт: frame-ийн хэсгүүдийн хугацааг хэмжиж төгсгөлд нь хэвлэнэ
-    const int warmupFrames = 30;
+    if (benchmark)
+    {
+        Profile::SetGpuSync(options.gpuSync);
+        if (options.gpuTimer) Profile::SetGpuTimer(true);
+    }
+    if (options.hasSeed)
+    {
+        // raylib-ийн GetRandomValue (rprand) — тоглоомын бүх санамсаргүй шийдвэр үүгээр (бусад: Rng нь тогтмол үртэй)
+        SetRandomSeed(options.seed);
+        TraceLog(LOG_INFO, "BENCH: random seed %u", options.seed);
+    }
+    if (benchmark && options.fixedStep) TraceLog(LOG_INFO, "BENCH: fixed simulation step 1/60 s");
+    const int warmupFrames = options.warmup;
     int endFrame = warmupFrames + std::max(1, options.frames);
     int frame = 0;
     double measureStart = 0.0;
@@ -356,6 +371,34 @@ void Game::Run()
         if (options.soldiers > 0)
         {
             ResetSquad(options.soldiers);
+        }
+        if (options.squadExact >= 0)
+        {
+            // Туршилт: AI цэргийн бодит тоо. Багийн гишүүд (тоглогчийн удирдаагүй хоёр) эхэлж, үлдсэн нь элсүүлсэн цэрэг.
+            const int members = std::min(options.squadExact, kTeamSize - 1);
+            squad.Reset(options.squadExact - members, player.Position(), world);
+            int added = 0;
+            for (int member = 0; member < kTeamSize && added < members; ++member)
+            {
+                if (member == activeMember) continue;
+                const Vector3 origin = player.Position();
+                Vector3 position = { origin.x + (member == kSniperMember ? 5.5f : -5.5f), origin.y, origin.z - 4.0f };
+                world.ResolveHorizontal(position, config.playerRadius, config.playerHeight, 0.0f);
+                position.y = world.GroundHeight(position.x, position.z);
+                squad.AddMember(member, position, player.Facing(), player.MaxHealth(), player.MaxHealth());
+                ++added;
+            }
+        }
+        {
+            // Бодит цэргийн тоо (--soldiers N нь N элсүүлсэн + багийн 2 гишүүн; заагаагүй бол хадгалалтын тоо)
+            int members = 0, alive = 0;
+            for (const Soldier& soldier : squad.All())
+            {
+                members += soldier.member >= 0;
+                alive += soldier.alive;
+            }
+            TraceLog(LOG_INFO, "SQUAD SETUP: --soldiers %d, --squad %d -> actual %d AI soldiers (%d team members, %d recruits), %d alive",
+                     options.soldiers, options.squadExact, squad.Total(), members, squad.Total() - members, alive);
         }
         if (options.heliRoof) PlaceHelicopterOnRoof();
 
@@ -435,7 +478,11 @@ void Game::Run()
     {
         if (benchmark)
         {
-            if (frame == warmupFrames) measureStart = GetTime();
+            if (frame == warmupFrames)
+            {
+                measureStart = GetTime();
+                Profile::BeginMeasurement(); // (BENCH ба PROFILE ижил кадруудыг хэмжинэ)
+            }
             // Автомат тоглолт: үе дуусмагц (эсвэл тоглогч үхвэл) удаан хүлээлгүй дуусгана.
             if (options.autoPlay && state != GameState::Playing && endFrame > frame + 20)
             {
@@ -446,9 +493,9 @@ void Game::Run()
                 const int measuredFrames = std::max(1, endFrame - warmupFrames);
                 const double seconds = GetTime() - measureStart;
                 TraceLog(LOG_INFO,
-                         "BENCH: %.1f fps average (%.2f ms/frame), %d terrain chunks drawn, %d colliders, %d zombies, "
+                         "BENCH: %d measured frames after %d warm-up frames; %.1f fps average (%.2f ms/frame), %d terrain chunks drawn, %d colliders, %d zombies, "
                          "%d kills, hp %d, player at (%.1f, %.1f) %s boundary, %d terrain meshes loaded",
-                         (double)measuredFrames / seconds, 1000.0 * seconds / (double)measuredFrames,
+                         measuredFrames, warmupFrames, (double)measuredFrames / seconds, 1000.0 * seconds / (double)measuredFrames,
                          world.DrawnChunks(), world.ObstacleCount(), horde.AliveCount(), missionKills,
                          (int)player.Health(), player.Position().x, player.Position().z,
                          world.InsideBoundary(player.Position().x, player.Position().z) ? "inside" : "OUTSIDE",
@@ -508,7 +555,8 @@ void Game::Run()
                 else smoothFrameTime += (raw - smoothFrameTime) * 0.3f;
             }
         }
-        const float dt = std::min(benchmark ? GetFrameTime() : smoothFrameTime, 1.0f / 20.0f) * (benchmark ? options.timeScale : 1.0f);
+        const float rawDt = benchmark ? (options.fixedStep ? 1.0f / 60.0f : GetFrameTime()) : smoothFrameTime;
+        const float dt = std::min(rawDt, 1.0f / 20.0f) * (benchmark ? options.timeScale : 1.0f);
 
         // Мэдрэгчтэй дэлгэцийн товчлуурууд ба гар, хулганы оролтыг нэгтгэнэ.
         touchState = MakeTouchState();
@@ -747,7 +795,7 @@ void Game::Run()
         }
         Profile::EndFrame();
     }
-    Profile::Report();
+    Profile::Report(warmupFrames);
     if (benchmark && AppShouldClose())
     {
         TraceLog(LOG_INFO, "BENCH: stopped early because the window was closed at frame %d", frame);
@@ -934,19 +982,30 @@ void Game::DrawCharacterSelect() const
     const int width = ViewWidth(), height = ViewHeight();
     // Бүтэн дэлгэцийн дэвсгэр (доорх газрын зургийг цэвэрлэж, 3D-д гүний buffer шинээр)
     rlDrawRenderBatchActive();
-    ClearBackground({ 8, 10, 14, 255 });
-    DrawRectangleGradientV(0, 0, width, height, { 26, 32, 44, 255 }, { 8, 10, 14, 255 });
+    ClearBackground(Ui::kBgDeep);
+    DrawRectangleGradientV(0, 0, width, height, Ui::kBg, Ui::kBgDeep);
+    // Дэвсгэрийн тактикийн тор
+    for (int gx = 40; gx < width; gx += 40) DrawRectangle(gx, 0, 1, height, Fade(WHITE, 0.025f));
+    for (int gy = 40; gy < height; gy += 40) DrawRectangle(0, gy, width, 1, Fade(WHITE, 0.025f));
     const char* title = "ДҮРЭЭ СОНГО";
-    Ui::TextBold(title, (width - Ui::MeasureBold(title, 30)) / 2, 50, 30, Ui::kAccent);
+    const int titleWidth = Ui::MeasureDisplay(title, 32, 0.1f);
+    Ui::TextDisplay(title, (width - titleWidth) / 2, 44, 32, Ui::kText, 0.1f);
+    DrawRectangle(width / 2 - 24, 84, 48, 3, Ui::kAccent);
     const char* subtitle = "1-р дайчин энэ дүрээр тоглоно";
-    Ui::Text(subtitle, (width - Ui::Measure(subtitle, 15)) / 2, 88, 15, Ui::kTextDim);
+    Ui::Text(subtitle, (width - Ui::Measure(subtitle, 15)) / 2, 94, 15, Ui::kTextDim);
 
     for (int skin = 0; skin < kLeaderSkinCount; ++skin)
     {
         const Rectangle card = CharacterCardRect(skin);
         const bool selected = skin == characterChoice;
-        Ui::Panel(card, selected ? Color{ 40, 32, 14, 230 } : Color{ 16, 20, 28, 220 });
-        Ui::Outline(card, selected ? Ui::kAccent : Color{ 255, 255, 255, 40 }, selected ? 3.0f : 1.0f, 12.0f);
+        Ui::Panel(card, selected ? Color{ 30, 42, 58, 236 } : Color{ 20, 30, 43, 220 });
+        if (selected)
+        {
+            DrawRectangleGradientV((int)card.x + 1, (int)(card.y + card.height * 0.55f), (int)card.width - 2, (int)(card.height * 0.45f) - 1,
+                                   Fade(Ui::kAccent, 0.0f), Fade(Ui::kAccent, 0.16f));
+            Ui::Outline(card, Fade(Ui::kAccent, 0.7f), 1.0f);
+            Ui::CornerBrackets(card, Ui::kAccent, 18.0f, 3.0f);
+        }
     }
 
     // 3D: хоёр дүр картуудынхаа дотор аажим эргэнэ (жинхэнэ загвар, буу барьсан)
@@ -981,16 +1040,16 @@ void Game::DrawCharacterSelect() const
         const Rectangle card = CharacterCardRect(skin);
         const char* name = LeaderSkinName(skin);
         const bool selected = skin == characterChoice;
-        Ui::TextBold(name, (int)(card.x + (card.width - (float)Ui::MeasureBold(name, 24)) / 2.0f), (int)(card.y + card.height) - 44, 24,
-                     selected ? Ui::kAccent : Ui::kText);
+        Ui::TextDisplay(name, (int)(card.x + (card.width - (float)Ui::MeasureDisplay(name, 24, 0.08f)) / 2.0f), (int)(card.y + card.height) - 44,
+                        24, selected ? Ui::kAccent : Ui::kText, 0.08f);
         if (Account::Enabled() && Account::PremiumSkin(skin))
         {
             // Онцгой дүр: аймаг эхлүүлэх бүрийн үнэ (картын дээд буланд)
             const char* price = TextFormat("%d Gold", Account::SkinPrice(skin));
             const float chipWidth = (float)Ui::MeasureBold(price, 16) + 20.0f;
             const Rectangle chip = { card.x + card.width - chipWidth - 10.0f, card.y + 10.0f, chipWidth, 28.0f };
-            DrawRectangleRounded(chip, 0.5f, 8, { 40, 30, 8, 230 });
-            DrawRectangleRoundedLinesEx(chip, 0.5f, 8, 1.5f, Ui::kAccent);
+            Ui::Fill(chip, { 40, 30, 8, 230 });
+            Ui::Stroke(chip, 1.5f, Ui::kAccent);
             Ui::TextBold(price, (int)chip.x + 10, (int)chip.y + 5, 16, Ui::kAccent);
         }
     }
@@ -998,21 +1057,19 @@ void Game::DrawCharacterSelect() const
         // Газрын зураг руу буцах (утсан дээр ESC байхгүй)
         const Rectangle back = CharacterBackRect();
         const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), back);
-        DrawRectangleRounded(back, 0.4f, 8, { 255, 255, 255, (unsigned char)(hover ? 46 : 24) });
-        DrawRectangleRoundedLinesEx(back, 0.4f, 8, 1.0f, { 255, 255, 255, 80 });
+        Ui::Button(back, "", Ui::ButtonKind::Secondary, hover);
         const float cy = back.y + back.height * 0.5f;
-        DrawLineEx({ back.x + 20.0f, cy }, { back.x + 36.0f, cy }, 3.0f, Ui::kText);
-        DrawLineEx({ back.x + 20.0f, cy }, { back.x + 28.0f, cy - 8.0f }, 3.0f, Ui::kText);
-        DrawLineEx({ back.x + 20.0f, cy }, { back.x + 28.0f, cy + 8.0f }, 3.0f, Ui::kText);
-        Ui::TextBold("БУЦАХ", (int)back.x + 48, (int)cy - 11, 19, Ui::kText);
+        const Color ink = hover ? Ui::kAccent : Ui::kText;
+        DrawLineEx({ back.x + 20.0f, cy }, { back.x + 36.0f, cy }, 3.0f, ink);
+        DrawLineEx({ back.x + 20.0f, cy }, { back.x + 28.0f, cy - 8.0f }, 3.0f, ink);
+        DrawLineEx({ back.x + 20.0f, cy }, { back.x + 28.0f, cy + 8.0f }, 3.0f, ink);
+        Ui::TextDisplay("БУЦАХ", (int)back.x + 48, (int)cy - 11, 20, ink, 0.08f);
     }
     const Rectangle button = CharacterStartRect();
-    DrawRectangleRounded(button, 0.4f, 8, Ui::kAccent);
     const bool unaffordable = Account::Enabled() && !pendingApproved && Account::PremiumSkin(characterChoice) &&
                               Account::GoldAvailable() < Account::SkinPrice(characterChoice);
     const char* label = unaffordable ? "GOLD АВАХ" : "ЭХЛЭХ";
-    Ui::TextBold(label, (int)(button.x + (button.width - (float)Ui::MeasureBold(label, 24)) / 2.0f), (int)button.y + 16, 24,
-                 { 20, 16, 10, 255 });
+    Ui::Button(button, label, Ui::ButtonKind::Primary, !InTouchMode() && CheckCollisionPointRec(InPointer(), button), 26);
     if (!InTouchMode())
     {
         const char* hint = "← → сонгох     ENTER эхлэх     ESC буцах";
@@ -4919,18 +4976,17 @@ void Game::ApplyFrameLimit()
 
 void Game::DrawPauseMenu() const
 {
-    const int width = ViewWidth(), height = ViewHeight();
-    DrawRectangle(0, 0, width, height, Fade(BLACK, 0.55f));
+    Ui::Backdrop(0.7f);
 
     PauseItem items[8];
     const int count = PauseItems(state == GameState::Playing, items);
     const Rectangle first = PauseRow(0, count), last = PauseRow(count - 1, count);
     const Rectangle panel = { first.x - 30.0f, first.y - 90.0f, first.width + 60.0f, last.y + last.height - first.y + 150.0f };
-    Ui::PanelAccent(panel, Ui::kAccent);
-    const char* title = "ЦЭС";
-    const int titleX = (int)(panel.x + (panel.width - (float)Ui::MeasureBold(title, 30)) * 0.5f);
-    Ui::DrawIcon(Ui::Icon::Pause, { (float)titleX - 40.0f, panel.y + 26.0f, 32.0f, 32.0f });
-    Ui::TextBold(title, titleX, (int)panel.y + 26, 30, Ui::kText);
+    Ui::Panel(panel, { Ui::kPanelSolid.r, Ui::kPanelSolid.g, Ui::kPanelSolid.b, 244 });
+    Ui::CornerBrackets(panel, Ui::kAccent, 16.0f, 2.0f);
+    Ui::DrawIcon(Ui::Icon::Pause, { first.x, panel.y + 28.0f, 28.0f, 28.0f });
+    Ui::Header(first.x + 38.0f, panel.y + 26.0f, first.width - 38.0f, "ЦЭС",
+               state == GameState::Playing ? "Тоглолт түр зогссон" : nullptr, 28);
 
     const Vector2 pointer = InPointer();
     for (int i = 0; i < count; ++i)
@@ -4957,7 +5013,7 @@ void Game::DrawPauseMenu() const
         }
         const bool hover = !InTouchMode() && CheckCollisionPointRec(pointer, row);
         const bool danger = items[i] == PauseItem::Quit;
-        Ui::Panel(row, hover ? Fade(danger ? Ui::kDanger : Ui::kAccent, 0.25f) : Ui::kPanelSoft, 12.0f);
+        Ui::MenuRow(row, hover, danger);
         if (!InTouchMode()) Ui::KeyBadge(TextFormat("%d", i + 1), (int)row.x + 16, (int)row.y + 17, 16, Ui::kTextDim);
         // Мөрийн баруун талд үйлдлийн икон
         Ui::Icon icon = Ui::Icon::Play;
@@ -4973,8 +5029,8 @@ void Game::DrawPauseMenu() const
         }
         Ui::DrawIcon(icon, { row.x + row.width - 44.0f, row.y + (row.height - 24.0f) * 0.5f, 24.0f, 24.0f },
                      hover ? WHITE : Fade(WHITE, 0.75f));
-        Ui::TextBold(label, (int)(row.x + (row.width - (float)Ui::MeasureBold(label, 22)) * 0.5f), (int)row.y + 17, 22,
-                     danger ? Ui::kDanger : Ui::kText);
+        Ui::TextDisplay(label, (int)row.x + 64, (int)(row.y + (row.height - 22.0f) * 0.5f), 22,
+                        danger ? Ui::kDanger : hover ? Ui::kAccent : Ui::kText);
     }
     const char* help = InTouchMode() ? "Мөрийг товшино уу" : "ESC — үргэлжлүүлэх    F11 — бүтэн дэлгэц";
     Ui::Text(help, (int)(panel.x + (panel.width - (float)Ui::Measure(help, 15)) * 0.5f), (int)(last.y + last.height) + 22, 15,
@@ -5026,11 +5082,16 @@ void Game::RenderShadows() const
 
     garage.Draw(center, radius * 1.4f, &environment.DepthMaterial(), true);
     SetPropDepthMaterial(&environment.DepthMaterial()); // хүмүүсийн барьсан бууны загвар
-    squad.Draw(center, false);
-    SetBearMaterial(&environment.DepthMaterial(), true);
-    horde.Draw(view.position, 12.0f, false); // зомби олон тул зөвхөн хамгийн ойрынх нь сүүдэр тусгана
-    SetBearMaterial(nullptr);
-    if (player.IsAlive()) player.Draw(config, false); // 1-р этгээдийн үед ч өөрийн сүүдэр харагдана
+    Profile::SetShadowPass(true);
+    {
+        PROFILE_SCOPE("shadow: characters");
+        squad.Draw(center, false);
+        SetBearMaterial(&environment.DepthMaterial(), true);
+        horde.Draw(view.position, 12.0f, false); // зомби олон тул зөвхөн хамгийн ойрынх нь сүүдэр тусгана
+        SetBearMaterial(nullptr);
+        if (player.IsAlive()) player.Draw(config, false); // 1-р этгээдийн үед ч өөрийн сүүдэр харагдана
+    }
+    Profile::SetShadowPass(false);
     barrels.Draw(center);
     if (remoteActive && !coopGuest) DrawRemoteFigure(guestFigure, TeamMemberLook(guestFigure.member, guestFigure.skin));
     if (coopGuest && guestPlaced)
@@ -5202,7 +5263,7 @@ void Game::DrawObjectiveGuides() const
                 const char* text = InTouchMode() ? def.action : TextFormat("E \xE2\x80\x94 %s", def.action);
                 const int w = Ui::MeasureBold(text, 15);
                 const Rectangle pill = { p.x - (float)w * 0.5f - 8.0f, p.y + radius + 4.0f, (float)w + 16.0f, 22.0f };
-                DrawRectangleRounded(pill, 0.5f, 8, Fade({ 14, 16, 22, 255 }, 0.85f));
+                Ui::Fill(pill, Fade({ 20, 30, 43, 255 }, 0.85f));
                 Ui::TextBold(text, (int)pill.x + 8, (int)pill.y + 3, 15, MarkerColor(KindOf(def.type)));
             }
         }
@@ -5302,7 +5363,7 @@ void Game::DrawObjectiveGuides() const
         {
             const int tw = Ui::MeasureBold(marker.title, 15);
             const Rectangle pill = { p.x - (float)tw * 0.5f - 8.0f, p.y - radius - 28.0f, (float)tw + 16.0f, 22.0f };
-            DrawRectangleRounded(pill, 0.5f, 8, Fade({ 14, 16, 22, 255 }, 0.8f));
+            Ui::Fill(pill, Fade({ 20, 30, 43, 255 }, 0.8f));
             Ui::TextBold(marker.title, (int)pill.x + 8, (int)pill.y + 3, 15, MarkerColor(marker.kind));
         }
     }
@@ -5496,7 +5557,8 @@ void Game::DrawMission() const
     }
     if (state == GameState::Lost)
     {
-        DrawRectangle(0, 0, ViewWidth(), ViewHeight(), Fade(MAROON, 0.5f));
+        Ui::Backdrop(0.66f);
+        DrawRectangleGradientV(0, ViewHeight() / 2, ViewWidth(), ViewHeight() / 2, Fade(Ui::kDanger, 0.0f), Fade(Ui::kDanger, 0.22f));
         info.banner = "БАГ ЯЛАГДЛАА";
         info.subBanner = InTouchMode() ? "Зоос болон биелүүлсэн даалгаврууд хадгалагдана."
                                        : "Зоос болон биелүүлсэн даалгаврууд хадгалагдана.     ENTER — газрын зураг руу буцах";
@@ -5778,16 +5840,15 @@ void Game::BuyShopOffer(int index)
 
 void Game::DrawShopMenu() const
 {
-    const int width = ViewWidth(), height = ViewHeight();
-    DrawRectangle(0, 0, width, height, Fade(BLACK, 0.45f));
+    Ui::Backdrop(0.6f);
 
     const int count = (int)ShopOffer::Count;
     const Rectangle first = ShopRow(0), last = ShopRow(count - 1);
     const Rectangle panel = { first.x - 20.0f, kShopTop - 96.0f, kShopPanelWidth, last.y + last.height - kShopTop + 172.0f };
-    Ui::PanelAccent(panel, Ui::kAccent);
-    Ui::TextBold("ДЭЛГҮҮР", (int)panel.x + 20, (int)panel.y + 18, 30, Ui::kText);
-    Ui::Text("Зомби алж олсон зоосоор: тоглолт дуусахад зоос, авсан юм алга болно", (int)panel.x + 20, (int)panel.y + 56, 16,
-             Ui::kTextDim);
+    Ui::Panel(panel, { Ui::kPanelSolid.r, Ui::kPanelSolid.g, Ui::kPanelSolid.b, 246 });
+    Ui::CornerBrackets(panel, Ui::kAccent, 16.0f, 2.0f);
+    Ui::Header(panel.x + 20.0f, panel.y + 16.0f, panel.width - 140.0f, "ДЭЛГҮҮР",
+               "Зомби алж олсон зоосоор: тоглолт дуусахад зоос, авсан юм алга болно", 28);
     Ui::Chip(TextFormat("%d", progress.coins), (int)(panel.x + panel.width) - 20, (int)panel.y + 22, Ui::kAccent, Ui::kAccent, true);
 
     const Vector2 pointer = InPointer();
@@ -5802,9 +5863,9 @@ void Game::DrawShopMenu() const
         const bool affordable = progress.coins >= cost;
 
         const bool hover = !InTouchMode() && CheckCollisionPointRec(pointer, row);
-        Ui::Panel(row, hover && affordable ? Fade(Ui::kAccent, 0.22f) : Ui::kPanelSoft, 10.0f);
+        Ui::MenuRow(row, hover && affordable, hover && !affordable);
         Ui::KeyBadge(TextFormat("%d", i + 1), (int)row.x + 12, (int)row.y + 13, 16, affordable ? Ui::kAccent : Ui::kTextDim);
-        Ui::TextBold(ShopOfferName(offer), (int)row.x + 54, (int)row.y + 14, 20, Ui::kText);
+        Ui::TextDisplay(ShopOfferName(offer), (int)row.x + 54, (int)row.y + 13, 21, affordable ? Ui::kText : Ui::kTextDim);
         const char* price = maxed ? "MAX" : TextFormat("%d", cost);
         const int priceWidth = Ui::MeasureBold(price, 22);
         Ui::TextBold(price, (int)(row.x + row.width) - 18 - priceWidth, (int)row.y + 13, 22,
@@ -5831,37 +5892,49 @@ void Game::DrawMissionCompleted() const
         UiTextShadow(line, (width - UiMeasure(line, size)) / 2, y, size, color);
     };
 
-    DrawRectangle(0, 0, width, height, Fade({ 14, 40, 22, 255 }, 0.82f));
-    Ui::DrawIcon(Ui::Icon::MissionComplete, { (float)width * 0.5f - 36.0f, 44.0f, 72.0f, 72.0f });
-    centered("ДААЛГАВАР АМЖИЛТТАЙ БИЕЛЛЭЭ", 126, 52, gold);
+    // Ялалтын дэлгэц: бараан хөх дэвсгэр, дээрээс алтан гэрэлтэлт, гарчгийн фонт, үзүүлэлтийн карт
+    Ui::Backdrop(0.86f);
+    DrawRectangleGradientV(0, 0, width, height / 2, Fade(Ui::kAccent, 0.10f), Fade(Ui::kAccent, 0.0f));
+    for (int gx = 40; gx < width; gx += 40) DrawRectangle(gx, 0, 1, height, Fade(WHITE, 0.02f));
+    Ui::DrawIcon(Ui::Icon::MissionComplete, { (float)width * 0.5f - 30.0f, 34.0f, 60.0f, 60.0f });
+    {
+        const char* kicker = "ДААЛГАВАР БИЕЛЛЭЭ";
+        Ui::TextDisplay(kicker, (width - Ui::MeasureDisplay(kicker, 15, 0.3f)) / 2, 104, 15, Ui::kGood, 0.3f);
+        const char* headline = "АЙМАГ ЧӨЛӨӨЛӨГДЛӨӨ";
+        const int w = Ui::MeasureDisplay(headline, 52, 0.06f);
+        Ui::TextDisplay(headline, (width - w) / 2 + 2, 130, 52, Fade(BLACK, 0.6f), 0.06f);
+        Ui::TextDisplay(headline, (width - w) / 2, 128, 52, gold, 0.06f);
+        DrawRectangleGradientH(width / 2 - 160, 192, 160, 2, Fade(gold, 0.0f), gold);
+        DrawRectangleGradientH(width / 2, 192, 160, 2, gold, Fade(gold, 0.0f));
+    }
 
     char line[200];
-    std::snprintf(line, sizeof(line), "%s — ҮЕ %02d / %02d", mission.Stage().provinceName, provinceIndex + 1,
+    std::snprintf(line, sizeof(line), "%s  ·  ҮЕ %02d / %02d", mission.Stage().provinceName, provinceIndex + 1,
                   (int)Provinces().size());
-    centered(line, 206, 32, text);
+    Ui::TextDisplay(line, (width - Ui::MeasureDisplay(line, 26, 0.06f)) / 2, 210, 26, text, 0.06f);
 
     std::snprintf(line, sizeof(line), "Биелүүлсэн даалгавар: %d / %d", mission.CompletedCount(), mission.ObjectiveCount());
-    centered(line, 280, 26, text);
+    centered(line, 262, 20, Ui::kTextDim);
 
     if (helpedHost)
     {
         std::snprintf(line, sizeof(line), "Та %s-д тусалж аймгийг чөлөөллөө", hostName.empty() ? "хост" : hostName.c_str());
     }
     else std::snprintf(line, sizeof(line), "Ганцаарчилсан тоглолт: Gold өөрчлөгдөхгүй");
-    centered(line, 318, 26, gold);
+    centered(line, 300, 20, gold);
     if (lastReward > 0)
     {
-        Ui::DrawIcon(Ui::Icon::Reward, { (float)(width - UiMeasure(line, 26)) * 0.5f - 38.0f, 316.0f, 30.0f, 30.0f });
+        Ui::DrawIcon(Ui::Icon::Reward, { (float)(width - UiMeasure(line, 20)) * 0.5f - 34.0f, 297.0f, 26.0f, 26.0f });
     }
 
     if (Account::ServerShop())
     {
         std::snprintf(line, sizeof(line), "Gold: %d", Account::Gold());
-        centered(line, 356, 26, text);
+        centered(line, 330, 20, text);
     }
 
     // Тоглолтын үзүүлэлт (хамтдаа бол хоёулангийнх, MVP)
-    const int statsTop = Account::ServerShop() ? 396 : 362;
+    const int statsTop = Account::ServerShop() ? 380 : 352;
     DrawMatchStats(statsTop);
     const int nextY = statsTop + (partnerStatsKnown ? 112 : 84);
 
@@ -5882,7 +5955,12 @@ void Game::DrawMissionCompleted() const
         centered("Монгол улс бүрэн чөлөөлөгдлөө!", nextY, 30, { 150, 220, 150, 255 });
     }
 
-    centered(InTouchMode() ? "Товшиж газрын зураг руу буцна уу" : "ENTER — газрын зураг руу буцах", nextY + 64, 24, text);
+    {
+        // Үндсэн үйлдэл (ENTER / товших — үйл ажиллагаа нь хэвээр Game::Update-д)
+        const Rectangle button = { (float)width * 0.5f - 170.0f, (float)nextY + 52.0f, 340.0f, 52.0f };
+        Ui::Button(button, InTouchMode() ? "ГАЗРЫН ЗУРАГ РУУ" : "ENTER — ГАЗРЫН ЗУРАГ РУУ", Ui::ButtonKind::Primary,
+                   CheckCollisionPointRec(InPointer(), button), 20);
+    }
 }
 
 void Game::SendMyStats()
@@ -5899,7 +5977,7 @@ void Game::DrawMatchStats(int y) const
     const char* const headers[] = { "", "Устгасан", "Толгойд", "Босгосон", "Унасан", "Оновчлол" };
     const float columns[] = { 0.0f, 0.34f, 0.48f, 0.62f, 0.76f, 0.90f };
     const Color dim = { 170, 190, 175, 255 }, gold = { 250, 214, 70, 255 };
-    DrawRectangleRounded({ left, (float)y - 6.0f, width, partnerStatsKnown ? 96.0f : 68.0f }, 0.15f, 8, Fade(BLACK, 0.28f));
+    Ui::Panel({ left, (float)y - 8.0f, width, partnerStatsKnown ? 100.0f : 72.0f }, { 20, 30, 43, 230 });
     for (int c = 1; c < 6; ++c)
     {
         const int w = Ui::Measure(headers[c], 15);
@@ -5913,7 +5991,7 @@ void Game::DrawMatchStats(int y) const
         {
             const int w = Ui::MeasureBold(name, 19);
             const Rectangle badge = { left + 24.0f + (float)w, (float)ry + 1.0f, 44.0f, 20.0f };
-            DrawRectangleRounded(badge, 0.5f, 6, gold);
+            Ui::Fill(badge, gold);
             Ui::TextBold("MVP", (int)badge.x + 7, (int)badge.y + 2, 15, { 30, 30, 20, 255 });
         }
         const int values[] = { 0, s.kills, s.headshots, s.revives, s.downs, accuracy };
@@ -6066,8 +6144,8 @@ void Game::DrawCoinPopups() const
         const float width = padX * 2.0f + coinRadius * 2.0f + gap + (float)textWidth;
         const float height = (float)size * 1.36f;
         const Rectangle pill = { screen.x - width * 0.5f, screen.y - height * 0.5f, width, height };
-        DrawRectangleRounded(pill, 1.0f, 12, Fade({ 14, 12, 8, 255 }, 0.62f * alpha));
-        DrawRectangleRoundedLinesEx(pill, 1.0f, 12, big ? 2.0f : 1.2f, Fade(Ui::kAccent, (big ? 0.9f : 0.55f) * alpha));
+        Ui::Fill(pill, Fade({ 14, 12, 8, 255 }, 0.62f * alpha));
+        Ui::Stroke(pill, big ? 2.0f : 1.2f, Fade(Ui::kAccent, (big ? 0.9f : 0.55f) * alpha));
         Ui::Coin({ pill.x + padX + coinRadius, screen.y }, coinRadius, alpha);
         const int textX = (int)(pill.x + padX + coinRadius * 2.0f + gap);
         const int textY = (int)(screen.y - (float)size * 0.56f);
@@ -8407,8 +8485,8 @@ void Game::DrawCoopOverlay() const
                                     : TextFormat("ТУЛААН  ·  Танай баг %d  ·  Дайсан %d%s", own, enemy, autopilot ? "  ·  AI" : "");
         const int textWidth = Ui::MeasureBold(text, 15);
         const Rectangle chip = { (float)(width - textWidth - 32) / 2.0f, 54.0f, (float)textWidth + 32.0f, 30.0f };
-        DrawRectangleRounded(chip, 0.5f, 8, Fade({ 60, 14, 12, 255 }, 0.85f));
-        DrawRectangleRoundedLinesEx(chip, 0.5f, 8, 1.5f, Fade(Ui::kDanger, 0.8f));
+        Ui::Fill(chip, Fade({ 60, 14, 12, 255 }, 0.85f));
+        Ui::Stroke(chip, 1.5f, Fade(Ui::kDanger, 0.8f));
         Ui::TextBold(text, (int)chip.x + 16, (int)chip.y + 6, 15, Ui::kText);
     }
     // Хост: нэгдэх хүсэлт
@@ -8448,7 +8526,7 @@ void Game::DrawCoopOverlay() const
         const int labelWidth = Ui::Measure(label, 13), codeWidth = Ui::MeasureBold(code, 20), noteWidth = Ui::Measure(note, 13);
         const int chipWidth = labelWidth + codeWidth + noteWidth + 48;
         const Rectangle chip = { (float)(width - chipWidth) / 2.0f, 54.0f, (float)chipWidth, 30.0f };
-        DrawRectangleRounded(chip, 0.5f, 8, Fade({ 12, 18, 28, 255 }, 0.78f));
+        Ui::Fill(chip, Fade({ 12, 18, 28, 255 }, 0.78f));
         Ui::Text(label, (int)chip.x + 14, (int)chip.y + 9, 13, Ui::kTextDim);
         Ui::TextBold(code, (int)chip.x + 22 + labelWidth, (int)chip.y + 4, 20, Ui::kGood);
         Ui::Text(note, (int)chip.x + 34 + labelWidth + codeWidth, (int)chip.y + 9, 13, Account::RoomPvp() ? Ui::kAccent : Ui::kTextDim);
@@ -8459,7 +8537,7 @@ void Game::DrawCoopOverlay() const
                                                              : "ХАМТ ТОГЛОХ: сервертэй холбогдож чадсангүй, дахин оролдож байна";
         const int textWidth = Ui::Measure(text, 13);
         const Rectangle chip = { (float)(width - textWidth - 28) / 2.0f, 54.0f, (float)textWidth + 28.0f, 26.0f };
-        DrawRectangleRounded(chip, 0.5f, 8, Fade({ 12, 18, 28, 255 }, 0.78f));
+        Ui::Fill(chip, Fade({ 12, 18, 28, 255 }, 0.78f));
         Ui::Text(text, (int)chip.x + 14, (int)chip.y + 6, 13, net.GetRole() == Net::Role::Host ? Ui::kTextDim : Ui::kAccent);
     }
     else if (webHosting && net.GetRole() == Net::Role::Host && !net.Connected() && !joinRequestPending)
@@ -8470,7 +8548,7 @@ void Game::DrawCoopOverlay() const
         const int labelWidth = Ui::Measure(label, 13), codeWidth = Ui::MeasureBold(code, 20);
         const int chipWidth = labelWidth + codeWidth + 36;
         const Rectangle chip = { (float)(width - chipWidth) / 2.0f, 54.0f, (float)chipWidth, 30.0f };
-        DrawRectangleRounded(chip, 0.5f, 8, Fade({ 12, 18, 28, 255 }, 0.78f));
+        Ui::Fill(chip, Fade({ 12, 18, 28, 255 }, 0.78f));
         Ui::Text(label, (int)chip.x + 14, (int)chip.y + 9, 13, Ui::kTextDim);
         Ui::TextBold(code, (int)chip.x + 22 + labelWidth, (int)chip.y + 4, 20, Ui::kInfo);
     }
@@ -8518,8 +8596,8 @@ void Game::DrawCoopOverlay() const
         for (const Row& row : rows)
         {
             const Rectangle cell = { x, y, cellW, cellH };
-            DrawRectangleRounded(cell, 0.3f, 8, Fade({ 40, 10, 10, 255 }, 0.82f));
-            DrawRectangleRoundedLinesEx(cell, 0.3f, 8, 1.2f, Fade(Ui::kDanger, row.alive ? 0.8f : 0.3f));
+            Ui::Fill(cell, Fade({ 40, 10, 10, 255 }, 0.82f));
+            Ui::Stroke(cell, 1.2f, Fade(Ui::kDanger, row.alive ? 0.8f : 0.3f));
             const float ratio = row.alive && row.healthMax > 0.0f ? std::clamp(row.health / row.healthMax, 0.0f, 1.0f) : 0.0f;
             Ui::Text(row.name.c_str(), (int)cell.x + 10, (int)cell.y + 5, 13, row.alive ? Ui::kText : Ui::kTextDim);
             const char* value = row.alive ? TextFormat("%d", (int)std::lround(row.health)) : "унасан";
@@ -8753,8 +8831,8 @@ void Game::ForceCodeSubmit()
 void Game::DrawCodeEntry() const
 {
     const Rectangle panel = CodePanel(CodeKeyRect(0), CodeKeyRect(11));
-    DrawRectangle(0, 0, ViewWidth(), ViewHeight(), { 0, 0, 0, 140 });
-    Ui::PanelAccent(panel, Ui::kInfo, { 10, 13, 19, 240 });
+    Ui::Backdrop(0.55f);
+    Ui::PanelAccent(panel, Ui::kInfo, { 20, 30, 43, 240 });
     const char* title = "НАЙЗЫН ӨРӨӨНИЙ КОД";
     Ui::TextBold(title, (int)(panel.x + (panel.width - (float)Ui::MeasureBold(title, 17)) / 2.0f), (int)panel.y + 16, 17, Ui::kInfo);
     // Цифрийн нүд (данстай: 6, relay-ийн хуучин код: 4)
@@ -8764,7 +8842,7 @@ void Game::DrawCodeEntry() const
     for (int i = 0; i < digits; ++i)
     {
         const Rectangle cell = { boxLeft + (float)i * (box + boxGap), panel.y + 48.0f, box, 48.0f };
-        DrawRectangleRounded(cell, 0.25f, 6, { 255, 255, 255, 18 });
+        Ui::Fill(cell, { 255, 255, 255, 18 });
         Ui::Outline(cell, i == (int)codeEntry.size() ? Ui::kAccent : Color{ 255, 255, 255, 60 }, 1.5f, 6.0f);
         if (i < (int)codeEntry.size())
         {
@@ -8777,7 +8855,7 @@ void Game::DrawCodeEntry() const
     {
         const Rectangle r = CodeKeyRect(key);
         const bool ok = key == 11;
-        DrawRectangleRounded(r, 0.3f, 8, ok ? Fade(Ui::kInfo, (int)codeEntry.size() == digits ? 0.9f : 0.35f) : Color{ 255, 255, 255, 26 });
+        Ui::Fill(r, ok ? Fade(Ui::kInfo, (int)codeEntry.size() == digits ? 0.9f : 0.35f) : Color{ 255, 255, 255, 26 });
         Ui::TextBold(labels[key], (int)(r.x + (r.width - (float)Ui::MeasureBold(labels[key], 24)) / 2.0f), (int)(r.y + 18.0f), 24,
                      ok ? Color{ 10, 20, 30, 255 } : Ui::kText);
     }
@@ -8918,11 +8996,12 @@ void Game::UpdateRoomBrowser()
 void Game::DrawRoomBrowser() const
 {
     const Rectangle panel = RoomBrowserPanel();
-    DrawRectangle(0, 0, ViewWidth(), ViewHeight(), { 0, 0, 0, 150 });
-    Ui::PanelAccent(panel, Ui::kInfo, { 10, 13, 19, 245 });
+    Ui::Backdrop(0.59f);
+    Ui::PanelAccent(panel, Ui::kInfo, { 20, 30, 43, 245 });
     const std::vector<Account::RoomListing>& rooms = Account::RoomList();
     const int x = (int)panel.x, y = (int)panel.y;
-    Ui::TextBold("ТУЛААНЫ ӨРӨӨНҮҮД", x + 20, y + 14, 20, Ui::kInfo);
+    Ui::TextDisplay("ТУЛААНЫ ӨРӨӨНҮҮД", x + 20, y + 12, 22, Ui::kText, 0.06f);
+    DrawRectangle(x + 20, y + 38, 40, 2, Ui::kInfo);
     {
         // Өөрийн цол, тулалдаж болох зэргийн хүрээ (сервертэй ижил: ±max(3, 15%))
         int stars = 0;
@@ -8951,7 +9030,7 @@ void Game::DrawRoomBrowser() const
         const Account::RoomListing& room = rooms[(size_t)(roomBrowserScroll + slot)];
         const Rectangle row = RoomBrowserRow(slot);
         const bool hover = CheckCollisionPointRec(pointer, row);
-        DrawRectangleRounded(row, 0.2f, 6, { 255, 255, 255, (unsigned char)(hover ? 26 : (slot % 2 ? 10 : 16)) });
+        Ui::Fill(row, { 255, 255, 255, (unsigned char)(hover ? 26 : (slot % 2 ? 10 : 16)) });
         const Color main = room.joinable ? Ui::kText : Ui::kTextDim;
         const int textY = (int)row.y + 13;
         std::string host = room.host;
@@ -8975,7 +9054,7 @@ void Game::DrawRoomBrowser() const
         if (room.joinable)
         {
             const float alpha = roomBrowserJoining || !Account::RoomListBlocked().empty() ? 0.35f : CheckCollisionPointRec(pointer, join) ? 1.0f : 0.85f;
-            DrawRectangleRounded(join, 0.5f, 6, Fade(Ui::kInfo, alpha));
+            Ui::Fill(join, Fade(Ui::kInfo, alpha));
             Ui::TextBold("ОРОХ", (int)(join.x + (join.width - (float)Ui::MeasureBold("ОРОХ", 14)) / 2.0f), (int)join.y + 7, 14,
                          { 10, 20, 30, 255 });
         }
@@ -9000,7 +9079,7 @@ void Game::DrawRoomBrowser() const
         {
             const Rectangle r = RoomBrowserButton(i);
             const bool active = i == 3 ? roomBrowserScroll > 0 : roomBrowserScroll < (int)rooms.size() - rows;
-            DrawRectangleRounded(r, 0.3f, 6, { 255, 255, 255, (unsigned char)(active ? 34 : 12) });
+            Ui::Fill(r, { 255, 255, 255, (unsigned char)(active ? 34 : 12) });
             const Vector2 c = { r.x + r.width * 0.5f, r.y + r.height * 0.5f };
             const Color tint = active ? Ui::kText : Ui::kTextDim;
             if (i == 3) DrawTriangle({ c.x, c.y - 7.0f }, { c.x - 8.0f, c.y + 6.0f }, { c.x + 8.0f, c.y + 6.0f }, tint);
@@ -9025,7 +9104,7 @@ void Game::DrawRoomBrowser() const
         const Rectangle r = RoomBrowserButton(i);
         const bool dim = (i == 0 && Account::RoomListLoading()) || (i > 0 && roomBrowserJoining);
         const Color fill = i == 0 ? Ui::kInfo : i == 1 ? Ui::kGood : Color{ 255, 255, 255, 40 };
-        DrawRectangleRounded(r, 0.5f, 6, i == 2 ? fill : Fade(fill, dim ? 0.45f : 0.85f));
+        Ui::Fill(r, i == 2 ? fill : Fade(fill, dim ? 0.45f : 0.85f));
         Ui::TextBold(labels[i], (int)(r.x + (r.width - (float)Ui::MeasureBold(labels[i], 14)) / 2.0f), (int)r.y + 10, 14,
                      i == 2 ? Ui::kText : Color{ 10, 20, 30, 255 });
     }
@@ -9038,13 +9117,13 @@ void Game::DrawCoopMap() const
     {
         // Хуудсыг refresh хийсэн: өмнөх хамтын тоглолт руу буцах
         const Rectangle button = ResumeButtonRect();
-        DrawRectangleRounded(button, 0.4f, 6, Fade(Ui::kGood, 0.9f));
+        Ui::Fill(button, Fade(Ui::kGood, 0.9f));
         const char* label = "ДАХИН ХОЛБОГДОХ — хамтын тоглолт руугаа буцах";
         Ui::TextBold(label, (int)(button.x + (button.width - (float)Ui::MeasureBold(label, 15)) / 2.0f), (int)button.y + 8, 15,
                      { 10, 20, 30, 255 });
     }
     const Rectangle panel = { 430.0f + MapScreenShift(), 598.0f, 500.0f, 114.0f };
-    Ui::PanelAccent(panel, Ui::kInfo, { 10, 13, 19, 205 });
+    Ui::PanelAccent(panel, Ui::kInfo, { 20, 30, 43, 205 });
     Ui::Outline(panel, { 96, 196, 236, 70 }, 1.0f, 10.0f);
     const char* title = Account::ServerShop()                ? "ХАМТ ТОГЛОХ · ТУЛААН  (интернэт)"
                         : net.HasLan() && net.UsesRoomCodes() ? "ХАМТ ТОГЛОХ  (сүлжээ, интернэт)"
@@ -9065,7 +9144,7 @@ void Game::DrawCoopMap() const
         Ui::Text(TextFormat("Үнэгүй · хамт давбал хоёулаа %d Gold", Account::CoopReward()), (int)panel.x + 18, 650, 12, Ui::kTextDim);
         {
             const Rectangle friendButton = FriendButtonRect();
-            DrawRectangleRounded(friendButton, 0.5f, 6, Fade(Ui::kGood, 0.85f));
+            Ui::Fill(friendButton, Fade(Ui::kGood, 0.85f));
             const char* friendLabel = "КОДООР НЭГДЭХ";
             Ui::TextBold(friendLabel, (int)(friendButton.x + (friendButton.width - (float)Ui::MeasureBold(friendLabel, 13)) / 2.0f),
                          (int)friendButton.y + 5, 13, { 10, 20, 30, 255 });
@@ -9090,7 +9169,7 @@ void Game::DrawCoopMap() const
         }
         const Rectangle button = CodeButtonRect();
         const char* label = searching ? "ЦУЦЛАХ" : "ТУЛААН ХАЙХ";
-        DrawRectangleRounded(button, 0.5f, 6, Fade(searching ? Ui::kDanger : enough ? Ui::kInfo : Ui::kTextDim, 0.85f));
+        Ui::Fill(button, Fade(searching ? Ui::kDanger : enough ? Ui::kInfo : Ui::kTextDim, 0.85f));
         Ui::TextBold(label, (int)(button.x + (button.width - (float)Ui::MeasureBold(label, 13)) / 2.0f), (int)button.y + 5, 13,
                      { 10, 20, 30, 255 });
         if (!coopStatus.empty() && !codeEntryOpen)
@@ -9103,7 +9182,7 @@ void Game::DrawCoopMap() const
     {
         Ui::Text("Хүсэлт илгээлээ, хариу хүлээж байна...", (int)panel.x + 18, 638, 15, Ui::kText);
         const Rectangle button = CoopButtonRect(0);
-        DrawRectangleRounded(button, 0.5f, 6, Fade(Ui::kDanger, 0.8f));
+        Ui::Fill(button, Fade(Ui::kDanger, 0.8f));
         Ui::TextBold("ЦУЦЛАХ", (int)(button.x + (button.width - (float)Ui::MeasureBold("ЦУЦЛАХ", 13)) / 2.0f), (int)button.y + 5, 13,
                      Ui::kText);
     }
@@ -9136,7 +9215,7 @@ void Game::DrawCoopMap() const
             const char* province = game.province >= 0 && game.province < (int)Provinces().size() ? Provinces()[(size_t)game.province].name : "?";
             Ui::Text(TextFormat("%s  —  %s", game.name.c_str(), province), (int)panel.x + 18, y + 2, 15, Ui::kText);
             const Rectangle button = CoopButtonRect(i);
-            DrawRectangleRounded(button, 0.5f, 6, Fade(Ui::kInfo, 0.85f));
+            Ui::Fill(button, Fade(Ui::kInfo, 0.85f));
             Ui::TextBold("НЭГДЭХ", (int)(button.x + (button.width - (float)Ui::MeasureBold("НЭГДЭХ", 13)) / 2.0f), (int)button.y + 5, 13,
                          { 10, 20, 30, 255 });
         }
@@ -9144,7 +9223,7 @@ void Game::DrawCoopMap() const
     if (!waitingForReply && net.UsesRoomCodes())
     {
         const Rectangle button = CodeButtonRect();
-        DrawRectangleRounded(button, 0.5f, 6, Fade(Ui::kInfo, 0.85f));
+        Ui::Fill(button, Fade(Ui::kInfo, 0.85f));
         Ui::TextBold("КОДООР НЭГДЭХ", (int)(button.x + (button.width - (float)Ui::MeasureBold("КОДООР НЭГДЭХ", 13)) / 2.0f),
                      (int)button.y + 5, 13, { 10, 20, 30, 255 });
     }
@@ -9342,7 +9421,7 @@ void Game::DrawFeed() const
         const char* text = TextFormat("ХАМГААЛАЛТ  %d", (int)std::ceil(battleGrace));
         const int w = Ui::MeasureBold(text, 20);
         const Rectangle pill = { (float)ViewWidth() * 0.5f - (float)w * 0.5f - 14.0f, 184.0f, (float)w + 28.0f, 32.0f };
-        DrawRectangleRounded(pill, 0.5f, 8, Fade({ 14, 16, 22, 255 }, 0.85f));
+        Ui::Fill(pill, Fade({ 20, 30, 43, 255 }, 0.85f));
         Ui::TextBold(text, (int)pill.x + 14, (int)pill.y + 6, 20, { 255, 210, 90, 255 });
     }
     else if (shrinkZone.active && state == GameState::Playing)
@@ -9357,7 +9436,7 @@ void Game::DrawFeed() const
         const Color color = outside ? Color{ 255, 90, 80, 255 } : Color{ 255, 210, 90, 255 };
         const int w = Ui::MeasureBold(text, 18);
         const Rectangle pill = { (float)ViewWidth() * 0.5f - (float)w * 0.5f - 14.0f, 184.0f, (float)w + 28.0f, 30.0f };
-        DrawRectangleRounded(pill, 0.5f, 8, Fade({ 14, 16, 22, 255 }, 0.85f));
+        Ui::Fill(pill, Fade({ 20, 30, 43, 255 }, 0.85f));
         Ui::TextBold(text, (int)pill.x + 14, (int)pill.y + 5, 18, color);
         if (outside)
         {
@@ -9376,7 +9455,7 @@ void Game::DrawFeed() const
                                  : TextFormat("%s  %d", AbilityName(kind), (int)std::ceil(abilityCooldown[kind]));
         const int w = Ui::MeasureBold(text, 15);
         const Rectangle r = { (float)ViewWidth() - (float)w - 36.0f, (float)ViewHeight() - 326.0f, (float)w + 20.0f, 24.0f };
-        DrawRectangleRounded(r, 0.4f, 6, Fade({ 14, 16, 22, 255 }, 0.75f));
+        Ui::Fill(r, Fade({ 20, 30, 43, 255 }, 0.75f));
         if (!ready)
         {
             const float part = 1.0f - abilityCooldown[kind] / kAbilityCooldown[kind];
@@ -9389,7 +9468,7 @@ void Game::DrawFeed() const
         const float alpha = std::clamp(7.0f - line.age, 0.0f, 1.0f);
         const int w = Ui::MeasureBold(line.text.c_str(), 15);
         const Rectangle r = { right - (float)w - 20.0f, y, (float)w + 20.0f, 24.0f };
-        DrawRectangleRounded(r, 0.4f, 6, Fade({ 14, 16, 22, 255 }, 0.78f * alpha));
+        Ui::Fill(r, Fade({ 20, 30, 43, 255 }, 0.78f * alpha));
         DrawRectangleRec({ r.x + r.width - 4.0f, r.y + 4.0f, 3.0f, r.height - 8.0f }, Fade(line.color, alpha));
         Ui::TextBold(line.text.c_str(), (int)r.x + 8, (int)r.y + 4, 15, Fade(line.color, alpha));
         y += 28.0f;
@@ -9757,7 +9836,7 @@ void Game::DrawChat() const
         for (const std::string& part : WrapChat(line.text))
         {
             const int width = Ui::Measure(part.c_str(), kChatTextSize);
-            DrawRectangleRounded({ 12.0f, y - 2.0f, (float)width + 16.0f, 24.0f }, 0.3f, 6, Fade(Ui::kPanel, alpha));
+            Ui::Fill({ 12.0f, y - 2.0f, (float)width + 16.0f, 24.0f }, Fade(Ui::kPanel, alpha));
             Ui::Text(part.c_str(), 20, (int)y + 1, kChatTextSize, Fade(line.mine ? Ui::kAccent : Ui::kText, alpha));
             y += 27.0f;
         }
@@ -9777,7 +9856,7 @@ void Game::DrawChat() const
         return;
     }
     const Rectangle bar = ChatBarRect();
-    Ui::PanelAccent(bar, Ui::kInfo, { 10, 13, 19, 235 });
+    Ui::PanelAccent(bar, Ui::kInfo, { 20, 30, 43, 235 });
     const bool empty = chatDraft.empty();
     std::string shown = empty ? std::string(touch ? (WebIsTouchDevice() ? "Энд товшиж бичнэ үү, эсвэл доороос сонго" : "Доороос сонгоно уу")
                                                   : "Бичээд Enter дарна уу (Esc — хаах)")
@@ -9787,7 +9866,7 @@ void Game::DrawChat() const
     for (int i = 0; i < kChatPhraseCount; ++i)
     {
         const Rectangle r = ChatPhraseRect(i);
-        Ui::Panel(r, { 10, 13, 19, 220 }, 8.0f);
+        Ui::Panel(r, { 20, 30, 43, 220 }, 8.0f);
         Ui::Outline(r, Ui::kBorder, 1.0f, 8.0f);
         Ui::Text(kChatPhrases[i], (int)(r.x + (r.width - (float)Ui::Measure(kChatPhrases[i], 14)) * 0.5f), (int)r.y + 12, 14, Ui::kText);
     }
@@ -9879,12 +9958,13 @@ void Game::UpdateEndDialog()
 
 void Game::DrawEndDialog() const
 {
-    DrawRectangle(0, 0, ViewWidth(), ViewHeight(), { 0, 0, 0, 150 });
+    Ui::Backdrop(0.72f);
     const Rectangle panel = EndDialogPanel();
     const Color accent = endDialog.battle ? Ui::kDanger : Ui::kAccent;
-    Ui::PanelAccent(panel, accent, { 10, 13, 19, 245 });
+    Ui::Panel(panel, { 20, 30, 43, 248 });
+    Ui::CornerBrackets(panel, accent, 14.0f, 2.0f);
     const char* title = endDialog.title.c_str();
-    Ui::TextBold(title, (int)(panel.x + (panel.width - (float)Ui::MeasureBold(title, 26)) * 0.5f), (int)panel.y + 30, 26, accent);
+    Ui::TextDisplay(title, (int)(panel.x + (panel.width - (float)Ui::MeasureDisplay(title, 28, 0.06f)) * 0.5f), (int)panel.y + 28, 28, accent, 0.06f);
     const char* detail = endDialog.detail.c_str();
     Ui::Text(detail, (int)(panel.x + (panel.width - (float)Ui::Measure(detail, 16)) * 0.5f), (int)panel.y + 78, 16, Ui::kText);
     const char* hint = "Дараа нь юу хийх вэ?";
@@ -9895,10 +9975,9 @@ void Game::DrawEndDialog() const
         const Rectangle r = EndDialogButton(i);
         if (r.width <= 0.0f) continue;
         const bool primary = i == (endDialog.battle && EndDialogHasBattle() ? 1 : 0);
-        DrawRectangleRounded(r, 0.3f, 8, primary ? Fade(accent, 0.9f) : Color{ 255, 255, 255, 26 });
-        Ui::Outline(r, primary ? accent : Ui::kBorder, 1.5f, 10.0f);
-        Ui::TextBold(labels[i], (int)(r.x + (r.width - (float)Ui::MeasureBold(labels[i], 17)) * 0.5f), (int)(r.y + 15.0f), 17,
-                     primary ? Color{ 20, 16, 8, 255 } : Ui::kText);
+        const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), r);
+        Ui::Button(r, labels[i], primary ? (endDialog.battle ? Ui::ButtonKind::Danger : Ui::ButtonKind::Primary) : Ui::ButtonKind::Secondary,
+                   hover, 17);
     }
 }
 
@@ -9989,16 +10068,16 @@ void Game::DrawUpdateBanner() const
     if (!updateAvailable || updateClosed) return;
     const Color green = { 112, 214, 132, 255 };
     const Rectangle banner = UpdateBannerRect();
-    Ui::PanelAccent(banner, green, { 10, 13, 19, 242 });
+    Ui::PanelAccent(banner, green, { 20, 30, 43, 242 });
     Ui::TextBold("Шинэ хувилбар гарлаа", (int)banner.x + 16, (int)banner.y + 8, 16, green);
     Ui::Text(InTouchMode() ? "Татаж аваад суулгана уу" : "Татаж аваад суулгана уу (хуучныг дарж суулгана)", (int)banner.x + 16,
              (int)banner.y + 29, 12, Ui::kText);
     const Rectangle button = UpdateButtonRect();
-    DrawRectangleRounded(button, 0.3f, 8, green);
+    Ui::Fill(button, green);
     Ui::TextBold("ТАТАХ", (int)(button.x + (button.width - (float)Ui::MeasureBold("ТАТАХ", 16)) * 0.5f), (int)button.y + 9, 16,
                  { 8, 24, 12, 255 });
     const Rectangle close = UpdateCloseRect();
-    DrawRectangleRounded(close, 0.3f, 6, { 255, 255, 255, 30 });
+    Ui::Fill(close, { 255, 255, 255, 30 });
     Ui::Text("x", (int)(close.x + (close.width - (float)Ui::Measure("x", 16)) * 0.5f), (int)close.y + 6, 16, Ui::kText);
 }
 
@@ -10090,7 +10169,7 @@ void Game::DrawSeatChoice() const
     if (seatChoice < 0) return;
     const Rectangle first = SeatChoiceButton(0), second = SeatChoiceButton(1);
     const Rectangle panel = { first.x - 24.0f, first.y - 70.0f, second.x + second.width - first.x + 48.0f, first.height + 110.0f };
-    Ui::PanelAccent(panel, Ui::kAccent, { 10, 13, 19, 240 });
+    Ui::PanelAccent(panel, Ui::kAccent, { 20, 30, 43, 240 });
     const char* title = "ХУЯГТ МАШИН — хаана суух вэ?";
     Ui::TextBold(title, (int)(panel.x + (panel.width - (float)Ui::MeasureBold(title, 20)) * 0.5f), (int)panel.y + 18, 20, Ui::kText);
     static const char* const labels[2] = { "ЖОЛООЧ", "БУУДАГЧ" };
@@ -10098,7 +10177,7 @@ void Game::DrawSeatChoice() const
     for (int i = 0; i < 2; ++i)
     {
         const Rectangle r = SeatChoiceButton(i);
-        DrawRectangleRounded(r, 0.25f, 8, i == 0 ? Color{ 255, 255, 255, 26 } : Fade(Ui::kAccent, 0.9f));
+        Ui::Fill(r, i == 0 ? Color{ 255, 255, 255, 26 } : Fade(Ui::kAccent, 0.9f));
         Ui::Outline(r, Ui::kAccent, 1.5f, 10.0f);
         const Color ink = i == 0 ? Ui::kText : Color{ 20, 16, 8, 255 };
         const char* label = InTouchMode() ? labels[i] : TextFormat("%d  %s", i + 1, labels[i]);

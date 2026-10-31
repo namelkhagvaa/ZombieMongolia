@@ -34,10 +34,10 @@ namespace
     // Аймгийн картын доорх довтлох товч (Update ба Draw хоёулаа ашиглана)
     Rectangle AttackButton() { return { (float)PanelX(), 246.0f, (float)kPanelWidth, 46.0f }; }
 
-    const Color kLiberated = { 52, 150, 48, 255 };
-    const Color kAvailable = { 238, 176, 28, 255 };
-    const Color kLocked = { 70, 78, 92, 255 };
-    const Color kBorderLine = { 24, 28, 36, 255 };
+    const Color kLiberated = { 40, 150, 96, 255 };  // чөлөөлсөн (Ui::kGood-ийн бараан)
+    const Color kAvailable = { 196, 104, 30, 255 }; // зомбид эзлэгдсэн: шатсан улбар (Ui::kOrange-ийн бараан)
+    const Color kLocked = { 46, 58, 76, 255 };      // түгжээтэй
+    const Color kBorderLine = { 8, 13, 22, 255 };   // Ui::kBgDeep
 
     Vector2 ToScreen(Vector2 lonLat)
     {
@@ -289,7 +289,7 @@ namespace
     // Аймгийн жижиг зураг: дэвсгэр зургийн аймаг бүрт өөр хэсэг.
     void DrawThumbnail(Rectangle box, int province)
     {
-        DrawRectangleRounded(box, 0.12f, 6, { 30, 26, 24, 255 });
+        Ui::Fill(box, { 30, 26, 24, 255 });
         const Texture2D& texture = Backdrop();
         if (texture.id != 0)
         {
@@ -300,14 +300,14 @@ namespace
             const float sy = (float)texture.height * 0.36f;
             DrawTexturePro(texture, { sx, sy, sw, sh }, box, { 0.0f, 0.0f }, 0.0f, WHITE);
         }
-        DrawRectangleRoundedLinesEx(box, 0.12f, 6, 1.5f, { 255, 255, 255, 60 });
+        Ui::Stroke(box, 1.5f, { 255, 255, 255, 60 });
     }
 
     // Хүндрэлийн гавлын яс
     void DrawSkull(Vector2 c, float r, Color color)
     {
         DrawCircleV({ c.x, c.y - r * 0.15f }, r, color);
-        DrawRectangleRounded({ c.x - r * 0.62f, c.y + r * 0.3f, r * 1.24f, r * 0.75f }, 0.4f, 4, color);
+        Ui::Fill({ c.x - r * 0.62f, c.y + r * 0.3f, r * 1.24f, r * 0.75f }, color);
         const Color hole = { 14, 16, 20, 255 };
         DrawCircleV({ c.x - r * 0.4f, c.y - r * 0.1f }, r * 0.3f, hole);
         DrawCircleV({ c.x + r * 0.4f, c.y - r * 0.1f }, r * 0.3f, hole);
@@ -394,7 +394,7 @@ namespace
             break;
         default: // цэрэг
             DrawCircleV({ c.x, c.y - 6.0f }, 4.5f, color);
-            DrawRectangleRounded({ c.x - 7.0f, c.y, 14.0f, 10.0f }, 0.6f, 6, color);
+            Ui::Fill({ c.x - 7.0f, c.y, 14.0f, 10.0f }, color);
             break;
         }
     }
@@ -403,8 +403,8 @@ namespace
     int DrawMouseIcon(int x, int y)
     {
         const Rectangle body = { (float)x + 6.0f, (float)y + 1.0f, 14.0f, 21.0f };
-        DrawRectangleRounded({ (float)x, (float)y - 2.0f, 26.0f, 28.0f }, 0.3f, 6, Ui::kPanel);
-        DrawRectangleRoundedLinesEx(body, 0.9f, 8, 1.5f, Ui::kText);
+        Ui::Fill({ (float)x, (float)y - 2.0f, 26.0f, 28.0f }, Ui::kPanel);
+        Ui::Stroke(body, 1.5f, Ui::kText);
         DrawRectangleRec({ body.x + 2.0f, body.y + 2.0f, 4.5f, 6.0f }, Ui::kAccent);
         DrawLineEx({ body.x + 7.0f, body.y + 1.0f }, { body.x + 7.0f, body.y + 8.0f }, 1.0f, Ui::kText);
         return 26;
@@ -539,19 +539,19 @@ void MapScreen::DrawConfirm(const Progress& progress) const
     const int wallet = ShopWallet(progress);
     const bool maxed = level >= maxLevel, affordable = !maxed && wallet >= cost;
     const int screenWidth = ViewWidth(), screenHeight = ViewHeight();
-    DrawRectangle(0, 0, screenWidth, screenHeight, { 0, 0, 0, 160 });
+    Ui::Backdrop(0.72f);
 
     const float width = std::min(480.0f, (float)screenWidth - 24.0f), height = 250.0f;
     const Rectangle panel = { ((float)screenWidth - width) * 0.5f, ((float)screenHeight - height) * 0.5f, width, height };
     confirmPanel = panel;
-    Ui::Panel(panel, { 12, 16, 22, 245 }, 14.0f);
-    Ui::Outline(panel, { 255, 200, 90, 140 }, 1.5f, 14.0f);
+    Ui::Panel(panel, { Ui::kPanelSolid.r, Ui::kPanelSolid.g, Ui::kPanelSolid.b, 248 });
+    Ui::CornerBrackets(panel, Ui::kAccent, 14.0f, 2.0f);
     const float x = panel.x + 26.0f, inner = width - 52.0f;
     if (!Ui::DrawIcon(ShopHudIconFor(item), { x, panel.y + 22.0f, 54.0f, 54.0f }))
     {
         DrawShopIcon(item, { x + 6.0f, panel.y + 28.0f, 42.0f, 42.0f }, Ui::kAccent);
     }
-    Ui::TextBold(ShopItemName(item), (int)x + 68, (int)panel.y + 24, 22, Ui::kText);
+    Ui::TextDisplay(ShopItemName(item), (int)x + 68, (int)panel.y + 24, 22, Ui::kText);
     const char* detail = maxed ? "Хамгийн дээд түвшинд хүрсэн"
                        : item == ShopItem::Soldier ? TextFormat("+1 цэрэг  (одоо %d / %d)", level, maxLevel)
                                                    : TextFormat("Түвшин %d  ->  %d  (дээд %d)", level, level + 1, maxLevel);
@@ -561,7 +561,7 @@ void MapScreen::DrawConfirm(const Progress& progress) const
     for (int k = 0; k < maxLevel; ++k)
     {
         const Color color = k < level ? Ui::kAccent : k == level && !maxed ? Fade(Ui::kAccent, 0.35f + 0.5f * pulse) : Color{ 255, 255, 255, 40 };
-        DrawRectangleRounded({ x + (float)k * 22.0f, panel.y + 96.0f, 16.0f, 7.0f }, 1.0f, 4, color);
+        DrawRectangleRec({ x + (float)k * 22.0f, panel.y + 96.0f, 18.0f, 6.0f }, color);
     }
     if (!maxed)
     {
@@ -576,15 +576,11 @@ void MapScreen::DrawConfirm(const Progress& progress) const
     confirmYes = { x, by, maxed ? inner : half, 52.0f };
     confirmNo = maxed ? Rectangle{} : Rectangle{ x + half + 12.0f, by, half, 52.0f };
     const bool yesHover = !InTouchMode() && CheckCollisionPointRec(InPointer(), confirmYes);
-    DrawRectangleRounded(confirmYes, 0.35f, 8, yesHover ? Color{ 255, 218, 110, 255 } : Color{ 242, 178, 48, 255 });
-    Ui::TextBold(yesLabel, (int)(confirmYes.x + (confirmYes.width - (float)Ui::MeasureBold(yesLabel, 19)) * 0.5f), (int)by + 15, 19,
-                 { 34, 24, 6, 255 });
+    Ui::Button(confirmYes, yesLabel, Ui::ButtonKind::Primary, yesHover, 19);
     if (!maxed)
     {
         const bool noHover = !InTouchMode() && CheckCollisionPointRec(InPointer(), confirmNo);
-        DrawRectangleRounded(confirmNo, 0.35f, 8, { 255, 255, 255, (unsigned char)(noHover ? 44 : 22) });
-        DrawRectangleRoundedLinesEx(confirmNo, 0.35f, 8, 1.0f, { 255, 255, 255, 70 });
-        Ui::TextBold("Болих", (int)(confirmNo.x + (confirmNo.width - (float)Ui::MeasureBold("Болих", 18)) * 0.5f), (int)by + 16, 18, Ui::kText);
+        Ui::Button(confirmNo, "Болих", Ui::ButtonKind::Secondary, noHover, 18);
     }
 }
 
@@ -604,15 +600,18 @@ void MapScreen::Draw(const Progress& progress) const
     const int screenWidth = ViewWidth(), screenHeight = ViewHeight();
     const float pulse = 0.5f + 0.5f * std::sin((float)GetTime() * 4.0f);
     const Color kGold = Ui::kAccent;
-    const Color kFrame = { 255, 200, 90, 90 };
+    const Color kFrame = Ui::kBorderStrong;
 
     // Дэвсгэр: үйл явдлын зураг (assets/home_back.png) + бараан давхарга
-    ClearBackground({ 14, 18, 26, 255 });
+    ClearBackground(Ui::kBgDeep);
     DrawBackdrop(screenWidth, screenHeight);
 
     // --- Гарчиг ба аяны явц ---
-    Ui::TextShadow("ZOMBIE", 30, 12, 38, Ui::kText, true);
-    Ui::TextShadow("MONGOLIA", 30 + Ui::MeasureBold("ZOMBIE ", 38), 12, 38, kGold, true);
+    Ui::TextDisplay("ZOMBIE", 31, 15, 38, Fade(BLACK, 0.6f), 0.08f);
+    Ui::TextDisplay("ZOMBIE", 30, 13, 38, Ui::kText, 0.08f);
+    const int mongoliaX = 30 + Ui::MeasureDisplay("ZOMBIE ", 38, 0.08f);
+    Ui::TextDisplay("MONGOLIA", mongoliaX + 1, 15, 38, Fade(BLACK, 0.6f), 0.08f);
+    Ui::TextDisplay("MONGOLIA", mongoliaX, 13, 38, kGold, 0.08f);
     const char* progressText = TextFormat("Чөлөөлсөн аймаг  %d / %d", liberated, count);
     Ui::TextShadow(progressText, 32, 56, 16, Ui::kText);
     Ui::Bar({ 42.0f + (float)Ui::Measure(progressText, 16), 62.0f, 200.0f, 7.0f }, (float)liberated / (float)count, kLiberated,
@@ -626,12 +625,11 @@ void MapScreen::Draw(const Progress& progress) const
         std::string label = std::string(title);
         if (stars > 0) label += TextFormat(" %d од", stars); // (фонтод ★ байхгүй)
         // Чөлөөлсөн аймгийн мөрний баруун талд (давхцахгүй)
-        const int x = std::max(30 + Ui::MeasureBold("ZOMBIE MONGOLIA", 38), 42 + Ui::Measure(progressText, 16) + 200) + 30;
+        const int x = std::max(30 + Ui::MeasureDisplay("ZOMBIE MONGOLIA", 38, 0.08f), 42 + Ui::Measure(progressText, 16) + 200) + 30;
         const int width = 320;
         const Rectangle badge = { (float)x, 10.0f, (float)width, 58.0f };
-        Ui::Panel(badge, { 10, 13, 19, 196 }, 8.0f);
-        Ui::Outline(badge, kFrame, 1.0f, 8.0f);
-        Ui::TextBold(label.c_str(), x + 12, 16, 17, kGold);
+        Ui::PanelAccent(badge, kGold, { 20, 30, 43, 214 });
+        Ui::TextDisplay(label.c_str(), x + 14, 15, 18, kGold);
         const char* level = TextFormat("%d-р зэрэг", rank);
         Ui::TextBold(level, x + width - 12 - Ui::MeasureBold(level, 15), 18, 15, Ui::kText);
         const int into = Account::Xp() - RankXp(rank), need = RankXpToNext(rank);
@@ -648,18 +646,14 @@ void MapScreen::Draw(const Progress& progress) const
 
     // --- Газрын зургийн хүрээ: бараан шил самбар, алтан хүрээ, булангийн хаалт ---
     const Rectangle frame = { MapRect().x - 8.0f, MapRect().y - 8.0f, MapRect().width + 16.0f, MapRect().height + 16.0f };
-    Ui::Panel(frame, { 10, 13, 19, 96 }, 12.0f);
-    Ui::Outline(frame, kFrame, 1.5f, 12.0f);
-    {
-        const float l = 26.0f, t = 3.0f;
-        const float x0 = frame.x - 2.0f, y0 = frame.y - 2.0f, x1 = frame.x + frame.width + 2.0f, y1 = frame.y + frame.height + 2.0f;
-        for (const Vector2 corner : { Vector2{ x0, y0 }, Vector2{ x1, y0 }, Vector2{ x0, y1 }, Vector2{ x1, y1 } })
-        {
-            const float sx = corner.x == x0 ? 1.0f : -1.0f, sy = corner.y == y0 ? 1.0f : -1.0f;
-            DrawLineEx(corner, { corner.x + sx * l, corner.y }, t, kGold);
-            DrawLineEx(corner, { corner.x, corner.y + sy * l }, t, kGold);
-        }
-    }
+    DrawRectangleRec(frame, { Ui::kBgDeep.r, Ui::kBgDeep.g, Ui::kBgDeep.b, 150 });
+    // Тактикийн дэлгэцийн тор (40 px): газрын зургийг командын самбар мэт харуулна
+    for (float gx = frame.x + 40.0f; gx < frame.x + frame.width; gx += 40.0f)
+        DrawRectangleRec({ gx, frame.y, 1.0f, frame.height }, Fade(WHITE, 0.035f));
+    for (float gy = frame.y + 40.0f; gy < frame.y + frame.height; gy += 40.0f)
+        DrawRectangleRec({ frame.x, gy, frame.width, 1.0f }, Fade(WHITE, 0.035f));
+    Ui::Outline(frame, kFrame, 1.0f, 4.0f);
+    Ui::CornerBrackets({ frame.x - 3.0f, frame.y - 3.0f, frame.width + 6.0f, frame.height + 6.0f }, kGold, 26.0f, 2.5f);
 
     // Аймгууд: эхлээд дотроо өөр нэгж агуулсан аймгууд, дараа нь бусад нь (дээр нь давхарлана)
     DrawMapShadow(art);
@@ -769,7 +763,7 @@ void MapScreen::Draw(const Progress& progress) const
         float tx = mouse.x + 18.0f, ty = mouse.y + 16.0f;
         if (tx + (float)width > MapRect().x + MapRect().width) tx = mouse.x - 12.0f - (float)width;
         if (ty + 48.0f > MapRect().y + MapRect().height) ty = mouse.y - 56.0f;
-        Ui::Panel({ tx, ty, (float)width, 46.0f }, { 10, 13, 19, 230 }, 8.0f);
+        Ui::Panel({ tx, ty, (float)width, 46.0f }, { 20, 30, 43, 238 });
         Ui::TextBold(name, (int)tx + 10, (int)ty + 5, 15, Ui::kText);
         DrawCircle((int)tx + 14, (int)ty + 33, 4.0f, StatusColor(progress, hovered));
         Ui::Text(state, (int)tx + 24, (int)ty + 25, 13, Ui::kTextDim);
@@ -805,11 +799,13 @@ void MapScreen::Draw(const Progress& progress) const
     int y = 82;
     {
         const Rectangle card = { (float)panelX, (float)y, (float)panelWidth, 152.0f };
-        Ui::PanelAccent(card, StatusColor(progress, selected), { 10, 13, 19, 210 });
-        Ui::Outline(card, kFrame, 1.0f, 10.0f);
-        Ui::Text("АЙМАГ", panelX + 18, y + 12, 13, Ui::kTextDim);
-        Ui::TextBold(TextFormat("%02d / %02d", selected + 1, count), panelX + 18 + Ui::Measure("АЙМАГ ", 13), y + 12, 13, kGold);
-        Ui::TextBold(provinces[selected].name, panelX + 18, y + 28, 26, Ui::kText);
+        Ui::PanelAccent(card, StatusColor(progress, selected), { 20, 30, 43, 226 });
+        Ui::TextDisplay("АЙМАГ", panelX + 18, y + 12, 13, Ui::kTextDim, 0.12f);
+        Ui::TextDisplay(TextFormat("%02d / %02d", selected + 1, count), panelX + 18 + Ui::MeasureDisplay("АЙМАГ ", 13, 0.12f), y + 12, 13, kGold, 0.12f);
+        // Нэр: зургийн зүүн талд багтах хүртэл жижигрүүлнэ (урт нэр: Баян-Өлгий, Говь-Сүмбэр)
+        int nameSize = 28;
+        while (nameSize > 18 && Ui::MeasureDisplay(provinces[selected].name, nameSize) > panelWidth - 18 - 136) --nameSize;
+        Ui::TextDisplay(provinces[selected].name, panelX + 18, y + 28 + (28 - nameSize) / 2, nameSize, Ui::kText);
         Ui::Text(free ? "Чөлөөлөгдсөн" : unlocked && owned ? "Зомбид эзлэгдсэн" : "Түгжээтэй", panelX + 18, y + 62, 15,
                  StatusColor(progress, selected));
         DrawThumbnail({ (float)panelX + (float)panelWidth - 122.0f, (float)y + 12.0f, 108.0f, 64.0f }, selected);
@@ -844,14 +840,10 @@ void MapScreen::Draw(const Progress& progress) const
     {
         const Rectangle button = AttackButton();
         const bool hover = CheckCollisionPointRec(InPointer(), button);
-        const Color top = hover ? Color{ 255, 226, 120, 255 } : Color{ 255, 206, 84, 255 };
-        const Color bottom = hover ? Color{ 236, 170, 40, 255 } : Color{ 214, 146, 28, 255 };
-        DrawRectangleRounded({ button.x - 3.0f, button.y - 3.0f, button.width + 6.0f, button.height + 6.0f }, 0.3f, 8,
-                             Fade(kGold, 0.15f + 0.2f * pulse));
-        DrawRectangleRounded(button, 0.3f, 8, bottom);
-        DrawRectangleRounded({ button.x, button.y, button.width, button.height * 0.55f }, 0.4f, 8, top);
-        DrawRectangleRoundedLinesEx(button, 0.3f, 8, 2.0f, { 255, 240, 190, 200 });
-        const Color ink = { 34, 24, 6, 255 };
+        // Үндсэн үйлдэл: алт -> улбар градиент, хяналттай лугших гэрэлтэлт
+        Ui::Fill({ button.x - 4.0f, button.y - 4.0f, button.width + 8.0f, button.height + 8.0f }, Fade(kGold, 0.10f + 0.14f * pulse));
+        Ui::Button(button, "", Ui::ButtonKind::Primary, hover);
+        const Color ink = { 26, 18, 4, 255 };
         const Vector2 icon = { button.x + 34.0f, button.y + button.height * 0.5f };
         // Шар товч дээр икон уусахгүйн тулд ард нь бараан дугуй тэмдэг
         if (Icon(MapIcon::Attack).id != 0)
@@ -865,7 +857,7 @@ void MapScreen::Draw(const Progress& progress) const
             DrawRifle(icon, PI - 0.65f, 34.0f, ink);
         }
         const char* label = owned ? "ДОВТЛОХ" : "НЭЭХ"; // түгжээтэй: эрх нээх, төлөх цонх
-        Ui::TextBold(label, panelX + (panelWidth - Ui::MeasureBold(label, 22)) / 2, (int)button.y + 11, 22, ink);
+        Ui::TextDisplay(label, panelX + (panelWidth - Ui::MeasureDisplay(label, 24, 0.12f)) / 2, (int)button.y + 10, 24, ink, 0.12f);
         const float ax = button.x + button.width - 30.0f + 3.0f * pulse, ay = button.y + button.height * 0.5f;
         DrawLineEx({ ax - 5.0f, ay - 9.0f }, { ax + 4.0f, ay }, 3.5f, ink);
         DrawLineEx({ ax + 4.0f, ay }, { ax - 5.0f, ay + 9.0f }, 3.5f, ink);
@@ -873,7 +865,7 @@ void MapScreen::Draw(const Progress& progress) const
     }
     else
     {
-        Ui::Panel({ (float)panelX, (float)y, (float)panelWidth, 48.0f }, Ui::kPanelSoft, 10.0f);
+        Ui::Panel({ (float)panelX, (float)y, (float)panelWidth, 48.0f }, Ui::kPanelSoft);
         const char* label = TextFormat("Эхлээд %s-г чөлөөл", provinces[selected - 1].name);
         Ui::Text(label, panelX + (panelWidth - Ui::Measure(label, 15)) / 2, y + 14, 15, Ui::kTextDim);
         y += 60;
@@ -883,10 +875,10 @@ void MapScreen::Draw(const Progress& progress) const
     {
         const int shopHeight = 40 + 5 * 46 + 26;
         const Rectangle shop = { (float)panelX, (float)y, (float)panelWidth, (float)shopHeight };
-        Ui::Panel(shop, { 10, 13, 19, 196 }, 10.0f);
-        Ui::Outline(shop, kFrame, 1.0f, 10.0f);
+        Ui::Panel(shop, { 20, 30, 43, 226 });
     }
-    Ui::TextBold("САЙЖРУУЛАЛТ", panelX + 14, y + 12, 15, Ui::kText);
+    Ui::TextDisplay("САЙЖРУУЛАЛТ", panelX + 14, y + 12, 16, Ui::kText, 0.1f);
+    DrawRectangleRec({ (float)panelX + 14.0f, (float)y + 33.0f, 34.0f, 2.0f }, kGold);
     {
         const char* coinText = TextFormat("%d Gold", ShopWallet(progress));
         const int coinWidth = Ui::MeasureBold(coinText, 17);
@@ -906,23 +898,22 @@ void MapScreen::Draw(const Progress& progress) const
         const Rectangle card = { (float)panelX + 8.0f, (float)y, (float)panelWidth - 16.0f, 40.0f };
         shopCards[i] = card;
         const bool hover = !InTouchMode() && confirmItem < 0 && CheckCollisionPointRec(InPointer(), card);
-        DrawRectangleRounded(card, 0.25f, 6, hover ? Color{ 255, 205, 90, 34 } : Color{ 255, 255, 255, 12 });
-        if (hover) DrawRectangleRoundedLinesEx(card, 0.25f, 6, 1.0f, Fade(kGold, 0.6f));
+        Ui::MenuRow(card, hover);
         Ui::KeyBadge(TextFormat("%d", i + 1), panelX + 16, y + 8, 13, affordable ? kGold : Ui::kTextDim);
         // assets/huds-ийн сайжруулалтын икон; байхгүй бол assets/icons-ийнх, тэр нь ч байхгүй бол зурсан дүрс
         const Color iconTint = maxed ? Color{ 255, 255, 255, 170 } : WHITE;
         if (!Ui::DrawIcon(ShopHudIconFor(item), { (float)panelX + 41.0f, (float)y + 2.0f, 36.0f, 36.0f }, iconTint) &&
             !DrawIcon(ShopIconFor(item), { (float)panelX + 40.0f, (float)y + 1.0f, 38.0f, 38.0f }, 0.62f, iconTint))
         {
-            DrawRectangleRounded({ (float)panelX + 44.0f, (float)y + 6.0f, 28.0f, 28.0f }, 0.3f, 6, { 0, 0, 0, 90 });
+            Ui::Fill({ (float)panelX + 44.0f, (float)y + 6.0f, 28.0f, 28.0f }, { 0, 0, 0, 90 });
             DrawShopIcon(item, { (float)panelX + 46.0f, (float)y + 8.0f, 24.0f, 24.0f }, maxed ? Ui::kTextDim : kGold);
         }
         Ui::TextBold(ShopItemName(item), panelX + 82, y + 4, 15, maxed ? Ui::kTextDim : Ui::kText);
         // Түвшний цэгүүд
         for (int k = 0; k < maxLevel; ++k)
         {
-            DrawRectangleRounded({ (float)panelX + 82.0f + (float)k * 14.0f, (float)y + 26.0f, 10.0f, 5.0f }, 1.0f, 4,
-                                 k < level ? kGold : Color{ 255, 255, 255, 40 });
+            DrawRectangleRec({ (float)panelX + 82.0f + (float)k * 14.0f, (float)y + 27.0f, 11.0f, 4.0f },
+                             k < level ? kGold : Color{ 255, 255, 255, 34 });
         }
         const char* price = maxed ? "MAX" : TextFormat("%d", cost);
         Ui::TextBold(price, panelX + panelWidth - 20 - Ui::MeasureBold(price, 16), y + 11, 16,

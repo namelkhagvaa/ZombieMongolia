@@ -156,4 +156,6 @@ namespace Account
 
     // Туршилт: дараагийн Update-д цонхны үндсэн товчийг (Enter) дарсан мэт.
     void TestEnter();
+    // Туршилт (дизайн шалгах): цонхыг шууд нээнэ — login, register, gold, cashout, verify, offer, message
+    void TestScreen(const char* name);
 }

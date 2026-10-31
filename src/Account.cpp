@@ -183,8 +183,8 @@ namespace
     bool drawPass = false, tapped = false, enter = false, testEnter = false;
     Vector2 pointer = {};
 
-    const Color kInk = { 34, 24, 6, 255 };
-    const Color kFrame = { 255, 200, 90, 110 };
+    const Color kInk = { 26, 18, 4, 255 };
+    const Color kFrame = Ui::kBorderStrong; // (дизайн систем: нимгэн цайвар хүрээ, онцлол нь булангийн алтан хаалт)
 
     const char* Platform()
     {
@@ -1168,15 +1168,11 @@ namespace
             const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), area);
             if (style == Style::Primary)
             {
-                DrawRectangleRounded(area, 0.3f, 8, hover ? Color{ 255, 218, 110, 255 } : Color{ 242, 178, 48, 255 });
-                DrawRectangleRoundedLinesEx(area, 0.3f, 8, 1.5f, { 255, 240, 190, 200 });
-                Centered(label, area, 20, kInk, true);
+                Ui::Button(area, label, Ui::ButtonKind::Primary, hover, 20);
             }
             else if (style == Style::Secondary)
             {
-                DrawRectangleRounded(area, 0.3f, 8, { 255, 255, 255, (unsigned char)(hover ? 44 : 22) });
-                DrawRectangleRoundedLinesEx(area, 0.3f, 8, 1.0f, { 255, 255, 255, 70 });
-                Centered(label, area, 17, Ui::kText, true);
+                Ui::Button(area, label, Ui::ButtonKind::Secondary, hover, 17);
             }
             else
             {
@@ -1205,8 +1201,10 @@ namespace
         {
             const bool focused = focus == index && (nativeEdit || !UseNativeKeyboard());
             if (focused) focusBottom = area.y + area.height;
-            DrawRectangleRounded(area, 0.25f, 8, { 0, 0, 0, 130 });
-            DrawRectangleRoundedLinesEx(area, 0.25f, 8, focused ? 2.0f : 1.0f, focused ? Ui::kAccent : Color{ 255, 255, 255, 60 });
+            // Оруулах талбар: хамгийн бараан давхарга, идэвхтэй үед алтан хүрээ ба доод зураас
+            Ui::Fill(area, { Ui::kBgDeep.r, Ui::kBgDeep.g, Ui::kBgDeep.b, 220 });
+            Ui::Stroke(area, 1.0f, focused ? Ui::kAccent : Ui::kBorderStrong);
+            if (focused) DrawRectangleRec({ area.x + 1.0f, area.y + area.height - 3.0f, area.width - 2.0f, 2.0f }, Ui::kAccent);
             const int size = 20;
             const int y = (int)(area.y + (area.height - (float)size * 1.3f) * 0.5f);
             std::string shown;
@@ -1290,7 +1288,9 @@ namespace
 
     void Title(const char* text, float x, float y)
     {
-        if (drawPass) Ui::TextBold(text, (int)x, (int)y, 26, Ui::kText);
+        if (!drawPass) return;
+        Ui::TextDisplay(text, (int)x, (int)y, 26, Ui::kText, 0.06f);
+        DrawRectangleRec({ x, y + 34.0f, 40.0f, 3.0f }, Ui::kAccent);
     }
 
     void Spinner(Vector2 center, float radius)
@@ -1408,7 +1408,7 @@ namespace
                     const bool lit = (key.code == kShift && shift) || key.code == kDone;
                     const Color fill = flash ? Color{ 255, 255, 255, 90 } : lit ? Ui::kAccentDark
                                      : special ? Color{ 255, 255, 255, 34 } : Color{ 255, 255, 255, 22 };
-                    DrawRectangleRounded(area, 0.2f, 6, fill);
+                    Ui::Fill(area, fill);
                     Centered(label.c_str(), area, key.code == kShift || key.code == kErase ? 30 : special || key.code == ' ' ? 20 : 28, key.code == ' ' ? Ui::kTextDim : Ui::kText, true);
                     // Үсэг дарахад хурууны дээр томоор харуулна
                     if (flash && key.code > ' ')
@@ -1441,8 +1441,8 @@ namespace
         }
         if (drawPass && popupLabel.size())
         {
-            DrawRectangleRounded(popup, 0.25f, 8, { 60, 64, 74, 255 });
-            DrawRectangleRoundedLinesEx(popup, 0.25f, 8, 1.5f, kFrame);
+            Ui::Fill(popup, { 60, 64, 74, 255 });
+            Ui::Stroke(popup, 1.5f, kFrame);
             Centered(popupLabel.c_str(), popup, 40, Ui::kText, true);
         }
     }
@@ -1456,8 +1456,8 @@ namespace
                                  std::max(8.0f, std::floor((bottom - height) * 0.5f)) + panelShift, width, height };
         if (drawPass)
         {
-            Ui::Panel(area, { 12, 16, 22, 242 }, 14.0f);
-            Ui::Outline(area, kFrame, 1.5f, 14.0f);
+            Ui::Panel(area, { Ui::kPanelSolid.r, Ui::kPanelSolid.g, Ui::kPanelSolid.b, 248 });
+            Ui::CornerBrackets(area, Ui::kAccent, 14.0f, 2.0f);
         }
         return area;
     }
@@ -1536,8 +1536,8 @@ namespace
         if (drawPass)
         {
             const Rectangle box = { x, y, inner, 104.0f };
-            DrawRectangleRounded(box, 0.15f, 8, { 0, 0, 0, 130 });
-            DrawRectangleRoundedLinesEx(box, 0.15f, 8, 1.0f, kFrame);
+            Ui::Fill(box, { 0, 0, 0, 130 });
+            Ui::Stroke(box, 1.0f, kFrame);
             Ui::Text("Хүлээн авагч", (int)x + 20, (int)y + 14, 15, Ui::kTextDim);
             Ui::TextBold(smsNumber.c_str(), (int)x + 20, (int)y + 38, 40, Ui::kText);
             Ui::Text("Мессеж", (int)(x + inner * 0.5f) + 20, (int)y + 14, 15, Ui::kTextDim);
@@ -1619,8 +1619,8 @@ namespace
             if (drawPass)
             {
                 const Rectangle box = { x, y, inner, 58.0f };
-                DrawRectangleRounded(box, 0.2f, 8, { 0, 0, 0, 130 });
-                DrawRectangleRoundedLinesEx(box, 0.2f, 8, 1.0f, kFrame);
+                Ui::Fill(box, { 0, 0, 0, 130 });
+                Ui::Stroke(box, 1.0f, kFrame);
                 Ui::TextBold(item.c_str(), (int)x + 16, (int)y + 17, 18, Ui::kText);
                 const std::string money = Money(price);
                 Ui::TextBold(money.c_str(), (int)(x + inner) - 16 - Ui::MeasureBold(money.c_str(), 24), (int)y + 13, 24, Ui::kAccent);
@@ -1661,8 +1661,7 @@ namespace
             if (drawPass)
             {
                 const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), box);
-                DrawRectangleRounded(box, 0.2f, 8, hover ? Color{ 60, 46, 14, 220 } : Color{ 0, 0, 0, 130 });
-                DrawRectangleRoundedLinesEx(box, 0.2f, 8, 1.5f, kFrame);
+                Ui::MenuRow(box, hover);
                 Ui::Coin({ x + 26.0f, y + row * 0.5f }, 10.0f);
                 Ui::TextBold(TextFormat("%d Gold", goldPacks[i].first), (int)x + 46, (int)(y + row * 0.5f) - 13, 22, Ui::kText);
                 const std::string money = Money(goldPacks[i].second);
@@ -1756,8 +1755,8 @@ namespace
                 }
                 if (cut) label += "..";
                 const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), area);
-                DrawRectangleRounded(area, 0.3f, 8, chosen ? Color{ 242, 178, 48, 255 } : Color{ 255, 255, 255, (unsigned char)(hover ? 40 : 20) });
-                if (!chosen) DrawRectangleRoundedLinesEx(area, 0.3f, 8, 1.0f, { 255, 255, 255, 50 });
+                Ui::Fill(area, chosen ? Color{ 242, 178, 48, 255 } : Color{ 255, 255, 255, (unsigned char)(hover ? 40 : 20) });
+                if (!chosen) Ui::Stroke(area, 1.0f, { 255, 255, 255, 50 });
                 Centered(label.c_str(), area, 14, chosen ? kInk : Ui::kText, chosen);
             }
             if (Hit(area)) cashoutBank = (int)i;
@@ -1798,7 +1797,7 @@ namespace
         if (drawPass)
         {
             const Rectangle box = { x, y, qrSize, qrSize };
-            DrawRectangleRounded(box, 0.06f, 8, WHITE);
+            Ui::Fill(box, WHITE);
             if (qr.id != 0)
             {
                 DrawTexturePro(qr, { 0.0f, 0.0f, (float)qr.width, (float)qr.height }, { x + 10.0f, y + 10.0f, qrSize - 20.0f, qrSize - 20.0f },
@@ -1851,7 +1850,7 @@ namespace
             while (!label.empty() && (float)Ui::Measure(label.c_str(), 15) > area.width - 12.0f) EraseLast(label);
             if (drawPass)
             {
-                DrawRectangleRounded(area, 0.3f, 8, { 255, 255, 255, 22 });
+                Ui::Fill(area, { 255, 255, 255, 22 });
                 Centered(label.c_str(), area, 15, Ui::kText, false);
             }
             if (Hit(area)) Online::OpenUrl(banks[(size_t)i].second);
@@ -1890,8 +1889,8 @@ namespace
             const char* title = "Утсаа баталгаажуулаад Gold цуглуул!";
             const int titleW = Ui::MeasureBold(title, 22);
             const float start = panel.x + (width - (float)titleW - 30.0f) * 0.5f;
-            DrawRectangleRounded({ start, y + 1.0f, 17.0f, 26.0f }, 0.35f, 6, Ui::kAccent);
-            DrawRectangleRounded({ start + 3.0f, y + 5.0f, 11.0f, 15.0f }, 0.2f, 4, { 40, 30, 10, 255 });
+            Ui::Fill({ start, y + 1.0f, 17.0f, 26.0f }, Ui::kAccent);
+            Ui::Fill({ start + 3.0f, y + 5.0f, 11.0f, 15.0f }, { 40, 30, 10, 255 });
             DrawCircleV({ start + 8.5f, y + 23.0f }, 1.6f, { 40, 30, 10, 255 });
             Ui::TextBold(title, (int)(start + 30.0f), (int)y, 22, Ui::kText);
             const char* subtitle = "Баталгаажуулснаар тоглоомын бүх боломжийг нээгээрэй.";
@@ -1918,8 +1917,8 @@ namespace
         {
             // Анхааруулга: алтан хүрээтэй бараан хайрцаг, (i) дүрс
             const Rectangle box = { x, y, inner, warningH };
-            DrawRectangleRounded(box, 0.12f, 8, { 255, 192, 64, 20 });
-            DrawRectangleRoundedLinesEx(box, 0.12f, 8, 1.0f, { 255, 192, 64, 90 });
+            Ui::Fill(box, { 255, 181, 27, 20 });
+            Ui::Stroke(box, 1.0f, { 255, 181, 27, 90 });
             DrawRing({ x + 24.0f, y + 22.0f }, 7.5f, 9.2f, 0.0f, 360.0f, 24, Ui::kAccent);
             DrawRectangle((int)x + 23, (int)y + 20, 2, 7, Ui::kAccent);
             DrawRectangle((int)x + 23, (int)y + 16, 2, 2, Ui::kAccent);
@@ -1978,7 +1977,7 @@ namespace
     void Frame()
     {
         if (!drawPass) Keyboard();
-        if (screen != Screen::None && drawPass) DrawRectangle(0, 0, ViewWidth(), ViewHeight(), { 0, 0, 0, 170 });
+        if (screen != Screen::None && drawPass) Ui::Backdrop(0.74f);
         switch (screen)
         {
         case Screen::Login: LoginScreen(); break;
@@ -2368,12 +2367,11 @@ void Account::Draw()
     if (request.id >= 0)
     {
         // "Түр хүлээнэ үү": доорх цонхны дээгүүр жижиг самбар
-        if (screen == Screen::None) DrawRectangle(0, 0, ViewWidth(), ViewHeight(), { 0, 0, 0, 150 });
+        if (screen == Screen::None) Ui::Backdrop(0.59f);
         const int textWidth = Ui::Measure(busyText.c_str(), 18);
         const Rectangle box = { std::floor(((float)ViewWidth() - (float)textWidth - 90.0f) * 0.5f), (float)ViewHeight() * 0.5f - 34.0f,
                                 (float)textWidth + 90.0f, 68.0f };
-        Ui::Panel(box, { 12, 16, 22, 250 }, 12.0f);
-        Ui::Outline(box, kFrame, 1.5f, 12.0f);
+        Ui::Panel(box, { Ui::kPanelSolid.r, Ui::kPanelSolid.g, Ui::kPanelSolid.b, 250 });
         drawPass = true;
         Spinner({ box.x + 36.0f, box.y + 34.0f }, 13.0f);
         drawPass = false;
@@ -2417,6 +2415,18 @@ int Account::TakeApproved()
 
 void Account::TestEnter() { testEnter = true; }
 
+void Account::TestScreen(const char* name)
+{
+    const std::string s = name ? name : "";
+    if (s == "login") Open(Screen::Login);
+    else if (s == "register") Open(Screen::Register);
+    else if (s == "gold") Open(Screen::Gold);
+    else if (s == "cashout") Open(Screen::Cashout);
+    else if (s == "verify") Open(Screen::Verify);
+    else if (s == "offer") Open(Screen::Offer);
+    else if (s == "message") ShowMessage("Мэдэгдэл", "Энэ бол туршилтын мэдэгдлийн цонх. Дизайныг шалгахад ашиглана.");
+}
+
 int Account::DrawBadge(int x, int y, bool alignRight)
 {
     if (!enabled || !signedIn)
@@ -2443,7 +2453,7 @@ int Account::DrawBadge(int x, int y, bool alignRight)
         const std::string amount = Thousands(gold);
         const int nameW = Ui::Measure(playerName.c_str(), 15), amountW = Ui::MeasureBold(amount.c_str(), 17);
         const Rectangle chip = { (float)x, (float)y, (float)(nameW + amountW) + 76.0f, h };
-        Ui::Panel(chip, { 14, 18, 26, 232 }, h * 0.5f);
+        Ui::Panel(chip, { 20, 30, 43, 232 }, h * 0.5f);
         Ui::Outline(chip, { 255, 255, 255, 34 }, 1.0f, h * 0.5f);
         Ui::Coin({ chip.x + 20.0f, cy }, 9.0f);
         Ui::Text(playerName.c_str(), (int)chip.x + 36, (int)cy - 10, 15, Ui::kTextDim);
@@ -2457,8 +2467,8 @@ int Account::DrawBadge(int x, int y, bool alignRight)
         const char* label = "Gold авах";
         topupBadge = { (float)(x + width + 8), (float)y, (float)Ui::MeasureBold(label, 15) + 56.0f, h };
         const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), topupBadge);
-        DrawRectangleRounded(topupBadge, 0.5f, 10, hover ? Color{ 255, 222, 120, 255 } : Color{ 242, 178, 48, 255 });
-        DrawRectangleRounded({ topupBadge.x + 3.0f, topupBadge.y + 2.0f, topupBadge.width - 6.0f, h * 0.45f }, 0.6f, 8, { 255, 255, 255, 46 });
+        Ui::Fill(topupBadge, hover ? Color{ 255, 222, 120, 255 } : Color{ 242, 178, 48, 255 });
+        Ui::Fill({ topupBadge.x + 3.0f, topupBadge.y + 2.0f, topupBadge.width - 6.0f, h * 0.45f }, { 255, 255, 255, 46 });
         const Vector2 icon = { topupBadge.x + 20.0f, cy };
         DrawCircleV(icon, 10.0f, ink);
         DrawRectangleRec({ icon.x - 5.0f, icon.y - 1.2f, 10.0f, 2.4f }, goldInk);
@@ -2504,7 +2514,7 @@ int Account::DrawBadge(int x, int y, bool alignRight)
     {
         badge = { (float)(x + width + 8), (float)y, h, h };
         const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), badge);
-        Ui::Panel(badge, hover ? Color{ 70, 30, 30, 235 } : Color{ 14, 18, 26, 232 }, h * 0.5f);
+        Ui::Panel(badge, hover ? Color{ 70, 30, 30, 235 } : Color{ 20, 30, 43, 232 }, h * 0.5f);
         Ui::Outline(badge, hover ? Color{ 240, 110, 100, 220 } : Color{ 255, 255, 255, 40 }, 1.0f, h * 0.5f);
         const Color c = hover ? Color{ 255, 160, 150, 255 } : Ui::kTextDim;
         const float bx = badge.x + h * 0.5f;

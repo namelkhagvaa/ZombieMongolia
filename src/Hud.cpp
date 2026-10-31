@@ -180,7 +180,7 @@ namespace
             const HudInfo::TeamEntry& entry = info.team[i];
             const Rectangle area = { card.x + pad + labelWidth + (float)i * (tile + gap), card.y + pad, tile, tile };
             teamTiles[i] = area;
-            DrawRectangleRounded(area, 0.18f, 6, entry.active ? Color{ 60, 46, 14, 235 } : Color{ 26, 32, 42, 235 });
+            Ui::Fill(area, entry.active ? Color{ 96, 64, 10, 235 } : Color{ 26, 32, 42, 235 });
             const Texture2D& portrait = info.portraits[i];
             if (portrait.id)
             {
@@ -198,12 +198,12 @@ namespace
                 DrawLineEx({ area.x + 16.0f, area.y + 16.0f }, { area.x + area.width - 16.0f, area.y + area.height - 16.0f }, 3.0f, Ui::kDanger);
                 DrawLineEx({ area.x + area.width - 16.0f, area.y + 16.0f }, { area.x + 16.0f, area.y + area.height - 16.0f }, 3.0f, Ui::kDanger);
             }
-            DrawRectangleRoundedLinesEx(area, 0.18f, 6, entry.active ? 2.5f : 1.0f, entry.active ? Ui::kAccent : Color{ 255, 255, 255, 60 });
+            Ui::Stroke(area, entry.active ? 2.5f : 1.0f, entry.active ? Ui::kAccent : Color{ 255, 255, 255, 60 });
             // Дугаар: доод голд
             const char* index = info.teamKeys[i] && info.teamKeys[i][0] ? info.teamKeys[i] : TextFormat("%d", i + 1);
             const float badgeW = (float)Ui::MeasureBold(index, 13) + 14.0f;
             const Rectangle badge = { area.x + (area.width - badgeW) * 0.5f, area.y + area.height - 12.0f, badgeW, 18.0f };
-            DrawRectangleRounded(badge, 0.5f, 6, entry.active ? Ui::kAccent : Color{ 12, 16, 22, 240 });
+            Ui::Fill(badge, entry.active ? Ui::kAccent : Color{ 20, 30, 43, 240 });
             Ui::TextBold(index, (int)(badge.x + 7.0f), (int)badge.y + 2, 13, entry.active ? Color{ 34, 24, 6, 255 } : Ui::kText);
         }
     }
@@ -240,7 +240,7 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         const int textWidth = Ui::MeasureBold(info.tutorial, size);
         const float cardW = (float)std::max(textWidth + 48, 360), cardH = (float)size + 52.0f;
         const Rectangle card = { ((float)width - cardW) * 0.5f, (float)height - (info.touch ? 330.0f : 200.0f), cardW, cardH };
-        Ui::Panel(card, { 12, 16, 22, 230 }, 12.0f);
+        Ui::Panel(card, { 20, 30, 43, 230 }, 12.0f);
         Ui::Outline(card, Fade(Ui::kAccent, 0.8f), 1.5f, 12.0f);
         const char* label = TextFormat("ЗААВАР  %d / %d", info.tutorialStep + 1, info.tutorialSteps);
         Ui::TextBold(label, (int)(card.x + 24.0f), (int)card.y + 10, 13, Ui::kAccent);
@@ -310,7 +310,7 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
                 DrawMarkerBadge((MarkerKind)info.objectiveKind, { (float)x + 30.0f, (float)y + (float)objY + (float)objSize * 0.55f },
                                 info.touch ? 11.0f : 13.0f);
             }
-            Ui::TextBold(objective, x + 18 + badgeSpace, y + objY, objSize, Ui::kText);
+            Ui::TextDisplay(objective, x + 18 + badgeSpace, y + objY, objSize + 1, Ui::kText, 0.02f);
             if (!hint.empty()) Ui::Text(hint.c_str(), x + 18 + badgeSpace, y + hintY, hintSize, Ui::kTextDim);
             if (info.objectiveDetail)
             {
@@ -321,11 +321,11 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
                     // Явцын зурвас: бичвэрийн баруун талд
                     const float bx = (float)(x + 18 + iconSpace + Ui::Measure(info.objectiveDetail, detailSize) + 14);
                     const Rectangle bar = { bx, (float)(y + detailY) + (float)detailSize * 0.35f, (float)barWidth, 7.0f };
-                    DrawRectangleRounded(bar, 1.0f, 6, Fade(BLACK, 0.45f));
+                    Ui::Fill(bar, Fade(BLACK, 0.45f));
                     const Color fill = info.objectiveKind >= 0 ? MarkerColor((MarkerKind)info.objectiveKind) : Ui::kAccent;
                     if (info.objectiveProgress > 0.0f)
                     {
-                        DrawRectangleRounded({ bar.x, bar.y, bar.width * std::min(1.0f, info.objectiveProgress), bar.height }, 1.0f, 6, fill);
+                        Ui::Fill({ bar.x, bar.y, bar.width * std::min(1.0f, info.objectiveProgress), bar.height }, fill);
                     }
                 }
             }
@@ -476,9 +476,9 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
             DrawCircleV({ hx + 5.0f, hy - 2.0f }, 6.0f, barColor);
             DrawTriangle({ hx - 11.0f, hy }, { hx, hy + 12.0f }, { hx + 11.0f, hy }, barColor);
         }
-        Ui::TextBold(TextFormat("%d", (int)player.Health()), (int)card.x + 46, (int)card.y + 6, 26, Ui::kText);
+        Ui::TextDisplay(TextFormat("%d", (int)player.Health()), (int)card.x + 46, (int)card.y + 5, 28, Ui::kText, 0.02f);
         Ui::Text(TextFormat("/ %d", (int)player.MaxHealth()),
-                 (int)card.x + 52 + Ui::MeasureBold(TextFormat("%d", (int)player.Health()), 26), (int)card.y + 13, 16,
+                 (int)card.x + 52 + Ui::MeasureDisplay(TextFormat("%d", (int)player.Health()), 28, 0.02f), (int)card.y + 14, 16,
                  Ui::kTextDim);
         if (info.stance)
         {
@@ -521,14 +521,15 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
                                      : weaponType == 2 ? Ui::Icon::AmmoClip
                                                        : Ui::Icon::Ammo;
         const int ammoIcon = info.usesAmmo && Ui::HasIcon(ammoPicture) ? 30 : 0;
-        const int contentWidth = std::max(Ui::MeasureBold(weapon, 14),
-                                          ammoIcon + Ui::MeasureBold(big, bigSize) + (small[0] ? Ui::Measure(small, 18) + 8 : 0));
-        const int cardWidth = std::max(150, contentWidth + 32);
+        const int bigWidth = Ui::MeasureDisplay(big, bigSize + 2, 0.02f);
+        const int contentWidth = std::max(Ui::MeasureDisplay(weapon, 14, 0.12f) + 72,
+                                          ammoIcon + bigWidth + (small[0] ? Ui::Measure(small, 18) + 10 : 0));
+        const int cardWidth = std::max(170, contentWidth + 32);
         const int cardHeight = big[0] ? 74 : 40;
         const int x = info.touch ? (width - cardWidth) / 2 : width - 16 - cardWidth;
         const int y = info.touch ? height - 150 : height - kMinimapSize - kMinimapMargin - cardHeight - 10;
         Ui::Panel({ (float)x, (float)y, (float)cardWidth, (float)cardHeight });
-        Ui::TextBold(weapon, x + 16, y + 10, 14, Ui::kTextDim);
+        Ui::TextDisplay(weapon, x + 16, y + 10, 14, Ui::kTextDim, 0.12f);
         Ui::WeaponIcon(info.slotWeapons[info.weaponSlot], { (float)(x + cardWidth - 70), (float)y + 8.0f, 56.0f, 20.0f },
                        Fade(Ui::kText, 0.7f));
         if (big[0])
@@ -536,10 +537,10 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
             const int by = y + (info.reloading ? 38 : 28);
             const float iconY = info.reloading ? (float)by - 1.0f : (float)by + 7.0f;
             if (ammoIcon > 0) Ui::DrawIcon(ammoPicture, { (float)x + 13.0f, iconY, 22.0f, 22.0f });
-            Ui::TextBold(big, x + 16 + ammoIcon, by, bigSize, bigColor);
+            Ui::TextDisplay(big, x + 16 + ammoIcon, by - 2, bigSize + 2, bigColor, 0.02f);
             if (small[0])
             {
-                Ui::Text(small, x + 24 + ammoIcon + Ui::MeasureBold(big, bigSize), by + bigSize - 22, 18, Ui::kTextDim);
+                Ui::Text(small, x + 26 + ammoIcon + bigWidth, by + bigSize - 22, 18, Ui::kTextDim);
             }
         }
     }
@@ -555,8 +556,14 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         {
             const bool selected = i == info.weaponSlot;
             const Rectangle tile = { (float)slotX, (float)slotY, (float)slotWidth, (float)slotHeight };
-            Ui::Panel(tile, selected ? Color{ 40, 32, 14, 210 } : Ui::kPanelSoft);
-            if (selected) Ui::Outline(tile, Ui::kAccent, 2.0f);
+            Ui::Panel(tile, selected ? Color{ 34, 44, 58, 228 } : Ui::kPanelSoft);
+            if (selected)
+            {
+                DrawRectangleGradientV((int)tile.x + 1, (int)tile.y + 1, (int)tile.width - 2, (int)tile.height - 2, Fade(Ui::kAccent, 0.16f),
+                                       Fade(Ui::kAccent, 0.0f));
+                DrawRectangleRec({ tile.x + 2.0f, tile.y, tile.width - 4.0f, 2.0f }, Ui::kAccent);
+                Ui::CornerBrackets(tile, Ui::kAccent, 10.0f, 2.0f);
+            }
             Ui::TextBold(TextFormat("%d", i + 1), slotX + 8, slotY + 4, 13, selected ? Ui::kAccent : Ui::kTextDim);
             // Зэвсгийн дүрс, доор нь жижиг нэр ("3 АВТОМАТ" -> "АВТОМАТ")
             Ui::WeaponIcon(info.slotWeapons[i], { (float)slotX + 14.0f, (float)slotY + 6.0f, (float)slotWidth - 28.0f, 30.0f },
@@ -564,7 +571,8 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
             const char* name = info.slotNames[i];
             if (name[0] >= '0' && name[0] <= '9' && name[1] == ' ') name += 2;
             const int nameWidth = Ui::MeasureBold(name, 11);
-            Ui::TextBold(name, slotX + (slotWidth - nameWidth) / 2, slotY + 40, 11, selected ? Ui::kAccent : Ui::kTextDim);
+            Ui::TextDisplay(name, slotX + (slotWidth - Ui::MeasureDisplay(name, 11, 0.1f)) / 2, slotY + 40, 11,
+                            selected ? Ui::kAccent : Ui::kTextDim, 0.1f);
             slotX += slotWidth + gap;
         }
     }
@@ -624,7 +632,7 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         const int textWidth = Ui::MeasureBold(info.notice, 22);
         const Rectangle toast = { (float)(width - textWidth) / 2.0f - 30.0f, info.touch ? 60.0f : 120.0f, (float)textWidth + 60.0f,
                                   52.0f };
-        Ui::PanelAccent(toast, Ui::kGood, { 10, 30, 18, 215 });
+        Ui::PanelAccent(toast, Ui::kGood, { 20, 30, 43, 228 });
         Ui::TextBold(info.notice, (int)toast.x + 30, (int)toast.y + 14, 22, Ui::kGood);
     }
 
@@ -635,9 +643,10 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         const int bandHeight = info.subBanner ? 120 : 84;
         DrawRectangleGradientH(0, bannerY, width / 2, bandHeight, Fade(BLACK, 0.0f), Fade(BLACK, 0.7f));
         DrawRectangleGradientH(width / 2, bannerY, width - width / 2, bandHeight, Fade(BLACK, 0.7f), Fade(BLACK, 0.0f));
-        const int textWidth = Ui::MeasureBold(info.banner, 52);
-        Ui::TextBold(info.banner, (width - textWidth) / 2, bannerY + 14, 52, Ui::kText);
-        DrawRectangle(width / 2 - 40, bannerY + 76, 80, 3, Ui::kAccent);
+        const int textWidth = Ui::MeasureDisplay(info.banner, 54, 0.1f);
+        Ui::TextDisplay(info.banner, (width - textWidth) / 2 + 2, bannerY + 16, 54, Fade(BLACK, 0.6f), 0.1f);
+        Ui::TextDisplay(info.banner, (width - textWidth) / 2, bannerY + 14, 54, Ui::kText, 0.1f);
+        DrawRectangle(width / 2 - 40, bannerY + 78, 80, 3, Ui::kAccent);
         if (info.subBanner)
         {
             const int subWidth = Ui::Measure(info.subBanner, 18);

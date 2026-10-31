@@ -7,6 +7,7 @@
 #include "Player.h"
 #include "CharacterModel.h"
 #include "Soldier.h"
+#include "Profile.h"
 #include "raymath.h"
 
 #include <algorithm>
@@ -1336,7 +1337,9 @@ void ZombieHorde::Draw(Vector3 viewPosition, float maxDistance, bool showCollide
             }
             continue;
         }
+        Profile::Token poseTiming = Profile::Begin(PROFILE_CHARACTER_NAME("char 1 pose"));
         HumanoidPose pose = PoseFor(zombie);
+        Profile::End(poseTiming);
         if (zombie.airborne)
         {
             // Агаарт: гар хөл нь сарвайж, бие нь эргэлдэнэ.

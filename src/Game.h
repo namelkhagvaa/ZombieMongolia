@@ -49,6 +49,13 @@ struct LaunchOptions
     float x = 0.0f, z = 0.0f, yawDegrees = 0.0f, pitchDegrees = 17.0f;
     bool forceMsaa = false;
     int frames = 120; // хэмжих frame-ийн тоо (--frames N)
+    int warmup = 30;  // хэмжилтээс өмнөх кадрууд (--warmup N): BENCH ба PROFILE ижил цонхыг хэмжинэ
+    bool hasSeed = false;      // санамсаргүй тоог тогтмол болгох (--seed N): ижил тохиргоо = ижил тоглолт
+    unsigned int seed = 0;
+    bool fixedStep = false;    // туршилт: dt = 1/60 тогтмол (--fixed-dt): кадрын хурдаас үл хамааран ижил симуляц
+    bool gpuSync = false;      // оношлогоо: хэсгийн хил дээр glFinish (--gpu-sync)
+    bool gpuTimer = false;     // оношлогоо: GL timestamp асуулга (--gpu-timer, зөвхөн компьютер)
+    int squadExact = -1;       // туршилт: AI цэргийн бодит тоо (--squad N; багийн 2 гишүүн + элсүүлсэн)
     int weather = -1; // туршилт: цаг агаарыг тогтоох (--weather 0..4)
     int graphics = -1; // туршилт: графикийн түвшин (--graphics 0..2)
     int driftFrame = 0; // туршилт: энэ frame-ээс гар тоормос татаж баруун тийш эргэнэ (--drift N)

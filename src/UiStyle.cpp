@@ -1,8 +1,10 @@
 #include "UiStyle.h"
 
 #include "UiFont.h"
+#include "Input.h"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <utility>
 
@@ -18,49 +20,195 @@ namespace Ui
         }
     }
 
+    namespace
+    {
+        // Дэлгэц бүрийн өөрсдийн бичсэн бараан саарал дэвсгэрийг (жишээ нь { 12, 16, 22, 250 }) дизайн системийн
+        // самбарын өнгө рүү шилжүүлнэ (тунгалаг байдлыг нь хадгална): бүх цонх нэг өнгөтэй болно.
+        Color Harmonize(Color fill)
+        {
+            const int top = std::max({ (int)fill.r, (int)fill.g, (int)fill.b });
+            const int bottom = std::min({ (int)fill.r, (int)fill.g, (int)fill.b });
+            if (top < 48 && top - bottom < 20) return { kPanelSolid.r, kPanelSolid.g, kPanelSolid.b, fill.a };
+            return fill;
+        }
+
+        float CapRadius(float radius) { return std::min(radius, kRadius); }
+    }
+
     void Panel(Rectangle area, Color fill, float radius)
     {
-        const float r = Roundness(area, radius);
-        DrawRectangleRounded(area, r, 8, fill);
-        DrawRectangleRoundedLinesEx(area, r, 8, 1.0f, kBorder);
+        fill = Harmonize(fill);
+        const float r = Roundness(area, CapRadius(radius));
+        // Зөөлөн сүүдэр (доош бага зэрэг)
+        if (area.width > 60.0f && area.height > 30.0f)
+            DrawRectangleRounded({ area.x, area.y + 3.0f, area.width, area.height }, r, 6, Fade(BLACK, 0.22f * (float)fill.a / 255.0f));
+        DrawRectangleRounded(area, r, 6, fill);
+        // Дээд талын нимгэн гэрэлтэлт (шил): дээрээс доош бүдгэрнэ
+        const float glow = std::min(area.height * 0.45f, 40.0f);
+        DrawRectangleGradientV((int)area.x + 1, (int)area.y + 1, (int)area.width - 2, (int)glow, Fade(WHITE, 0.05f), Fade(WHITE, 0.0f));
+        DrawRectangleRoundedLinesEx(area, r, 6, 1.0f, kBorder);
+        // Том самбар: булангийн тактикийн тэмдэг
+        if (area.width >= 220.0f && area.height >= 120.0f) CornerBrackets(area, Fade(WHITE, 0.16f), 9.0f, 1.5f);
     }
 
     void PanelAccent(Rectangle area, Color accent, Color fill, float radius)
     {
         Panel(area, fill, radius);
-        const Rectangle stripe = { area.x + 5.0f, area.y + 8.0f, 3.0f, area.height - 16.0f };
-        DrawRectangleRounded(stripe, 1.0f, 4, accent);
+        // Зүүн ирмэгийн өнгөт зураас (ирмэгтээ наалдсан) ба түүний бүдэг гэрэлтэлт
+        DrawRectangleGradientH((int)area.x + 3, (int)area.y + 1, 22, (int)area.height - 2, Fade(accent, 0.14f), Fade(accent, 0.0f));
+        DrawRectangleRec({ area.x, area.y + 3.0f, 3.0f, area.height - 6.0f }, accent);
     }
 
     void Outline(Rectangle area, Color color, float thickness, float radius)
     {
-        DrawRectangleRoundedLinesEx(area, Roundness(area, radius), 8, thickness, color);
+        DrawRectangleRoundedLinesEx(area, Roundness(area, CapRadius(radius)), 6, thickness, color);
     }
 
     void Bar(Rectangle area, float ratio, Color fill, Color back)
     {
         ratio = std::clamp(ratio, 0.0f, 1.0f);
-        DrawRectangleRounded(area, 1.0f, 8, back);
+        const float r = Roundness(area, 1.5f);
+        DrawRectangleRounded(area, r, 4, back);
         if (ratio > 0.0f)
         {
             Rectangle filled = area;
-            filled.width = std::max(area.height, area.width * ratio); // бөөрөнхий үзүүр хэвээр
-            DrawRectangleRounded(filled, 1.0f, 8, fill);
-            // Дээд талын гэрэлтэлт
-            DrawRectangleRounded({ filled.x + 2.0f, filled.y + 1.0f, filled.width - 4.0f, filled.height * 0.35f }, 1.0f, 6,
-                                 Fade(WHITE, 0.18f));
+            filled.width = std::max(2.0f, area.width * ratio);
+            // Градиент дүүргэлт: зүүнээсээ бага зэрэг бараан, үзүүртээ тод
+            const Color dark = { (unsigned char)(fill.r * 0.72f), (unsigned char)(fill.g * 0.72f), (unsigned char)(fill.b * 0.72f), fill.a };
+            DrawRectangleGradientH((int)filled.x, (int)filled.y, (int)std::ceil(filled.width), (int)filled.height, dark, fill);
+            // Дээд талын гялбаа
+            DrawRectangleRec({ filled.x, filled.y, filled.width, std::max(1.0f, filled.height * 0.32f) }, Fade(WHITE, 0.16f));
+            // Үзүүрийн гэрэлтэлт
+            if (ratio < 0.999f && area.height >= 4.0f)
+                DrawRectangleRec({ filled.x + filled.width - 2.0f, filled.y - 1.0f, 2.0f, filled.height + 2.0f }, Fade(WHITE, 0.55f));
+        }
+        // 10%-ийн хуваалт (урт зурвас)
+        if (area.width >= 90.0f && area.height >= 5.0f)
+        {
+            for (int i = 1; i < 10; ++i)
+            {
+                const float x = area.x + area.width * (float)i / 10.0f;
+                DrawRectangleRec({ std::floor(x), area.y, 1.0f, area.height }, Fade(kBgDeep, 0.45f));
+            }
         }
     }
 
     int KeyBadge(const char* key, int x, int y, int size, Color color)
     {
+        // Гарны товч: өргөгдсөн дэвсгэр, доод ирмэг зузаан (дарагддаг товчны хэлбэр)
         const int textWidth = MeasureBold(key, size);
         const int width = std::max(textWidth + 12, size + 8);
         const Rectangle box = { (float)x, (float)y, (float)width, (float)size + 8.0f };
-        DrawRectangleRounded(box, 0.35f, 6, { 255, 255, 255, 36 });
-        DrawRectangleRoundedLinesEx(box, 0.35f, 6, 1.0f, Fade(color, 0.55f));
+        const float r = Roundness(box, 3.0f);
+        DrawRectangleRounded({ box.x, box.y + 2.0f, box.width, box.height }, r, 4, Fade(BLACK, 0.45f));
+        DrawRectangleRounded(box, r, 4, kElevated);
+        DrawRectangleRoundedLinesEx(box, r, 4, 1.0f, Fade(color, 0.45f));
         TextBold(key, x + (width - textWidth) / 2, y + 4, size, color);
         return width;
+    }
+
+    void Button(Rectangle area, const char* label, ButtonKind kind, bool hover, int size)
+    {
+        const float r = Roundness(area, kRadius);
+        const int textWidth = MeasureDisplay(label, size);
+        const int tx = (int)(area.x + (area.width - (float)textWidth) * 0.5f), ty = (int)(area.y + (area.height - (float)size) * 0.5f);
+        switch (kind)
+        {
+        case ButtonKind::Primary:
+        {
+            // Алтан градиент, гэрэлтэлттэй; hover үед илүү тод
+            if (hover) DrawRectangleRounded({ area.x - 3.0f, area.y - 3.0f, area.width + 6.0f, area.height + 6.0f }, r, 6, Fade(kAccent, 0.18f));
+            DrawRectangleRounded(area, r, 6, kOrange);
+            DrawRectangleGradientV((int)area.x + 1, (int)area.y + 1, (int)area.width - 2, (int)area.height - 2,
+                                   hover ? Color{ 255, 206, 84, 255 } : kAccent, Fade(kOrange, 0.0f));
+            DrawRectangleRec({ area.x + 2.0f, area.y + 1.0f, area.width - 4.0f, 1.0f }, Fade(WHITE, 0.45f));
+            TextDisplay(label, tx, ty, size, { 26, 18, 4, 255 });
+            break;
+        }
+        case ButtonKind::Danger:
+            DrawRectangleRounded(area, r, 6, hover ? Color{ 120, 30, 30, 235 } : Color{ 70, 22, 26, 225 });
+            DrawRectangleRoundedLinesEx(area, r, 6, 1.0f, Fade(kDanger, hover ? 0.9f : 0.6f));
+            TextDisplay(label, tx, ty, size, hover ? kText : kDanger);
+            break;
+        case ButtonKind::Ghost:
+            if (hover) DrawRectangleRounded(area, r, 6, Fade(WHITE, 0.06f));
+            TextDisplay(label, tx, ty, size, hover ? kText : kTextDim);
+            break;
+        case ButtonKind::Secondary:
+        default:
+            DrawRectangleRounded(area, r, 6, hover ? Color{ 34, 50, 70, 240 } : kElevated);
+            DrawRectangleGradientV((int)area.x + 1, (int)area.y + 1, (int)area.width - 2, (int)(area.height * 0.5f), Fade(WHITE, 0.05f), Fade(WHITE, 0.0f));
+            DrawRectangleRoundedLinesEx(area, r, 6, 1.0f, hover ? Fade(kAccent, 0.8f) : kBorderStrong);
+            TextDisplay(label, tx, ty, size, hover ? kAccent : kText);
+            break;
+        }
+    }
+
+    void Fill(Rectangle area, Color color)
+    {
+        DrawRectangleRounded(area, Roundness(area, kRadius), 6, Harmonize(color));
+    }
+
+    void Stroke(Rectangle area, float thickness, Color color)
+    {
+        DrawRectangleRoundedLinesEx(area, Roundness(area, kRadius), 6, thickness, color);
+    }
+
+    void MenuRow(Rectangle area, bool hover, bool danger, bool selected)
+    {
+        const float r = Roundness(area, kRadius);
+        const bool lit = hover || selected;
+        const Color tone = danger ? kDanger : kAccent;
+        DrawRectangleRounded(area, r, 6, lit ? Color{ 30, 42, 58, 240 } : Fade(kElevated, 0.82f));
+        if (lit)
+        {
+            DrawRectangleGradientH((int)area.x + 1, (int)area.y + 1, (int)(area.width * 0.7f), (int)area.height - 2, Fade(tone, 0.22f), Fade(tone, 0.0f));
+            DrawRectangleRec({ area.x, area.y + 2.0f, 3.0f, area.height - 4.0f }, tone);
+        }
+        DrawRectangleRoundedLinesEx(area, r, 6, 1.0f, lit ? Fade(tone, 0.75f) : kBorder);
+    }
+
+    void Backdrop(float alpha)
+    {
+        const int width = ViewWidth(), height = ViewHeight();
+        DrawRectangle(0, 0, width, height, Fade(kBgDeep, alpha));
+        // Захын харанхуйлал
+        const int edge = height / 4;
+        DrawRectangleGradientV(0, 0, width, edge, Fade(BLACK, 0.35f * alpha), Fade(BLACK, 0.0f));
+        DrawRectangleGradientV(0, height - edge, width, edge, Fade(BLACK, 0.0f), Fade(BLACK, 0.35f * alpha));
+    }
+
+    void Header(float x, float y, float width, const char* title, const char* subtitle, int size)
+    {
+        TextDisplay(title, (int)x, (int)y, size, kText, 0.06f);
+        const float line = y + (float)size + 8.0f;
+        DrawRectangleRec({ x, line, width, 1.0f }, kBorder);
+        DrawRectangleRec({ x, line - 1.0f, 46.0f, 3.0f }, kAccent);
+        if (subtitle && subtitle[0]) Text(subtitle, (int)x, (int)(line + 9.0f), 15, kTextDim);
+    }
+
+    void CornerBrackets(Rectangle area, Color color, float length, float thickness)
+    {
+        const float l = std::min(length, std::min(area.width, area.height) * 0.3f);
+        const float x0 = area.x, y0 = area.y, x1 = area.x + area.width, y1 = area.y + area.height;
+        DrawRectangleRec({ x0, y0, l, thickness }, color);
+        DrawRectangleRec({ x0, y0, thickness, l }, color);
+        DrawRectangleRec({ x1 - l, y0, l, thickness }, color);
+        DrawRectangleRec({ x1 - thickness, y0, thickness, l }, color);
+        DrawRectangleRec({ x0, y1 - thickness, l, thickness }, color);
+        DrawRectangleRec({ x0, y1 - l, thickness, l }, color);
+        DrawRectangleRec({ x1 - l, y1 - thickness, l, thickness }, color);
+        DrawRectangleRec({ x1 - thickness, y1 - l, thickness, l }, color);
+    }
+
+    void TextDisplay(const char* text, int x, int y, int size, Color color, float tracking)
+    {
+        UiTextDisplay(text, x, y, size, color, tracking);
+    }
+
+    int MeasureDisplay(const char* text, int size, float tracking)
+    {
+        return UiMeasureDisplay(text, size, tracking);
     }
 
     void Text(const char* text, int x, int y, int size, Color color)
@@ -104,7 +252,7 @@ namespace Ui
         const int dotSpace = dot.a > 0 ? 16 : 0;
         const int width = MeasureBold(text, size) + 24 + dotSpace;
         if (right) x -= width;
-        Panel({ (float)x, (float)y, (float)width, 32.0f }, kPanel, 16.0f);
+        Panel({ (float)x, (float)y, (float)width, 32.0f }, kPanel, kRadius);
         if (dot.a > 0)
         {
             DrawCircle(x + 17, y + 16, 5.0f, dot);
@@ -193,7 +341,7 @@ namespace Ui
         const int size = 18;
         const int width = MeasureBold(text, size) + 24 + 22;
         if (right) x -= width;
-        Panel({ (float)x, (float)y, (float)width, 32.0f }, kPanel, 16.0f);
+        Panel({ (float)x, (float)y, (float)width, 32.0f }, kPanel, kRadius);
         DrawIcon(icon, { (float)x + 8.0f, (float)y + 6.0f, 20.0f, 20.0f });
         TextBold(text, x + 12 + 22, y + 6, size, textColor);
         return width;

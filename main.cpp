@@ -293,6 +293,31 @@ int main(int argc, char** argv)
             options.waypointX = (float)std::atof(argv[++i]);
             options.waypointZ = (float)std::atof(argv[++i]);
         }
+        else if (std::strcmp(argv[i], "--warmup") == 0 && i + 1 < argc)
+        {
+            options.warmup = std::max(0, std::atoi(argv[++i]));
+        }
+        else if (std::strcmp(argv[i], "--seed") == 0 && i + 1 < argc)
+        {
+            options.hasSeed = true;
+            options.seed = (unsigned int)std::strtoul(argv[++i], nullptr, 10);
+        }
+        else if (std::strcmp(argv[i], "--fixed-dt") == 0)
+        {
+            options.fixedStep = true;
+        }
+        else if (std::strcmp(argv[i], "--gpu-sync") == 0)
+        {
+            options.gpuSync = true;
+        }
+        else if (std::strcmp(argv[i], "--gpu-timer") == 0)
+        {
+            options.gpuTimer = true;
+        }
+        else if (std::strcmp(argv[i], "--squad") == 0 && i + 1 < argc)
+        {
+            options.squadExact = std::max(0, std::atoi(argv[++i]));
+        }
         else if (std::strcmp(argv[i], "--frames") == 0 && i + 1 < argc)
         {
             options.frames = std::atoi(argv[++i]);

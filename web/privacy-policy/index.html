@@ -6,7 +6,11 @@
 <title>Нууцлалын бодлого — Zombie Mongolia</title>
 <meta name="description" content="Zombie Mongolia тоглоомын нууцлалын бодлого: ямар мэдээлэл цуглуулж, хэрхэн ашиглаж, хамгаалдаг вэ.">
 <style>
-  :root { --bg: #0d1015; --panel: #151a22; --text: #e9e6df; --dim: #a9adb5; --gold: #f0b030; --line: #262d39; }
+  :root { --bg: #080D16; --panel: #141E2B; --text: #F4F6FA; --dim: #9AA7B7; --gold: #FFB51B; --line: rgba(255,255,255,.10);
+          --display: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Segoe UI", Roboto, Arial, sans-serif; }
+  header a, h1, h2 { font-family: var(--display); letter-spacing: 1px; }
+  h1::after { content: ""; display: block; width: 44px; height: 3px; margin-top: 10px; background: var(--gold); }
+  header { background: #101824; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.65 "Segoe UI", Roboto, Arial, sans-serif; }
   header { border-bottom: 1px solid var(--line); padding: 18px 16px; }
