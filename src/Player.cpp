@@ -403,12 +403,8 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
     timeSinceHit += dt;
     if (downed)
     {
-        // Унасан: хэвтэнэ, хөдлөхгүй (босгохыг хүлээнэ)
+        // Унасан: хэвтээ чигтээ маш удаан мөлхөнө (халхавч руу), гар буугаар буудна (Game::UpdateShooting)
         stance = Stance::Prone;
-        velocity = { 0.0f, 0.0f, 0.0f };
-        pronePose += (1.0f - pronePose) * std::min(1.0f, 6.0f * dt);
-        crouchPose = std::max(0.0f, crouchPose - dt * 4.0f);
-        return;
     }
     aimTimer -= dt;
     aimPose += ((aimTimer > 0.0f ? 1.0f : 0.0f) - aimPose) * std::min(1.0f, 9.0f * dt);
@@ -501,9 +497,9 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
     if (swimming) stance = Stance::Stand;
 
     // --- Биеийн байрлал: C суух / босох, Z хэвтэх / босох, Space босох ---
-    if (InKeyPressed(KEY_C)) stance = stance == Stance::Crouch ? Stance::Stand : Stance::Crouch;
-    if (InKeyPressed(KEY_Z)) stance = stance == Stance::Prone ? Stance::Stand : Stance::Prone;
-    bool jump = InKeyPressed(KEY_SPACE) && !swimming;
+    if (InKeyPressed(KEY_C) && !downed) stance = stance == Stance::Crouch ? Stance::Stand : Stance::Crouch;
+    if (InKeyPressed(KEY_Z) && !downed) stance = stance == Stance::Prone ? Stance::Stand : Stance::Prone;
+    bool jump = InKeyPressed(KEY_SPACE) && !swimming && !downed;
     if (swimming) stance = Stance::Stand; // (C, Z сэлж байхад үйлчлэхгүй)
     if (jump && stance != Stance::Stand)
     {
@@ -515,6 +511,7 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
 
     // Сууж алхах нь удаан, мөлхөх нь бүр удаан; хурдан гүйх нь зөвхөн босоо үед бүрэн хүчтэй.
     float speed = config.walkSpeed * (1.0f - 0.45f * crouchPose - 0.78f * pronePose);
+    if (downed) speed *= 0.45f; // шархадсан: мөлхөхөөс ч удаан
     if (InSprint() && stance != Stance::Prone)
     {
         speed *= stance == Stance::Crouch ? 1.25f : config.sprintMultiplier;
@@ -542,10 +539,18 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
     const float previousY = position.y;
     const bool wasGrounded = grounded;
 
-    position.x += velocity.x * dt;
-    position.z += velocity.z * dt;
     const float height = config.playerHeight * (1.0f - 0.3f * crouchPose - 0.65f * pronePose);
-    world.ResolveHorizontal(position, config.playerRadius, height, config.stepHeight);
+    {
+        // Бага FPS-д нэг кадрын алхам урт: хэд хэдэн хэсэгт хувааж мөргөлдөөнийг шалгана (нимгэн хана нэвтлэхгүй)
+        const float step = std::sqrt(velocity.x * velocity.x + velocity.z * velocity.z) * dt;
+        const int parts = std::clamp((int)std::ceil(step / (config.playerRadius * 0.6f)), 1, 4);
+        for (int k = 0; k < parts; ++k)
+        {
+            position.x += velocity.x * dt / (float)parts;
+            position.z += velocity.z * dt / (float)parts;
+            world.ResolveHorizontal(position, config.playerRadius, height, config.stepHeight);
+        }
+    }
 
     if (swimming)
     {

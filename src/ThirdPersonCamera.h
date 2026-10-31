@@ -60,6 +60,9 @@ private:
     Camera3D camera = {};
     Vector3 follow = { 0.0f, 0.0f, 0.0f }; // тоглогчийн байрлалын зөөлрүүлсэн утга
     bool hasFollow = false;
+    float smoothClip = -1.0f; // хана, модонд хаагдах зай: ойртохдоо шууд, холдохдоо аажим (огцом үсрэхгүй)
+    bool eyeReady = false;
+    float eyeLift = 0.0f;     // 1-р этгээд, дуран: нүдний өндөр (шат, бартаан дээр чичрэхгүй)
     float yaw = 0.0f;    // радиан, 0 = +Z рүү харна
     float pitch = 0.3f;  // эерэг = камер дээрээс харна
     float distance;

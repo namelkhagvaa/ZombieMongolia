@@ -954,6 +954,12 @@ namespace
                 }
                 // Босго
                 s.solid.Box({ cx, 0.06f, b0.z }, { std::fabs(b1.x - b0.x) + 0.12f, 0.12f, 0.16f }, ScaleColor(doorColor, 0.75f));
+                // Хаалганы дээгүүр (тотгоноос дээврийн орой хүртэл): хаалгаар л орж гарна, дээгүүр нь үсэрч гарахгүй
+                {
+                    const float top = wall + roof;
+                    s.Collider({ (b0.x + b1.x) * 0.5f, (doorHeight + top) * 0.5f, (b0.z + b1.z) * 0.5f },
+                               { std::fabs(b1.x - b0.x) + 0.22f, top - doorHeight, std::fabs(b1.z - b0.z) + 0.22f });
+                }
 
                 // Нээж хаадаг хаалга: нугас нь баруун захад (-X), гадагш (-Z) онгойно.
                 const float left = std::min(b0.x, b1.x);
@@ -986,9 +992,11 @@ namespace
                              ring(i, radius + 0.03f, y + 0.07f), band);
             }
 
-            // Ханын мөргөлдөөн: талын хоёр үзүүрийг хамарсан хайрцаг
-            const Vector3 center = { (b0.x + b1.x) * 0.5f, wall * 0.5f, (b0.z + b1.z) * 0.5f };
-            s.Collider(center, { std::fabs(b1.x - b0.x) + 0.22f, wall, std::fabs(b1.z - b0.z) + 0.22f });
+            // Ханын мөргөлдөөн: талын хоёр үзүүрийг хамарсан хайрцаг. Дээврийн орой хүртэл өндөр: дээвэрт мөргөлдөөн
+            // байхгүй тул 2 м-ийн хана байхад ор, авдар дээрээс үсэрч хананы дээгүүр дээврээр нэвт гардаг байв.
+            const float top = wall + roof;
+            const Vector3 center = { (b0.x + b1.x) * 0.5f, top * 0.5f, (b0.z + b1.z) * 0.5f };
+            s.Collider(center, { std::fabs(b1.x - b0.x) + 0.22f, top, std::fabs(b1.z - b0.z) + 0.22f });
         }
 
         s.solid.Cylinder({ cx, wall + roof, cz }, crown, crown, 0.12f, sides, doorColor); // тооно

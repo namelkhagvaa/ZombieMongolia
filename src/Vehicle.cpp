@@ -1259,6 +1259,40 @@ namespace
         return { 1.0f, 0.8f };
     }
 
+    // Их бие хана, байшин, хашаатай: капсулын тэнхлэг дагуух хэд хэдэн тойргоор (нэг төв тойрог нь урт машины урд,
+    // хойд хэсгийг хананд нэвтрүүлж, доторхийг харуулдаг байв). Тойрог бүрийн түлхэлтийг бүх биед хэрэглэнэ.
+    // Нисэж буй нисдэг тэрэг газрын саадтай мөргөлдөхгүй (өмнөх шиг нэг тойрог).
+    void ResolveBody(const World& world, Vehicle& vehicle)
+    {
+        const VehicleSpec& spec = SpecFor(vehicle.type);
+        if (vehicle.type == VehicleType::Helicopter)
+        {
+            world.ResolveHorizontal(vehicle.position, spec.radius, 1.6f, 0.3f, false);
+            return;
+        }
+        const Vector2 capsule = CapsuleOf(vehicle.type);
+        const float half = capsule.x, radius = capsule.y;
+        const int count = std::clamp((int)std::ceil(2.0f * half / radius) + 1, 2, 7);
+        const float fx = std::sin(vehicle.heading), fz = std::cos(vehicle.heading);
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            bool pushed = false;
+            for (int k = 0; k < count; ++k)
+            {
+                const float offset = -half + 2.0f * half * (float)k / (float)(count - 1);
+                Vector3 circle = { vehicle.position.x + fx * offset, vehicle.position.y, vehicle.position.z + fz * offset };
+                const Vector3 before = circle;
+                world.ResolveHorizontal(circle, radius, 1.6f, 0.3f, false);
+                const float dx = circle.x - before.x, dz = circle.z - before.z;
+                if (dx * dx + dz * dz < 1e-8f) continue;
+                vehicle.position.x += dx;
+                vehicle.position.z += dz;
+                pushed = true;
+            }
+            if (!pushed) break;
+        }
+    }
+
     // Хоёр хэрчмийн хамгийн ойр цэгүүд (xz)
     void ClosestPoints(Vector2 p1, Vector2 q1, Vector2 p2, Vector2 q2, Vector2& c1, Vector2& c2)
     {
@@ -1339,10 +1373,9 @@ void Garage::Collide(int index, const World& world)
         }
         // Давхцлыг салгана: хөнгөн нь илүү холдоно
         const float overlap = minDistance - distance;
-        Vector3 pushB = { b.position.x + n.x * overlap * ma / total, b.position.y, b.position.z + n.y * overlap * ma / total };
-        world.ResolveHorizontal(pushB, sb.radius, 1.6f, 0.3f, false);
-        b.position.x = pushB.x;
-        b.position.z = pushB.z;
+        b.position.x += n.x * overlap * ma / total;
+        b.position.z += n.y * overlap * ma / total;
+        ResolveBody(world, b);
         a.position.x -= n.x * overlap * mb / total;
         a.position.z -= n.y * overlap * mb / total;
     }
@@ -1868,7 +1901,7 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
             const Vector3 before = vehicle.position;
             vehicle.position.x += vehicle.knock.x * dt;
             vehicle.position.z += vehicle.knock.y * dt;
-            world.ResolveHorizontal(vehicle.position, spec.radius, 1.6f, 0.3f, false);
+            ResolveBody(world, vehicle);
             const float moved = HorizontalDistance(before, vehicle.position);
             if (knockSpeed > 3.0f && moved < knockSpeed * dt * 0.5f)
             {
@@ -1881,6 +1914,7 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
             vehicle.spin *= decay;
             vehicle.position.y = world.GroundHeight(vehicle.position.x, vehicle.position.z);
             Collide(i, world);
+            ResolveBody(world, vehicle); // (нөгөө унаа түлхсэн ч хананд орохгүй)
         }
         if (!controlled && vehicle.speed == 0.0f && vehicle.slip == 0.0f)
         {
@@ -2047,12 +2081,13 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
             const float step = std::sqrt(stepX * stepX + stepZ * stepZ);
             // Хурдтай (удаан frame) үед нэг алхам нь мөргөлдөөний радиусаас урт болж нимгэн хашаа, ханыг нэвт
             // үсэрнэ: радиусын 40%-иас ихгүй жижиг алхмуудад хувааж алхам бүрд саадаас түлхэнэ.
-            const int substeps = std::clamp((int)std::ceil(step / (spec.radius * 0.4f)), 1, 12);
+            const float thin = std::min(spec.radius, CapsuleOf(vehicle.type).y);
+            const int substeps = std::clamp((int)std::ceil(step / (thin * 0.4f)), 1, 12);
             for (int k = 0; k < substeps; ++k)
             {
                 vehicle.position.x += stepX / (float)substeps;
                 vehicle.position.z += stepZ / (float)substeps;
-                world.ResolveHorizontal(vehicle.position, spec.radius, 1.6f, 0.3f, false);
+                ResolveBody(world, vehicle);
             }
 
             // Саад мөргөсөн бол (төлөвлөснөөс хамаагүй бага явсан) хурдаа алдаж, хурдаас хамааран гэмтэнэ.

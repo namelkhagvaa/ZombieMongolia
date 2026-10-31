@@ -131,6 +131,10 @@ public:
     void SpawnBear(Vector3 position, const MissionParams& mission, float facing = -100.0f); // facing < -50: санамсаргүй
     // Тухайн бүсийн амьд зомбины тоо.
     int AliveInZone(int zone) const;
+    // Тухайн бүсийн, center-ээс radius дотор амьд зомбины тоо (хол тэнүүчилсэн нь бүсийг гацаахгүй)
+    int AliveInZoneNear(int zone, Vector3 center, float radius) const;
+    // Тухайн бүсийн аварга амьд эсэх
+    bool BossAliveInZone(int zone) const;
     // Тухайн бүсийн эхний maxTargets амьд зомбид хохирол учруулна (туршилтын автомат тоглолтод).
     void DamageZone(int zone, float amount, int maxTargets);
 
@@ -169,6 +173,8 @@ public:
 
     // Бүх зомбины хөдөлгөөний хурдны үржүүлэгч (устгасан тоогоор өснө: Game тохируулна).
     void SetSpeedMultiplier(float multiplier) { speedMultiplier = multiplier; }
+    // Хамтарсан тоглолт: хоёр тоглогчтой үед шинээр гарах зомбины амь (хэтэрхий хялбар болохгүй)
+    void SetHealthScale(float scale) { healthScale = scale; }
     // Тоглогчийн (хамтын тоглолтод хостын) зэрэг: зомбины ухаан шатлалаар нэмэгдэнэ (хүчийг MissionParams-аар):
     //   10+ хажуугаас тойрч дайрна, хол сонсоно; 20+ гүйгч, орилогч олон; 35+ ойртохдоо хоёр тийш зигзаглана;
     //   50+ ойрхон ирээд байг тойрон бүсэлнэ; 75+ том зомби ойроос давхиж мөргөнө
@@ -234,6 +240,7 @@ private:
     int pendingCoins = 0;
     int pendingKills = 0;
     float speedMultiplier = 1.0f;
+    float healthScale = 1.0f;
     uint32_t nextId = 0;
     bool puppet = false;
     bool remoteActive = false;

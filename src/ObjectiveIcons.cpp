@@ -54,6 +54,7 @@ Color MarkerColor(MarkerKind kind)
     case MarkerKind::Defend: return { 90, 150, 255, 255 };   // хөх
     case MarkerKind::Boss: return { 225, 70, 210, 255 };     // нил ягаан
     case MarkerKind::Event: return { 255, 236, 140, 255 };   // цайвар шар
+    case MarkerKind::Ping: return { 70, 235, 225, 255 };     // ногоовтор цэнхэр
     }
     return WHITE;
 }
@@ -71,6 +72,7 @@ const char* MarkerName(MarkerKind kind)
     case MarkerKind::Defend: return "Хамгаалах";
     case MarkerKind::Boss: return "Аварга";
     case MarkerKind::Event: return "Үйл явдал";
+    case MarkerKind::Ping: return "Тэмдэг";
     }
     return "";
 }
@@ -136,6 +138,12 @@ void DrawMarkerGlyph(MarkerKind kind, Vector2 center, float radius, Color color)
         // Анхаар (!)
         DrawRectangleRounded({ f.P(-0.15f, -1.0f).x, f.P(0.0f, -1.0f).y, f.u * 0.3f, f.u * 1.3f }, 0.5f, 4, color);
         DrawCircleV(f.P(0.0f, 0.75f), f.u * 0.18f, color);
+        break;
+    case MarkerKind::Ping:
+        // Зүү: дугуй толгой, доош шовх
+        DrawCircleV(f.P(0.0f, -0.35f), f.u * 0.62f, color);
+        Tri(f.P(-0.5f, 0.0f), f.P(0.5f, 0.0f), f.P(0.0f, 1.05f), color);
+        DrawCircleV(f.P(0.0f, -0.35f), f.u * 0.24f, dark);
         break;
     }
 }

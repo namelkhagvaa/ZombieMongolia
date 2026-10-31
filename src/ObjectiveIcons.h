@@ -15,7 +15,8 @@ enum class MarkerKind
     Clear,    // онилгоо: бүсийг цэвэрлэх (бүх даалгавар биелсний дараах үлдсэн зомби ч)
     Defend,   // бамбай: хамгаалах
     Boss,     // гавлын яс: аварга
-    Event     // анхаар тэмдэг: гэнэтийн үйл явдал (ачаа, бөөгнөрөл, аврах хүн)
+    Event,    // анхаар тэмдэг: гэнэтийн үйл явдал (ачаа, бөөгнөрөл, аврах хүн)
+    Ping      // зүү: хамтрагчийн тэмдэглэсэн цэг (хамтарсан тоглолт)
 };
 
 MarkerKind KindOf(ObjectiveType type);
@@ -23,6 +24,8 @@ Color MarkerColor(MarkerKind kind);
 const char* MarkerName(MarkerKind kind); // "Аврах", "Цуглуулах" ...
 
 // Газрын зураг, дэлгэцэд харуулах даалгаврын тэмдэг
+constexpr int kMarkerAlways = -2; // MapMarker::objective: даалгавар биш, ойроос ч заах (унасан хамтрагч)
+
 struct MapMarker
 {
     Vector3 position;

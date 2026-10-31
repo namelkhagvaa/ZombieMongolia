@@ -1312,6 +1312,26 @@ namespace Net
             break;
         case Msg::MissionLost:
             break;
+        case Msg::Ping:
+            e.id = r.U8();
+            e.position = r.V3();
+            break;
+        case Msg::BattleZone:
+            e.position = r.V3(); // (x, анхны радиус, z)
+            e.amount = r.F();
+            break;
+        case Msg::Ability:
+            e.province = r.U8();
+            e.position = r.V3();
+            e.id = r.U16();
+            break;
+        case Msg::Stats:
+            e.id = r.U16();                     // устгасан
+            e.id |= (uint32_t)r.U16() << 16;    // толгойд
+            e.province = r.U8();                // босгосон
+            e.province |= (int)r.U8() << 8;     // унасан
+            e.province |= (int)r.U8() << 16;    // оновчлол %
+            break;
         case Msg::Revive:
             break;
         case Msg::BattleOver:
@@ -1439,6 +1459,46 @@ namespace Net
     {
         Writer w;
         w.U8((uint8_t)Msg::MissionLost);
+        Send(w.data, true);
+    }
+
+    void Session::SendPing(int kind, Vector3 position)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::Ping);
+        w.U8((uint8_t)kind);
+        w.V3(position);
+        Send(w.data, true);
+    }
+
+    void Session::SendBattleZone(Vector2 center, float startRadius, float elapsed)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::BattleZone);
+        w.V3({ center.x, startRadius, center.y });
+        w.F(elapsed);
+        Send(w.data, true);
+    }
+
+    void Session::SendAbility(int kind, Vector3 position, int vehicle)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::Ability);
+        w.U8((uint8_t)kind);
+        w.V3(position);
+        w.U16((uint16_t)(vehicle < 0 ? 0xFFFF : vehicle));
+        Send(w.data, true);
+    }
+
+    void Session::SendStats(int kills, int headshots, int revives, int downs, int accuracy)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::Stats);
+        w.U16((uint16_t)std::clamp(kills, 0, 65535));
+        w.U16((uint16_t)std::clamp(headshots, 0, 65535));
+        w.U8((uint8_t)std::clamp(revives, 0, 255));
+        w.U8((uint8_t)std::clamp(downs, 0, 255));
+        w.U8((uint8_t)std::clamp(accuracy, 0, 100));
         Send(w.data, true);
     }
 

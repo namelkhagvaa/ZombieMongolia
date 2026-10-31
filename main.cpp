@@ -178,6 +178,10 @@ int main(int argc, char** argv)
         {
             options.seat = std::atoi(argv[++i]);
         }
+        else if (std::strcmp(argv[i], "--ping") == 0)
+        {
+            options.ping = true;
+        }
         else if (std::strcmp(argv[i], "--chat") == 0 && i + 1 < argc)
         {
             options.chat = argv[++i];

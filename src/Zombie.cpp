@@ -426,6 +426,25 @@ int ZombieHorde::AliveInZone(int zone) const
     return count;
 }
 
+int ZombieHorde::AliveInZoneNear(int zone, Vector3 center, float radius) const
+{
+    int count = 0;
+    for (const Zombie& zombie : zombies)
+    {
+        count += zombie.IsAlive() && zombie.zone == zone && HorizontalDistance(zombie.mover.position, center) < radius;
+    }
+    return count;
+}
+
+bool ZombieHorde::BossAliveInZone(int zone) const
+{
+    for (const Zombie& zombie : zombies)
+    {
+        if (zombie.IsAlive() && zombie.boss && zombie.zone == zone) return true;
+    }
+    return false;
+}
+
 void ZombieHorde::DamageZone(int zone, float amount, int maxTargets)
 {
     for (int i = 0; i < (int)zombies.size() && maxTargets > 0; ++i)
@@ -482,7 +501,7 @@ void ZombieHorde::Spawn(ZombieType type, Vector3 position, const MissionParams& 
     zombie.lastPosition = position;
     zombie.mover.detourSign = GetRandomValue(0, 1) == 0 ? -1.0f : 1.0f;
     zombie.type = type;
-    zombie.health = stats.health * mission.healthScale * kZombieHealthMultiplier;
+    zombie.health = stats.health * mission.healthScale * kZombieHealthMultiplier * healthScale;
     zombie.id = ++nextId;
     zombie.maxHealth = zombie.health;
     zombie.speed = (stats.speed + mission.speedBonus) * kSpeedScale;
@@ -791,7 +810,9 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
         }
         if (detour || targetDistance > reach * 0.8f)
         {
-            const float speed = zombie.speed * speedMultiplier * (zombie.stagger > 0.0f ? 0.2f : 1.0f) * boost;
+            // Цочилт: эхэндээ бараг зогсоно, дараа нь аажим хурдална (огцом зогсоод огцом гүйхгүй)
+            const float shock = std::clamp(zombie.stagger / kStaggerTime, 0.0f, 1.0f);
+            const float speed = zombie.speed * speedMultiplier * (1.0f - 0.8f * shock * (2.0f - shock)) * boost;
             MoveToward(zombie.mover, moveTarget, speed, dt, world, zombie.Radius(), zombie.Height(), kClimbHeight);
             world.KeepOutOfSafeRooms(pos, zombie.Radius()); // дэлгүүрийн үүдээр орохгүй
             // Хашаанд тулсан (байдаа хөөж явахад): удаан авирч давна (дундуур нь нэвтрэхгүй)

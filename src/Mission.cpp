@@ -54,10 +54,12 @@ namespace
     Vector3 PlaceAround(const World& world, Vector3 center, float minRadius, float maxRadius, Rng& rng)
     {
         Vector3 best = center;
-        for (int attempt = 0; attempt < 30; ++attempt)
+        for (int attempt = 0; attempt < 60; ++attempt)
         {
+            // Олдохгүй бол радиусыг аажим томсгоно (том барилгын төвөөс гадагш гарна)
+            const float grow = 1.0f + (float)(attempt / 15) * 0.8f;
             const float angle = rng.Range(0.0f, 2.0f * PI);
-            const float distance = rng.Range(minRadius, maxRadius);
+            const float distance = rng.Range(minRadius, maxRadius * grow);
             Vector3 candidate = { center.x + std::sin(angle) * distance, 0.0f, center.z + std::cos(angle) * distance };
             candidate.y = world.GroundHeight(candidate.x, candidate.z);
 
@@ -65,7 +67,11 @@ namespace
             world.ResolveHorizontal(resolved, 0.6f, 1.8f, 0.3f);
             best = resolved;
 
-            const bool free = HorizontalDistance(candidate, resolved) < 0.05f;
+            // Дээвэр, барилгын орой доор биш (хана нь мөргөлдөөнтэй, дотор нь хоосон барилгад хүн, хайрцаг
+            // дотор нь гарч, тоглогч хүрч чадахгүй байв)
+            const bool covered = world.SurfaceHeightAt(candidate.x, candidate.z, 1.0e5f) > candidate.y + 1.5f ||
+                                 world.RoofHeight(candidate.x, candidate.z) > candidate.y + 1.5f;
+            const bool free = HorizontalDistance(candidate, resolved) < 0.05f && !covered;
             if (free && world.InteriorAt(candidate.x, candidate.z) < 0 && world.InsideBoundary(candidate.x, candidate.z))
             {
                 return candidate;
@@ -199,6 +205,8 @@ namespace
         if (kind == SurvivorKind::Soldier)
         {
             look.kind = HumanoidKind::Soldier;
+            // Багийн цэргүүдийн загвар (кодоор угсарсан хайрцган дүрс бусдаас ялгардаг, гар даллах нь ажилладаггүй байв)
+            look.model = variant % 2 ? kCharacterFighter1 : kCharacterFighter2;
             look.pants = { 74, 84, 56, 255 };
             look.boots = { 30, 28, 24, 255 };
             look.body = { 92, 108, 68, 255 };
@@ -681,6 +689,42 @@ int Mission::FocusObjective() const
     return -1;
 }
 
+int Mission::ZoneRemaining(int index) const
+{
+    const ObjectiveDef& def = stage->objectives[(size_t)index];
+    if (def.type != ObjectiveType::ClearZone) return -1;
+    const ObjectiveState& state = states[(size_t)index];
+    const int near = index < (int)zoneNear.size() ? zoneNear[(size_t)index] : 0;
+    return state.status == ObjectiveStatus::Done ? 0 : state.reserve + near;
+}
+
+std::string Mission::HowTo(int index) const
+{
+    const ObjectiveDef& def = stage->objectives[(size_t)index];
+    const ObjectiveState& state = states[(size_t)index];
+    const bool touch = InTouchMode();
+    const char* press = touch ? "үйлдлийн товчийг дар" : "E дар";
+    switch (def.type)
+    {
+    case ObjectiveType::ReachLocation: return "Тэмдэгтэй газарт оч (газрын зураг дээр дарвал чиглэл заана)";
+    case ObjectiveType::InteractObject: return std::string("Төхөөрөмжийн дэргэд очиж ") + press;
+    case ObjectiveType::RescueSurvivors:
+        return TextFormat("Гараа даллаж буй хүмүүсийн дэргэд очиж %s  (%d / %d)", press, state.progress, state.target);
+    case ObjectiveType::CollectItems:
+        return TextFormat("Хайрцгуудын дэргэд очиж %s  (%d / %d)", press, state.progress, state.target);
+    case ObjectiveType::DeliverItems: return std::string("Хүргэх цэгт очиж ") + press;
+    case ObjectiveType::ClearZone:
+        return state.reserve > 0 ? TextFormat("Бүсийн зомбийг устга: үлдсэн %d (шинээр гарсаар байна)", ZoneRemaining(index))
+                                 : TextFormat("Сүүлчийн %d зомбийг устга (дэлгэц дээр улаан тэмдэгтэй)", ZoneRemaining(index));
+    case ObjectiveType::DefendLocation:
+        return partnerPresent
+                   ? TextFormat("Бүс дотроо тэс: %d сек үлдлээ (хоёулаа бүсэд байвал 1.5x хурдан)", std::max(0, state.target - state.progress))
+                   : TextFormat("Бүс дотроо байж тэс: %d секунд үлдлээ", std::max(0, state.target - state.progress));
+    case ObjectiveType::DefeatBoss: return "Аварга зомбийг ал (бусад зомби хамаагүй)";
+    }
+    return def.description;
+}
+
 std::string Mission::ProgressText(int index) const
 {
     const ObjectiveDef& def = stage->objectives[(size_t)index];
@@ -694,7 +738,7 @@ std::string Mission::ProgressText(int index) const
         std::snprintf(buffer, sizeof(buffer), "%d / %d", state.progress, state.target);
         break;
     case ObjectiveType::ClearZone:
-        std::snprintf(buffer, sizeof(buffer), "%d / %d зомби", state.progress, state.target);
+        std::snprintf(buffer, sizeof(buffer), "Үлдсэн %d зомби", std::max(0, ZoneRemaining(index)));
         break;
     case ObjectiveType::DefendLocation:
         std::snprintf(buffer, sizeof(buffer), "%d / %d сек", state.progress, state.target);
@@ -765,6 +809,8 @@ float Mission::ProgressFraction(int index) const
     case ObjectiveType::ClearZone:
     case ObjectiveType::DefendLocation:
         return state.target > 0 ? std::clamp((float)state.progress / (float)state.target, 0.0f, 1.0f) : -1.0f;
+    case ObjectiveType::DefeatBoss:
+        return state.status == ObjectiveStatus::Done ? 1.0f : -1.0f;
     default:
         return -1.0f;
     }
@@ -792,7 +838,14 @@ void Mission::UpdatePresentation(float dt, Vector3 player)
     }
     else if (!banners.empty())
     {
-        banners.front().age += dt;
+        // Хоцорсон: аль хэдийн биелсэн даалгаврын "шинэ даалгавар" баннер хэрэггүй
+        while (!banners.empty() && !banners.front().completed && banners.front().age == 0.0f && banners.front().objective >= 0 &&
+               banners.front().objective < ObjectiveCount() && states[(size_t)banners.front().objective].status == ObjectiveStatus::Done)
+        {
+            banners.erase(banners.begin());
+        }
+        if (banners.empty()) return;
+        banners.front().age += dt * (banners.size() > 2 ? 2.0f : 1.0f); // (олон хуримтлагдвал хурдан)
         if (banners.front().age >= kBannerTime)
         {
             banners.erase(banners.begin());
@@ -986,7 +1039,10 @@ void Mission::UpdateZone(int index, float dt, const World& world, const Player& 
     const ObjectiveDef& def = stage->objectives[(size_t)index];
     ObjectiveState& state = states[(size_t)index];
     const int zone = index + 1;
-    const float playerDistance = HorizontalDistance(player.Position(), state.location);
+    // Хамтарсан тоглолт: аль нэг тоглогч бүсэд байхад л хангалттай
+    const float hostDistance = HorizontalDistance(player.Position(), state.location);
+    const float partnerDistance = partnerPresent ? HorizontalDistance(partnerPosition, state.location) : 1e9f;
+    const float playerDistance = std::min(hostDistance, partnerDistance);
     state.spawnTimer -= dt;
 
     if (def.type == ObjectiveType::ClearZone)
@@ -1009,8 +1065,13 @@ void Mission::UpdateZone(int index, float dt, const World& world, const Player& 
             }
         }
 
-        state.progress = state.target - state.reserve - alive;
-        if (state.reserve == 0 && alive == 0)
+        // Дуусах нөхцөл: нөөц дууссан, бүсийн ойролцоох (радиус + 40 м) зомби бүгд устсан. Хол тэнүүчилж явсан,
+        // гацсан нэг зомби даалгаврыг дуусгахгүй байлгаж байв (тэд үеийн тоонд хэвээр тоологдоно).
+        const int near = horde.AliveInZoneNear(zone, state.location, state.radius + 40.0f);
+        if ((int)zoneNear.size() <= index) zoneNear.resize((size_t)index + 1, 0);
+        zoneNear[(size_t)index] = near;
+        state.progress = std::max(0, state.target - state.reserve - near);
+        if (state.reserve == 0 && near == 0)
         {
             Complete(index);
         }
@@ -1020,8 +1081,10 @@ void Mission::UpdateZone(int index, float dt, const World& world, const Player& 
         // Хугацаа зөвхөн тоглогч бүс дотор байхад урагшилна; энэ үед зомби тасралтгүй довтолно.
         if (playerDistance < state.radius)
         {
-            state.timer += dt;
-            const int cap = 22 + province / 2;
+            // Хоёулаа бүсэд: хугацаа 1.5 дахин хурдан, довтолгоо ч хүчтэй
+            const bool both = hostDistance < state.radius && partnerDistance < state.radius;
+            state.timer += dt * (both ? 1.5f : 1.0f);
+            const int cap = (22 + province / 2) * (both ? 4 : 3) / 3;
             if (state.spawnTimer <= 0.0f && horde.AliveInZone(zone) < cap)
             {
                 SpawnFromPool(horde, RandomAround(world, state.location, 42.0f, 58.0f), zone, true, index);
@@ -1046,7 +1109,8 @@ void Mission::UpdateZone(int index, float dt, const World& world, const Player& 
             }
             state.spawned = true;
         }
-        if (state.spawned && horde.AliveInZone(zone) == 0)
+        // Аварга өөрөө үхэхэд биелнэ (дагалдах зомби хөөж хол явсан, гацсан ч хамаагүй)
+        if (state.spawned && !horde.BossAliveInZone(zone))
         {
             state.progress = 1;
             Complete(index);
@@ -1068,6 +1132,7 @@ void Mission::UpdateGuards(float dt, const World& world, const Player& player, Z
     // Багаас хол хоцорсон хамгаалагчид нөөцөд буцна: баг дахин ирэхэд тэнд гарч ирнэ.
     // Бүх даалгавар биелсний дараа үлдсэн бүх зомбид хамаарна, эс бөгөөс алсад үлдсэн нь үеийг дуусгахад саад болно.
     std::vector<Vector3> anchors = { player.Position() };
+    if (partnerPresent) anchors.push_back(partnerPosition);
     for (const Soldier& soldier : squad.All())
     {
         if (soldier.alive) anchors.push_back(soldier.mover.position);
@@ -1181,8 +1246,23 @@ void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde,
     {
         if (guarded >= 0)
         {
-            notice = TextFormat("%s: %d зомби, %d том зомби хамгаалж байна", stage->objectives[(size_t)guarded].title,
-                                PoolLeft(guarded, false), PoolLeft(guarded, true));
+            // (Хамгаалагчдын тоо нь аймгийн нөөцийн хувь: даалгаврыг биелүүлэхэд бүгдийг нь устгах шаардлагагүй.
+            // Хуучин бичвэр бүгдийг нь алах ёстой мэт ойлгогдож байв.)
+            const ObjectiveDef& guardedDef = stage->objectives[(size_t)guarded];
+            const ObjectiveStatus status = states[(size_t)guarded].status;
+            const int around = PoolLeft(guarded, false) + PoolLeft(guarded, true);
+            if (status == ObjectiveStatus::Active && guardedDef.type == ObjectiveType::ClearZone)
+            {
+                notice = TextFormat("%s: устгах ёстой %d зомби үлдлээ", guardedDef.title, std::max(0, ZoneRemaining(guarded)));
+            }
+            else if (status == ObjectiveStatus::Done)
+            {
+                notice = TextFormat("Энд %d зомби тэнүүчилж байна (даалгаварт заавал устгах шаардлагагүй)", around);
+            }
+            else
+            {
+                notice = TextFormat("%s: ойролцоо %d зомби хамгаалж байна", guardedDef.title, around);
+            }
             noticeTimer = kNoticeTime;
         }
         guardedObjective = guarded;
@@ -1205,7 +1285,8 @@ void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde,
         switch (def.type)
         {
         case ObjectiveType::ReachLocation:
-            if (HorizontalDistance(position, state.location) < state.radius)
+            if (HorizontalDistance(position, state.location) < state.radius ||
+                (partnerPresent && HorizontalDistance(partnerPosition, state.location) < state.radius))
             {
                 Complete(i);
             }
@@ -1218,7 +1299,8 @@ void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde,
             for (int k = 0; k < (int)state.entities.size(); ++k)
             {
                 if (state.entities[(size_t)k].used) continue;
-                const float reach = def.type == ObjectiveType::DeliverItems ? kInteractDistance + 1.0f : kInteractDistance;
+                const float reach = def.type == ObjectiveType::DeliverItems ? kInteractDistance + 1.0f
+                                  : def.type == ObjectiveType::RescueSurvivors ? kInteractDistance + 0.7f : kInteractDistance;
                 const float distance = HorizontalDistance(position, state.entities[(size_t)k].position);
                 if (distance < reach && distance < nearestDistance)
                 {
@@ -1388,6 +1470,18 @@ void Mission::Draw(Vector3 viewPosition) const
                 if (entity.used)
                 {
                     pose = MakeSoldierPose(0.0f, 0.0f, true, time + (float)k, 0.0f, HeldItem::None);
+                }
+                else if (HorizontalDistance(viewPosition, entity.position) < 45.0f)
+                {
+                    // Тусламж дуудаж гараа даллана (баруун гар дээш, тохой нь найгана): алсаас анзаарагдана
+                    pose.seated = true;
+                    pose.shoulder[0] = 165.0f;
+                    pose.elbow[0] = 35.0f + 30.0f * std::sin(time * 7.0f + (float)k);
+                    pose.shoulderYaw[0] = 25.0f;
+                    pose.shoulder[1] = 15.0f;
+                    pose.elbow[1] = 20.0f;
+                    pose.headPitch = -8.0f;
+                    pose.breath = std::sin(time * 3.4f + (float)k);
                 }
                 else
                 {

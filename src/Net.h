@@ -26,7 +26,7 @@ namespace Net
     constexpr uint16_t kDiscoveryPort = 47811;
     // Сүлжээний мессежийн хувилбар: мессежийн бүтэц өөрчлөгдөх бүрд нэмэгдүүлнэ. Хост ба зочин ижил хувилбартай
     // байж л нэгдэнэ (эс бөгөөс өгөгдөл буруу уншигдаж, жишээ нь цэргүүд "үхсэн" мэт харагдана).
-    constexpr uint16_t kProtocolVersion = 18; // 18: Aqua (унааны төрөл 10); 17: Crown (унааны төрөл 9); 16: баавгай (ZombieState.type 3); 15: хуягт машин; 14: нисдэг тэрэг (зорчигч, хаалганы буудагч), чат, унааны дугаар 254 хүртэл;
+    constexpr uint16_t kProtocolVersion = 19; // 19: тэмдэг (Ping); 18: Aqua (унааны төрөл 10); 17: Crown (унааны төрөл 9); 16: баавгай (ZombieState.type 3); 15: хуягт машин; 14: нисдэг тэрэг (зорчигч, хаалганы буудагч), чат, унааны дугаар 254 хүртэл;
                                              // 13: цэргийн тогтвортой дугаар, зочныг хүлээх хугацаа дуусав (GuestKick);
                                              // 12: шахсан snapshot, хайрцгийг хост олгоно, дахин холбогдох; 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris; 6: 1-р дайчны дүр;
                                              // 7: тулаан (тоглогч хооронд); 8: зочин хосттой адил (гишүүн солих г.м.);
@@ -69,7 +69,11 @@ namespace Net
         CrateGrant,      // хост -> зочин: зочны авахыг хүссэн хайрцаг түүнийх (давхар авахаас сэргийлж хост шийднэ)
         GuestKick,       // хост -> зочин: зочин ертөнцөд хэт удаан ирээгүй тул хост хүлээхээ болив (зочин гарна)
         Chat,            // аль аль нь: чатын мессеж (бичвэр)
-        MissionLost      // хост -> зочин: хостын баг бүгд унаж аймаг ялагдлаа (хамтын тоглолт дууслаа)
+        MissionLost,     // хост -> зочин: хостын баг бүгд унаж аймаг ялагдлаа (хамтын тоглолт дууслаа)
+        Ping,            // аль аль нь: хамтрагчдаа цэг тэмдэглэв (төрөл, байрлал)
+        BattleZone,      // хост -> зочин: тулааны хумигдах бүс (төв, анхны радиус, өнгөрсөн хугацаа)
+        Ability,         // аль аль нь: дүрийн тусгай чадвар (төрөл, байрлал, унааны дугаар)
+        Stats            // аль аль нь: энэ тоглолтын өөрийн үзүүлэлт (устгасан, толгой, босгосон, унасан, оновчлол)
     };
     constexpr uint32_t kHostPlayer = 0xFFFF; // GuestHitHuman: хостын удирдаж буй тоглогч (бусад нь Soldier::id)
 
@@ -281,6 +285,10 @@ namespace Net
         void SendGuestKick();
         void SendChat(const std::string& text);
         void SendMissionLost();
+        void SendPing(int kind, Vector3 position);
+        void SendBattleZone(Vector2 center, float startRadius, float elapsed);
+        void SendAbility(int kind, Vector3 position, int vehicle);
+        void SendStats(int kills, int headshots, int revives, int downs, int accuracy);
 
         // Хүлээн авсан сүүлийн snapshot (зочин)
         bool TakeSnapshot(Snapshot& out);

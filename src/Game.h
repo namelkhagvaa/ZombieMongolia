@@ -103,6 +103,7 @@ struct LaunchOptions
     bool show = false;              // туршилтын цонхыг дэлгэцэнд харуулна; үгүй бол нуугдмал ажиллана (--show)
     bool thirdPerson = false;       // туршилтыг 3-р этгээдийн камераар эхлүүлнэ: дүрийн бие харагдана (--third)
     int seat = 0;                   // хуягт машинд суухад (--use-frame-ээр F) 1 жолооч, 2 буудагч гэж сонгоно (--seat N)
+    bool ping = false;              // туршилт: 2 секундын дараа харж буй цэгээ тэмдэглэнэ (--ping)
     const char* chat = nullptr;     // хамтарсан тоглолтод холбогдсоноос 3 секундын дараа энэ чатын мессежийг илгээнэ (--chat)
     bool heliRoof = false;          // ойрын өндөр байшингийн дээвэр дээр нисдэг тэрэг буулгаж тоглогчийг суулгана:
                                     // баг нь олсоор авирч суух эсэхийг шалгана (--heli-roof)
@@ -459,6 +460,82 @@ private:
         float calm = 0.0f; // онилоогүй өнгөрсөн хугацаа
         float spot = 0.0f; // >0: "зомби!" гэж хэлэхийг оролдож буй хугацаа
     };
+    // Тулааны мэдээ (killfeed): хэн унав, босгогдов, амь үрэгдэв — баруун талд богино мөрүүд
+    struct FeedLine
+    {
+        std::string text;
+        Color color;
+        float age = 0.0f;
+    };
+    struct FeedMemo
+    {
+        uint16_t id = 0;
+        bool alive = true, downed = false;
+    };
+    std::vector<FeedLine> feed;
+    std::vector<FeedMemo> feedMemo;
+    bool feedSelfDown = false, feedSelfAlive = true, feedOtherDown = false, feedOtherAlive = true, feedReady = false;
+    void UpdateFeed(float dt);
+    void PushFeed(const std::string& text, Color color);
+    void DrawFeed() const;
+    // Тулааны эхэнд хоёр тал хоорондоо хохирол учруулахгүй хугацаа (байраа эзлэх)
+    // Тоглолтын үзүүлэлт (дуусахад: хоёр тоглогчийг харьцуулж MVP)
+    struct MatchStats
+    {
+        int kills = 0, headshots = 0, revives = 0, downs = 0, shots = 0, hits = 0;
+        int accuracy = 0; // нөгөө тоглогчийнх (илгээснээр)
+        int Accuracy() const { return shots > 0 ? std::min(100, hits * 100 / shots) : accuracy; }
+        int Score() const { return kills + headshots * 2 + revives * 25 - downs * 10; }
+    };
+    MatchStats myStats, partnerStats;
+    bool partnerStatsKnown = false;
+    float statsSendTimer = 0.0f;
+    int lastHitShot = -1;
+    void SendMyStats();
+    void DrawMatchStats(int y) const;
+    // Дүрийн тусгай чадвар (U): Дайчин 1 — сум түгээх, Дайчин 2 — унаа засах, Мэргэн буудагч — тагнуул
+    static constexpr float kAbilityCooldown[3] = { 60.0f, 50.0f, 45.0f };
+    static constexpr float kAbilityRange = 15.0f; // сум түгээх: нөгөө тоглогчид хүрэх зай
+    static constexpr float kScanRadius = 130.0f;
+    static constexpr float kScanTime = 10.0f;
+    float abilityCooldown[3] = {};
+    float scanTimer = 0.0f;
+    Vector3 scanCenter = {};
+    void HandleAbilityInput(float dt);
+    void ApplyAbility(int kind, Vector3 position, int vehicle, bool mine);
+    static const char* AbilityName(int kind);
+    // Хоцролтын нөхөлт (хост, тулаан): манай хүмүүсийн сүүлийн ~0.8 секундын байрлал. Зочин хоцорсон дүрс рүү буудсан
+    // тул оногдлыг шалгахдаа одоогийн бус, тэр үеийн аль нэг байрлалаас харагдаж байсан эсэхийг үзнэ.
+    struct HistorySample
+    {
+        float time;
+        std::vector<std::pair<uint32_t, Vector3>> bodies; // (Net::kHostPlayer эсвэл Soldier::id, байрлал)
+    };
+    std::vector<HistorySample> hostHistory;
+    float historyTimer = 0.0f;
+    void RecordHostHistory(float dt);
+    // Тулааны хумигдах бүс: 60 сек дараа багасаж эхэлнэ (3 минутад 25 м болно), гадна нь амь хасагдана. Хост тооцно.
+    struct ShrinkZone
+    {
+        bool active = false;
+        Vector2 center = { 0.0f, 0.0f };
+        float startRadius = 0.0f;
+        float elapsed = 0.0f;
+        static constexpr float kDelay = 60.0f, kShrink = 180.0f, kFinal = 25.0f;
+        float Radius() const
+        {
+            const float t = std::clamp((elapsed - kDelay) / kShrink, 0.0f, 1.0f);
+            return startRadius + (kFinal - startRadius) * t;
+        }
+        bool Outside(Vector3 p) const { return active && std::hypot(p.x - center.x, p.z - center.y) > Radius(); }
+    };
+    ShrinkZone shrinkZone;
+    float zoneSendTimer = 0.0f, zoneDamageTimer = 0.0f;
+    void UpdateShrinkZone(float dt);
+    float battleGrace = 0.0f;
+    int weaponBeforeDown = -1; // унасан үед гар буу руу шилжүүлэхээс өмнөх зэвсэг
+    bool battleWasActive = false;
+    float PvpScale() const { return battleGrace > 0.0f ? 0.0f : kPvpDamageScale; }
     std::vector<ChatterSubject> chatterSubjects;
     std::vector<ChatterMemo> chatterMemo;
     float chatterCooldown[(int)VoiceLine::Count] = {};
@@ -550,6 +627,7 @@ private:
             float facing;
         };
         Sample samples[8] = {};
+        float targetAimPitch = 0.0f; // сүүлд ирсэн (aimPitch түүн рүү зөөлөн шилжинэ)
         int sampleCount = 0;
         float renderTime = -1.0f; // илгээгчийн цагаар харуулж буй мөч
     };
@@ -581,6 +659,10 @@ private:
     std::vector<RemoteFigure> hostSoldiers;
     Net::Snapshot guestView;        // зочин: хостын сүүлийн мэдээлэл (даалгаврын бичиг г.м.)
     float coopSendTimer = 0.0f;
+    float smoothFrameTime = 1.0f / 60.0f; // зөөлрүүлсэн кадрын хугацаа (Run)
+    // 1-р этгээд: зэвсэг солиход шинэ зэвсэг доороос өргөгдөнө (0 = дөнгөж солисон, 1 = бэлэн)
+    float weaponRaise = 1.0f;
+    int lastHeldItem = -1;
     bool waitingForReply = false;   // зочин: хүсэлт илгээгээд хүлээж байна
     bool characterSelectOpen = false; // даалгавар эхлэхийн өмнө 1-р дайчны дүр сонгох цонх
     int characterChoice = 0;
@@ -631,6 +713,21 @@ private:
         bool mine = false;
     };
     std::vector<ChatLine> chatLog;
+    // Тэмдэг (ping): X / хулганы дунд товч — харж буй цэгээ хамтрагчдаа заана (зомби, унаа, "энд ир")
+    struct PingMark
+    {
+        Vector3 position;
+        int kind = 0; // PingKind
+        float age = 0.0f;
+        bool mine = false;
+    };
+    std::vector<PingMark> pings;
+    float pingCooldown = 0.0f;
+    float pingTestTimer = 0.0f;
+    void HandlePingInput(float dt);
+    void AddPing(Vector3 position, int kind, bool mine);
+    void PlacePing(Vector3 position, int kind);
+    static const char* PingText(int kind, bool mine);
     bool chatOpen = false;
     std::string chatDraft;
     float chatTestTimer = 0.0f;

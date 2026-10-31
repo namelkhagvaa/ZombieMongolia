@@ -367,6 +367,7 @@ void Game::Run()
         }
         if (options.stance == 1) player.SetStance(Stance::Crouch);
         if (options.stance == 2) player.SetStance(Stance::Prone);
+        if (options.stance == 3) player.TakeDamage(player.Health() * 10.0f + 1000.0f); // туршилт: унасан
         if (options.hold >= 1 && options.hold <= arsenal.SlotCount())
         {
             arsenal.Select(arsenal.SlotWeapon(options.hold - 1));
@@ -496,8 +497,18 @@ void Game::Run()
             ++frame;
         }
 
-        // Цонх гацах үед (чирэх г.м.) том dt-ээс болж хана нэвтлэхээс сэргийлнэ.
-        const float dt = std::min(GetFrameTime(), 1.0f / 30.0f) * (benchmark ? options.timeScale : 1.0f);
+        // Кадрын хугацаа: жижиг савлагааг зөөлрүүлнэ (хөдөлгөөн тэгш, "чичрэхгүй"); огцом өөрчлөлтийг шууд авна.
+        // 20 FPS хүртэл бодит хурдаар (өмнө нь 30-аас доош FPS-д тоглоом бүхэлдээ удааширч, FPS хэлбэлзэхэд хурд нь
+        // хэлбэлздэг байв). Цонх гацах үед (чирэх г.м.) том dt-ээс болж хана нэвтлэхээс сэргийлж 1/20 с-ээр хязгаарлана.
+        {
+            const float raw = GetFrameTime();
+            if (raw > 0.0f)
+            {
+                if (raw > smoothFrameTime * 1.8f || raw < smoothFrameTime * 0.55f) smoothFrameTime = raw;
+                else smoothFrameTime += (raw - smoothFrameTime) * 0.3f;
+            }
+        }
+        const float dt = std::min(benchmark ? GetFrameTime() : smoothFrameTime, 1.0f / 20.0f) * (benchmark ? options.timeScale : 1.0f);
 
         // Мэдрэгчтэй дэлгэцийн товчлуурууд ба гар, хулганы оролтыг нэгтгэнэ.
         touchState = MakeTouchState();
@@ -714,6 +725,8 @@ void Game::Run()
             }
             else
             {
+                HandlePingInput(dt);
+                HandleAbilityInput(dt);
                 UpdateMission(dt);
             }
             break;
@@ -1203,6 +1216,9 @@ void Game::StartMission(int index, StageSave* stageOverride)
         world.SetBoundary(square);
     }
     missionKills = 0;
+    myStats = partnerStats = MatchStats{};
+    partnerStatsKnown = false;
+    lastHitShot = -1;
     inTown = false;
     medKitKills = 0;
     lastReward = 0;
@@ -1687,6 +1703,7 @@ void Game::UpdateDowned(float dt)
         if (humanRevive >= 3.0f)
         {
             humanRevive = 0.0f;
+            ++myStats.revives;
             net.SendRevive();
             if (!coopGuest)
             {
@@ -1819,11 +1836,17 @@ void Game::MarkHit(int kind)
     // Нэг буудалтад (бөөрөнцөг олон) нэг л дуу: хамгийн "хүчтэй" тэмдгийг үлдээнэ
     const bool fresh = hitMarker < 0.8f;
     if (fresh || kind > hitMarkerKind) hitMarkerKind = kind;
+    if (lastHitShot != myStats.shots)
+    {
+        lastHitShot = myStats.shots; // (бөөрөнцөг олон онсон ч нэг буудалт)
+        ++myStats.hits;
+    }
     hitMarker = 1.0f;
 }
 
 void Game::UpdateFeedback(float dt)
 {
+    weaponRaise = std::min(1.0f, weaponRaise + dt / 0.28f);
     hitMarker = std::max(0.0f, hitMarker - dt * 4.0f);
     damageArrow = std::max(0.0f, damageArrow - dt * 0.9f);
     // Цохиулсан: зүг (мэдэгдэж байвал), камер сэгсэрнэ
@@ -1945,7 +1968,7 @@ void Game::UpdateVehicleCombat(float dt)
     {
         if (remoteActive && guestFigure.alive && !(guestFigure.flags & Net::kRiding))
         {
-            ram(guestFigure.position, kGuestTarget, [&] { DamageGuest(-kRamShare); });
+            ram(guestFigure.position, kGuestTarget, [&] { if (!battleActive || battleGrace <= 0.0f) DamageGuest(-kRamShare); });
         }
         for (int i = 0; i < squad.Total(); ++i)
         {
@@ -2214,7 +2237,22 @@ HeldItem Game::HeldFor(WeaponType type) const
 
 void Game::UpdateShooting()
 {
-    if (player.IsDowned()) return; // унасан: буудахгүй
+    if (player.IsDowned())
+    {
+        // Унасан: зөвхөн гар буугаар (босгох хүртэл өөрийгөө хамгаална)
+        if (!arsenal.Has(WeaponType::Pistol)) return;
+        if (arsenal.Current() != WeaponType::Pistol)
+        {
+            weaponBeforeDown = (int)arsenal.Current();
+            arsenal.Select(WeaponType::Pistol);
+        }
+    }
+    else if (weaponBeforeDown >= 0)
+    {
+        // Босгогдсон: унахаас өмнөх зэвсэг рүүгээ
+        if (arsenal.Has((WeaponType)weaponBeforeDown)) arsenal.Select((WeaponType)weaponBeforeDown);
+        weaponBeforeDown = -1;
+    }
     if (player.IsTraversing() || player.IsSwimming())
     {
         return; // шат, цонхоор гарч байхдаа, сэлж байхдаа буудахгүй
@@ -2222,7 +2260,7 @@ void Game::UpdateShooting()
 
     // --- Зэвсэг сонгох. Дайчин: 1 хутга, 2 гар буу, 3 автомат, 4 үрлэн буу, 5 гранат.
     //     Мэргэн буудагч: 1 хутга, 2 гар буу, 3 дурантай буу. ---
-    for (int i = 0; i < arsenal.SlotCount(); ++i)
+    for (int i = 0; i < arsenal.SlotCount() && !player.IsDowned(); ++i)
     {
         if (InKeyPressed(KEY_ONE + i))
         {
@@ -2230,6 +2268,11 @@ void Game::UpdateShooting()
         }
     }
     player.SetHeld(HeldFor(arsenal.Current()));
+    if ((int)player.Held() != lastHeldItem)
+    {
+        if (lastHeldItem >= 0) weaponRaise = 0.0f;
+        lastHeldItem = (int)player.Held();
+    }
 
     if (InKeyPressed(KEY_R))
     {
@@ -2258,6 +2301,7 @@ void Game::UpdateShooting()
     {
         return;
     }
+    ++myStats.shots;
 
     // Онилгооны туяа: камераас дэлгэцийн төв рүү
     const Camera3D& cam = camera.Get();
@@ -2444,12 +2488,13 @@ void Game::FireGun(Ray aim, float cameraDistance)
             {
                 // Хаана оносноос: толгой 4, гэдэс 1.25, цээж, гар 1, хөл 0.75 дахин
                 const bool humanHead = zone == HitZone::Head;
-                const float damage = arsenal.Damage() * HitZoneMultiplier(zone);
+                // Тулаан: суурин пулемёт (хуягт машин, нисдэг тэрэг) хүнд хэт хүчтэй байсан тул хагас хохирол
+                const float damage = arsenal.Damage() * HitZoneMultiplier(zone) * (arsenal.Mounted() ? 0.5f : 1.0f);
                 if (options.screenshotPath) TraceLog(LOG_INFO, "HIT: player -> human %d zone %d damage %.1f at %.1f m", human, (int)zone, damage, humanDistance);
                 // (хүн хоорондын хохирол: зочны оноолтыг хост өсгөнө, хост өөрийнхийг энд)
                 if (coopGuest) net.SendHitHuman((uint32_t)human, damage);
-                else if (human == kGuestTarget) DamageGuest(damage * kPvpDamageScale);
-                else squad.Damage(human, damage * kPvpDamageScale);
+                else if (human == kGuestTarget) DamageGuest(damage * PvpScale());
+                else squad.Damage(human, damage * PvpScale());
                 const Vector3 at = Vector3Add(ray.position, Vector3Scale(ray.direction, humanDistance));
                 tracers.Add(muzzle, at, humanHead ? RED : YELLOW);
                 if (pellet == 0) localShotEnd = at;
@@ -2509,6 +2554,7 @@ void Game::FireGun(Ray aim, float cameraDistance)
             if (coopGuest) net.SendHit(horde.At(hit.index).id, hit.headshot ? headshot : arsenal.Damage(), hit.headshot);
             horde.Damage(hit.index, hit.headshot ? headshot : arsenal.Damage());
             MarkHit(horde.At(hit.index).health <= 0.0f ? 2 : hit.headshot ? 1 : 0);
+            if (hit.headshot && pellet == 0) ++myStats.headshots;
             particles.Blood(end, Vector3Negate(ray.direction), hit.headshot ? 14 : (spec.pellets > 1 ? 3 : 7));
             if (pellet == 0) Audio::Play(Sfx::Hit, end, hit.headshot ? 0.6f : 0.4f);
         }
@@ -2884,6 +2930,9 @@ void Game::UpdateSounds(float dt, float throttle)
         Audio::SetEngine(1, EngineSound::Off, 0.0f, 0.0f, view.position);
     }
     UpdateChatter(dt);
+    UpdateFeed(dt);
+    RecordHostHistory(dt);
+    UpdateShrinkZone(dt);
 }
 
 namespace
@@ -3077,7 +3126,7 @@ void Game::UpdateVehicles(float dt)
     // --- F: унаанд суух / буух, хаалга нээх / хаах ---
     ++missionFrame;
     const bool testUse = options.screenshotPath && options.useFrame > 0 && missionFrame == options.useFrame;
-    if (InKeyPressed(KEY_F) || testUse)
+    if ((InKeyPressed(KEY_F) && !player.IsDowned()) || testUse) // (унасан: мөлхөхөөс өөр юу ч хийхгүй)
     {
         if (garage.IsDriving() && garage.Airborne(garage.Driven()))
         {
@@ -4450,7 +4499,7 @@ void Game::UpdateMission(float dt)
     for (const HumanHit& hit : squad.TakeHumanHits())
     {
         TraceLog(LOG_INFO, "BATTLE: AI hit %d for %.0f", hit.id, hit.damage);
-        const float damage = hit.damage * kPvpDamageScale; // хүн хоорондын хохирол (Team.h)
+        const float damage = hit.damage * PvpScale(); // хүн хоорондын хохирол (Team.h); тулааны эхэнд 0
         if (hit.id == kHostTarget) player.TakeDamage(damage);
         else if (hit.id == kGuestTarget) DamageGuest(damage);
         else if (hit.id >= 0 && hit.id < squad.Total()) squad.Damage(hit.id, damage);
@@ -4604,7 +4653,7 @@ void Game::UpdateMission(float dt)
     }
 
     // --- Даалгаврууд: E товчоор объекттой харилцана (унаанаас буусан үед) ---
-    bool interact = InKeyPressed(KEY_E);
+    bool interact = InKeyPressed(KEY_E) && !player.IsDowned();
     if (options.screenshotPath && options.autoPlay)
     {
         interact = mission.AutoPlay(dt, world, player, horde) || interact; // туршилтын автомат тоглолт
@@ -4626,6 +4675,8 @@ void Game::UpdateMission(float dt)
     const bool autoStopped = options.autoPlay && options.stopAfter > 0 && mission.CompletedCount() >= options.stopAfter;
     if (!autoStopped)
     {
+        const RemoteFigure& partner = coopGuest ? hostFigure : guestFigure;
+        mission.SetPartner(net.Connected() && (coopGuest || remoteActive) && !battleActive && partner.alive, partner.position);
         mission.Update(dt, world, player, horde, squad, interact, RideVehicle() < 0);
     }
 
@@ -4703,7 +4754,12 @@ void Game::UpdateAirstrike(float dt)
         Save();
         if (Account::CurrentRoomRole() == Account::RoomRole::Host) Account::CompleteRoom(); // шагнал, өрөө хаагдана
         TraceLog(LOG_INFO, "STEP: stage_complete province %d", provinceIndex + 1);
-        if (net.Connected() && remoteActive) net.SendMissionWon(params.reward);
+        if (net.Connected() && remoteActive)
+        {
+            myStats.kills = missionKills;
+            SendMyStats();
+            net.SendMissionWon(params.reward);
+        }
         if (remoteActive && joinCoop && Account::Enabled()) SetNotice(TextFormat("ХАМТ ДАВЛАА! Хоёулаа +%d Gold", Account::CoopReward()), 5.0f);
         state = GameState::Won;
     }
@@ -5052,8 +5108,15 @@ void Game::DrawMissionScene() const
     world.DrawTransparent(view, material);
     if (!cinematic && camera.IsFirstPerson() && player.IsAlive() && !player.IsSwimming())
     {
+        // Зэвсэг солих: доороос өргөгдөнө (дэлгэцийн доош чиглэлд шилжүүлнэ)
+        const float lower = 0.22f * (1.0f - weaponRaise) * (1.0f - weaponRaise);
+        const Vector3 forward = Vector3Normalize(Vector3Subtract(view.target, view.position));
+        const Vector3 down = Vector3Negate(Vector3Normalize(Vector3CrossProduct(Vector3CrossProduct(forward, view.up), forward)));
+        rlPushMatrix();
+        rlTranslatef(down.x * lower, down.y * lower, down.z * lower);
         DrawViewModel(view, player.Held(), player.Recoil(), player.WalkPhase(), player.HorizontalSpeed() / config.walkSpeed,
                       player.ReloadProgress(), player.ActionProgress(), camera.AimBlend());
+        rlPopMatrix();
     }
     environment.End();
     movingHoles.clear();
@@ -5091,6 +5154,18 @@ void Game::CollectMapMarkers(std::vector<MapMarker>& out) const
     std::vector<Vector3> happenings;
     events.Markers(happenings);
     for (const Vector3& at : happenings) out.push_back({ at, MarkerKind::Event, -1, "Гэнэтийн үйл явдал", false });
+    {
+        // Унасан хамтрагч: хаана байгааг үргэлж (ойроос ч) заана
+        const RemoteFigure& other = coopGuest ? hostFigure : guestFigure;
+        if (net.Connected() && (coopGuest || remoteActive) && !battleActive && other.alive && (other.flags & Net::kDowned))
+            out.push_back({ other.position, MarkerKind::Rescue, kMarkerAlways, "Нөхрөө босго! (дэргэд нь зогс)", true });
+    }
+    if (shrinkZone.active && HorizontalDistance(player.Position(), { shrinkZone.center.x, 0.0f, shrinkZone.center.y }) > shrinkZone.Radius() * 0.75f)
+    {
+        const Vector3 at = { shrinkZone.center.x, world.GroundHeight(shrinkZone.center.x, shrinkZone.center.y), shrinkZone.center.y };
+        out.push_back({ at, MarkerKind::Defend, kMarkerAlways, "Аюулгүй бүсийн төв", false });
+    }
+    for (const PingMark& ping : pings) out.push_back({ ping.position, MarkerKind::Ping, -1, PingText(ping.kind, ping.mine), false });
 }
 
 void Game::DrawObjectiveGuides() const
@@ -5121,6 +5196,58 @@ void Game::DrawObjectiveGuides() const
             if (p.x < 0.0f || p.y < 0.0f || p.x > width || p.y > height) continue;
             const float radius = std::clamp(15.0f - d * 0.15f, 8.0f, 15.0f);
             DrawMarkerBadge(KindOf(def.type), p, radius, d < 4.0f ? 1.0f : 0.9f);
+            if (d < 8.0f && def.action && def.action[0])
+            {
+                // Ойртоход: юу хийхийг тэмдгийн доор ("E — Цэргийг аврах")
+                const char* text = InTouchMode() ? def.action : TextFormat("E \xE2\x80\x94 %s", def.action);
+                const int w = Ui::MeasureBold(text, 15);
+                const Rectangle pill = { p.x - (float)w * 0.5f - 8.0f, p.y + radius + 4.0f, (float)w + 16.0f, 22.0f };
+                DrawRectangleRounded(pill, 0.5f, 8, Fade({ 14, 16, 22, 255 }, 0.85f));
+                Ui::TextBold(text, (int)pill.x + 8, (int)pill.y + 3, 15, MarkerColor(KindOf(def.type)));
+            }
+        }
+    }
+
+    // 1б. Бүс цэвэрлэх, аварга: сүүлчийн цөөн зомби (8-аас бага) хаана байгааг улаан тэмдгээр (хананы цаанаас ч)
+    {
+        const int focus = mission.FocusObjective();
+        if (focus >= 0)
+        {
+            const ObjectiveDef& def = mission.Stage().objectives[(size_t)focus];
+            const ObjectiveState& objective = mission.State(focus);
+            const bool boss = def.type == ObjectiveType::DefeatBoss;
+            const int left = def.type == ObjectiveType::ClearZone ? mission.ZoneRemaining(focus) : boss ? 1 : -1;
+            if (left > 0 && (boss || (objective.reserve == 0 && left <= 8)))
+            {
+                for (int z = 0; z < horde.Count(); ++z)
+                {
+                    const Zombie& zombie = horde.At(z);
+                    if (!zombie.IsAlive() || zombie.zone != focus + 1 || (boss && !zombie.boss)) continue;
+                    if (HorizontalDistance(zombie.mover.position, objective.location) > objective.radius + 40.0f && !boss) continue;
+                    const Vector3 head = { zombie.mover.position.x, zombie.mover.position.y + (boss ? 5.0f : 2.4f), zombie.mover.position.z };
+                    if (Vector3DotProduct(Vector3Subtract(head, view.position), forward) <= 0.5f) continue;
+                    const Vector2 p = ViewWorldToScreen(head, view);
+                    if (p.x < 0.0f || p.y < 0.0f || p.x > width || p.y > height) continue;
+                    DrawMarkerBadge(boss ? MarkerKind::Boss : MarkerKind::Clear, p, boss ? 14.0f : 9.0f, 0.95f);
+                }
+            }
+        }
+    }
+
+    // 1в. Тагнуул (мэргэн буудагчийн чадвар): ойрын зомбинууд хананы цаанаас ч
+    if (scanTimer > 0.0f)
+    {
+        const float alpha = std::min(1.0f, scanTimer);
+        for (int z = 0; z < horde.Count(); ++z)
+        {
+            const Zombie& zombie = horde.At(z);
+            if (!zombie.IsAlive() || HorizontalDistance(zombie.mover.position, scanCenter) > kScanRadius) continue;
+            const Vector3 head = { zombie.mover.position.x, zombie.mover.position.y + (zombie.boss ? 5.0f : 2.1f), zombie.mover.position.z };
+            if (Vector3DotProduct(Vector3Subtract(head, view.position), forward) <= 0.5f) continue;
+            const Vector2 p = ViewWorldToScreen(head, view);
+            if (p.x < 0.0f || p.y < 0.0f || p.x > width || p.y > height) continue;
+            DrawCircleV(p, 5.0f, Fade({ 255, 70, 60, 255 }, 0.85f * alpha));
+            DrawRing(p, 6.0f, 8.0f, 0.0f, 360.0f, 16, Fade(BLACK, 0.5f * alpha));
         }
     }
 
@@ -5132,13 +5259,14 @@ void Game::DrawObjectiveGuides() const
     for (const MapMarker& marker : markers)
     {
         const float distance = HorizontalDistance(me, marker.position);
-        if (distance < 30.0f || (marker.objective < 0 && distance > 400.0f)) continue;
+        const bool ping = marker.kind == MarkerKind::Ping || marker.objective == kMarkerAlways;
+        if (!ping && (distance < 30.0f || (marker.objective < 0 && distance > 400.0f))) continue;
         const bool chosen = Vector2Distance(target, { marker.position.x, marker.position.z }) < 3.0f;
-        const Vector3 at = { marker.position.x, marker.position.y + 4.0f, marker.position.z };
+        const Vector3 at = { marker.position.x, marker.position.y + (ping ? 1.6f : 4.0f), marker.position.z };
         const bool behind = Vector3DotProduct(Vector3Subtract(at, view.position), forward) <= 0.0f;
         Vector2 p = ViewWorldToScreen(at, view);
         const bool inside = !behind && p.x > margin && p.y > margin && p.x < width - margin && p.y < height - margin;
-        const float radius = marker.focus || chosen ? 17.0f : 12.0f;
+        const float radius = marker.focus || chosen || ping ? 17.0f : 12.0f;
         const float alpha = marker.focus || chosen ? 1.0f : 0.8f;
         if (!inside)
         {
@@ -5159,7 +5287,7 @@ void Game::DrawObjectiveGuides() const
             if (cross < 0.0f) DrawTriangle(tip, b, c, arrow);
             else DrawTriangle(tip, c, b, arrow);
         }
-        if (chosen)
+        if (chosen || ping)
         {
             const float pulse = std::fmod((float)GetTime() * 0.9f, 1.0f);
             DrawRing(p, radius * (1.05f + 0.6f * pulse), radius * (1.2f + 0.6f * pulse), 0.0f, 360.0f, 32, Fade(WHITE, 0.8f * (1.0f - pulse)));
@@ -5170,7 +5298,7 @@ void Game::DrawObjectiveGuides() const
         const int mw = Ui::MeasureBold(meters, 15);
         Ui::TextBold(meters, (int)(p.x - (float)mw * 0.5f) + 1, (int)(p.y + radius + 4.0f) + 1, 15, Fade(BLACK, 0.6f * alpha));
         Ui::TextBold(meters, (int)(p.x - (float)mw * 0.5f), (int)(p.y + radius + 4.0f), 15, Fade(WHITE, alpha));
-        if ((marker.focus || chosen) && inside)
+        if ((marker.focus || chosen || ping) && inside)
         {
             const int tw = Ui::MeasureBold(marker.title, 15);
             const Rectangle pill = { p.x - (float)tw * 0.5f - 8.0f, p.y - radius - 28.0f, (float)tw + 16.0f, 22.0f };
@@ -5266,6 +5394,7 @@ void Game::DrawMission() const
     char objectiveText[200] = "";
     char objectiveDetail[120] = "";
     char objectiveNext[200] = "";
+    std::string objectiveHow;
     const int focus = mission.FocusObjective();
     if (focus >= 0)
     {
@@ -5279,7 +5408,8 @@ void Game::DrawMission() const
         info.objectiveDetail = objectiveDetail;
         const ObjectiveDef& focusDef = mission.Stage().objectives[(size_t)focus];
         info.objectiveKind = (int)KindOf(focusDef.type);
-        info.objectiveHint = focusDef.description;
+        objectiveHow = mission.HowTo(focus);
+        info.objectiveHint = objectiveHow.c_str();
         info.objectiveProgress = mission.ProgressFraction(focus);
         for (int i = 0; i < mission.ObjectiveCount(); ++i)
         {
@@ -5356,7 +5486,7 @@ void Game::DrawMission() const
         const float revive = squad.HostReviveProgress();
         info.banner = "УНАЛАА!";
         if (revive > 0.0f) std::snprintf(downText, sizeof(downText), "Нөхөр чинь босгож байна... %d%%", (int)(revive / 3.0f * 100.0f));
-        else std::snprintf(downText, sizeof(downText), "Нөхдөө хүлээ — %d сек дотор босгохгүй бол үхнэ", (int)std::ceil(player.DownTimeLeft()));
+        else std::snprintf(downText, sizeof(downText), "%d сек дотор босгохгүй бол үхнэ — мөлхөж нуугдаж, гар буугаар хамгаал", (int)std::ceil(player.DownTimeLeft()));
         info.subBanner = downText;
     }
     else if (state == GameState::Playing && humanRevive > 0.0f)
@@ -5501,6 +5631,7 @@ void Game::DrawMission() const
     mission.DrawBriefing();
     navigator.DrawHud(player.Position(), camera.Yaw());
     DrawCoopOverlay();
+    DrawFeed();
     DrawChat();
     DrawSeatChoice();
 
@@ -5729,24 +5860,72 @@ void Game::DrawMissionCompleted() const
         centered(line, 356, 26, text);
     }
 
+    // Тоглолтын үзүүлэлт (хамтдаа бол хоёулангийнх, MVP)
+    const int statsTop = Account::ServerShop() ? 396 : 362;
+    DrawMatchStats(statsTop);
+    const int nextY = statsTop + (partnerStatsKnown ? 112 : 84);
+
     // Дараагийн нээгдэх үе (зочинд: өөрийн аймаг нээгдээгүй тул)
     const int next = provinceIndex + 1;
     if (helpedHost)
     {
-        centered("Энэ аймагт өөрөө тоглох бол газрын зургаас нээнэ үү", 430, 24, { 150, 220, 150, 255 });
+        centered("Энэ аймагт өөрөө тоглох бол газрын зургаас нээнэ үү", nextY, 24, { 150, 220, 150, 255 });
     }
     else if (next < (int)Provinces().size())
     {
         std::snprintf(line, sizeof(line), "Дараагийн үе нээгдлээ: %s (%02d / %02d)", StageFor(next).provinceName, next + 1,
                       (int)Provinces().size());
-        centered(line, 430, 28, { 150, 220, 150, 255 });
+        centered(line, nextY, 28, { 150, 220, 150, 255 });
     }
     else
     {
-        centered("Монгол улс бүрэн чөлөөлөгдлөө!", 430, 30, { 150, 220, 150, 255 });
+        centered("Монгол улс бүрэн чөлөөлөгдлөө!", nextY, 30, { 150, 220, 150, 255 });
     }
 
-    centered(InTouchMode() ? "Товшиж газрын зураг руу буцна уу" : "ENTER — газрын зураг руу буцах", 520, 24, text);
+    centered(InTouchMode() ? "Товшиж газрын зураг руу буцна уу" : "ENTER — газрын зураг руу буцах", nextY + 64, 24, text);
+}
+
+void Game::SendMyStats()
+{
+    if (!net.Connected()) return;
+    net.SendStats(myStats.kills, myStats.headshots, myStats.revives, myStats.downs, myStats.Accuracy());
+}
+
+void Game::DrawMatchStats(int y) const
+{
+    // Хүснэгт: нэр | устгасан | толгойд | босгосон | унасан | оновчлол ; хамтдаа бол оноо ихтэй нь MVP
+    const float width = std::min(720.0f, (float)ViewWidth() - 40.0f);
+    const float left = ((float)ViewWidth() - width) * 0.5f;
+    const char* const headers[] = { "", "Устгасан", "Толгойд", "Босгосон", "Унасан", "Оновчлол" };
+    const float columns[] = { 0.0f, 0.34f, 0.48f, 0.62f, 0.76f, 0.90f };
+    const Color dim = { 170, 190, 175, 255 }, gold = { 250, 214, 70, 255 };
+    DrawRectangleRounded({ left, (float)y - 6.0f, width, partnerStatsKnown ? 96.0f : 68.0f }, 0.15f, 8, Fade(BLACK, 0.28f));
+    for (int c = 1; c < 6; ++c)
+    {
+        const int w = Ui::Measure(headers[c], 15);
+        Ui::Text(headers[c], (int)(left + width * columns[c]) - w / 2, y, 15, dim);
+    }
+    const std::string& otherName = coopGuest ? hostName : joinRequester;
+    const bool mvpMine = !partnerStatsKnown || myStats.Score() >= partnerStats.Score();
+    auto row = [&](const char* name, const MatchStats& s, int accuracy, bool mvp, int ry) {
+        Ui::TextBold(name, (int)left + 16, ry, 19, mvp && partnerStatsKnown ? gold : WHITE);
+        if (mvp && partnerStatsKnown)
+        {
+            const int w = Ui::MeasureBold(name, 19);
+            const Rectangle badge = { left + 24.0f + (float)w, (float)ry + 1.0f, 44.0f, 20.0f };
+            DrawRectangleRounded(badge, 0.5f, 6, gold);
+            Ui::TextBold("MVP", (int)badge.x + 7, (int)badge.y + 2, 15, { 30, 30, 20, 255 });
+        }
+        const int values[] = { 0, s.kills, s.headshots, s.revives, s.downs, accuracy };
+        for (int c = 1; c < 6; ++c)
+        {
+            const char* text = c == 5 ? TextFormat("%d%%", values[c]) : TextFormat("%d", values[c]);
+            const int w = Ui::MeasureBold(text, 19);
+            Ui::TextBold(text, (int)(left + width * columns[c]) - w / 2, ry, 19, WHITE);
+        }
+    };
+    row("Чи", myStats, myStats.Accuracy(), mvpMine, y + 26);
+    if (partnerStatsKnown) row(otherName.empty() ? "Найз" : otherName.c_str(), partnerStats, partnerStats.accuracy, !mvpMine, y + 56);
 }
 
 TouchState Game::MakeTouchState() const
@@ -6011,7 +6190,7 @@ void Game::UpdateRemoteFigure(RemoteFigure& figure, const Net::AvatarState& stat
     figure.target = state.position;
     figure.targetFacing = state.facing;
     figure.speed = state.speed;
-    figure.aimPitch = state.aimPitch;
+    figure.targetAimPitch = state.aimPitch;
     figure.held = state.held;
     figure.member = state.member;
     figure.skin = state.leaderSkin;
@@ -6028,7 +6207,9 @@ void Game::UpdateRemoteFigure(RemoteFigure& figure, const Net::AvatarState& stat
     }
     figure.aiming = (state.flags & Net::kAiming) != 0;
     figure.vehicle = (state.flags & Net::kRiding) ? state.vehicle : -1;
-    if (snap || Vector3Distance(figure.position, figure.target) > 6.0f)
+    // Үсрэлт: хурдтай явж буй (машин, нисдэг тэрэг) дүр хоцроосон байрлалаасаа хол байх нь хэвийн тул зайг хурдаар нэмнэ
+    // (өмнө нь 60 км/ц-ээс хурдан унааг кадр бүр "үсрүүлж" чичрүүлдэг байв)
+    if (snap || Vector3Distance(figure.position, figure.target) > 6.0f + Vector3Length(figure.velocity) * 0.5f)
     {
         figure.position = figure.target;
         figure.synced = false; // үсэрсэн (өөр цэрэг байж магадгүй): хуучин сумыг зурахгүй
@@ -6064,6 +6245,8 @@ void Game::ShowRemoteShots(RemoteFigure& figure, uint8_t shots, Vector3 shotEnd)
     particles.Flash(muzzle, direction);
     figure.recoil = 1.0f;
     figure.aimTimer = 1.2f;
+    // Хост: нөгөө тоглогчийн буун дуунд ч ойр орчмын зомби сэрнэ (тулаанд нууцаар явах, дайсныг зомби руу татах)
+    if (!coopGuest) horde.AlertAround(figure.position, 95.0f);
 }
 
 void Game::AdvanceRemoteFigure(RemoteFigure& figure, float dt) const
@@ -6116,6 +6299,7 @@ void Game::AdvanceRemoteFigure(RemoteFigure& figure, float dt) const
         figure.facing += std::remainder(figure.targetFacing - figure.facing, 2.0f * PI) * std::min(1.0f, 12.0f * dt);
     }
     figure.walk += dt * HumanoidGaitRate(figure.speed);
+    figure.aimPitch += (figure.targetAimPitch - figure.aimPitch) * std::min(1.0f, 14.0f * dt);
     figure.recoil = std::max(0.0f, figure.recoil - dt * 9.0f);
     figure.aimTimer = std::max(0.0f, figure.aimTimer - dt);
 }
@@ -6759,8 +6943,57 @@ void Game::UpdateNetwork(float dt)
                 if (!(amount == amount)) break; // NaN
                 amount = std::clamp(amount, -2100.0f, GuestHumanDamageCap());
                 if (amount < 0.0f) amount = std::max(amount, -0.5f);
-                else amount *= kPvpDamageScale; // хүн хоорондын хохирол (Team.h)
+                else amount *= PvpScale(); // хүн хоорондын хохирол (Team.h); тулааны эхэнд 0
                 const bool share = amount < 0.0f;
+                if (!share)
+                {
+                    // Зай, харагдах эсэх: зочны нүднээс байны цээж эсвэл толгой хүртэл хана, барилга байвал (хакердсан
+                    // тоглоом хананы цаанаас, газрын зургийн нөгөө үзүүрээс "онох") хүлээж авахгүй. Сүлжээний хоцрогдлоор
+                    // бай булангаас дөнгөж орсон байж болох тул цээж, толгой, хөлийн аль нэг нь харагдвал хангалттай.
+                    Vector3 target = player.Position();
+                    bool found = event.id == Net::kHostPlayer;
+                    if (!found)
+                    {
+                        if (const int index = squad.FindById((uint16_t)event.id); index >= 0)
+                        {
+                            target = squad.All()[(size_t)index].mover.position;
+                            found = true;
+                        }
+                    }
+                    if (!found) break;
+                    const Vector3 eye = Vector3Add(guestFigure.position, { 0.0f, 1.5f, 0.0f });
+                    // Хоцролтын нөхөлт: одоогийн ба сүүлийн 0.8 секундын байрлалууд (зочны дэлгэцэнд бай хоцорч харагдана)
+                    std::vector<Vector3> candidates = { target };
+                    for (const HistorySample& sample : hostHistory)
+                    {
+                        for (const auto& body : sample.bodies)
+                        {
+                            if (body.first == event.id) candidates.push_back(body.second);
+                        }
+                    }
+                    bool inRange = false, visible = false;
+                    for (const Vector3& at : candidates)
+                    {
+                        if (Vector3Distance(eye, at) > 360.0f) continue; // хамгийн холын буу (дурантай)-ны хүрэхээс хол
+                        inRange = true;
+                        visible = Vector3Distance(eye, at) < 3.0f;
+                        for (const float height : { 1.2f, 1.65f, 0.3f })
+                        {
+                            if (visible) break;
+                            const Vector3 point = Vector3Add(at, { 0.0f, height, 0.0f });
+                            const float span = Vector3Distance(eye, point);
+                            const Ray line = { eye, Vector3Scale(Vector3Subtract(point, eye), 1.0f / span) };
+                            visible = world.RayDistance(line, span) >= span - 1.2f;
+                        }
+                        if (visible) break;
+                    }
+                    if (!inRange) break;
+                    if (!visible)
+                    {
+                        TraceLog(LOG_WARNING, "COOP: rejected a guest hit on %u through a wall", (unsigned)event.id);
+                        break;
+                    }
+                }
                 if (event.id == Net::kHostPlayer) player.TakeDamage(share ? -amount * player.MaxHealth() : amount);
                 else if (const int index = squad.FindById((uint16_t)event.id); index >= 0)
                 {
@@ -6800,6 +7033,31 @@ void Game::UpdateNetwork(float dt)
                 if (state == GameState::Playing || state == GameState::Airstrike) ReturnToMap();
                 OpenEndDialog("ХОСТЫН БАГ ЯЛАГДЛАА", "Хамтын тоглолт дууслаа: хостын баг бүгд унав.", false);
             }
+            break;
+        case Net::Msg::Ping:
+            if (!battleActive) AddPing(event.position, (int)event.id, false);
+            break;
+        case Net::Msg::BattleZone:
+            if (coopGuest && battleActive)
+            {
+                const bool fresh = !shrinkZone.active;
+                shrinkZone.active = true;
+                shrinkZone.center = { event.position.x, event.position.z };
+                shrinkZone.startRadius = std::clamp(event.position.y, ShrinkZone::kFinal, 1000.0f);
+                if (fresh || std::fabs(shrinkZone.elapsed - event.amount) > 1.0f) shrinkZone.elapsed = std::max(0.0f, event.amount);
+                if (fresh) TraceLog(LOG_INFO, "BATTLE: shrinking zone received, radius %.0f", shrinkZone.startRadius);
+            }
+            break;
+        case Net::Msg::Ability:
+            if (!battleActive) ApplyAbility(event.province, event.position, event.id == 0xFFFF ? -1 : (int)event.id, false);
+            break;
+        case Net::Msg::Stats:
+            partnerStats.kills = (int)(event.id & 0xFFFF);
+            partnerStats.headshots = (int)(event.id >> 16);
+            partnerStats.revives = event.province & 0xFF;
+            partnerStats.downs = (event.province >> 8) & 0xFF;
+            partnerStats.accuracy = (event.province >> 16) & 0xFF;
+            partnerStatsKnown = true;
             break;
         case Net::Msg::Chat:
         {
@@ -6915,6 +7173,8 @@ void Game::UpdateNetwork(float dt)
                 // зомбины зоос л үлдэнэ). Өөрөө тоглох бол аймгийг өөрийн эрхээр нээнэ.
                 lastReward = 0;
                 helpedHost = true;
+                myStats.kills = missionKills;
+                SendMyStats();
                 Save();
                 state = GameState::Won;
                 // Хамт тоглолт: өрөөнөөс гарсан гэж мэдэгдэхгүй (хост дуусгахад сервер хоёуланд нь шагнал өгч өрөөг хаана)
@@ -7800,6 +8060,7 @@ void Game::UpdateCoopMission(float dt)
         }
         if (!remoteActive && !battleActive) guestTeamSpawned = false; // (тулааны дараа зочин гартал дахин үүсгэхгүй)
         squad.SetGuestLeader(remoteActive, guestFigure.position);
+        horde.SetHealthScale(remoteActive && !battleActive ? 1.4f : 1.0f); // хоёр тоглогчтой: зомби бат бөх
         stageSyncTimer -= dt;
         if (remoteActive && stageSyncTimer <= 0.0f)
         {
@@ -8903,12 +9164,422 @@ extern "C" void glDrawBuffersEXT(GLsizei count, const GLenum* buffers)
 }
 #endif
 
+// ---------------------------------------------------------------- Тулааны мэдээ (killfeed)
+
+void Game::UpdateShrinkZone(float dt)
+{
+    if (!battleActive || !net.Connected())
+    {
+        shrinkZone.active = false;
+        return;
+    }
+    if (!shrinkZone.active)
+    {
+        if (coopGuest) return; // (зочин хостоос авна)
+        // Зочны багийн байрлал ирсний дараа (эхний төлөв), хамгаалалтын хугацааны төгсгөлд
+        if (!guestTeamSpawned || !guestFigure.alive || battleGrace > 2.0f) return;
+        // Хоёр тоглогчийн дунд, хоёуланг нь багтаана
+        const Vector3 a = player.Position(), b = guestFigure.position;
+        shrinkZone.center = { (a.x + b.x) * 0.5f, (a.z + b.z) * 0.5f };
+        shrinkZone.startRadius = std::clamp(HorizontalDistance(a, b) * 0.5f + 120.0f, 150.0f, 420.0f);
+        shrinkZone.elapsed = 0.0f;
+        shrinkZone.active = true;
+        zoneSendTimer = 0.0f;
+        TraceLog(LOG_INFO, "BATTLE: shrinking zone at (%.0f, %.0f), radius %.0f", shrinkZone.center.x, shrinkZone.center.y, shrinkZone.startRadius);
+    }
+    shrinkZone.elapsed += dt;
+    if (coopGuest) return;
+
+    if ((zoneSendTimer -= dt) <= 0.0f)
+    {
+        zoneSendTimer = 2.0f;
+        net.SendBattleZone(shrinkZone.center, shrinkZone.startRadius, shrinkZone.elapsed);
+    }
+    // Гадна: секундэд амийн 4% (унасан хүн өөрийн хугацаагаар)
+    if ((zoneDamageTimer -= dt) > 0.0f) return;
+    zoneDamageTimer = 0.5f;
+    const float share = 0.02f;
+    if (player.IsAlive() && !player.IsDowned() && shrinkZone.Outside(player.Position()))
+        player.TakeDamage(share * player.MaxHealth() * kTeamToughness);
+    for (int i = 0; i < squad.Total(); ++i)
+    {
+        const Soldier& soldier = squad.All()[(size_t)i];
+        if (soldier.alive && !soldier.downed && soldier.member >= 0 && shrinkZone.Outside(soldier.mover.position))
+            squad.DamageFraction(i, share);
+    }
+    if (guestFigure.alive && !(guestFigure.flags & Net::kDowned) && shrinkZone.Outside(guestFigure.position))
+        DamageGuest(-share * kTeamToughness);
+}
+
+void Game::RecordHostHistory(float dt)
+{
+    if (coopGuest || !battleActive)
+    {
+        hostHistory.clear();
+        return;
+    }
+    historyTimer -= dt;
+    if (historyTimer > 0.0f) return;
+    historyTimer = 0.05f;
+    const float now = (float)GetTime();
+    HistorySample sample;
+    sample.time = now;
+    if (player.IsAlive()) sample.bodies.push_back({ Net::kHostPlayer, player.Position() });
+    for (const Soldier& soldier : squad.All())
+    {
+        if (soldier.alive && !soldier.guestTeam && soldier.member >= 0) sample.bodies.push_back({ soldier.id, soldier.mover.position });
+    }
+    hostHistory.push_back(std::move(sample));
+    while (!hostHistory.empty() && now - hostHistory.front().time > 0.8f) hostHistory.erase(hostHistory.begin());
+}
+
+void Game::PushFeed(const std::string& text, Color color)
+{
+    TraceLog(LOG_INFO, "FEED: %s", text.c_str());
+    feed.push_back({ text, color, 0.0f });
+    while (feed.size() > 5) feed.erase(feed.begin());
+}
+
+void Game::UpdateFeed(float dt)
+{
+    for (FeedLine& line : feed) line.age += dt;
+    feed.erase(std::remove_if(feed.begin(), feed.end(), [](const FeedLine& l) { return l.age > 7.0f; }), feed.end());
+
+    // Тулааны эхлэл: хамгаалалтын хугацаа
+    battleGrace = std::max(0.0f, battleGrace - dt);
+    if (battleActive && !battleWasActive)
+    {
+        battleGrace = 8.0f;
+        PushFeed("ТУЛААН ЭХЭЛЛЭЭ — 8 сек хамгаалалт: байраа эзэл!", { 255, 210, 90, 255 });
+    }
+    battleWasActive = battleActive;
+
+    const Color ownDown = { 255, 170, 70, 255 }, ownDead = { 255, 90, 80, 255 }, good = { 120, 225, 120, 255 };
+    const Color enemyDown = { 150, 210, 255, 255 };
+    const std::string& otherName = coopGuest ? hostName : joinRequester;
+    const std::string partner = otherName.empty() ? std::string("Найз") : otherName;
+
+    // Өөрөө
+    const bool selfDown = player.IsDowned(), selfAlive = player.IsAlive();
+    if (feedReady)
+    {
+        if (selfDown && !feedSelfDown)
+        {
+            PushFeed("Чи унав — нөхөд босгоно", ownDown);
+            ++myStats.downs;
+        }
+        if (!selfDown && feedSelfDown && selfAlive) PushFeed("Чи босгогдлоо", good);
+        if (!selfAlive && feedSelfAlive) PushFeed("Чи амь үрэгдэв", ownDead);
+    }
+    feedSelfDown = selfDown;
+    feedSelfAlive = selfAlive;
+
+    // Нөгөө тоглогч
+    const RemoteFigure& other = coopGuest ? hostFigure : guestFigure;
+    const bool present = net.Connected() && (coopGuest || remoteActive);
+    const bool otherAlive = present && other.alive, otherDown = otherAlive && (other.flags & Net::kDowned);
+    if (feedReady && present)
+    {
+        const Color down = battleActive ? enemyDown : ownDown, dead = battleActive ? good : ownDead;
+        const std::string who = battleActive ? "Дайсан " + partner : partner;
+        if (otherDown && !feedOtherDown) PushFeed(who + " унав", down);
+        if (!otherDown && feedOtherDown && otherAlive) PushFeed(who + " босгогдлоо", battleActive ? ownDown : good);
+        if (!otherAlive && feedOtherAlive) PushFeed(who + " амь үрэгдэв", dead);
+    }
+    feedOtherDown = otherDown;
+    feedOtherAlive = otherAlive;
+    myStats.kills = missionKills;
+    if (present && (statsSendTimer -= dt) <= 0.0f)
+    {
+        statsSendTimer = 4.0f;
+        SendMyStats();
+    }
+
+    // Багийн дайчид (хоёр тал): id-аар нь өмнөх төлөвтэй харьцуулна
+    struct Now
+    {
+        uint16_t id;
+        int member;
+        bool mine, alive, downed;
+    };
+    std::vector<Now> now;
+    if (coopGuest)
+    {
+        for (const Net::SoldierState& s : guestView.soldiers) now.push_back({ s.id, s.member, s.guest != 0, s.alive != 0, s.alive == 2 });
+    }
+    else
+    {
+        for (const Soldier& s : squad.All()) now.push_back({ s.id, s.member, !s.guestTeam, s.alive, s.downed });
+    }
+    std::vector<FeedMemo> next;
+    next.reserve(now.size());
+    for (const Now& s : now)
+    {
+        const auto memo = std::find_if(feedMemo.begin(), feedMemo.end(), [&](const FeedMemo& m) { return m.id == s.id; });
+        // (тулаангүй үед элсүүлсэн жирийн цэргүүдийг бичихгүй — хэт олон)
+        if (feedReady && memo != feedMemo.end() && (s.member >= 0 || battleActive))
+        {
+            const bool enemy = battleActive && !s.mine;
+            std::string name = s.member >= 0 ? TeamMemberName(s.member) : "Цэрэг";
+            if (enemy) name = "Дайсны " + name;
+            else if (!s.mine) name = partner + ": " + name;
+            if (s.alive && s.downed && !memo->downed) PushFeed(name + " унав", enemy ? enemyDown : ownDown);
+            else if (s.alive && !s.downed && memo->downed) PushFeed(name + " босгогдлоо", enemy ? ownDown : good);
+            else if (!s.alive && memo->alive) PushFeed(name + " амь үрэгдэв", enemy ? good : ownDead);
+        }
+        next.push_back({ s.id, s.alive, s.downed });
+    }
+    feedMemo.swap(next);
+    feedReady = state == GameState::Playing;
+}
+
+void Game::DrawFeed() const
+{
+    float y = (float)ViewHeight() * 0.36f;
+    const float right = (float)ViewWidth() - 96.0f; // (ирмэгийн даалгаврын тэмдгүүдээс дотогш)
+    if (battleActive && battleGrace > 0.0f)
+    {
+        const char* text = TextFormat("ХАМГААЛАЛТ  %d", (int)std::ceil(battleGrace));
+        const int w = Ui::MeasureBold(text, 20);
+        const Rectangle pill = { (float)ViewWidth() * 0.5f - (float)w * 0.5f - 14.0f, 184.0f, (float)w + 28.0f, 32.0f };
+        DrawRectangleRounded(pill, 0.5f, 8, Fade({ 14, 16, 22, 255 }, 0.85f));
+        Ui::TextBold(text, (int)pill.x + 14, (int)pill.y + 6, 20, { 255, 210, 90, 255 });
+    }
+    else if (shrinkZone.active && state == GameState::Playing)
+    {
+        // Хумигдах бүс: үлдсэн хугацаа / радиус; гадна бол улаан анхааруулга
+        const bool outside = shrinkZone.Outside(player.Position()) && player.IsAlive();
+        const float wait = ShrinkZone::kDelay - shrinkZone.elapsed;
+        const int distance = (int)HorizontalDistance(player.Position(), { shrinkZone.center.x, 0.0f, shrinkZone.center.y });
+        const char* text = outside ? TextFormat("БҮСЭЭС ГАДУУР — буцаж ор! (%d м)", distance - (int)shrinkZone.Radius())
+                           : wait > 0.0f ? TextFormat("Бүс %d сек дараа хумигдана  ·  %d м", (int)std::ceil(wait), (int)shrinkZone.Radius())
+                                         : TextFormat("Бүс хумигдаж байна  ·  %d м", (int)shrinkZone.Radius());
+        const Color color = outside ? Color{ 255, 90, 80, 255 } : Color{ 255, 210, 90, 255 };
+        const int w = Ui::MeasureBold(text, 18);
+        const Rectangle pill = { (float)ViewWidth() * 0.5f - (float)w * 0.5f - 14.0f, 184.0f, (float)w + 28.0f, 30.0f };
+        DrawRectangleRounded(pill, 0.5f, 8, Fade({ 14, 16, 22, 255 }, 0.85f));
+        Ui::TextBold(text, (int)pill.x + 14, (int)pill.y + 5, 18, color);
+        if (outside)
+        {
+            const float pulse = 0.18f + 0.1f * std::sin((float)GetTime() * 5.0f);
+            const int vw = ViewWidth(), vh = ViewHeight();
+            DrawRectangleGradientV(0, 0, vw, vh / 5, Fade(RED, pulse), BLANK);
+            DrawRectangleGradientV(0, vh - vh / 5, vw, vh / 5, BLANK, Fade(RED, pulse));
+        }
+    }
+    if (state == GameState::Playing && !InTouchMode() && !camera.IsScoped())
+    {
+        // Тусгай чадварын бэлэн эсэх: зэвсгийн самбарын дээр
+        const int kind = std::clamp(activeMember, 0, 2);
+        const bool ready = abilityCooldown[kind] <= 0.0f;
+        const char* text = ready ? TextFormat("U \xE2\x80\x94 %s", AbilityName(kind))
+                                 : TextFormat("%s  %d", AbilityName(kind), (int)std::ceil(abilityCooldown[kind]));
+        const int w = Ui::MeasureBold(text, 15);
+        const Rectangle r = { (float)ViewWidth() - (float)w - 36.0f, (float)ViewHeight() - 326.0f, (float)w + 20.0f, 24.0f };
+        DrawRectangleRounded(r, 0.4f, 6, Fade({ 14, 16, 22, 255 }, 0.75f));
+        if (!ready)
+        {
+            const float part = 1.0f - abilityCooldown[kind] / kAbilityCooldown[kind];
+            DrawRectangleRec({ r.x + 6.0f, r.y + r.height - 4.0f, (r.width - 12.0f) * part, 2.0f }, { 150, 210, 255, 200 });
+        }
+        Ui::TextBold(text, (int)r.x + 10, (int)r.y + 4, 15, ready ? Color{ 150, 230, 150, 255 } : Ui::kTextDim);
+    }
+    for (const FeedLine& line : feed)
+    {
+        const float alpha = std::clamp(7.0f - line.age, 0.0f, 1.0f);
+        const int w = Ui::MeasureBold(line.text.c_str(), 15);
+        const Rectangle r = { right - (float)w - 20.0f, y, (float)w + 20.0f, 24.0f };
+        DrawRectangleRounded(r, 0.4f, 6, Fade({ 14, 16, 22, 255 }, 0.78f * alpha));
+        DrawRectangleRec({ r.x + r.width - 4.0f, r.y + 4.0f, 3.0f, r.height - 8.0f }, Fade(line.color, alpha));
+        Ui::TextBold(line.text.c_str(), (int)r.x + 8, (int)r.y + 4, 15, Fade(line.color, alpha));
+        y += 28.0f;
+    }
+}
+
+// ---------------------------------------------------------------- Дүрийн тусгай чадвар
+
+const char* Game::AbilityName(int kind)
+{
+    switch (kind)
+    {
+    case 0: return "Сум түгээх";
+    case 1: return "Унаа засах";
+    default: return "Тагнуул";
+    }
+}
+
+void Game::HandleAbilityInput(float dt)
+{
+    for (float& wait : abilityCooldown) wait = std::max(0.0f, wait - dt);
+    scanTimer = std::max(0.0f, scanTimer - dt);
+    const bool test = options.screenshotPath && std::getenv("ZM_ABILITY") && missionFrame == 60; // туршилт
+    if ((!InKeyPressed(KEY_U) && !test) || !player.IsAlive() || player.IsDowned()) return;
+    const int kind = std::clamp(activeMember, 0, 2);
+    if (abilityCooldown[kind] > 0.0f)
+    {
+        SetNotice(TextFormat("%s: %d сек хүлээнэ", AbilityName(kind), (int)std::ceil(abilityCooldown[kind])), 1.5f);
+        return;
+    }
+    int vehicle = -1;
+    if (kind == 1)
+    {
+        vehicle = garage.IsDriving() ? garage.Driven() : garage.Nearest(player.Position(), 7.0f);
+        if (vehicle < 0 || garage.At(vehicle).wrecked)
+        {
+            SetNotice("Унаа засах: эвдэрсэн унааны дэргэд (7 м) очно уу", 2.0f);
+            return;
+        }
+        const Vehicle& car = garage.At(vehicle);
+        if (car.health >= SpecFor(car.type).maxHealth - 0.5f && car.flatTires == 0)
+        {
+            SetNotice("Энэ унаа бүрэн бүтэн байна", 1.5f);
+            return;
+        }
+    }
+    abilityCooldown[kind] = kAbilityCooldown[kind];
+    ApplyAbility(kind, player.Position(), vehicle, true);
+    if (net.Connected() && (coopGuest || remoteActive) && !battleActive) net.SendAbility(kind, player.Position(), vehicle);
+}
+
+void Game::ApplyAbility(int kind, Vector3 position, int vehicle, bool mine)
+{
+    const std::string& otherName = coopGuest ? hostName : joinRequester;
+    const std::string who = mine ? std::string("Чи") : (otherName.empty() ? std::string("Найз") : otherName);
+    switch (kind)
+    {
+    case 0:
+        // Сум түгээх: өөртөө ба ойрын нөхөрт нөөц сум, гранат
+        if (mine || HorizontalDistance(player.Position(), position) < kAbilityRange)
+        {
+            ammoReserve += 150;
+            arsenal.AddGrenades(1);
+            Audio::Play(Sfx::Reload, player.Position(), 0.8f);
+            SetNotice(mine ? "СУМ ТҮГЭЭЛЭЭ: +150 сум, +1 гранат (ойрын нөхөрт ч)" : who + " сум өглөө: +150 сум, +1 гранат", 2.5f);
+        }
+        PushFeed(who + ": сум түгээв", { 120, 225, 120, 255 });
+        break;
+    case 1:
+        if (vehicle >= 0 && vehicle < garage.Count())
+        {
+            garage.Repair(vehicle, SpecFor(garage.At(vehicle).type).maxHealth * 0.5f);
+            Audio::Play(Sfx::Reload, garage.At(vehicle).position, 0.8f, 0.7f);
+            if (mine) SetNotice("УНАА ЗАСЛАА: +50% бат бөх, дугуй сольсон", 2.5f);
+        }
+        PushFeed(who + ": унаа засав", { 120, 225, 120, 255 });
+        break;
+    default:
+        // Тагнуул: ойрын зомбинууд 10 секунд хананы цаанаас ч харагдана (хоёр тоглогчид)
+        scanTimer = kScanTime;
+        scanCenter = position;
+        Audio::Play(Sfx::Marker, player.Position(), 0.8f, 0.7f);
+        if (mine) SetNotice("ТАГНУУЛ: ойрын зомбинууд 10 сек тэмдэглэгдлээ", 2.5f);
+        PushFeed(who + ": тагнуул — зомбинууд тэмдэглэгдэв", { 150, 210, 255, 255 });
+        break;
+    }
+}
+
+// ---------------------------------------------------------------- Тэмдэг (ping)
+
+namespace
+{
+    enum PingKind { kPingHere = 0, kPingZombie, kPingVehicle, kPingMe, kPingKindCount };
+    constexpr float kPingLife = 10.0f;
+    constexpr size_t kPingMax = 4; // нэг тал бүрийн зэрэг харагдах тэмдэг
+}
+
+const char* Game::PingText(int kind, bool mine)
+{
+    switch (kind)
+    {
+    case kPingZombie: return mine ? "Зомби (би)" : "Зомби!";
+    case kPingVehicle: return mine ? "Унаа (би)" : "Унаа энд";
+    case kPingMe: return mine ? "Би энд" : "Найз энд байна";
+    default: return mine ? "Энд (би)" : "Энд ир!";
+    }
+}
+
+void Game::AddPing(Vector3 position, int kind, bool mine)
+{
+    if (kind < 0 || kind >= kPingKindCount) kind = kPingHere;
+    // Нэг талын хуучин тэмдгүүд: хэт олон бол хамгийн хуучныг арилгана
+    size_t own = 0;
+    for (const PingMark& ping : pings) own += ping.mine == mine ? 1 : 0;
+    if (own >= kPingMax)
+    {
+        for (size_t i = 0; i < pings.size(); ++i)
+        {
+            if (pings[i].mine != mine) continue;
+            pings.erase(pings.begin() + (long)i);
+            break;
+        }
+    }
+    pings.push_back({ position, kind, 0.0f, mine });
+    Audio::Play(Sfx::Marker, player.Position(), mine ? 0.45f : 0.8f, kind == kPingZombie ? 0.9f : 1.6f);
+    if (!mine)
+    {
+        const std::string& who = coopGuest ? hostName : joinRequester;
+        const int meters = (int)HorizontalDistance(player.Position(), position);
+        AddChatLine((who.empty() ? std::string("Найз") : who) + ": " + PingText(kind, false) + " (" + std::to_string(meters) + " м)", false);
+    }
+}
+
+void Game::PlacePing(Vector3 position, int kind)
+{
+    AddPing(position, kind, true);
+    if (net.Connected() && !battleActive) net.SendPing(kind, position);
+}
+
+void Game::HandlePingInput(float dt)
+{
+    pingCooldown = std::max(0.0f, pingCooldown - dt);
+    for (PingMark& ping : pings) ping.age += dt;
+    pings.erase(std::remove_if(pings.begin(), pings.end(), [](const PingMark& p) { return p.age > kPingLife; }), pings.end());
+    if (pingCooldown > 0.0f || camera.IsScoped()) return;
+    bool test = false;
+    if (options.ping && (pingTestTimer += dt) > 2.0f)
+    {
+        test = true;
+        options.ping = false;
+    }
+    if (!test && !InKeyPressed(KEY_X) && !InMousePressed(MOUSE_BUTTON_MIDDLE)) return;
+
+    // Харж буй цэг (дэлгэцийн төв): эхлээд зомби, дараа нь унаа, эс бөгөөс газар / хана
+    const Camera3D& view = camera.Get();
+    const Ray ray = { view.position, Vector3Normalize(Vector3Subtract(view.target, view.position)) };
+    const float reach = 320.0f;
+    float distance = world.RayDistance(ray, reach);
+    int kind = kPingHere;
+    Vector3 at = Vector3Add(ray.position, Vector3Scale(ray.direction, std::max(0.0f, distance - 0.3f)));
+    const ZombieHit hit = horde.Raycast(ray, 0.5f, distance);
+    float vehicleDistance = 0.0f;
+    const int vehicle = garage.Raycast(ray, 0.5f, distance, -1, -1, vehicleDistance);
+    if (hit.index >= 0 && (vehicle < 0 || hit.distance < vehicleDistance))
+    {
+        kind = kPingZombie;
+        at = horde.At(hit.index).mover.position;
+    }
+    else if (vehicle >= 0)
+    {
+        kind = kPingVehicle;
+        at = Vector3Add(ray.position, Vector3Scale(ray.direction, vehicleDistance));
+    }
+    else if (distance >= reach - 0.01f)
+    {
+        return; // тэнгэр рүү: юу ч заахгүй
+    }
+    PlacePing(at, kind);
+    pingCooldown = 0.5f;
+}
+
 // ---------------------------------------------------------------- Чат (хамтарсан тоглолт)
 
 namespace
 {
-    const char* const kChatPhrases[] = { "Над руу ир!", "Тусламж хэрэгтэй!", "Нисдэг тэрэг рүү оч", "Хүлээж бай", "Явцгаая!", "Баярлалаа" };
-    constexpr int kChatPhraseCount = 6;
+    // Сүүлчийнх нь бичвэр биш: өөрийн байршлыг тэмдэглэнэ (утсан дээр X товчгүй тул)
+    const char* const kChatPhrases[] = { "Над руу ир!", "Тусламж хэрэгтэй!", "Сум дууслаа!", "Зомби олон байна!", "Намайг хамгаал!",
+                                         "Хүлээж бай", "Явцгаая!", "Баярлалаа", "Миний байршил" };
+    constexpr int kChatPhraseCount = 9;
+    constexpr int kChatPhraseLocation = 8;
     const int kChatField = 40;          // утасны гарын <input> (WebFieldPlace): нэвтрэх цонхны талбаруудаас тусдаа
     const float kChatLineTime = 14.0f;  // мессеж ийм удаан харагдана
     const size_t kChatMaxBytes = 200;   // (Net: SendChat)
@@ -9050,7 +9721,8 @@ bool Game::UpdateChat(float dt)
         for (int i = 0; i < kChatPhraseCount; ++i)
         {
             if (!CheckCollisionPointRec(pointer, ChatPhraseRect(i))) continue;
-            SendChatLine(kChatPhrases[i]);
+            if (i == kChatPhraseLocation) PlacePing(player.Position(), kPingMe);
+            else SendChatLine(kChatPhrases[i]);
             CloseChat();
             return true;
         }
@@ -9091,7 +9763,7 @@ void Game::DrawChat() const
         }
     }
     if (!ChatAvailable()) return;
-    if (!touch && !chatOpen) Ui::Text("Enter — чат", 18, (int)y + 2, 13, Fade(Ui::kTextDim, 0.7f));
+    if (!touch && !chatOpen) Ui::Text(battleActive ? "Enter — чат" : "Enter — чат  ·  X — тэмдэг", 18, (int)y + 2, 13, Fade(Ui::kTextDim, 0.7f));
     if (touch)
     {
         const Rectangle button = ChatButtonRect();

@@ -56,6 +56,12 @@ public:
     void BindSave(StageSave& stageSave) { save = &stageSave; }
 
     // interactPressed: E товч дарагдсан эсэх. onFoot: тоглогч явган (унаанаас харилцаж болохгүй).
+    // Хамтарсан тоглолт: нөгөө тоглогчийн байрлал (бүс, хүрэх газар, хамгаалагчдын тооцоонд)
+    void SetPartner(bool present, Vector3 position)
+    {
+        partnerPresent = present;
+        partnerPosition = position;
+    }
     void Update(float dt, World& world, Player& player, ZombieHorde& horde, SoldierSquad& squad, bool interactPressed,
                 bool onFoot);
 
@@ -96,6 +102,10 @@ public:
     int CompletedCount() const;
     int FocusObjective() const;                  // одоо хийх ёстой (эхний идэвхтэй) даалгавар; -1 = байхгүй
     std::string ProgressText(int index) const;   // "2 / 3", "45 / 60 сек" гэх мэт; явцгүй төрөлд хоосон
+    // Юу хийхийг нэг мөрөөр ("Хүмүүсийн дэргэд очиж E дар", "Үлдсэн 12 зомбийг устга"): HUD-ийн картад
+    std::string HowTo(int index) const;
+    // Бүс цэвэрлэх / аварга: устгах ёстой үлдсэн зомби (нөөц + бүсийн ойролцоох амьд); бусад төрөлд -1
+    int ZoneRemaining(int index) const;
     float DistanceTo(int index, Vector3 from) const;
 
     const char* Prompt() const { return prompt.empty() ? nullptr : prompt.c_str(); } // "E — Генератор асаах"
@@ -135,6 +145,8 @@ public:
     bool AutoPlay(float dt, const World& world, Player& player, ZombieHorde& horde);
 
 private:
+    bool partnerPresent = false;
+    Vector3 partnerPosition = { 0.0f, 0.0f, 0.0f };
     void Activate(int index);
     void Complete(int index);
     void PushBanner(int objective, bool completed);
@@ -159,6 +171,7 @@ private:
     int aliveSmall = 0;     // одоо амьд байгаа (frame бүрд шинэчлэгдэнэ)
     int aliveBig = 0;
     int alivePool[kHordePools][2] = {}; // даалгавар бүрийн нөөцөөс одоо амьд: [0] жижиг, [1] том
+    std::vector<int> zoneNear;          // даалгавар бүрийн бүсийн ойролцоох амьд зомби (UpdateZone)
     int guardedObjective = -1;
 
     std::string prompt;

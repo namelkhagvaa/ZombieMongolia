@@ -18,6 +18,8 @@ void ThirdPersonCamera::Snap(Vector3 playerFeet)
 {
     follow = playerFeet;
     hasFollow = true;
+    smoothClip = -1.0f;
+    eyeReady = false;
 }
 
 void ThirdPersonCamera::SetView(float newYaw, float newPitch)
@@ -103,6 +105,11 @@ void ThirdPersonCamera::Update(float dt, const GameConfig& config, const World& 
     float clipped = world.ClipDistance(target, back, wanted);
     // Унаа жолоодож байхад камер унааны их бие дотор орохгүй (ард нь толгод байсан ч)
     if (riding) clipped = std::max(clipped, std::min(wanted, 2.0f + rideDistance * 0.7f));
+    // Саад гарвал шууд ойртоно (хананы цаанаас харахгүй), саад арилахад аажим буцна (модны дэргэдүүр гүйхэд
+    // камер урагш хойш "цохилохгүй")
+    if (smoothClip < 0.0f || clipped < smoothClip) smoothClip = clipped;
+    else smoothClip += (clipped - smoothClip) * (1.0f - std::exp(-5.0f * dt));
+    clipped = smoothClip;
 
     camera.target = target;
     camera.position = Vector3Add(target, Vector3Scale(back, clipped));
@@ -112,11 +119,22 @@ void ThirdPersonCamera::Update(float dt, const GameConfig& config, const World& 
     camera.position.y = std::max(camera.position.y, ground + 0.35f);
     camera.fovy = Lerp(config.cameraFovY, config.aimFovY, aimBlend);
 
+    // Нүдний өндөр: шатаар өгсөх, бартаатай газар алхахад жижиг үсрэлтийг зөөлрүүлнэ (0.35 м-ээс их хоцрохгүй)
+    {
+        const float wantedEye = playerFeet.y - targetDrop;
+        if (!eyeReady)
+        {
+            eyeLift = wantedEye;
+            eyeReady = true;
+        }
+        eyeLift += (wantedEye - eyeLift) * (1.0f - std::exp(-18.0f * dt));
+        eyeLift = std::clamp(eyeLift, wantedEye - 0.35f, wantedEye + 0.35f);
+    }
     if (firstPerson && !IsScoped())
     {
         // 1-р этгээд: нүдний түвшнээс харна; онилоход (баруун товч) бага зэрэг томруулна.
         const Vector3 forward = Vector3Negate(back);
-        const Vector3 eye = { playerFeet.x, playerFeet.y + 1.66f - targetDrop, playerFeet.z };
+        const Vector3 eye = { playerFeet.x, eyeLift + 1.66f, playerFeet.z };
         camera.position = Vector3Add(eye, Vector3Scale(forward, 0.08f));
         camera.target = Vector3Add(camera.position, Vector3Scale(forward, 10.0f));
         camera.fovy = Lerp(config.cameraFovY + 8.0f, config.aimFovY + 6.0f, aimBlend);
@@ -126,7 +144,7 @@ void ThirdPersonCamera::Update(float dt, const GameConfig& config, const World& 
     {
         // Дуран хараа: нүдний түвшнээс шууд урагш харна (тоглогчийн биеийг зурахгүй).
         const Vector3 forward = Vector3Negate(back);
-        const Vector3 eye = { playerFeet.x, playerFeet.y + 1.72f - targetDrop, playerFeet.z };
+        const Vector3 eye = { playerFeet.x, eyeLift + 1.72f, playerFeet.z };
         camera.position = Vector3Add(eye, Vector3Scale(forward, 0.3f));
         camera.target = Vector3Add(camera.position, Vector3Scale(forward, 10.0f));
         camera.fovy = config.scopeFovY / (float)scopeZoom;

@@ -783,7 +783,12 @@ def join_room(player, device_id, ip, protocol=0, room_id=None):
                 raise GameError("room_gone", "Энэ өрөөнд орох боломжгүй боллоо (өөр тоглогч орсон эсвэл хаагдсан). "
                                              "Жагсаалтаа шинэчилнэ үү", 404)
         else:
-            room = rooms.order_by("created").first()
+            # Хүрээн доторх өрөөнүүдээс зэрэг нь хамгийн ойр хосттой (тэнцвэл хамгийн эртний) өрөө
+            level = rank_level(locked.xp)
+            ids = list(rooms.order_by("created").values_list("pk", flat=True)[:50])
+            hosts = dict(Room.objects.filter(pk__in=ids).values_list("pk", "host__xp"))
+            best = min(ids, key=lambda pk: abs(rank_level(hosts.get(pk, 0)) - level), default=None)
+            room = rooms.filter(pk=best).first() if best is not None else None
         if room is None:
             other_rank = (Room.objects.filter(status=Room.OPEN, pvp=True, guest__isnull=True,
                                               host_seen__gte=timezone.now() - ROOM_JOINABLE, protocol=_protocol(protocol))
