@@ -29,8 +29,13 @@ bool HasVehicleModel(VehicleModelId id);
 // steer -1..1. depth != nullptr бол сүүдрийн зурагт тэр материалаар зурна. tint нь эвдрэлийн бараан өнгө.
 // rotor: нисдэг тэрэгний сэнсний эргэлт (радиан; сүүлний сэнс 5 дахин хурдан).
 // rotor: kind 3 хэсгийн босоо тэнхлэгийн эргэлт (сэнс, хуягт машины пулемёт), pitch: kind 3-ыг дээш (+) доош хазайлгана
+// flatMask: хагарсан дугуйнууд (VehicleModelWheels-ийн дарааллаар бит): хавтгайрч (босоогоор шахагдаж) зурагдана.
 void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Material* depth, Color tint, float rotor = 0.0f,
-                      float pitch = 0.0f);
+                      float pitch = 0.0f, unsigned int flatMask = 0);
+// Дугуй бүрийн төв (загварын орон зайд, файлд байгаа дарааллаар; y нь радиус). Тоог буцаана (max хүртэл).
+int VehicleModelWheels(VehicleModelId id, Vector3* centers, int max);
+// Их биеийн (дугуй, сэнсгүй) mesh-д орон нутгийн туяа тусах эсэх: зай ба гадаргуугийн normal (сумны ором)
+bool RaycastVehicleModel(VehicleModelId id, Ray local, float maxDistance, float& distance, Vector3& normal);
 float VehicleModelWheelRadius(VehicleModelId id);
 // kind төрлийн эхний хэсгийн эргэх төв (м; байхгүй бол 0): 3 үндсэн сэнсний тэнхлэг, 4 сүүлний сэнс
 Vector3 VehicleModelPivot(VehicleModelId id, unsigned int kind);
@@ -58,6 +63,8 @@ enum class SceneryModelId
     Saxaul,     // заг (trees/saxaul)
     OldBarrel,  // зэвэрсэн хоосон торх (pooshig/barrel_old)
     FuelBarrel, // бензинтэй улаан торх (pooshig/barrel_fuel)
+    Chinggis,   // Засгийн газрын ордны урд суугаа Чингис хаан (monuments/chinggis; урд тал +Z, хөшөөний суурьтай)
+    Sukhbaatar, // Сүхбаатарын талбайн голын морьт хөшөө (monuments/sukhbaatar; шат, арслан, хадан суурьтай бүтнээрээ)
     Count
 };
 

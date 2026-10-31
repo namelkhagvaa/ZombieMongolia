@@ -67,11 +67,14 @@ void Grenades::Update(float dt, const World& world, ZombieHorde& horde, Player& 
             }
             grenade.position = Vector3Add(grenade.position, Vector3Scale(ray.direction, travel));
 
+            // Ард нь гэрэлтэх дөл (кадр бүр), цагаан утааны мөр
+            const Vector3 tail = Vector3Subtract(grenade.position, Vector3Scale(ray.direction, 0.6f));
+            particles.Flame(tail, Vector3Scale(ray.direction, -3.0f), 0.16f, 0.09f);
             grenade.trail -= dt;
             if (grenade.trail <= 0.0f)
             {
                 grenade.trail = 0.03f;
-                particles.Dust(grenade.position); // утааны мөр
+                particles.Smoke(tail, 0.18f, { 196, 194, 188, 255 });
             }
 
             if (impact || grenade.fuse <= 0.0f)
@@ -155,13 +158,12 @@ void Grenades::Draw() const
     {
         if (grenade.rocket)
         {
-            // Пуужин: шовх хошуу, их бие, ард нь гал
+            // Пуужин: шовх хошуу, их бие (ард нь гал, утаа: Particles)
             const Vector3 direction = Vector3Normalize(grenade.velocity);
             const Vector3 tail = Vector3Subtract(grenade.position, Vector3Scale(direction, 0.55f));
-            DrawCylinderEx(tail, grenade.position, 0.05f, 0.05f, 6, { 70, 84, 60, 255 });
-            DrawCylinderEx(grenade.position, Vector3Add(grenade.position, Vector3Scale(direction, 0.22f)), 0.075f, 0.0f, 6,
+            DrawCylinderEx(tail, grenade.position, 0.05f, 0.05f, 10, { 70, 84, 60, 255 });
+            DrawCylinderEx(grenade.position, Vector3Add(grenade.position, Vector3Scale(direction, 0.22f)), 0.075f, 0.0f, 10,
                            { 96, 104, 70, 255 });
-            DrawCylinderEx(Vector3Subtract(tail, Vector3Scale(direction, 0.35f)), tail, 0.0f, 0.07f, 6, { 255, 190, 70, 255 });
             continue;
         }
         DrawSphereEx(grenade.position, kRadius, 4, 6, { 62, 78, 48, 255 });

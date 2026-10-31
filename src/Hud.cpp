@@ -1,4 +1,5 @@
 #include "Hud.h"
+#include "ObjectiveIcons.h"
 
 #include "Input.h"
 
@@ -8,6 +9,7 @@
 #include "raylib.h"
 
 #include <algorithm>
+#include <string>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -252,21 +254,48 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
     DrawHitMarker(info.hitMarker, info.hitMarkerKind);
     DrawDamageArrow(info.damageArrow, info.damageAngle);
 
-    // --- Зүүн дээд: даалгаврын карт (аймаг, одоогийн зорилт, зай) ---
+    // --- Зүүн дээд: даалгаврын карт (аймаг; төрлийн тэмдэгтэй зорилт, юу хийх, явц, зай; зэрэг идэвхтэй өөр даалгавар) ---
+    int cardBottom = 0;
     {
         const int x = 16, y = 16;
         // Утсан дээр жижиг (дээд мөр шахцалдахгүй)
         const int titleSize = info.touch ? 13 : 15, objSize = info.touch ? 17 : 20, detailSize = info.touch ? 14 : 16;
+        const int hintSize = info.touch ? 13 : 15;
         const char* objective = info.objective ? info.objective : "";
-        const int iconSpace = Ui::HasIcon(Ui::Icon::Mission) ? 24 : 0; // гарчиг, зайн мөрийн өмнөх икон
+        const int iconSpace = Ui::HasIcon(Ui::Icon::Mission) ? 24 : 0; // гарчгийн өмнөх икон
+        const int badgeSpace = info.objectiveKind >= 0 ? 30 : 0;        // зорилтын өмнөх төрлийн тэмдэг
+        const int maxHint = info.touch ? 300 : 420;
+        // Тайлбар: нэг мөрөнд багтахгүй бол таслана
+        std::string hint = info.objectiveHint ? info.objectiveHint : "";
+        if (!hint.empty() && Ui::Measure(hint.c_str(), hintSize) > maxHint)
+        {
+            while (!hint.empty() && Ui::Measure((hint + "\xE2\x80\xA6").c_str(), hintSize) > maxHint)
+            {
+                hint.pop_back();
+                while (!hint.empty() && ((unsigned char)hint.back() & 0xC0) == 0x80) hint.pop_back();
+                if (!hint.empty() && ((unsigned char)hint.back() & 0xC0) == 0xC0) hint.pop_back();
+            }
+            hint += "\xE2\x80\xA6";
+        }
+        const int barWidth = info.objectiveProgress >= 0.0f ? (info.touch ? 70 : 100) : 0;
         const int contentWidth = std::max({ Ui::MeasureBold(info.provinceName, titleSize) + 90 + iconSpace,
-                                            Ui::MeasureBold(objective, objSize),
-                                            info.objectiveDetail ? Ui::Measure(info.objectiveDetail, detailSize) + iconSpace : 0 });
-        const int cardHeight = info.touch ? (info.objective ? (info.objectiveDetail ? 72 : 54) : 34)
-                                          : (info.objective ? (info.objectiveDetail ? 86 : 64) : 40);
-        const int objY = info.touch ? 27 : 32, detailY = info.touch ? 50 : 60;
+                                            Ui::MeasureBold(objective, objSize) + badgeSpace,
+                                            hint.empty() ? 0 : Ui::Measure(hint.c_str(), hintSize) + badgeSpace,
+                                            info.objectiveDetail ? Ui::Measure(info.objectiveDetail, detailSize) + iconSpace + barWidth + 14 : 0,
+                                            info.objectiveNext ? Ui::Measure(info.objectiveNext, 14) + badgeSpace : 0 });
+        // Мөрүүд дээрээс доош
+        const int objY = info.touch ? 27 : 32;
+        int rowY = objY + (info.touch ? 22 : 26);
+        const int hintY = rowY;
+        if (info.objective && !hint.empty()) rowY += info.touch ? 18 : 21;
+        const int detailY = rowY;
+        if (info.objective && info.objectiveDetail) rowY += info.touch ? 22 : 26;
+        const int nextY = rowY;
+        if (info.objective && info.objectiveNext) rowY += info.touch ? 18 : 21;
+        const int cardHeight = info.objective ? rowY + (info.touch ? 2 : 6) : (info.touch ? 34 : 40);
         const Rectangle card = { (float)x, (float)y, (float)contentWidth + 36.0f, (float)cardHeight };
-        Ui::PanelAccent(card, Ui::kAccent);
+        cardBottom = y + cardHeight;
+        Ui::PanelAccent(card, info.objectiveKind >= 0 ? MarkerColor((MarkerKind)info.objectiveKind) : Ui::kAccent);
         Ui::DrawIcon(Ui::Icon::Mission, { (float)x + 17.0f, (float)y + (info.touch ? 7.0f : 9.0f), 16.0f, 16.0f });
         Ui::TextBold(info.provinceName, x + 18 + iconSpace, y + (info.touch ? 8 : 10), titleSize, Ui::kTextDim);
         // FPS: картын баруун дээд буланд жижиг
@@ -276,12 +305,31 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
                  fps >= 50 ? Fade(Ui::kGood, 0.8f) : Ui::kDanger);
         if (info.objective)
         {
-            Ui::TextBold(objective, x + 18, y + objY, objSize, Ui::kText);
+            if (info.objectiveKind >= 0)
+            {
+                DrawMarkerBadge((MarkerKind)info.objectiveKind, { (float)x + 30.0f, (float)y + (float)objY + (float)objSize * 0.55f },
+                                info.touch ? 11.0f : 13.0f);
+            }
+            Ui::TextBold(objective, x + 18 + badgeSpace, y + objY, objSize, Ui::kText);
+            if (!hint.empty()) Ui::Text(hint.c_str(), x + 18 + badgeSpace, y + hintY, hintSize, Ui::kTextDim);
             if (info.objectiveDetail)
             {
                 Ui::DrawIcon(Ui::Icon::Location, { (float)x + 17.0f, (float)y + (float)detailY + 1.0f, 16.0f, 16.0f });
                 Ui::Text(info.objectiveDetail, x + 18 + iconSpace, y + detailY, detailSize, Ui::kAccent);
+                if (barWidth > 0)
+                {
+                    // Явцын зурвас: бичвэрийн баруун талд
+                    const float bx = (float)(x + 18 + iconSpace + Ui::Measure(info.objectiveDetail, detailSize) + 14);
+                    const Rectangle bar = { bx, (float)(y + detailY) + (float)detailSize * 0.35f, (float)barWidth, 7.0f };
+                    DrawRectangleRounded(bar, 1.0f, 6, Fade(BLACK, 0.45f));
+                    const Color fill = info.objectiveKind >= 0 ? MarkerColor((MarkerKind)info.objectiveKind) : Ui::kAccent;
+                    if (info.objectiveProgress > 0.0f)
+                    {
+                        DrawRectangleRounded({ bar.x, bar.y, bar.width * std::min(1.0f, info.objectiveProgress), bar.height }, 1.0f, 6, fill);
+                    }
+                }
             }
+            if (info.objectiveNext) Ui::Text(info.objectiveNext, x + 18 + badgeSpace, y + nextY, 14, Fade(Ui::kTextDim, 0.85f));
         }
     }
 
@@ -289,8 +337,7 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
     if (info.hordeSmall >= 0)
     {
         // Даалгаврын картын шууд доор (утсан дээр картын өндөр жижиг)
-        const int y = info.touch ? (info.objective ? (info.objectiveDetail ? 96 : 78) : 58)
-                                 : (info.objective ? (info.objectiveDetail ? 112 : 90) : 66);
+        const int y = cardBottom + (info.touch ? 8 : 10);
         int x = 16;
         x += Ui::IconChip(Ui::Icon::Zombie, TextFormat("Зомби  %d", info.hordeSmall), x, y, Ui::kText, Ui::kDanger) + 8;
         x += Ui::IconChip(Ui::Icon::ZombieElite, TextFormat("Том зомби  %d", info.hordeBig), x, y, Ui::kText, { 170, 60, 200, 255 }) + 8;
@@ -309,8 +356,7 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
     // Мэдрэгчтэй дэлгэц: баг зомбины чипүүдийн доор (компьютер дээр баруун талд картууд)
     if (info.touch)
     {
-        const int cardBottom = info.objective ? (info.objectiveDetail ? 96 : 78) : 58;
-        DrawTouchTeam(info, info.hordeSmall >= 0 ? cardBottom + 38 : cardBottom);
+        DrawTouchTeam(info, info.hordeSmall >= 0 ? cardBottom + 46 : cardBottom + 8);
     }
     else
     {

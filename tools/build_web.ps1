@@ -12,7 +12,7 @@ param(
     # Байршуулсан сайтын бүтэн хаяг (/ -ээр төгсөнө): холбоос хуваалцахад гарах зураг (og:image) үүнээс
     [string]$SiteUrl = "https://play-zombie.apps.mn/",
     # Нууцлалын бодлого, үйлчилгээний нөхцлийн хуудсанд харагдах холбоо барих имэйл
-    [string]$ContactEmail = "",
+    [string]$ContactEmail = "worldmongolia@gmail.com",
     [switch]$Serve
 )
 if (-not $SiteUrl.EndsWith("/")) { $SiteUrl += "/" }

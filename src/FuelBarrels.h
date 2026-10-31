@@ -39,7 +39,6 @@ public:
     }
 
     void Draw(Vector3 viewPosition) const;      // гэрэлтүүлэгтэй
-    void DrawUnlit(Vector3 viewPosition) const; // дэлбэрсний дараах гал
 
 private:
     struct Barrel
@@ -50,6 +49,7 @@ private:
         bool exploded = false;
         float burn = 0.0f;  // дэлбэрсний дараа шатах хугацаа
         float smoke = 0.0f; // утааны дараагийн хэсэг хүртэл
+        float flame = 0.0f; // дараагийн дөл хүртэл
         float tilt = 0.0f;  // бага зэрэг хазайсан (санамсаргүй)
     };
 

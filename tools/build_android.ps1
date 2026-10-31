@@ -92,7 +92,7 @@ New-Item -ItemType Directory -Force (Join-Path $staging "assets\buu") | Out-Null
 Copy-Item (Join-Path $root "assets\buu\*.vmesh") (Join-Path $staging "assets\buu")
 Copy-Item (Join-Path $root "assets\buu\*_color.png") (Join-Path $staging "assets\buu")
 # Мод, торх (ойрын зайд): бэлтгэсэн .vmesh ба текстур л
-foreach ($sub in @("trees", "pooshig")) {
+foreach ($sub in @("trees", "pooshig", "monuments")) {
     New-Item -ItemType Directory -Force (Join-Path $staging "assets\$sub") | Out-Null
     Copy-Item (Join-Path $root "assets\$sub\*.vmesh") (Join-Path $staging "assets\$sub")
     Copy-Item (Join-Path $root "assets\$sub\*_color.png") (Join-Path $staging "assets\$sub")

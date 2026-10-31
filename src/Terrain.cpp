@@ -33,8 +33,11 @@ namespace
     const Color kBush = { 84, 98, 52, 255 };
     const Color kGrassLush = { 96, 126, 64, 255 };
     const Color kOchre = { 152, 130, 86, 255 };
-    // Тал хээрийн цэцэг: алтан гагнуур (шар), хонхон цэцэг (ягаан хөх), цагаан цэцэг, улаан
-    const Color kFlowers[4] = { { 236, 196, 52, 255 }, { 150, 110, 196, 255 }, { 236, 232, 220, 255 }, { 206, 72, 64, 255 } };
+    // Тал хээрийн цэцэг: алтан гагнуур (шар), хонхон цэцэг (ягаан хөх), цагаан цэцэг (уулын цагаан цэцэг), улаан,
+    // гэнцэр (тод хөх), алтан хундага (улбар шар), ягаан (тавилгана)
+    const Color kFlowers[] = { { 240, 200, 48, 255 }, { 150, 104, 206, 255 }, { 238, 234, 222, 255 }, { 214, 64, 56, 255 },
+                               { 64, 112, 222, 255 },  { 246, 140, 36, 255 },  { 222, 96, 168, 255 } };
+    constexpr int kFlowerCount = (int)(sizeof(kFlowers) / sizeof(kFlowers[0]));
     const Color kBushDry = { 132, 112, 70, 255 };
 
     // Тэгшлээгүй үеийн толгодын өндөр.
@@ -70,11 +73,12 @@ namespace
         return false;
     }
 
-    void AddGrassTuft(MeshBuilder& builder, Vector3 base, Rng& rng)
+    void AddGrassTuft(MeshBuilder& builder, Vector3 base, Rng& rng, float lush)
     {
         // Хиаг, ерхөг: ногоон, шаргал, цайвар ногоон хольцтой; ир бүр гадагшаа налж, үзүүр нь цайвар.
-        const Color tint = rng.Chance(0.2f) ? MixColor(kGrassLush, kGrassGreen, rng.Next())
-                                            : MixColor(kGrassGreen, kGrassDry, rng.Next());
+        // Чийглэг аймагт (Хангай) ихэнх нь шүүслэг ногоон, шаргал ир цөөн.
+        const Color tint = rng.Chance(0.2f + 0.65f * lush) ? MixColor(kGrassLush, kGrassGreen, rng.Next() * (1.0f - 0.7f * lush))
+                                                          : MixColor(kGrassGreen, kGrassDry, rng.Next() * (1.0f - 0.6f * lush));
         // Нимгэн ир нь ихэвчлэн нарны эсрэг харж бараан гардаг тул өнгийг нь цайвар авна.
         const Color root = ScaleColor(tint, 0.85f);
         Color tip = ScaleColor(tint, 1.55f);
@@ -494,15 +498,16 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
         if (layout.FlatDistance(x, z) < 0.0f && !keep) continue; // суурин дотор сийрэг
         if (InsideObstacle(nearby, x, z, 0.15f)) continue;
 
-        AddGrassTuft(builder, { x, HeightAt(x, z), z }, rng);
+        AddGrassTuft(builder, { x, HeightAt(x, z), z }, rng, lushness);
     }
 
-    // --- Зэрлэг цэцэг: нэг төрлийнх нь бөөнөөрөө ургана ---
-    for (int patch = 0; patch < 6; ++patch)
+    // --- Зэрлэг цэцэг: нэг төрлийнх нь бөөнөөрөө ургана (Хангайн чийглэг нутагт олон, говьд цөөн) ---
+    const int patches = 4 + (int)std::round(12.0f * lushness);
+    for (int patch = 0; patch < patches; ++patch)
     {
         const float px = x0 + rng.Next() * chunkSize;
         const float pz = z0 + rng.Next() * chunkSize;
-        const Color petal = kFlowers[rng.Int(0, 3)];
+        const Color petal = kFlowers[rng.Int(0, kFlowerCount - 1)];
         if (layout.FlatDistance(px, pz) < 2.0f) continue; // суурин, замын ойролцоо гишгэгдсэн
         if (InUrban(px, pz) && layout.CityGround(px, pz) != 1) continue; // хотод зөвхөн цэцэрлэгт
         for (int i = 0; i < 14; ++i)
@@ -590,6 +595,14 @@ void Terrain::InvalidateDetails()
             --loadedMeshes;
         }
     }
+}
+
+void Terrain::SetLushness(float value)
+{
+    value = std::clamp(value, 0.0f, 1.0f);
+    if (std::fabs(value - lushness) < 0.01f) return;
+    lushness = value;
+    InvalidateDetails(); // (өвс, цэцгийг шинэ аймгийн байдлаар дахин ургуулна)
 }
 
 float Terrain::HeightAt(float x, float z) const

@@ -208,12 +208,26 @@ void FuelBarrels::Update(float dt, ZombieHorde& horde, Player& player, SoldierSq
         {
             if (barrel.burn > 0.0f)
             {
+                // Шатаж буй гал: тасралтгүй гарах жижиг дөл (сүүлдээ багасна), дээрээс нь бараан утаа
                 barrel.burn -= dt;
+                const float strength = std::min(1.0f, barrel.burn / 2.0f);
+                barrel.flame -= dt;
+                while (barrel.flame <= 0.0f)
+                {
+                    barrel.flame += 0.035f;
+                    const float angle = (float)GetRandomValue(0, 628) / 100.0f, r = (float)GetRandomValue(0, 20) / 100.0f;
+                    const Vector3 at = { barrel.position.x + std::cos(angle) * r, barrel.position.y + 0.3f, barrel.position.z + std::sin(angle) * r };
+                    particles.Flame(at, { std::cos(angle) * 0.3f, 0.6f + (float)GetRandomValue(0, 60) / 100.0f, std::sin(angle) * 0.3f },
+                                    (0.2f + (float)GetRandomValue(0, 15) / 100.0f) * (0.4f + 0.6f * strength),
+                                    0.4f + (float)GetRandomValue(0, 30) / 100.0f);
+                }
                 barrel.smoke -= dt;
                 if (barrel.smoke <= 0.0f)
                 {
-                    barrel.smoke = 0.25f;
-                    particles.Dust({ barrel.position.x, barrel.position.y + 0.6f, barrel.position.z }); // утаа
+                    barrel.smoke = 0.3f;
+                    const unsigned char grey = (unsigned char)GetRandomValue(30, 55);
+                    particles.Smoke({ barrel.position.x, barrel.position.y + 1.3f, barrel.position.z }, 0.5f + 0.3f * strength,
+                                    { grey, grey, grey, 255 });
                 }
             }
             continue;
@@ -272,23 +286,3 @@ void FuelBarrels::Draw(Vector3 viewPosition) const
     }
 }
 
-void FuelBarrels::DrawUnlit(Vector3 viewPosition) const
-{
-    const float time = (float)GetTime();
-    for (const Barrel& barrel : barrels)
-    {
-        if (!barrel.exploded || barrel.burn <= 0.0f) continue;
-        if (HorizontalDistance(viewPosition, barrel.position) > kDrawDistance) continue;
-        // Шатаж буй гал: анивчих хэдэн дөл, сүүлдээ багасна
-        const float strength = std::min(1.0f, barrel.burn / 2.0f);
-        for (int i = 0; i < 4; ++i)
-        {
-            const float phase = time * (7.0f + (float)i) + (float)i * 1.7f + barrel.position.x;
-            const float height = (0.6f + 0.35f * std::sin(phase)) * strength;
-            const float ox = 0.16f * std::cos((float)i * 1.57f), oz = 0.16f * std::sin((float)i * 1.57f);
-            const Vector3 base = { barrel.position.x + ox, barrel.position.y + 0.28f, barrel.position.z + oz };
-            DrawCylinderEx(base, Vector3Add(base, { 0.0f, height, 0.0f }), 0.14f * strength, 0.0f, 5,
-                           i % 2 == 0 ? Color{ 255, 140, 30, 230 } : Color{ 255, 210, 60, 230 });
-        }
-    }
-}

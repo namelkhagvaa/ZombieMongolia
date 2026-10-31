@@ -10,7 +10,9 @@
 #include <cstdint>
 #include <cstring>
 #include <map>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 void MeshBuilder::SetTransform(const Matrix& matrix)
 {
@@ -545,4 +547,147 @@ void UnloadBuiltMesh(Mesh& mesh)
         UnloadMesh(mesh);
         mesh = {};
     }
+}
+
+float ModelViewDistance()
+{
+    const Matrix eye = MatrixMultiply(rlGetMatrixTransform(), rlGetMatrixModelview());
+    return Vector3Length({ eye.m12, eye.m13, eye.m14 });
+}
+
+// Холын объектод зориулсан хөнгөн mesh: оройнуудыг cell хэмжээтэй нүдээр бүлэглэж (нүд бүрд нэг орой),
+// хоёр орой нь нэг нүдэнд орсон гурвалжнуудыг хаяна. Хол харагдах тул хэлбэр хангалттай хадгалагдана.
+// Текстурын өөр хэсэгт (UV seam-ийн хоёр тал) хамаарах оройг нийлүүлэхгүй: эс бөгөөс гадаргуу шаарсан харагдана.
+Mesh SimplifyMesh(const Mesh& source, float cell, float uvStep)
+{
+    Mesh lod = {};
+    if (source.vertexCount <= 0 || !source.vertices) return lod;
+
+    std::unordered_map<uint64_t, int> cells;
+    std::vector<int> remap((size_t)source.vertexCount);
+    std::vector<int> representative;
+    std::vector<Vector3> sum, normalSum;
+    std::vector<int> count;
+    // Байрлалын нүд (UV, ясгүй): нэг нүдний бүх орой нэг цэгт очно. UV хил, ясаар хуваагдсан оройнууд өөр өөр
+    // дундаж байрлалтай байхад хил дагуу ан цав (цоорхой) гардаг байв.
+    std::unordered_map<uint64_t, int> spatialCells;
+    std::vector<Vector3> spatialSum;
+    std::vector<int> spatialCount;
+    std::vector<int> clusterSpatial;           // шинэ орой бүрийн байрлалын нүд
+    for (int v = 0; v < source.vertexCount; ++v)
+    {
+        const float* p = source.vertices + v * 3;
+        auto quantize = [](float value, float step, uint64_t mask) {
+            return (uint64_t)((int64_t)std::floor(value / step) + (int64_t)(mask / 2)) & mask;
+        };
+        uint64_t key = quantize(p[0], cell, 0x3FF) | (quantize(p[1], cell, 0x3FF) << 10) | (quantize(p[2], cell, 0x3FF) << 20);
+        int spatial;
+        {
+            const auto placed = spatialCells.find(key);
+            if (placed == spatialCells.end())
+            {
+                spatial = (int)spatialSum.size();
+                spatialCells.emplace(key, spatial);
+                spatialSum.push_back({ 0.0f, 0.0f, 0.0f });
+                spatialCount.push_back(0);
+            }
+            else
+            {
+                spatial = placed->second;
+            }
+            spatialSum[(size_t)spatial] = Vector3Add(spatialSum[(size_t)spatial], { p[0], p[1], p[2] });
+            ++spatialCount[(size_t)spatial];
+        }
+        if (source.texcoords)
+        {
+            const float* uv = source.texcoords + v * 2;
+            key |= (quantize(uv[0], uvStep, 0x7FFF) << 30) | (quantize(uv[1], uvStep, 0x7FFF) << 45);
+        }
+        if (source.boneIds && source.boneWeights)
+        {
+            // Араг ястай загвар: өөр ясыг (хамгийн их жинтэй) дагадаг оройг нийлүүлэхгүй. Эс бөгөөс нийлсэн орой нэг
+            // ясаар хөдөлж, хуруу, гар, хөл хөдлөхөд гурвалжин өргөс шиг сунана.
+            const float* w = source.boneWeights + v * 4;
+            int dominant = 0;
+            for (int k = 1; k < 4; ++k) dominant = w[k] > w[dominant] ? k : dominant;
+            key ^= ((uint64_t)source.boneIds[v * 4 + dominant] + 1u) * 0x9E3779B97F4A7C15ull;
+        }
+        auto found = cells.find(key);
+        int index;
+        if (found == cells.end())
+        {
+            index = (int)representative.size();
+            cells.emplace(key, index);
+            representative.push_back(v);
+            clusterSpatial.push_back(spatial);
+            sum.push_back({ 0.0f, 0.0f, 0.0f });
+            normalSum.push_back({ 0.0f, 0.0f, 0.0f });
+            count.push_back(0);
+        }
+        else
+        {
+            index = found->second;
+        }
+        remap[(size_t)v] = index;
+        sum[(size_t)index] = Vector3Add(sum[(size_t)index], { p[0], p[1], p[2] });
+        if (source.normals)
+        {
+            const float* n = source.normals + v * 3;
+            normalSum[(size_t)index] = Vector3Add(normalSum[(size_t)index], { n[0], n[1], n[2] });
+        }
+        ++count[(size_t)index];
+    }
+
+    std::vector<unsigned short> indices;
+    const int triangles = source.triangleCount;
+    for (int t = 0; t < triangles; ++t)
+    {
+        int corner[3];
+        for (int k = 0; k < 3; ++k)
+        {
+            const int v = source.indices ? source.indices[t * 3 + k] : t * 3 + k;
+            corner[k] = remap[(size_t)v];
+        }
+        // Хоёр булан нь нэг байрлалын нүдэнд (тэг талбайтай) бол хасна
+        const int a = clusterSpatial[(size_t)corner[0]], b = clusterSpatial[(size_t)corner[1]], c = clusterSpatial[(size_t)corner[2]];
+        if (a == b || b == c || a == c) continue;
+        for (int k = 0; k < 3; ++k) indices.push_back((unsigned short)corner[k]);
+    }
+    const int vertices = (int)representative.size();
+    if (vertices >= 65535 || indices.empty()) return lod;
+
+    lod.vertexCount = vertices;
+    lod.triangleCount = (int)indices.size() / 3;
+    lod.vertices = (float*)MemAlloc((unsigned int)vertices * 3 * sizeof(float));
+    if (source.texcoords) lod.texcoords = (float*)MemAlloc((unsigned int)vertices * 2 * sizeof(float));
+    if (source.normals) lod.normals = (float*)MemAlloc((unsigned int)vertices * 3 * sizeof(float));
+    if (source.boneIds) lod.boneIds = (unsigned char*)MemAlloc((unsigned int)vertices * 4);
+    if (source.boneWeights) lod.boneWeights = (float*)MemAlloc((unsigned int)vertices * 4 * sizeof(float));
+    for (int i = 0; i < vertices; ++i)
+    {
+        const int v = representative[(size_t)i];
+        const int spatial = clusterSpatial[(size_t)i];
+        const Vector3 average = Vector3Scale(spatialSum[(size_t)spatial], 1.0f / (float)spatialCount[(size_t)spatial]);
+        lod.vertices[i * 3 + 0] = average.x;
+        lod.vertices[i * 3 + 1] = average.y;
+        lod.vertices[i * 3 + 2] = average.z;
+        if (lod.texcoords) std::memcpy(lod.texcoords + i * 2, source.texcoords + v * 2, 2 * sizeof(float));
+        if (lod.normals)
+        {
+            Vector3 normal = normalSum[(size_t)i];
+            const float length = Vector3Length(normal);
+            normal = length > 1e-5f ? Vector3Scale(normal, 1.0f / length) : Vector3{ source.normals[v * 3], source.normals[v * 3 + 1], source.normals[v * 3 + 2] };
+            lod.normals[i * 3 + 0] = normal.x;
+            lod.normals[i * 3 + 1] = normal.y;
+            lod.normals[i * 3 + 2] = normal.z;
+        }
+        if (lod.boneIds) std::memcpy(lod.boneIds + i * 4, source.boneIds + v * 4, 4);
+        if (lod.boneWeights) std::memcpy(lod.boneWeights + i * 4, source.boneWeights + v * 4, 4 * sizeof(float));
+    }
+    lod.indices = (unsigned short*)MemAlloc((unsigned int)indices.size() * sizeof(unsigned short));
+    std::memcpy(lod.indices, indices.data(), indices.size() * sizeof(unsigned short));
+    lod.boneCount = source.boneCount;
+    lod.boneMatrices = source.boneMatrices; // хуваалцана (Skin нэг удаа бичнэ)
+    UploadMesh(&lod, false);
+    return lod;
 }

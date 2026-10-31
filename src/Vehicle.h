@@ -1,5 +1,6 @@
 #pragma once
 
+#include "BulletHoles.h"
 #include "World.h"
 #include "Zombie.h"
 #include "raylib.h"
@@ -108,7 +109,20 @@ struct Vehicle
     float turretYaw = 0.0f;
     float turretPitch = 0.0f;  // хошууны өндөр (радиан, + дээш)
     float turretRecoil = 0.0f; // 1 = дөнгөж буудсан (амны гал)
+    // Хагарсан дугуйнууд (VehicleWheels-ийн дарааллаар бит): удаан явж, тэр тал руу татна, тэр булан нь сууна
+    unsigned int flatTires = 0;
+    std::vector<BulletHole> holes; // сумны ором (машины орон нутгийн байрлалаар)
 };
+
+// Дугуй (машины орон нутгийн тэнхлэгт: +X зүүн, +Z урагш): хагарахад
+struct WheelSpot
+{
+    Vector3 center;  // төв
+    float radius;
+    float halfWidth;
+};
+// Тухайн төрлийн дугуйнууд (морь, нисдэг тэрэгт 0). Текстуртай загвартай бол түүний дугуйнуудаар.
+int VehicleWheels(VehicleType type, WheelSpot* out, int max);
 
 inline bool IsHelicopter(VehicleType type) { return type == VehicleType::Helicopter; }
 
@@ -191,6 +205,18 @@ public:
     // Сум: туяа хэрэгслийн биеийн хайрцагт (орон нутгийн тэнхлэгээр эргүүлсэн) тусах эсэх. skipA, skipB: тоглогчийн
     // өөрийн / багийнх (буудахгүй). Эвдэрсэн хэрэгсэл ч сумыг халхална. -1 = тусаагүй.
     int Raycast(Ray ray, float minDistance, float maxDistance, int skipA, int skipB, float& distance) const;
+
+    // Сум дугуйнд тусах эсэх (maxDistance хүртэл): дугуйн дугаар (-1 = үгүй), зай
+    int RaycastWheel(int index, Ray ray, float maxDistance, float& distance) const;
+    // Дугуйг хагална: аль хэдийн хагарсан бол false
+    bool BurstTire(int index, int wheel);
+    int FlatCount(int index) const;
+    // Сум их биеийн (текстуртай загварын) гадаргууд тусах цэг, normal: сумны оромд. Загваргүй бол false.
+    bool SurfaceHit(int index, Ray ray, float maxDistance, Vector3& point, Vector3& normal) const;
+    // Сумны ором нэмнэ (ертөнцийн байрлалаар; машинтай хамт хөдөлнө)
+    void AddHole(int index, Vector3 point, Vector3 normal);
+    // Ойрын машинуудын сумны оромнууд энэ frame-ийн ертөнцийн байрлалаар
+    void CollectHoles(Vector3 viewPosition, float maxDistance, std::vector<BulletHole>& out) const;
 
     // Явган хүнийг зогсож буй хэрэгсэл дундуур гарахаас сэргийлнэ.
     void PushOut(Vector3& position, float radius) const;

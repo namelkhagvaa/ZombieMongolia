@@ -13,7 +13,7 @@
 namespace
 {
     const float kReplanDistance = 35.0f; // замаас ийм холдвол дахин тооцно
-    const float kArriveDistance = 14.0f;
+    const float kArriveDistance = 30.0f; // (энэ бүсэд орж ирэхэд чиглэлийн сум арилна)
 
     float SegmentDistance(Vector2 p, Vector2 a, Vector2 b, float& t)
     {

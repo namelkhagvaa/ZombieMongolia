@@ -120,6 +120,7 @@ namespace
         {
             zombie.skin = { 158, 162, 118, 255 };
             zombie.limp = 0.0f;
+            zombie.woman = GetRandomValue(0, 1) == 0;
         }
     }
 
@@ -163,7 +164,8 @@ namespace
         // Гаднаас оруулсан загвар (байвал). Ижил төрлийн зомбинууд нэг загвартай тул өнгийг нь бага зэрэг
         // өөрчилж ялгана; аварга нь улаавтар.
         look.model = zombie.boss ? kCharacterZombieBoss
-                   : zombie.type == ZombieType::Runner ? kCharacterZombieRunner
+                   : zombie.type == ZombieType::Runner ? (zombie.woman && HasCharacterModel(kCharacterZombieWoman) ? kCharacterZombieWoman
+                                                                                                     : kCharacterZombieRunner)
                    : zombie.type == ZombieType::Brute ? kCharacterZombieBrute : kCharacterZombieWalker;
         look.modelTint = zombie.boss ? Color{ 255, 255, 255, 255 } // аварга өөрийн загвартай: өнгөө хэвээр
                                      : Color{ (unsigned char)(200 + zombie.skin.r % 56), (unsigned char)(200 + zombie.skin.g % 56),
@@ -760,7 +762,8 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
         }
 
         // --- Хөдөлгөөн: оногдсон үедээ бараг зогсоно ---
-        const float reach = zombie.Radius() + 0.9f;
+        // (биеийн өргөнөөр: том зомби байнаасаа зайтай зогсож урт гараараа цохино, бай руу шингэхгүй)
+        const float reach = zombie.BodyRadius() + 0.75f;
         const bool detour = moveTarget.x != targetPosition.x || moveTarget.z != targetPosition.z;
         float boost = 1.0f;
         if (!detour && smartLevel >= 10)
@@ -836,28 +839,61 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
         }
     }
 
-    // --- Амьд зомбинууд бие биетэйгээ давхцахгүй ---
-    for (size_t i = 0; i < zombies.size(); ++i)
+    // --- Амьд зомбинууд бие биетэйгээ давхцахгүй (биеийн өргөнөөр; бөөгнөрөхөд нэг удаа хангалтгүй тул хэд давтана) ---
+    for (int pass = 0; pass < 3; ++pass)
     {
-        if (!zombies[i].IsAlive()) continue;
-        for (size_t j = i + 1; j < zombies.size(); ++j)
+        for (size_t i = 0; i < zombies.size(); ++i)
         {
-            if (!zombies[j].IsAlive()) continue;
-
-            Vector3& a = zombies[i].mover.position;
-            Vector3& b = zombies[j].mover.position;
-            const float minDistance = zombies[i].Radius() + zombies[j].Radius();
-            const float distance = HorizontalDistance(a, b);
-            if (distance < minDistance && distance > 1e-4f)
+            if (!zombies[i].IsAlive() || zombies[i].climbTimer > 0.0f) continue;
+            for (size_t j = i + 1; j < zombies.size(); ++j)
             {
-                const float push = (minDistance - distance) * 0.5f / distance;
-                const float dx = (a.x - b.x) * push;
-                const float dz = (a.z - b.z) * push;
-                a.x += dx;
-                a.z += dz;
-                b.x -= dx;
-                b.z -= dz;
+                if (!zombies[j].IsAlive() || zombies[j].climbTimer > 0.0f) continue;
+
+                Vector3& a = zombies[i].mover.position;
+                Vector3& b = zombies[j].mover.position;
+                if (std::fabs(a.y - b.y) > 1.5f) continue; // өөр давхарт
+                const float minDistance = zombies[i].BodyRadius() + zombies[j].BodyRadius();
+                const float dx0 = a.x - b.x, dz0 = a.z - b.z;
+                if (std::fabs(dx0) > minDistance || std::fabs(dz0) > minDistance) continue;
+                const float distance = std::sqrt(dx0 * dx0 + dz0 * dz0);
+                if (distance < minDistance)
+                {
+                    // Яг давхар бол санамсаргүй биш, id-гаар тогтмол чиглэлд салгана
+                    const float nx = distance > 1e-4f ? dx0 / distance : std::cos((float)zombies[i].id);
+                    const float nz = distance > 1e-4f ? dz0 / distance : std::sin((float)zombies[i].id);
+                    // Хүнд нь бага түлхэгдэнэ (том зомби жижгийг түлхэж гарна)
+                    const float wa = zombies[j].scale / (zombies[i].scale + zombies[j].scale);
+                    const float overlap = minDistance - distance;
+                    a.x += nx * overlap * wa;
+                    a.z += nz * overlap * wa;
+                    b.x -= nx * overlap * (1.0f - wa);
+                    b.z -= nz * overlap * (1.0f - wa);
+                }
             }
+        }
+    }
+
+    // --- Хүн рүү (тоглогч, цэрэг) шингэхгүй: зомбиг л түлхэнэ ---
+    std::vector<Vector3> people;
+    if (player.IsAlive()) people.push_back(player.Position());
+    for (const Soldier& soldier : squad.All())
+    {
+        if (soldier.alive && soldier.riding < 0) people.push_back(soldier.mover.position);
+    }
+    const float personRadius = 0.35f;
+    for (Zombie& zombie : zombies)
+    {
+        if (!zombie.IsAlive() || zombie.IsBear() || zombie.climbTimer > 0.0f) continue;
+        Vector3& pos = zombie.mover.position;
+        for (const Vector3& person : people)
+        {
+            if (std::fabs(person.y - pos.y) > 1.5f) continue;
+            const float minDistance = zombie.BodyRadius() + personRadius;
+            const float dx = pos.x - person.x, dz = pos.z - person.z;
+            const float distance = std::sqrt(dx * dx + dz * dz);
+            if (distance >= minDistance || distance < 1e-4f) continue;
+            pos.x += dx / distance * (minDistance - distance);
+            pos.z += dz / distance * (minDistance - distance);
         }
     }
 }
@@ -1295,11 +1331,13 @@ void ZombieHorde::Draw(Vector3 viewPosition, float maxDistance, bool showCollide
         HumanoidLook look = LookFor(zombie);
         if (viewDistance >= kSimpleDistance)
         {
-            look.model = -1; // маш хол (манан дунд жижиг): хамгийн хөнгөн кодоор үүсгэсэн дүрс
+            // Маш хол (манан дунд жижиг): загварын маш хөнгөн хувилбар (кодоор үүсгэсэн хайрцган дүрс бусдаас ялгардаг байв)
+            look.lowDetail = HasCharacterModel(look.model) ? 2 : 0;
+            if (!HasCharacterModel(look.model)) look.model = -1;
         }
         else if (viewDistance >= modelDistance)
         {
-            look.lowDetail = true; // холын зомби: загварын хөнгөн хувилбар (дөрвөлжин дүрс биш)
+            look.lowDetail = 1; // холын зомби: загварын хөнгөн хувилбар (дөрвөлжин дүрс биш)
         }
         DrawHumanoid(position, zombie.mover.facing, zombie.scale, pose, look, detailed);
 

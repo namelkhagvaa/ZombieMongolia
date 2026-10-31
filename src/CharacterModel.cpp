@@ -1,5 +1,6 @@
 #include "CharacterModel.h"
 
+#include "MeshBuilder.h"
 #include "Platform.h"
 
 #include "raymath.h"
@@ -20,7 +21,7 @@ namespace
                                                   "model-1",       "model-3",       "demon",
                                                   "iron",          "survivor_doctor_man", "survivor_doctor_woman",
                                                   "survivor_student_boy", "survivor_student_girl", "survivor_monk",
-                                                  "model2" };
+                                                  "model2",        "woman_zombie" };
 
     // Загварын өндөр тоглоомын хүний өндөртэй (~1.9 м) таарахаар томруулна. Аврах иргэд бодит харьцаагаар:
     // эрэгтэй цэргээс бага зэрэг намхан, эмэгтэй, сурагч (15 настай) нь түүнээс намхан.
@@ -31,7 +32,8 @@ namespace
         case kCharacterSurvivorMan:
         case kCharacterDoctorMan: return 1.84f;
         case kCharacterSurvivorWoman:
-        case kCharacterDoctorWoman: return 1.72f;
+        case kCharacterDoctorWoman:
+        case kCharacterZombieWoman: return 1.72f;
         case kCharacterStudentBoy: return 1.70f;
         case kCharacterStudentGirl: return 1.64f;
         case kCharacterMonk: return 1.78f;
@@ -76,110 +78,10 @@ namespace
         std::vector<char> solved;
         std::vector<float> matrices;      // яс бүрийн 3x4 матриц (арьслахад)
         std::vector<Mesh> lod;            // хөнгөн хувилбар (холын дүрд): ясны матрицыг үндсэн mesh-тэй хуваалцана
+        std::vector<Mesh> lodFar;         // маш хөнгөн (манан дунд жижиг харагдах дүрд)
     };
 
     Character characters[kCharacterCount];
-
-    // Холын дүрд зориулсан хөнгөн mesh: оройнуудыг cell хэмжээтэй нүдээр бүлэглэж (нүд бүрд нэг орой),
-    // хоёр орой нь нэг нүдэнд орсон гурвалжнуудыг хаяна. Хол харагдах тул хэлбэр хангалттай хадгалагдана.
-    // Текстурын өөр хэсэгт (UV seam-ийн хоёр тал) хамаарах оройг нийлүүлэхгүй: эс бөгөөс гадаргуу шаарсан харагдана.
-    Mesh SimplifyMesh(const Mesh& source, float cell)
-    {
-        Mesh lod = {};
-        if (source.vertexCount <= 0 || !source.vertices) return lod;
-
-        std::unordered_map<uint64_t, int> cells;
-        std::vector<int> remap((size_t)source.vertexCount);
-        std::vector<int> representative;
-        std::vector<Vector3> sum, normalSum;
-        std::vector<int> count;
-        for (int v = 0; v < source.vertexCount; ++v)
-        {
-            const float* p = source.vertices + v * 3;
-            auto quantize = [](float value, float step, uint64_t mask) {
-                return (uint64_t)((int64_t)std::floor(value / step) + (int64_t)(mask / 2)) & mask;
-            };
-            uint64_t key = quantize(p[0], cell, 0x3FF) | (quantize(p[1], cell, 0x3FF) << 10) | (quantize(p[2], cell, 0x3FF) << 20);
-            if (source.texcoords)
-            {
-                const float* uv = source.texcoords + v * 2;
-                key |= (quantize(uv[0], 1.0f / 40.0f, 0x7FFF) << 30) | (quantize(uv[1], 1.0f / 40.0f, 0x7FFF) << 45);
-            }
-            auto found = cells.find(key);
-            int index;
-            if (found == cells.end())
-            {
-                index = (int)representative.size();
-                cells.emplace(key, index);
-                representative.push_back(v);
-                sum.push_back({ 0.0f, 0.0f, 0.0f });
-                normalSum.push_back({ 0.0f, 0.0f, 0.0f });
-                count.push_back(0);
-            }
-            else
-            {
-                index = found->second;
-            }
-            remap[(size_t)v] = index;
-            sum[(size_t)index] = Vector3Add(sum[(size_t)index], { p[0], p[1], p[2] });
-            if (source.normals)
-            {
-                const float* n = source.normals + v * 3;
-                normalSum[(size_t)index] = Vector3Add(normalSum[(size_t)index], { n[0], n[1], n[2] });
-            }
-            ++count[(size_t)index];
-        }
-
-        std::vector<unsigned short> indices;
-        const int triangles = source.triangleCount;
-        for (int t = 0; t < triangles; ++t)
-        {
-            int corner[3];
-            for (int k = 0; k < 3; ++k)
-            {
-                const int v = source.indices ? source.indices[t * 3 + k] : t * 3 + k;
-                corner[k] = remap[(size_t)v];
-            }
-            if (corner[0] == corner[1] || corner[1] == corner[2] || corner[0] == corner[2]) continue;
-            for (int k = 0; k < 3; ++k) indices.push_back((unsigned short)corner[k]);
-        }
-        const int vertices = (int)representative.size();
-        if (vertices >= 65535 || indices.empty()) return lod;
-
-        lod.vertexCount = vertices;
-        lod.triangleCount = (int)indices.size() / 3;
-        lod.vertices = (float*)MemAlloc((unsigned int)vertices * 3 * sizeof(float));
-        if (source.texcoords) lod.texcoords = (float*)MemAlloc((unsigned int)vertices * 2 * sizeof(float));
-        if (source.normals) lod.normals = (float*)MemAlloc((unsigned int)vertices * 3 * sizeof(float));
-        if (source.boneIds) lod.boneIds = (unsigned char*)MemAlloc((unsigned int)vertices * 4);
-        if (source.boneWeights) lod.boneWeights = (float*)MemAlloc((unsigned int)vertices * 4 * sizeof(float));
-        for (int i = 0; i < vertices; ++i)
-        {
-            const int v = representative[(size_t)i];
-            const Vector3 average = Vector3Scale(sum[(size_t)i], 1.0f / (float)count[(size_t)i]);
-            lod.vertices[i * 3 + 0] = average.x;
-            lod.vertices[i * 3 + 1] = average.y;
-            lod.vertices[i * 3 + 2] = average.z;
-            if (lod.texcoords) std::memcpy(lod.texcoords + i * 2, source.texcoords + v * 2, 2 * sizeof(float));
-            if (lod.normals)
-            {
-                Vector3 normal = normalSum[(size_t)i];
-                const float length = Vector3Length(normal);
-                normal = length > 1e-5f ? Vector3Scale(normal, 1.0f / length) : Vector3{ source.normals[v * 3], source.normals[v * 3 + 1], source.normals[v * 3 + 2] };
-                lod.normals[i * 3 + 0] = normal.x;
-                lod.normals[i * 3 + 1] = normal.y;
-                lod.normals[i * 3 + 2] = normal.z;
-            }
-            if (lod.boneIds) std::memcpy(lod.boneIds + i * 4, source.boneIds + v * 4, 4);
-            if (lod.boneWeights) std::memcpy(lod.boneWeights + i * 4, source.boneWeights + v * 4, 4 * sizeof(float));
-        }
-        lod.indices = (unsigned short*)MemAlloc((unsigned int)indices.size() * sizeof(unsigned short));
-        std::memcpy(lod.indices, indices.data(), indices.size() * sizeof(unsigned short));
-        lod.boneCount = source.boneCount;
-        lod.boneMatrices = source.boneMatrices; // хуваалцана (Skin нэг удаа бичнэ)
-        UploadMesh(&lod, false);
-        return lod;
-    }
 
     Quaternion AxisAngle(float x, float y, float z, float degrees)
     {
@@ -765,8 +667,11 @@ void LoadCharacterModels(Shader shader)
         {
             c.lod.push_back(SimplifyMesh(c.model.meshes[index], std::max(0.001f, top) / 30.0f));
             lodTriangles += c.lod.back().triangleCount;
+            c.lodFar.push_back(SimplifyMesh(c.model.meshes[index], std::max(0.001f, top) / 12.0f, 1.0f / 12.0f));
         }
-        TraceLog(LOG_INFO, "CHARACTER: %s low-detail version %d triangles", kNames[id], lodTriangles);
+        int farTriangles = 0;
+        for (const Mesh& mesh : c.lodFar) farTriangles += mesh.triangleCount;
+        TraceLog(LOG_INFO, "CHARACTER: %s low-detail version %d triangles, far %d", kNames[id], lodTriangles, farTriangles);
         {
             // Алхааны өргөн загвар бүрд өөр: ташаа өргөн, өмд бүдүүн (анхны зогсолтод өвдөг ташаанаас илүү
             // гадагш гарсан) загвар өргөн гишгэнэ, эс бөгөөс гуя, өвдөг хоорондоо шүргэлцэнэ.
@@ -799,10 +704,13 @@ void UnloadCharacterModels()
             c.material.maps[MATERIAL_MAP_ALBEDO].texture = {};
             UnloadMaterial(c.material);
             UnloadTexture(c.texture);
-            for (Mesh& mesh : c.lod)
+            for (std::vector<Mesh>* list : { &c.lod, &c.lodFar })
             {
-                mesh.boneMatrices = nullptr; // үндсэн mesh-ийнх
-                if (mesh.vertexCount > 0) UnloadMesh(mesh);
+                for (Mesh& mesh : *list)
+                {
+                    mesh.boneMatrices = nullptr; // үндсэн mesh-ийнх
+                    if (mesh.vertexCount > 0) UnloadMesh(mesh);
+                }
             }
             UnloadModel(c.model);
             c = Character{};
@@ -876,7 +784,7 @@ namespace
 //    хөдлөхөд (суух, найгах, урагш дайрах) тавхай газартаа үлдэнэ.
 //  - Их бие: ташаа, цээж эсрэг чиглэлд эргэж, алхам бүрд найгана; зогсож байхад жингээ шилжүүлж, амьсгална.
 //  - Зэвсэг бүр "бэлэн" ба "онилсон" хоёр байрлалтай; хутгаар дайрах, гранат шидэх нь бүтэн биеийн хөдөлгөөн.
-CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem held, bool direct, Color tint, bool lowDetail)
+CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem held, bool direct, Color tint, int lowDetail)
 {
     Character& c = characters[id];
     std::fill(c.solved.begin(), c.solved.end(), 0);
@@ -1373,8 +1281,9 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
     rlScalef(s, s, s);
     for (int index = 0; index < c.model.meshCount; ++index)
     {
-        const bool light = lowDetail && index < (int)c.lod.size() && c.lod[(size_t)index].vertexCount > 0;
-        const Mesh& mesh = light ? c.lod[(size_t)index] : c.model.meshes[index];
+        const std::vector<Mesh>& level = lowDetail >= 2 ? c.lodFar : c.lod;
+        const bool light = lowDetail > 0 && index < (int)level.size() && level[(size_t)index].vertexCount > 0;
+        const Mesh& mesh = light ? level[(size_t)index] : c.model.meshes[index];
         UploadBoneRows(c.material.shader, mesh.boneMatrices, mesh.boneCount);
         DrawMesh(mesh, c.material, MatrixIdentity());
     }

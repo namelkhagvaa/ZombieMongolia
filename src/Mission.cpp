@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <utility>
 
 namespace
 {
@@ -37,6 +38,7 @@ namespace
     const float kZoneRadius = 42.0f;
     const float kZoneWakeDistance = 130.0f; // тоглогч ийм ойртоход бүсийн зомби гарч эхэлнэ
     const float kNoticeTime = 4.5f;
+    const float kBannerTime = 3.8f; // шинэ / биелсэн даалгаврын баннер
     const float kDrawDistance = 160.0f;
 
     const Color kMarker = { 250, 214, 70, 255 };
@@ -461,6 +463,12 @@ void Mission::Start(int provinceIndex, const MissionParams& missionParams, const
     autoTimer = 0.0f;
     rewardPending = 0;
     dirty = false;
+    banners.clear();
+    bannerSound = 0;
+    briefingTimer = briefingEnabled ? 12.0f : 0.0f;
+    syncedOnce = false;
+    hintObjective = -1;
+    hintShown = 0;
 
     guardedObjective = -1;
     for (auto& alive : alivePool) alive[0] = alive[1] = 0;
@@ -569,6 +577,7 @@ void Mission::SyncFrom(const StageSave& host)
         }
         if (done && state.status != ObjectiveStatus::Done)
         {
+            if (syncedOnce) PushBanner(i, true);
             state.status = ObjectiveStatus::Done;
             for (MissionEntity& entity : state.entities) entity.used = true;
             state.progress = std::max(state.progress, state.target);
@@ -588,8 +597,10 @@ void Mission::SyncFrom(const StageSave& host)
             (after < 0 || (after < count && states[(size_t)after].status == ObjectiveStatus::Done)))
         {
             Activate(i);
+            if (syncedOnce) PushBanner(i, false);
         }
     }
+    syncedOnce = true;
 }
 
 void Mission::Activate(int index)
@@ -614,8 +625,7 @@ void Mission::Complete(int index)
     }
 
     rewardPending += def.reward;
-    notice = std::string("ДААЛГАВАР БИЕЛЛЭЭ: ") + def.title;
-    noticeTimer = kNoticeTime;
+    PushBanner(index, true);
     dirty = true;
     TraceLog(LOG_INFO, "MISSION: stage %d objective %d (%s) completed", province + 1, index + 1, def.id);
 
@@ -625,6 +635,7 @@ void Mission::Complete(int index)
         if (states[(size_t)j].status == ObjectiveStatus::Locked && stage->objectives[(size_t)j].after == index)
         {
             Activate(j);
+            PushBanner(j, false);
         }
     }
 }
@@ -723,6 +734,237 @@ void Mission::Markers(std::vector<Vector3>& out) const
             out.push_back(state.location);
         }
     }
+}
+
+void Mission::MapMarkers(std::vector<MapMarker>& out) const
+{
+    const bool complete = IsComplete();
+    const int focus = FocusObjective();
+    for (int i = 0; i < ObjectiveCount(); ++i)
+    {
+        const ObjectiveDef& def = stage->objectives[(size_t)i];
+        const ObjectiveState& state = states[(size_t)i];
+        if (state.status == ObjectiveStatus::Active)
+        {
+            out.push_back({ state.location, KindOf(def.type), i, def.title, i == focus });
+        }
+        else if (complete && PoolLeft(i, false) + PoolLeft(i, true) > 0)
+        {
+            out.push_back({ state.location, MarkerKind::Clear, i, "Үлдсэн зомбийг устга", false });
+        }
+    }
+}
+
+float Mission::ProgressFraction(int index) const
+{
+    const ObjectiveState& state = states[(size_t)index];
+    switch (stage->objectives[(size_t)index].type)
+    {
+    case ObjectiveType::RescueSurvivors:
+    case ObjectiveType::CollectItems:
+    case ObjectiveType::ClearZone:
+    case ObjectiveType::DefendLocation:
+        return state.target > 0 ? std::clamp((float)state.progress / (float)state.target, 0.0f, 1.0f) : -1.0f;
+    default:
+        return -1.0f;
+    }
+}
+
+int Mission::TakeBannerSound()
+{
+    return std::exchange(bannerSound, 0);
+}
+
+void Mission::PushBanner(int objective, bool completed)
+{
+    if (banners.size() > 6) banners.erase(banners.begin()); // (олон зэрэг: хамгийн хуучныг алгасна)
+    banners.push_back({ objective, completed, 0.0f });
+    if (banners.size() == 1 && !BriefingOpen()) bannerSound = completed ? 2 : 1;
+}
+
+void Mission::UpdatePresentation(float dt, Vector3 player)
+{
+    if (!stage) return;
+    if (briefingTimer > 0.0f)
+    {
+        briefingTimer = std::max(0.0f, briefingTimer - dt);
+        if (briefingTimer <= 0.0f && !banners.empty()) bannerSound = banners.front().completed ? 2 : 1;
+    }
+    else if (!banners.empty())
+    {
+        banners.front().age += dt;
+        if (banners.front().age >= kBannerTime)
+        {
+            banners.erase(banners.begin());
+            if (!banners.empty()) bannerSound = banners.front().completed ? 2 : 1;
+        }
+    }
+    UpdateHint(dt, player);
+}
+
+void Mission::UpdateHint(float dt, Vector3 player)
+{
+    const int focus = FocusObjective();
+    if (focus != hintObjective)
+    {
+        hintObjective = focus;
+        hintTimer = 0.0f;
+        hintBest = 1e9f;
+        hintProgress = -1;
+    }
+    if (focus < 0 || focus >= 32 || ((hintShown >> focus) & 1u) || BriefingOpen()) return;
+    const float distance = DistanceTo(focus, player);
+    const int progress = states[(size_t)focus].progress;
+    // Ойртож (20 м-ээс их), эсвэл явц гарч байвал гацаагүй
+    if (distance < hintBest - 20.0f || progress != hintProgress)
+    {
+        hintBest = std::min(hintBest, distance);
+        hintProgress = progress;
+        hintTimer = 0.0f;
+        return;
+    }
+    hintTimer += dt;
+    if (hintTimer < 75.0f) return;
+    hintShown |= 1u << focus;
+    if (distance > 60.0f)
+    {
+        notice = InTouchMode() ? "Зөвлөгөө: газрын зураг дээрх даалгаврын тэмдэг дээр дарвал чиглэлийг сумаар заана"
+                               : "Зөвлөгөө: газрын зургийг (M) нээж даалгаврын тэмдэг дээр дарвал чиглэлийг сумаар заана";
+    }
+    else
+    {
+        notice = TextFormat("Зөвлөгөө: %s — дэлгэц дээрх тэмдэгтэй зүйлсийг хай", stage->objectives[(size_t)focus].title);
+    }
+    noticeTimer = 7.0f;
+}
+
+namespace
+{
+    // Нэг мөрөнд багтахгүй бол "…"-аар таслана (UTF-8 тэмдэгтийн дундуур биш)
+    std::string FitLine(std::string line, int size, int maxWidth, bool bold)
+    {
+        auto measure = [&](const std::string& s) { return bold ? Ui::MeasureBold(s.c_str(), size) : Ui::Measure(s.c_str(), size); };
+        if (measure(line) <= maxWidth) return line;
+        while (!line.empty() && measure(line + "\xE2\x80\xA6") > maxWidth)
+        {
+            line.pop_back();
+            while (!line.empty() && ((unsigned char)line.back() & 0xC0) == 0x80) line.pop_back();
+        }
+        return line + "\xE2\x80\xA6";
+    }
+
+    // Ногоон зөв тэмдэг (дугуйн дотор)
+    void DrawCheckBadge(Vector2 c, float r, float alpha)
+    {
+        const Color green = { 110, 220, 120, 255 };
+        DrawCircleV({ c.x + 1.0f, c.y + 2.0f }, r + 2.0f, Fade(BLACK, 0.35f * alpha));
+        DrawCircleV(c, r, Fade(green, alpha));
+        const float k = r / 20.0f;
+        DrawLineEx({ c.x - 9.0f * k, c.y + 1.0f * k }, { c.x - 2.5f * k, c.y + 8.0f * k }, 4.5f * k, Fade({ 18, 22, 30, 255 }, alpha));
+        DrawLineEx({ c.x - 2.5f * k, c.y + 8.0f * k }, { c.x + 10.0f * k, c.y - 7.0f * k }, 4.5f * k, Fade({ 18, 22, 30, 255 }, alpha));
+    }
+}
+
+void Mission::DrawBanner() const
+{
+    const Banner* banner = CurrentBanner();
+    if (!banner || banner->objective < 0 || banner->objective >= ObjectiveCount()) return;
+    const ObjectiveDef& def = stage->objectives[(size_t)banner->objective];
+    const MarkerKind kind = KindOf(def.type);
+    const Color accent = banner->completed ? Color{ 110, 220, 120, 255 } : MarkerColor(kind);
+
+    // Гарч ирэх (0.25 с), алга болох (0.45 с): тунгалаг ба бага зэрэг дээрээс доош гулсана
+    const float in = std::min(1.0f, banner->age / 0.25f);
+    const float out = std::min(1.0f, (kBannerTime - banner->age) / 0.45f);
+    const float alpha = std::clamp(std::min(in, out), 0.0f, 1.0f);
+    const float slide = (1.0f - in) * -18.0f;
+
+    const int screenWidth = ViewWidth(), screenHeight = ViewHeight();
+    const float width = std::min(640.0f, (float)screenWidth - 40.0f), height = 96.0f;
+    const Rectangle card = { ((float)screenWidth - width) * 0.5f, (float)screenHeight * 0.25f + slide, width, height };
+    Ui::Panel(card, Fade({ 12, 16, 22, 255 }, 0.9f * alpha), 14.0f);
+    Ui::Outline(card, Fade(accent, 0.75f * alpha), 2.0f, 14.0f);
+    DrawRectangleRounded({ card.x, card.y + 10.0f, 5.0f, card.height - 20.0f }, 1.0f, 4, Fade(accent, alpha));
+
+    const Vector2 badge = { card.x + 52.0f, card.y + card.height * 0.5f };
+    if (banner->completed) DrawCheckBadge(badge, 28.0f, alpha);
+    else DrawMarkerBadge(kind, badge, 28.0f, alpha, banner->objective + 1);
+
+    const int textX = (int)card.x + 98, textWidth = (int)card.width - 98 - 20;
+    char label[96];
+    if (banner->completed) std::snprintf(label, sizeof(label), "ДААЛГАВАР БИЕЛЛЭЭ  ·  %d / %d", CompletedCount(), ObjectiveCount());
+    else std::snprintf(label, sizeof(label), "ШИНЭ ДААЛГАВАР  ·  %s", MarkerName(kind));
+    Ui::TextBold(label, textX, (int)card.y + 12, 15, Fade(accent, alpha));
+    Ui::TextBold(FitLine(def.title, 26, textWidth, true).c_str(), textX, (int)card.y + 32, 26, Fade(Ui::kText, alpha));
+    // Биелсэн бол: дараагийн нээгдсэн даалгаврын нэр (дараалалд байгаа), эсвэл бүгд биелсэн
+    std::string second = def.description;
+    if (banner->completed)
+    {
+        second = IsComplete() ? "Бүх даалгавар биеллээ! Үлдсэн зомбийг устгаад аймгийг чөлөөл." : "Сайн байна! Үргэлжлүүл.";
+        for (size_t k = 1; k < banners.size(); ++k)
+        {
+            if (banners[k].completed || banners[k].objective < 0 || banners[k].objective >= ObjectiveCount()) continue;
+            second = std::string("Дараагийнх: ") + stage->objectives[(size_t)banners[k].objective].title;
+            break;
+        }
+    }
+    Ui::Text(FitLine(second, 17, textWidth, false).c_str(), textX, (int)card.y + 66, 17, Fade(Ui::kTextDim, alpha));
+}
+
+void Mission::DrawBriefing() const
+{
+    if (!BriefingOpen() || !stage) return;
+    const float alpha = std::clamp(briefingTimer / 0.35f, 0.0f, 1.0f);
+    const int screenWidth = ViewWidth(), screenHeight = ViewHeight();
+    DrawRectangle(0, 0, screenWidth, screenHeight, Fade({ 6, 8, 12, 255 }, 0.55f * alpha));
+
+    const int count = ObjectiveCount();
+    const float row = 34.0f;
+    const float width = std::min(720.0f, (float)screenWidth - 32.0f);
+    const int goalLines = 2;
+    const float height = std::min((float)screenHeight - 24.0f, 150.0f + 24.0f * (float)goalLines + row * (float)count + 64.0f);
+    const Rectangle card = { ((float)screenWidth - width) * 0.5f, ((float)screenHeight - height) * 0.5f, width, height };
+    Ui::Panel(card, Fade({ 14, 18, 26, 255 }, 0.95f * alpha), 18.0f);
+    Ui::Outline(card, Fade(kMarker, 0.6f * alpha), 2.0f, 18.0f);
+
+    const int left = (int)card.x + 28;
+    int y = (int)card.y + 20;
+    Ui::TextBold(TextFormat("АЙМАГ %d / %d", province + 1, (int)Provinces().size()), left, y, 15, Fade(kMarker, alpha));
+    y += 22;
+    Ui::TextBold(stage->provinceName, left, y, 40, Fade(Ui::kText, alpha));
+    y += 50;
+    y += 24 * DrawWrapped(stage->goal, left, y, 20, (int)card.width - 56, Fade(Ui::kTextDim, alpha));
+    y += 10;
+    DrawLine(left, y, (int)(card.x + card.width) - 28, y, Fade(kMarker, 0.4f * alpha));
+    y += 12;
+    Ui::TextBold("ДААЛГАВРУУД", left, y, 15, Fade(Ui::kTextDim, alpha));
+    y += 24;
+
+    for (int i = 0; i < count && (float)y + row < card.y + card.height - 48.0f; ++i)
+    {
+        const ObjectiveDef& def = stage->objectives[(size_t)i];
+        const ObjectiveState& state = states[(size_t)i];
+        const bool done = state.status == ObjectiveStatus::Done;
+        const bool locked = state.status == ObjectiveStatus::Locked;
+        const float rowAlpha = alpha * (locked ? 0.55f : 1.0f);
+        if (done) DrawCheckBadge({ (float)left + 13.0f, (float)y + 12.0f }, 13.0f, rowAlpha);
+        else DrawMarkerBadge(KindOf(def.type), { (float)left + 13.0f, (float)y + 12.0f }, 13.0f, rowAlpha);
+        const Color color = done ? Color{ 110, 220, 120, 255 } : locked ? Ui::kTextDim : Ui::kText;
+        Ui::TextBold(TextFormat("%d. %s", i + 1, def.title), left + 36, y + 2, 19, Fade(color, rowAlpha));
+        const char* state_text = done ? "биелсэн" : locked ? "дараа нь" : "одоо";
+        const int w = Ui::Measure(state_text, 15);
+        Ui::Text(state_text, (int)(card.x + card.width) - 28 - w, y + 5, 15, Fade(color, rowAlpha));
+        y += (int)row;
+    }
+
+    // Доод мөр: хаах заавар ба автоматаар хаагдах хүртэлх зурвас
+    const char* hint = InTouchMode() ? "Дэлгэц дээр товшиж эхлэх" : "Дурын товч дарж эхлэх   ·   Q: даалгаврын журнал   ·   M: газрын зураг";
+    const int hintWidth = Ui::Measure(hint, 16);
+    const int bottom = (int)(card.y + card.height) - 34;
+    Ui::Text(hint, (int)(card.x + (card.width - (float)hintWidth) * 0.5f), bottom, 16, Fade(Ui::kTextDim, alpha));
+    const float left_frac = std::clamp(briefingTimer / 12.0f, 0.0f, 1.0f);
+    DrawRectangleRounded({ card.x + 28.0f, card.y + card.height - 10.0f, (card.width - 56.0f) * left_frac, 3.0f }, 1.0f, 4,
+                         Fade(kMarker, 0.7f * alpha));
 }
 
 bool Mission::InClearedZone(Vector3 position) const
@@ -1186,11 +1428,18 @@ void Mission::DrawBeacons(const World& world, Vector3 viewPosition) const
             continue;
         }
 
-        // Алсаас харагдах гэрлийн багана: даалгаврын байршлыг заана.
+        // Алсаас харагдах нарийн гэрлийн багана (төрлийн өнгөөр): ойртоход (40 м) алга болно, дэлгэц дээрх тэмдэг заана
         const float distance = HorizontalDistance(viewPosition, state.location);
-        const float width = std::clamp(distance * 0.012f, 0.35f, 4.0f); // хол байх тусам бүдүүн зурж харагдуулна
-        DrawCubeV({ state.location.x, state.location.y + 45.0f, state.location.z }, { width, 90.0f, width },
-                  Fade(kMarker, 0.22f + 0.12f * pulse));
+        const Color beam = MarkerColor(KindOf(def.type));
+        if (distance > 40.0f)
+        {
+            const float width = std::clamp(distance * 0.005f, 0.25f, 2.2f); // хол байх тусам бүдүүн (харагдахуйц)
+            const float fade = std::min(1.0f, (distance - 40.0f) / 60.0f);
+            DrawCubeV({ state.location.x, state.location.y + 30.0f, state.location.z }, { width, 60.0f, width },
+                      Fade(beam, (0.16f + 0.08f * pulse) * fade));
+            DrawCubeV({ state.location.x, state.location.y + 90.0f, state.location.z }, { width * 0.7f, 60.0f, width * 0.7f },
+                      Fade(beam, (0.06f + 0.04f * pulse) * fade));
+        }
 
         // Бүсийн хүрээ: газрын гадаргууг дагасан цагираг
         if (state.radius > 0.0f && distance < 220.0f)
@@ -1203,23 +1452,12 @@ void Mission::DrawBeacons(const World& world, Vector3 viewPosition) const
                 const float x = state.location.x + std::sin(angle) * state.radius;
                 const float z = state.location.z + std::cos(angle) * state.radius;
                 const Vector3 point = { x, world.GroundHeight(x, z) + 0.35f, z };
-                if (s > 0) DrawLine3D(previous, point, kMarker);
+                if (s > 0) DrawLine3D(previous, point, beam);
                 previous = point;
             }
         }
 
-        // Аврах хүн, цуглуулах зүйл, төхөөрөмж бүрийн дээр жижиг тэмдэг
-        if (distance < kDrawDistance)
-        {
-            for (const MissionEntity& entity : state.entities)
-            {
-                if (entity.used) continue;
-                const float height = def.type == ObjectiveType::CollectItems ? 1.3f : 2.7f;
-                const float bob = 0.12f * std::sin((float)GetTime() * 4.0f + entity.position.x);
-                DrawCubeV({ entity.position.x, entity.position.y + height + bob, entity.position.z }, { 0.22f, 0.22f, 0.22f },
-                          kMarker);
-            }
-        }
+        // (Аврах хүн, цуглуулах зүйл, төхөөрөмж бүрийн тэмдгийг Game дэлгэц дээр 2D-ээр зурна)
     }
 }
 
@@ -1293,7 +1531,9 @@ void Mission::DrawJournal() const
         char title[160];
         std::snprintf(title, sizeof(title), "%d. %s", i + 1, def.title);
         const Color titleColor = done ? kDoneGreen : locked ? dim : text;
-        Ui::TextBold(title, left + 74, y, compact ? 20 : 24, titleColor);
+        DrawMarkerBadge(KindOf(def.type), { (float)left + 88.0f, (float)y + (compact ? 11.0f : 13.0f) }, compact ? 11.0f : 13.0f,
+                        locked ? 0.5f : 1.0f);
+        Ui::TextBold(title, left + 106, y, compact ? 20 : 24, titleColor);
 
         // Төлөв: баруун талд
         const char* status = done ? "БИЕЛСЭН" : locked ? "ТҮГЖЭЭТЭЙ" : (i == focus ? "ОДОО ХИЙХ" : "ИДЭВХТЭЙ");
@@ -1309,11 +1549,11 @@ void Mission::DrawJournal() const
             else right[0] = '\0';
             const int rightWidth = UiMeasure(right, 16);
             UiText(right, left + width - 34 - rightWidth, y + 28, 16, done ? kDoneGreen : dim);
-            UiText(fit(def.description, 16, width - 74 - 60 - rightWidth).c_str(), left + 74, y + 28, 16, locked ? dim : text);
+            UiText(fit(def.description, 16, width - 106 - 60 - rightWidth).c_str(), left + 106, y + 28, 16, locked ? dim : text);
             y += blockHeight;
             continue;
         }
-        const int lines = DrawWrapped(def.description, left + 74, y + 32, 20, width - 74 - 40, locked ? dim : text);
+        const int lines = DrawWrapped(def.description, left + 106, y + 32, 20, width - 106 - 40, locked ? dim : text);
 
         // Явц (тоо, хугацаатай даалгаварт) ба шагнал
         char detail[160];
@@ -1329,7 +1569,7 @@ void Mission::DrawJournal() const
         {
             detail[0] = '\0';
         }
-        UiText(detail, left + 74, y + 34 + lines * 24, 18, done ? kDoneGreen : dim);
+        UiText(detail, left + 106, y + 34 + lines * 24, 18, done ? kDoneGreen : dim);
 
         y += blockHeight;
     }

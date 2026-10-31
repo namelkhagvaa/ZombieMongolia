@@ -27,6 +27,9 @@ public:
     // Саадууд өөрчлөгдсөн (суурингууд дахин үүссэн): өвс, чулууны mesh-үүдийг хаяж, дахин үүсгүүлнэ.
     void InvalidateDetails();
 
+    // Аймгийн чийглэг байдал 0 (говь) .. 1 (Хангай, ойт): ногоон өвс, цэцэг олон. Өөрчлөгдвөл өвсийг дахин үүсгэнэ.
+    void SetLushness(float value);
+
     // Layout солигдсон (Улаанбаатарын жинхэнэ хот <-> хээр тал): өндрийн торыг дахин тооцож, бүх mesh-ийг хаяна.
     void Rebuild();
 
@@ -70,6 +73,7 @@ private:
     // step: нэг дөрвөлжинд орох нүдний тоо (1 = бүрэн, 2 = бүдүүн).
     Mesh BuildGround(const Chunk& chunk, int step) const;
     Mesh BuildDetails(const Chunk& chunk) const;
+    float lushness = 0.5f;
     Vector3 GridNormal(int ix, int iz) const;
     Color GroundColor(int ix, int iz, Vector3 normal) const;
     Color CityGroundColor(float x, float z, Vector3 normal) const;

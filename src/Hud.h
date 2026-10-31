@@ -9,6 +9,10 @@ struct HudInfo
     const char* provinceName = "";
     const char* objective = nullptr;       // одоо хийх даалгавар: "2 / 4  Генераторыг асаа" (UTF-8)
     const char* objectiveDetail = nullptr; // явц ба зай: "1 / 3    120 м"
+    int objectiveKind = -1;                // MarkerKind: картын тэмдэг (-1 = тэмдэггүй, жишээ нь зочин)
+    const char* objectiveHint = nullptr;   // юу хийхийг нэг мөрөөр (даалгаврын тайлбар)
+    float objectiveProgress = -1.0f;       // явцын зурвас 0..1 (-1 = байхгүй)
+    const char* objectiveNext = nullptr;   // зэрэг идэвхтэй өөр даалгавар ("+ Эм цуглуул")
     int hordeSmall = -1;                   // үлдсэн жирийн зомби (-1 = харуулахгүй)
     int hordeBig = 0;                      // үлдсэн том зомби
     float zombieSpeed = 1.0f;              // зомбины хурдны үржүүлэгч (> 1 бол чип харуулна)

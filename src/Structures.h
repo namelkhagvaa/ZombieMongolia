@@ -37,7 +37,8 @@ void BuildStaticStructures(const Layout& layout, const Terrain& terrain, std::ve
                            MeshBuilder& solid, MeshBuilder& shadows, MeshBuilder& glass,
                            std::vector<Interior>& interiors, std::vector<Door>& doors,
                            std::vector<Passage>& passages, std::vector<WallSegment>& walls,
-                           std::vector<FencePanel>& panels, MeshBuilder& scenery, std::vector<SceneryPlacement>& placements);
+                           std::vector<FencePanel>& panels, MeshBuilder& scenery, std::vector<SceneryPlacement>& placements,
+                           std::vector<Facade>* facades = nullptr);
 
 // Хотын байшингийн налуу дээвэр (хоёр налуу, дөрвөн налуу): дээвэр дээр алхах, нисдэг тэрэг буух өндөр
 // (World::SurfaceHeightAt). Хананы оройг (World::RoofHeight) биш, дээврийн жинхэнэ гадаргууг.
@@ -65,4 +66,5 @@ void BuildSettlementStructures(int variant, const Layout& layout, const Terrain&
                                std::vector<Obstacle>& obstacles, MeshBuilder& solid, MeshBuilder& shadows,
                                MeshBuilder& glass, std::vector<Interior>& interiors, std::vector<Door>& doors,
                            std::vector<Passage>& passages, std::vector<WallSegment>& walls,
-                           std::vector<FencePanel>& panels, MeshBuilder& scenery, std::vector<SceneryPlacement>& placements);
+                           std::vector<FencePanel>& panels, MeshBuilder& scenery, std::vector<SceneryPlacement>& placements,
+                           std::vector<Facade>* facades = nullptr);

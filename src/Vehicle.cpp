@@ -358,7 +358,7 @@ namespace
         if (HasVehicleModel(VehicleModelId::Truck))
         {
             const Color tint = propMaterial && !modelDepthMaterial ? propMaterial->maps[MATERIAL_MAP_DIFFUSE].color : WHITE;
-            DrawVehicleModel(VehicleModelId::Truck, v.animation, v.steer, modelDepthMaterial, tint);
+            DrawVehicleModel(VehicleModelId::Truck, v.animation, v.steer, modelDepthMaterial, tint, 0.0f, 0.0f, v.flatTires);
             return;
         }
         DrawProp(TruckBody());
@@ -447,13 +447,8 @@ namespace
         if (HasVehicleModel(VehicleModelId::Armored))
         {
             const Color tint = propMaterial && !modelDepthMaterial ? propMaterial->maps[MATERIAL_MAP_DIFFUSE].color : WHITE;
-            DrawVehicleModel(VehicleModelId::Armored, v.animation, v.steer, modelDepthMaterial, tint, turret, v.turretPitch);
-            if (v.turretRecoil > 0.5f && !modelDepthMaterial)
-            {
-                // Амны гал (пулемётын амсар дээр)
-                DrawSphere(ArmorMuzzleLocal(turret, v.turretPitch, true), 0.1f + 0.08f * v.turretRecoil, { 255, 220, 120, 230 });
-            }
-            return;
+            DrawVehicleModel(VehicleModelId::Armored, v.animation, v.steer, modelDepthMaterial, tint, turret, v.turretPitch, v.flatTires);
+            return; // (амны гал: буудахад Particles::Flash)
         }
         DrawProp(ArmoredBody());
         const float spin = v.animation / kArmorWheel;
@@ -473,12 +468,7 @@ namespace
         rlTranslatef(0.0f, 2.95f, -0.1f);
         rlRotatef(turret * RAD2DEG, 0.0f, 1.0f, 0.0f);
         rlRotatef(-v.turretPitch * RAD2DEG, 1.0f, 0.0f, 0.0f);
-        DrawProp(ArmoredTurret());
-        if (v.turretRecoil > 0.5f && !modelDepthMaterial)
-        {
-            // Амны гал
-            DrawSphere({ 0.0f, 0.42f, 1.85f }, 0.18f + 0.1f * v.turretRecoil, { 255, 200, 90, 220 });
-        }
+        DrawProp(ArmoredTurret()); // (амны гал: буудахад Particles::Flash)
         rlPopMatrix();
     }
 
@@ -503,7 +493,7 @@ namespace
         if (HasVehicleModel(model))
         {
             const Color tint = propMaterial && !modelDepthMaterial ? propMaterial->maps[MATERIAL_MAP_DIFFUSE].color : WHITE;
-            DrawVehicleModel(model, v.animation, v.steer, modelDepthMaterial, tint);
+            DrawVehicleModel(model, v.animation, v.steer, modelDepthMaterial, tint, 0.0f, 0.0f, v.flatTires);
             return;
         }
         DrawProp(JeepBody());
@@ -652,7 +642,7 @@ namespace
         if (HasVehicleModel(VehicleModelId::Motorcycle))
         {
             const Color tint = propMaterial && !modelDepthMaterial ? propMaterial->maps[MATERIAL_MAP_DIFFUSE].color : WHITE;
-            DrawVehicleModel(VehicleModelId::Motorcycle, v.animation, v.steer, modelDepthMaterial, tint);
+            DrawVehicleModel(VehicleModelId::Motorcycle, v.animation, v.steer, modelDepthMaterial, tint, 0.0f, 0.0f, v.flatTires);
             return;
         }
         DrawProp(MotorcycleBody());
@@ -709,7 +699,7 @@ namespace
         if (HasVehicleModel(VehicleModelId::Trike))
         {
             const Color tint = propMaterial && !modelDepthMaterial ? propMaterial->maps[MATERIAL_MAP_DIFFUSE].color : WHITE;
-            DrawVehicleModel(VehicleModelId::Trike, v.animation, v.steer, modelDepthMaterial, tint);
+            DrawVehicleModel(VehicleModelId::Trike, v.animation, v.steer, modelDepthMaterial, tint, 0.0f, 0.0f, v.flatTires);
             return;
         }
         DrawProp(TrikeBody());
@@ -927,6 +917,157 @@ namespace
 
         rlPopMatrix();
     }
+}
+
+namespace
+{
+    // Унааны төрөл -> текстуртай загвар (байгаа бол)
+    bool ModelFor(VehicleType type, VehicleModelId& id)
+    {
+        switch (type)
+        {
+        case VehicleType::Jeep: id = VehicleModelId::Jeep; break;
+        case VehicleType::Suv: id = VehicleModelId::Suv; break;
+        case VehicleType::Hatchback: id = VehicleModelId::Hatchback; break;
+        case VehicleType::Sedan: id = VehicleModelId::Sedan; break;
+        case VehicleType::Compact: id = VehicleModelId::Compact; break;
+        case VehicleType::Truck: id = VehicleModelId::Truck; break;
+        case VehicleType::Armored: id = VehicleModelId::Armored; break;
+        case VehicleType::Motorcycle: id = VehicleModelId::Motorcycle; break;
+        case VehicleType::Trike: id = VehicleModelId::Trike; break;
+        default: return false;
+        }
+        return HasVehicleModel(id);
+    }
+
+    float TireHalfWidth(VehicleType type)
+    {
+        switch (type)
+        {
+        case VehicleType::Truck: return 0.2f;
+        case VehicleType::Armored: return 0.22f;
+        case VehicleType::Motorcycle:
+        case VehicleType::Trike: return 0.07f;
+        default: return 0.13f;
+        }
+    }
+
+    // Хагарсан дугуйгаар их бие тэр буланд суух (ойролцоогоор): доош шилжилт, хажуу (Z), урд хойд (X) хазайлт.
+    // Явж байхад хагарсан дугуй эргэлт бүрд бага зэрэг доргино.
+    struct Sag
+    {
+        float drop = 0.0f, roll = 0.0f, pitch = 0.0f;
+    };
+
+    Sag SagOf(const Vehicle& v)
+    {
+        Sag sag;
+        if (!v.flatTires) return sag;
+        WheelSpot spots[8];
+        const int count = VehicleWheels(v.type, spots, 8);
+        int flats = 0;
+        float radius = 0.4f;
+        for (int k = 0; k < count; ++k)
+        {
+            if (!(v.flatTires >> k & 1u)) continue;
+            const Vector3 c = spots[k].center;
+            const float quarter = 0.2f * spots[k].radius * 0.25f; // дугуй радиусынхаа ~20%-иар сууна
+            sag.drop += quarter;
+            if (std::fabs(c.x) > 0.05f) sag.roll += -quarter / c.x;  // (тэр тал доош: y += x * roll)
+            if (std::fabs(c.z) > 0.05f) sag.pitch += -quarter / c.z; // (y += z * pitch)
+            radius = spots[k].radius;
+            ++flats;
+        }
+        if (std::fabs(v.speed) > 0.5f)
+        {
+            sag.roll += std::sin(v.animation / std::max(0.2f, radius)) * 0.006f * (float)std::min(flats, 3);
+        }
+        return sag;
+    }
+
+    // Машины орон нутаг <-> ертөнц (Garage::Draw-ийн хувиргалттай ижил дарааллаар, суулт оруулаад)
+    Vector3 VehicleToWorld(const Vehicle& v, Vector3 p, bool point)
+    {
+        const Sag sag = SagOf(v);
+        p = Vector3Transform(p, MatrixRotateX(-sag.pitch));
+        p = Vector3Transform(p, MatrixRotateZ(sag.roll));
+        if (point) p.y -= sag.drop;
+        p = Vector3Transform(p, MatrixRotateZ(v.roll));
+        p = Vector3Transform(p, MatrixRotateX(-v.pitch));
+        p = Vector3Transform(p, MatrixRotateY(v.heading));
+        return point ? Vector3Add(p, v.position) : p;
+    }
+
+    Vector3 VehicleToLocal(const Vehicle& v, Vector3 p, bool point)
+    {
+        const Sag sag = SagOf(v);
+        if (point) p = Vector3Subtract(p, v.position);
+        p = Vector3Transform(p, MatrixRotateY(-v.heading));
+        p = Vector3Transform(p, MatrixRotateX(v.pitch));
+        p = Vector3Transform(p, MatrixRotateZ(-v.roll));
+        if (point) p.y += sag.drop;
+        p = Vector3Transform(p, MatrixRotateZ(-sag.roll));
+        p = Vector3Transform(p, MatrixRotateX(sag.pitch));
+        return p;
+    }
+
+    // Мотоциклийн загварт нэг дугуй хоёр хагас хэсэг (зүүн, баруун): ижил дугуйн хэсгүүд
+    bool SameTire(const WheelSpot& a, const WheelSpot& b)
+    {
+        return std::fabs(a.center.z - b.center.z) < 0.1f && std::fabs(a.center.x - b.center.x) < a.radius * 0.6f;
+    }
+}
+
+int VehicleWheels(VehicleType type, WheelSpot* out, int max)
+{
+    if (type == VehicleType::Horse || IsHelicopter(type) || max <= 0) return 0;
+    VehicleModelId id;
+    if (ModelFor(type, id))
+    {
+        Vector3 centers[8];
+        const int count = VehicleModelWheels(id, centers, std::min(max, 8));
+        for (int k = 0; k < count; ++k) out[k] = { centers[k], centers[k].y, TireHalfWidth(type) };
+        if (count > 0) return count;
+    }
+    // Кодоор угсарсан хэлбэрүүдийн дугуй (Draw*-тэй ижил)
+    int count = 0;
+    auto add = [&](float x, float r, float z) {
+        if (count < max) out[count++] = { { x, r, z }, r, TireHalfWidth(type) };
+    };
+    switch (type)
+    {
+    case VehicleType::Truck:
+        for (float z : kTruckAxles)
+        {
+            add(-1.02f, kTruckWheel, z);
+            add(1.02f, kTruckWheel, z);
+        }
+        break;
+    case VehicleType::Armored:
+        for (float z : kArmorAxles)
+        {
+            add(-1.08f, kArmorWheel, z);
+            add(1.08f, kArmorWheel, z);
+        }
+        break;
+    case VehicleType::Motorcycle:
+        add(0.0f, 0.34f, 0.72f);
+        add(0.0f, 0.34f, -0.72f);
+        break;
+    case VehicleType::Trike:
+        add(0.0f, 0.34f, 0.95f);
+        add(-0.62f, 0.34f, -0.85f);
+        add(0.62f, 0.34f, -0.85f);
+        break;
+    default:
+        for (float z : { 1.2f, -1.2f })
+        {
+            add(-0.86f, 0.42f, z);
+            add(0.86f, 0.42f, z);
+        }
+        break;
+    }
+    return count;
 }
 
 namespace
@@ -1240,8 +1381,10 @@ float Garage::Repair(int index, float amount)
 {
     Vehicle& vehicle = vehicles[(size_t)index];
     if (vehicle.wrecked) return 0.0f;
+    if (amount > 0.0f) vehicle.flatTires = 0; // засварын газар хагарсан дугуйг солино
     const float added = std::min(amount, SpecFor(vehicle.type).maxHealth - vehicle.health);
     vehicle.health += added;
+    if (vehicle.health >= SpecFor(vehicle.type).maxHealth - 0.01f) vehicle.holes.clear();
     return added;
 }
 
@@ -1261,6 +1404,118 @@ void Garage::Damage(int index, float amount)
         // Эвдрэхэд: машин тэсрэх мэт, морь унах
         Audio::Play(vehicle.type == VehicleType::Horse ? Sfx::Thud : Sfx::Explosion, vehicle.position, 0.8f,
                     vehicle.type == VehicleType::Horse ? 0.7f : 1.3f);
+    }
+}
+
+int Garage::RaycastWheel(int index, Ray ray, float maxDistance, float& distance) const
+{
+    const Vehicle& v = vehicles[(size_t)index];
+    WheelSpot spots[8];
+    const int count = VehicleWheels(v.type, spots, 8);
+    if (count == 0) return -1;
+    const Vector3 o = VehicleToLocal(v, ray.position, true), d = VehicleToLocal(v, ray.direction, false);
+    int best = -1;
+    distance = maxDistance;
+    for (int k = 0; k < count; ++k)
+    {
+        const WheelSpot& w = spots[k];
+        const Vector3 oc = Vector3Subtract(o, w.center);
+        auto consider = [&](float t) {
+            if (t > 0.0f && t < distance)
+            {
+                distance = t;
+                best = k;
+            }
+        };
+        // Дугуйн гадаргуу (X тэнхлэгтэй цилиндр)
+        const float a = d.y * d.y + d.z * d.z;
+        if (a > 1e-6f)
+        {
+            const float b = 2.0f * (oc.y * d.y + oc.z * d.z), c = oc.y * oc.y + oc.z * oc.z - w.radius * w.radius;
+            const float disc = b * b - 4.0f * a * c;
+            if (disc >= 0.0f)
+            {
+                const float t = (-b - std::sqrt(disc)) / (2.0f * a);
+                if (std::fabs(oc.x + d.x * t) <= w.halfWidth) consider(t);
+            }
+        }
+        // Хажуугийн тал (обуд): хажуунаас буудахад
+        if (std::fabs(d.x) > 1e-6f)
+        {
+            for (float side : { -w.halfWidth, w.halfWidth })
+            {
+                const float t = (side - oc.x) / d.x;
+                const float y = oc.y + d.y * t, z = oc.z + d.z * t;
+                if (y * y + z * z <= w.radius * w.radius) consider(t);
+            }
+        }
+    }
+    return best;
+}
+
+bool Garage::BurstTire(int index, int wheel)
+{
+    Vehicle& v = vehicles[(size_t)index];
+    WheelSpot spots[8];
+    const int count = VehicleWheels(v.type, spots, 8);
+    if (wheel < 0 || wheel >= count || (v.flatTires >> wheel & 1u)) return false;
+    for (int k = 0; k < count; ++k)
+    {
+        if (k == wheel || SameTire(spots[wheel], spots[k])) v.flatTires |= 1u << k;
+    }
+    return true;
+}
+
+int Garage::FlatCount(int index) const
+{
+    const Vehicle& v = vehicles[(size_t)index];
+    if (!v.flatTires) return 0;
+    WheelSpot spots[8];
+    const int count = VehicleWheels(v.type, spots, 8);
+    int flats = 0;
+    for (int k = 0; k < count; ++k)
+    {
+        if (!(v.flatTires >> k & 1u)) continue;
+        bool twin = false; // (мотоциклийн нэг дугуйн нөгөө хагас аль хэдийн тоологдсон)
+        for (int j = 0; j < k; ++j) twin = twin || ((v.flatTires >> j & 1u) && SameTire(spots[j], spots[k]));
+        if (!twin) ++flats;
+    }
+    return flats;
+}
+
+bool Garage::SurfaceHit(int index, Ray ray, float maxDistance, Vector3& point, Vector3& normal) const
+{
+    const Vehicle& v = vehicles[(size_t)index];
+    VehicleModelId id;
+    if (!ModelFor(v.type, id)) return false;
+    const Ray local = { VehicleToLocal(v, ray.position, true), VehicleToLocal(v, ray.direction, false) };
+    float distance = 0.0f;
+    Vector3 n = { 0.0f, 1.0f, 0.0f };
+    if (!RaycastVehicleModel(id, local, maxDistance, distance, n)) return false;
+    point = VehicleToWorld(v, Vector3Add(local.position, Vector3Scale(local.direction, distance)), true);
+    normal = Vector3Normalize(VehicleToWorld(v, n, false));
+    if (Vector3DotProduct(normal, ray.direction) > 0.0f) normal = Vector3Negate(normal);
+    return true;
+}
+
+void Garage::AddHole(int index, Vector3 point, Vector3 normal)
+{
+    Vehicle& v = vehicles[(size_t)index];
+    if (v.holes.size() >= 40) v.holes.erase(v.holes.begin()); // хамгийн хуучин нь арилна
+    v.holes.push_back(BulletHoles::Make(VehicleToLocal(v, point, true), VehicleToLocal(v, normal, false), true));
+}
+
+void Garage::CollectHoles(Vector3 viewPosition, float maxDistance, std::vector<BulletHole>& out) const
+{
+    for (const Vehicle& v : vehicles)
+    {
+        if (v.holes.empty() || HorizontalDistance(viewPosition, v.position) > maxDistance) continue;
+        for (BulletHole hole : v.holes)
+        {
+            hole.position = VehicleToWorld(v, hole.position, true);
+            hole.normal = VehicleToWorld(v, hole.normal, false);
+            out.push_back(hole);
+        }
     }
 }
 
@@ -1651,6 +1906,12 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
         {
             maxSpeed *= 0.55f; // Shift дарахгүй бол хатирна (~33 км/ц); Shift: давхина (~60 км/ц)
         }
+        // Хагарсан дугуй: обуд дээр явах мэт удаан (нэг дугуйтай ~45%, олон дугуйтай бүр удаан), хурдлалт сул
+        const int flats = FlatCount(i);
+        if (flats > 0)
+        {
+            maxSpeed *= vehicle.type == VehicleType::Motorcycle ? 0.3f : flats == 1 ? 0.45f : flats == 2 ? 0.3f : 0.2f;
+        }
 
         // --- Хурд ---
         float input = byPlayer ? throttle : controlled ? escortThrottle : 0.0f;
@@ -1692,7 +1953,7 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
             // Урагш: ухарч байсан бол эхлээд тоормослоно. Хурдлалт аажим: эхэндээ хүчтэй, дээд хурд руу ойртох тусам
             // суларна (0-ээс дээд хурд хүртэл ~10-15 секунд), шууд дээд хурдандаа хүрэхгүй.
             const float ratio = maxSpeed > 0.1f ? std::clamp(vehicle.speed / maxSpeed, 0.0f, 1.0f) : 0.0f;
-            const float pull = std::max(0.12f, 1.0f - ratio * std::sqrt(ratio)) * 0.75f;
+            const float pull = std::max(0.12f, 1.0f - ratio * std::sqrt(ratio)) * 0.75f * (flats > 0 ? 0.6f : 1.0f);
             vehicle.speed += (vehicle.speed < 0.0f ? spec.braking : spec.acceleration * pull) * input * dt;
         }
         else if (input < 0.0f)
@@ -1728,6 +1989,21 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
             vehicle.heading -= steerInput * rate * grip * dt; // D = баруун тийш
             // Гар тоормостой шарвахад ар нь гулсаж, машин илүү огцом эргэнэ
             if (sliding) vehicle.heading -= steerInput * (vehicle.type == VehicleType::Truck ? 0.5f : 1.1f) * (vehicle.speed >= 0.0f ? 1.0f : -1.0f) * dt;
+        }
+
+        // Хагарсан дугуй тэр тал руугаа татна (жолоогоор эсрэг тийш барина): урд дугуй илүү хүчтэй
+        if (flats > 0 && !vehicle.wrecked)
+        {
+            WheelSpot spots[8];
+            const int count = VehicleWheels(vehicle.type, spots, 8);
+            float bias = 0.0f;
+            for (int k = 0; k < count; ++k)
+            {
+                if (!(vehicle.flatTires >> k & 1u)) continue;
+                const float x = spots[k].center.x;
+                bias += (x > 0.05f ? 1.0f : x < -0.05f ? -1.0f : 0.0f) * (spots[k].center.z > 0.0f ? 1.0f : 0.6f);
+            }
+            vehicle.heading += bias * 0.09f * std::clamp(vehicle.speed / 6.0f, -1.0f, 1.0f) * dt; // (+X зүүн: зүүн тийш)
         }
 
         // --- Дугуйн наалдац: хажуугийн гулсалтыг унтраана (засмал дээр хурдан, хээр талд удаан, гар тоормостой үед бараг үгүй) ---
@@ -1923,6 +2199,14 @@ void Garage::Draw(Vector3 viewPosition, float maxDistance, const Material* mater
         rlRotatef(vehicle.heading * RAD2DEG, 0.0f, 1.0f, 0.0f);
         rlRotatef(-vehicle.pitch * RAD2DEG, 1.0f, 0.0f, 0.0f); // өгсүүрт хошуу дээшилнэ
         rlRotatef(vehicle.roll * RAD2DEG, 0.0f, 0.0f, 1.0f);   // хажуу налууд хазайна
+        if (vehicle.flatTires)
+        {
+            // Хагарсан дугуйтай булан сууна (VehicleToWorld-тэй ижил)
+            const Sag sag = SagOf(vehicle);
+            rlTranslatef(0.0f, -sag.drop, 0.0f);
+            rlRotatef(sag.roll * RAD2DEG, 0.0f, 0.0f, 1.0f);
+            rlRotatef(-sag.pitch * RAD2DEG, 1.0f, 0.0f, 0.0f);
+        }
 
         if (!shadowPass && !IsHelicopter(vehicle.type) && vehicle.type != VehicleType::Horse && vehicle.type != VehicleType::Motorcycle)
         {

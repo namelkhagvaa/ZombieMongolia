@@ -23,7 +23,7 @@ $files = @(
     @("icons", "*.png"), @("huds", "*.png"), @("terrain", "*.png"), @("surfaces", "*.jpg"),
     @("cars", "*.vmesh"), @("cars", "*_color.png"), @("buu", "*.vmesh"), @("buu", "*_color.png"),
     @("sounds", "*.wav"), @("sounds\narration", "*.wav"), @("trees", "*.vmesh"), @("trees", "*_color.png"), @("trees", "*_far.bin"),
-    @("pooshig", "*.vmesh"), @("pooshig", "*_color.png"), @("city", "*.bin")
+    @("pooshig", "*.vmesh"), @("pooshig", "*_color.png"), @("monuments", "*.vmesh"), @("monuments", "*_color.png"), @("city", "*.bin")
 )
 foreach ($entry in $files) {
     $target = if ($entry[0]) { Join-Path $stage $entry[0] } else { $stage }

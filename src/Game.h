@@ -22,6 +22,7 @@
 #include "Team.h"
 #include "ThirdPersonCamera.h"
 #include "Tracers.h"
+#include "BulletHoles.h"
 #include "Vehicle.h"
 #include "Weapon.h"
 #include "WorldEvents.h"
@@ -67,6 +68,7 @@ struct LaunchOptions
     int ride = 0;             // 1..4: жийп, мотоцикл, гурван дугуйт, морийг унаж шууд урагш явна (--ride N)
     float timeScale = 1.0f;   // туршилтад тоглоомын цагийг хурдасгана (--timescale X)
     bool journal = false;     // даалгаврын журналыг нээлттэй эхлүүлнэ (--journal)
+    bool briefing = false;    // туршилтад ч аймгийн танилцуулгыг харуулна (--briefing; ердийн тоглоомд үргэлж)
     bool shop = false;        // дэлгүүрийн цэсийг нээлттэй эхлүүлнэ (--shop)
     bool characterSelect = false; // газрын зураг дээр дүр сонгох цонхыг нээнэ (--campaign --select)
     bool stayOnMap = false;       // --campaign --api: нэвтэрсний дараа аймаг эхлүүлэхгүй (дэлгүүр, Gold шалгах)
@@ -259,6 +261,11 @@ private:
 
     void Draw() const;
     void DrawMission() const;      // HUD ба 2D давхарга (3D зургийн дараа)
+    // Идэвхтэй даалгаврууд ба гэнэтийн үйл явдлууд (газрын зураг, дэлгэц дээрх чиглүүлэгчид)
+    void CollectMapMarkers(std::vector<MapMarker>& out) const;
+    // Дэлгэц дээр: даалгаврын байршлын тэмдэг ба зай (харагдахгүй бол дэлгэцийн ирмэг дээр сумтай), ойрын
+    // объект (аврах хүн, хайрцаг, төхөөрөмж) бүрийн дээр төрлийн тэмдэг
+    void DrawObjectiveGuides() const;
     void DrawMissionScene() const; // тэнгэр + 3D ертөнц
     void RenderShadows() const;    // нарны сүүдрийн зураг (frame бүрд, 3D-ээс өмнө)
     void WatchPerformance(float dt); // удаан бол графикийг автоматаар бууруулна
@@ -423,6 +430,8 @@ private:
     ZombieHorde horde;
     SoldierSquad squad;
     Tracers tracers;
+    BulletHoles bulletHoles; // хана, машин дээрх сумны ором
+    mutable std::vector<BulletHole> movingHoles; // (зурахад: машин дээрх оромнууд энэ frame-д)
     Particles particles;
     Precipitation precipitation; // бороо, цас, шороон шуурга
     float dustTimer = 0.0f;

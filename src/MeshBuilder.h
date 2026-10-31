@@ -123,6 +123,12 @@ private:
 void DrawBuiltMesh(const Mesh& mesh, const Material& material);
 void UnloadBuiltMesh(Mesh& mesh);
 
+// Холын объектод зориулсан хөнгөн mesh (оройг cell хэмжээтэй нүдээр бүлэглэнэ; GPU-д хуулсан). Бүтэлгүйтвэл хоосон.
+// uvStep: текстурын байрлал үүнээс их зөрүүтэй оройг нийлүүлэхгүй (бага бол UV заг хадгалагдана, хялбаршилт бага)
+Mesh SimplifyMesh(const Mesh& source, float cell, float uvStep = 1.0f / 40.0f);
+// Одоогийн rlgl хувиргалттай загварын эхлэл цэгээс камер хүртэлх зай (BeginMode3D дотор): LOD сонгоход
+float ModelViewDistance();
+
 // Харагдаж буй, maxDistance доторх хэсгүүдийг зурна.
 void DrawPieces(const std::vector<MeshPiece>& pieces, const Material& material, const ViewCone& view,
                 float maxDistance);

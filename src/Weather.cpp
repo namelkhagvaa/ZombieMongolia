@@ -4,6 +4,7 @@
 #include "raymath.h"
 #include "rlgl.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace
@@ -11,6 +12,8 @@ namespace
     // Бөөмсийн хайрцаг (камерын эргэн тойронд): хэвтээ 2 x kHalf, босоо kHeight
     const float kHalf = 22.0f;
     const float kHeight = 16.0f;
+    const int kSplashes = 220;          // бороонд нэгэн зэрэг үсэрч буй дусал (хүчээр үржинэ)
+    const float kSplashRadius = 13.0f;  // камерын эргэн тойронд
 
     float Wrap(float value, float half)
     {
@@ -43,11 +46,36 @@ void Precipitation::Reset(WeatherKind newKind)
     }
 }
 
-void Precipitation::Update(float dt, Vector3 viewPosition, WeatherKind newKind, Vector2 newWind)
+void Precipitation::Update(float dt, Vector3 viewPosition, WeatherKind newKind, Vector2 newWind, float newAmount,
+                           const std::function<float(float, float)>& ground)
 {
     if (!initialized || newKind != kind) Reset(newKind);
     wind = newWind;
+    amount = std::clamp(newAmount, 0.0f, 1.0f);
     time += dt;
+
+    // Дусал үсрэх: богино насалтай, дуусмагц камерын ойролцоо шинэ газар (хүч багатай үед цөөн)
+    if (kind == WeatherKind::Rain)
+    {
+        splashes.resize((size_t)kSplashes);
+        auto random = [&]() {
+            seed = seed * 1664525u + 1013904223u;
+            return (float)(seed >> 8) / 16777216.0f;
+        };
+        for (size_t i = 0; i < splashes.size(); ++i)
+        {
+            Splash& s = splashes[i];
+            s.age += dt;
+            if (s.age < s.life) continue;
+            if ((float)i >= amount * (float)kSplashes) { s.life = 0.0f; continue; } // идэвхгүй
+            const float angle = random() * 2.0f * PI, r = std::sqrt(random()) * kSplashRadius;
+            const float x = viewPosition.x + std::cos(angle) * r, z = viewPosition.z + std::sin(angle) * r;
+            s.position = { x, ground(x, z) + 0.02f, z };
+            s.life = 0.22f + random() * 0.12f;
+            s.age = -random() * 0.3f; // зэрэг биш, ээлжлэн
+        }
+    }
+    else splashes.clear();
 
     // Камер хөдлөхөд бөөмс ертөнцөд хөдлөхгүй: хайрцгийн төв шилжихэд offset-ыг эсрэгээр нь шилжүүлнэ.
     const Vector3 move = Vector3Subtract(viewPosition, center);
@@ -77,6 +105,8 @@ void Precipitation::Update(float dt, Vector3 viewPosition, WeatherKind newKind, 
 void Precipitation::Draw(const Camera3D& camera, float brightness) const
 {
     if (drops.empty()) return;
+    // Хүч багатай үед (шиврээ) бөөмсийн зөвхөн эхний хэсгийг зурна
+    const size_t count = std::min(drops.size(), (size_t)((float)drops.size() * (0.15f + 0.85f * amount)));
     const Vector3 base = { center.x, center.y - kHeight * 0.35f, center.z };
     const Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
     const Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, { 0.0f, 1.0f, 0.0f }));
@@ -93,12 +123,29 @@ void Precipitation::Draw(const Camera3D& camera, float brightness) const
         const Vector3 streak = Vector3Normalize({ wind.x * 1.2f, -17.0f, wind.y * 1.2f });
         rlBegin(RL_LINES);
         rlColor4ub(color.r, color.g, color.b, color.a);
-        for (const Drop& d : drops)
+        for (size_t i = 0; i < count; ++i)
         {
+            const Drop& d = drops[i];
             const Vector3 p = Vector3Add(base, d.offset);
             const Vector3 q = Vector3Subtract(p, Vector3Scale(streak, 0.55f * d.speed));
             rlVertex3f(p.x, p.y, p.z);
             rlVertex3f(q.x, q.y, q.z);
+        }
+        // Дусал үсрэлт: газраас дээш, гадагш цацарсан 5 жижиг судал (титэм), хурдан бүдгэрнэ
+        for (const Splash& s : splashes)
+        {
+            if (s.age < 0.0f || s.age >= s.life) continue;
+            const float t = s.age / s.life;
+            const float spread = 0.03f + 0.11f * t, rise = 0.09f * std::sin(PI * t) + 0.01f;
+            const Color c = shade(214, 222, 232, (int)(170.0f * (1.0f - t)));
+            rlColor4ub(c.r, c.g, c.b, c.a);
+            for (int k = 0; k < 5; ++k)
+            {
+                const float a = (float)k * 1.2566f + s.position.x * 3.1f;
+                const float dx = std::cos(a), dz = std::sin(a);
+                rlVertex3f(s.position.x + dx * spread * 0.45f, s.position.y, s.position.z + dz * spread * 0.45f);
+                rlVertex3f(s.position.x + dx * spread, s.position.y + rise, s.position.z + dz * spread);
+            }
         }
         rlEnd();
     }
@@ -109,8 +156,9 @@ void Precipitation::Draw(const Camera3D& camera, float brightness) const
         const Color color = snow ? shade(242, 244, 250, 220) : shade(196, 164, 118, 150);
         rlBegin(RL_QUADS);
         rlColor4ub(color.r, color.g, color.b, color.a);
-        for (const Drop& d : drops)
+        for (size_t i = 0; i < count; ++i)
         {
+            const Drop& d = drops[i];
             const Vector3 p = Vector3Add(base, d.offset);
             const float s = (snow ? 0.045f : 0.03f) * d.speed;
             const Vector3 r = Vector3Scale(right, s), u = Vector3Scale(up, s);

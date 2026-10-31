@@ -268,6 +268,7 @@ Game::~Game()
     UnloadHorseModel();
     UnloadBearModel();
     UnloadVehicleModels();
+    bulletHoles.Unload();
     UnloadPropModels();
     UnloadSceneryModels();
     Save();
@@ -694,6 +695,9 @@ void Game::Run()
             }
             else if (fullMap.IsOpen())
             {
+                std::vector<MapMarker> mapMarkers;
+                CollectMapMarkers(mapMarkers);
+                fullMap.SetMarkers(mapMarkers);
                 fullMap.Update(world, player);
                 Vector2 point;
                 bool clear = false;
@@ -1115,6 +1119,7 @@ void Game::EnsureMissionAssets(int provinceIndex)
     worldModelsLoaded = true;
     LoadVehicleModels(environment.VehicleShader());  // байхгүй бол унаанууд кодоор угсарсан хэлбэрээрээ
     LoadSceneryModels(environment.VehicleShader());  // assets/trees, pooshig: ойрын мод, торх (байхгүй бол кодоор)
+    bulletHoles.Load();
     WebReleaseLoadedAssets(true);                    // хөтөч: ачаалсан файлуудыг санах ойгоос чөлөөлнө
 }
 
@@ -1222,8 +1227,9 @@ void Game::StartMission(int index, StageSave* stageOverride)
     activeMember = 0;
     dayClock = 0.08f * kDayLength; // аймаг бүр өглөөгөөр эхэлнэ
     wasNight = false;
-    environment.SetWeather(PickWeather(index, options.weather));
+    environment.SetWeather(PickWeather(index, options.weather), true);
     environment.SetDryness(ProvinceDryness(index));
+    world.SetLushness(1.0f - ProvinceDryness(index)); // (Хангай: ногоон өвс, олон цэцэг)
     environment.SetMountainScale(ProvinceMountains(index));
     TraceLog(LOG_INFO, "MISSION: start setup %.2f s (graphics %d)", GetTime() - startTime, environment.Quality());
     if (WebHeapMegabytes() > 0) TraceLog(LOG_INFO, "MEMORY: heap %d MB after mission setup", WebHeapMegabytes());
@@ -1241,6 +1247,7 @@ void Game::StartMission(int index, StageSave* stageOverride)
     lastStageKills = 0;
     tracers.Clear();
     particles.Clear();
+    bulletHoles.Clear();
     fullMap.Close();
     barrels.Spawn(world, index); // аймаг бүрт өөр байрлалд
     medKits.Clear();
@@ -1264,6 +1271,7 @@ void Game::StartMission(int index, StageSave* stageOverride)
     {
         mission.SetQuota(options.quotaSmall, std::max(0, options.quotaBig)); // туршилт
     }
+    mission.SetBriefing(!options.screenshotPath || options.briefing);
     mission.Start(index, params, world, stageSave);
     SpawnBears();
     navigator.Clear();
@@ -2454,9 +2462,37 @@ void Game::FireGun(Ray aim, float cameraDistance)
 
         if (vehicle >= 0)
         {
-            const Vector3 at = Vector3Add(ray.position, Vector3Scale(ray.direction, vehicleDistance));
+            // Дугуй (их биеэс өмнө тусвал): нэг сумаар хагарна. Их бие: загварын гадаргууд сумны ором үлдэнэ.
+            float wheelDistance = 0.0f, bodyDistance = vehicleDistance + 3.0f;
+            Vector3 bodyPoint = {}, bodyNormal = {};
+            const bool body = garage.SurfaceHit(vehicle, ray, vehicleDistance + 3.0f, bodyPoint, bodyNormal);
+            if (body) bodyDistance = Vector3Distance(ray.position, bodyPoint);
+            const int wheel = garage.RaycastWheel(vehicle, ray, vehicleDistance + 3.0f, wheelDistance);
+            if (wheel >= 0 && wheelDistance <= bodyDistance + 0.02f)
+            {
+                const Vector3 tire = Vector3Add(ray.position, Vector3Scale(ray.direction, wheelDistance));
+                tracers.Add(muzzle, tire, YELLOW);
+                if (pellet == 0) localShotEnd = tire;
+                if (garage.BurstTire(vehicle, wheel))
+                {
+                    if (options.screenshotPath) TraceLog(LOG_INFO, "HIT: tire burst on vehicle %d wheel %d", vehicle, wheel);
+                    // Хагарах: хүчтэй "пах" (богино тэсрэлт), резин, тоос үсэрнэ
+                    Audio::Play(Sfx::Explosion, tire, 0.32f, 2.6f);
+                    particles.Kickup(tire, { 0.0f, 1.8f, 0.0f }, { 48, 46, 44, 255 });
+                    particles.Dust(tire);
+                }
+                else
+                {
+                    particles.Dust(tire);
+                }
+                if (!garage.At(vehicle).wrecked) HitVehicle(vehicle, arsenal.Damage() * 0.25f, tire, ray.direction);
+                continue;
+            }
+            const Vector3 at = body ? bodyPoint : Vector3Add(ray.position, Vector3Scale(ray.direction, vehicleDistance));
             tracers.Add(muzzle, at, YELLOW);
             if (pellet == 0) localShotEnd = at;
+            if (body) garage.AddHole(vehicle, bodyPoint, bodyNormal);
+            if (options.screenshotPath) TraceLog(LOG_INFO, "HIT: vehicle %d body %s", vehicle, body ? "hole" : "(no surface)");
             HitVehicle(vehicle, arsenal.Damage(), at, ray.direction);
             continue;
         }
@@ -2479,6 +2515,14 @@ void Game::FireGun(Ray aim, float cameraDistance)
         else if (wallDistance < reach)
         {
             particles.Dust(end); // газар эсвэл хананд туссан
+            // Барилгын хананд: харагдах хананы хавтгайд сумны ором (мөргөлдөөний хайрцаг хананаас 1 м хүртэл зөрдөг)
+            float facadeDistance = 0.0f;
+            Vector3 normal = {};
+            if (world.FacadeHit(ray, wallDistance + 1.2f, facadeDistance, normal) && facadeDistance > wallDistance - 1.2f)
+            {
+                bulletHoles.Add(Vector3Add(ray.position, Vector3Scale(ray.direction, facadeDistance)), normal, false);
+                if (options.screenshotPath) TraceLog(LOG_INFO, "HIT: wall hole at %.1f m", facadeDistance);
+            }
         }
     }
 
@@ -3150,6 +3194,16 @@ void Game::UpdateVehicles(float dt)
         const Vector2 dir = { std::sin(vehicle.heading) * sign, std::cos(vehicle.heading) * sign };
         const int hits = world.BreakFences(vehicle.position, spec.radius * 0.6f + 0.45f + speed * dt * 2.0f, dir, speed);
         if (hits <= 0) continue;
+        // Мөргөсөн газраас тоос, үртэс босно
+        const Vector3 front = { vehicle.position.x + dir.x * (spec.radius * 0.6f + 0.6f), 0.0f,
+                                vehicle.position.z + dir.y * (spec.radius * 0.6f + 0.6f) };
+        const float ground = world.GroundHeight(front.x, front.z);
+        for (int k = 0; k < 2 + hits * 2; ++k)
+        {
+            particles.Kickup({ front.x, ground + 0.4f, front.z }, { dir.x * speed * 0.2f, 0.0f, dir.y * speed * 0.2f },
+                             Color{ 150, 134, 108, 255 });
+        }
+        particles.Dust({ front.x, ground + 1.0f, front.z });
         garage.Slow(i, std::pow(0.85f, (float)hits));
         Audio::Play(Sfx::Crash, vehicle.position, std::min(1.0f, speed / 10.0f), 0.8f);
     }
@@ -3324,9 +3378,16 @@ void Game::UpdateVehicles(float dt)
             const Vector2 wind = environment.Wind();
             const unsigned char grey = vehicle.wrecked ? 40 : (unsigned char)(70 + condition * 200.0f);
             particles.Kickup(engine, { wind.x * 0.8f, 1.6f, wind.y * 0.8f }, { grey, grey, grey, 255 });
-            if (vehicle.wrecked && GetRandomValue(0, 2) == 0)
+            if (vehicle.wrecked)
             {
-                particles.Kickup(engine, { 0.0f, 2.2f, 0.0f }, { 240, 120, 40, 255 }); // гал
+                // Гал: хөдөлгүүрийн орчноос хэдэн гэрэлтэх дөл
+                for (int k = 0; k < 3; ++k)
+                {
+                    const Vector3 at = { engine.x + (float)GetRandomValue(-35, 35) / 100.0f, engine.y - 0.3f,
+                                         engine.z + (float)GetRandomValue(-35, 35) / 100.0f };
+                    particles.Flame(at, { wind.x * 0.3f, 0.8f + (float)GetRandomValue(0, 60) / 100.0f, wind.y * 0.3f },
+                                    0.28f + (float)GetRandomValue(0, 15) / 100.0f, 0.45f + (float)GetRandomValue(0, 25) / 100.0f);
+                }
             }
         }
     }
@@ -4134,6 +4195,8 @@ void Game::AdvanceDay(float dt)
 {
     dayClock = std::fmod(dayClock + dt, kDayLength);
     if (options.dayTime >= 0.0f) dayClock = options.dayTime * kDayLength; // туршилт
+    const Vector3 viewPosition = camera.Get().position;
+    environment.SetGroundLevel(world.GroundHeight(viewPosition.x, viewPosition.z)); // намхан газрын манан
     environment.Update(dt);
     UpdateRenderScale(dt);
     WatchPerformance(dt);
@@ -4150,6 +4213,16 @@ void Game::AdvanceDay(float dt)
 
 void Game::UpdateMission(float dt)
 {
+    // Даалгаврын баннер, аймгийн танилцуулга (зочин, зогссон үед ч хөдөлнө); танилцуулгыг дурын товчоор хаана
+    if (mission.BriefingOpen() && (GetKeyPressed() != 0 || InMousePressed(MOUSE_BUTTON_LEFT))) mission.DismissBriefing();
+    mission.UpdatePresentation(dt, player.Position());
+    switch (mission.TakeBannerSound())
+    {
+    case 1: Audio::Play(Sfx::Marker, player.Position(), 0.9f, 0.7f); break;   // шинэ даалгавар: намхан "тик"
+    case 2: Audio::Play(Sfx::Headshot, player.Position(), 0.7f, 0.85f); break; // биеллээ: "дин"
+    default: break;
+    }
+
     // Зэрэг ахисан (үе давсан, тулаанд ялсан: сервер XP нэмсэн)
     if (Account::SignedIn())
     {
@@ -4183,6 +4256,7 @@ void Game::UpdateMission(float dt)
     UpdateVehicleBlockers(); // зогсож буй унаа: явган хүн, зомби дундуур нь гарахгүй
     UpdateTeamRiding(dt);
     world.UpdateDoors(dt);
+    world.UpdateDebris(dt); // нурсан хашаа унаж, хэлтэрхий нисэнэ
     {
         PROFILE_SCOPE("world stream");
         world.Stream(player.Position()); // явах тусам урд талын газрыг бага багаар үүсгэнэ
@@ -4417,7 +4491,8 @@ void Game::UpdateMission(float dt)
         player.Nudge(position.x, position.z);
     }
     particles.Update(dt, world);
-    precipitation.Update(dt, camera.Get().position, environment.Weather(), environment.Wind());
+    precipitation.Update(dt, camera.Get().position, environment.Weather(), environment.Wind(), environment.PrecipitationAmount(),
+                         [this](float x, float z) { return world.GroundHeight(x, z); });
     if (!coopGuest)
     {
         PROFILE_SCOPE("zombies update");
@@ -4873,6 +4948,17 @@ void Game::RenderShadows() const
     const float radius = environment.ShadowRadius();
     Vector3 center = Vector3Add(view.position, Vector3Scale(forward, radius * 0.45f));
     center.y = world.GroundHeight(center.x, center.z);
+
+    // Холын сүүдэр ("өндөр" график): ойрын хүрээнээс цааш барилга, мод, газар (хөдөлдөг зүйлсгүй)
+    const float farRadius = environment.FarShadowRadius();
+    Vector3 farCenter = Vector3Add(view.position, Vector3Scale(forward, farRadius * 0.55f));
+    farCenter.y = world.GroundHeight(farCenter.x, farCenter.z);
+    if (environment.BeginFarShadowPass(farCenter))
+    {
+        world.DrawShadowCasters(farCenter, farRadius * 1.1f, environment.DepthMaterial());
+        environment.EndShadowPass();
+    }
+
     if (!environment.BeginShadowPass(center)) return;
 
     world.DrawShadowCasters(center, radius * 1.1f, environment.DepthMaterial());
@@ -4907,15 +4993,14 @@ void Game::DrawMissionScene() const
     const Camera3D& view = cinematic ? strikeView : camera.Get();
     const Material& material = environment.GetMaterial();
 
-    environment.DrawSky(view); // 2D: тэнгэр, үүл, нар
+    environment.DrawSky(view); // 2D: дэвсгэр (тэнгэр өөрөө доор, газар, барилгын дараа)
 
     BeginMode3D(view);
     ViewCull::Begin(view); // камерын ард байгаа дүрс, унааг зурахгүй
 
-    // Гэрэлтүүлэг + манантай хэсэг
+    // Гэрэлтүүлэг + манантай хэсэг. Ойрын зүйлс эхэлж: холын газар, тэнгэрийн далдлагдсан пикселийг
+    // видео карт гүнээр нь шууд хаяна (shader ажиллахгүй)
     environment.Begin(view);
-    if (world.HasFarLand()) environment.DrawFarLand(world.FarLand(), view); // жинхэнэ уулс, гол (10 км)
-    else environment.DrawMountains(view.position);
     {
         PROFILE_SCOPE("draw world");
         world.Draw(view, material, environment.TerrainMaterial(), environment.DetailMaterial(), config.detailDistance,
@@ -4958,9 +5043,11 @@ void Game::DrawMissionScene() const
         DrawRemoteFigure(hostFigure, TeamMemberLook(hostFigure.member, hostFigure.skin));
         for (const RemoteFigure& soldier : hostSoldiers) DrawRemoteFigure(soldier, TeamMemberLook(soldier.member, soldier.skin));
     }
+    if (world.HasFarLand()) environment.DrawFarLand(world.FarLand(), view); // жинхэнэ уулс, гол (10 км)
+    else environment.DrawMountains(view.position);
+    environment.DrawSkyDome(view); // тэнгэр, од, сар: хагас тунгалаг зүйлсээс өмнө
     particles.Draw();
     grenades.Draw();
-    particles.DrawPuffs();
     rlDrawRenderBatchActive(); // дүрүүдийг хагас тунгалаг хашаанаас өмнө зурж дуусгана
     world.DrawTransparent(view, material);
     if (!cinematic && camera.IsFirstPerson() && player.IsAlive() && !player.IsSwimming())
@@ -4969,6 +5056,10 @@ void Game::DrawMissionScene() const
                       player.ReloadProgress(), player.ActionProgress(), camera.AimBlend());
     }
     environment.End();
+    movingHoles.clear();
+    garage.CollectHoles(view.position, 90.0f, movingHoles);
+    bulletHoles.Draw(view, environment.ParticleLight(), movingHoles); // хана, машин дээрх сумны ором
+    particles.DrawSoft(view, environment.ParticleLight()); // цус, тоос, утаа, газрын толбо
 
     // Бороо, цас, шороо (гэрэлтүүлэггүй, шөнө бүдэг). Барилга дотор байхад зурахгүй.
     if (world.InteriorAt(view.position.x, view.position.z) < 0)
@@ -4978,8 +5069,7 @@ void Game::DrawMissionScene() const
 
     // Гэрэлтүүлэггүй: сумны мөр, амны гал
     tracers.Draw();
-    particles.DrawUnlit();
-    barrels.DrawUnlit(view.position);
+    particles.DrawUnlit(view);
     medKits.DrawUnlit(view.position);
     events.DrawUnlit(view.position);
     if (state == GameState::Playing)
@@ -4993,6 +5083,101 @@ void Game::DrawMissionScene() const
     }
     ViewCull::End();
     EndMode3D();
+}
+
+void Game::CollectMapMarkers(std::vector<MapMarker>& out) const
+{
+    mission.MapMarkers(out);
+    std::vector<Vector3> happenings;
+    events.Markers(happenings);
+    for (const Vector3& at : happenings) out.push_back({ at, MarkerKind::Event, -1, "Гэнэтийн үйл явдал", false });
+}
+
+void Game::DrawObjectiveGuides() const
+{
+    if (state != GameState::Playing || camera.IsScoped() || fullMap.IsOpen()) return;
+    const Camera3D& view = camera.Get();
+    const Vector3 forward = Vector3Normalize(Vector3Subtract(view.target, view.position));
+    const Vector3 me = player.Position();
+    const float width = (float)ViewWidth(), height = (float)ViewHeight();
+    const Vector2 center = { width * 0.5f, height * 0.5f };
+    const Vector2 target = navigator.Active() ? navigator.Target() : Vector2{ 1e9f, 1e9f };
+
+    // 1. Ойрын даалгаврын объектууд (45 м дотор): тэдгээрийн дээр жижиг төрлийн тэмдэг
+    for (int i = 0; i < mission.ObjectiveCount(); ++i)
+    {
+        const ObjectiveState& objective = mission.State(i);
+        if (objective.status != ObjectiveStatus::Active) continue;
+        const ObjectiveDef& def = mission.Stage().objectives[(size_t)i];
+        const float lift = def.type == ObjectiveType::CollectItems ? 1.2f : 2.3f;
+        for (const MissionEntity& entity : objective.entities)
+        {
+            if (entity.used) continue;
+            const float d = HorizontalDistance(me, entity.position);
+            if (d > 45.0f) continue;
+            const Vector3 at = { entity.position.x, entity.position.y + lift + 0.1f * std::sin((float)GetTime() * 3.0f + entity.position.x), entity.position.z };
+            if (Vector3DotProduct(Vector3Subtract(at, view.position), forward) <= 0.5f) continue;
+            const Vector2 p = ViewWorldToScreen(at, view);
+            if (p.x < 0.0f || p.y < 0.0f || p.x > width || p.y > height) continue;
+            const float radius = std::clamp(15.0f - d * 0.15f, 8.0f, 15.0f);
+            DrawMarkerBadge(KindOf(def.type), p, radius, d < 4.0f ? 1.0f : 0.9f);
+        }
+    }
+
+    // 2. Даалгаврын байршил: харагдаж байвал тэр цэг дээр, үгүй бол дэлгэцийн ирмэг дээр сумтай.
+    //    Бүсэд (30 м) орж ирэхэд алга болж, дээрх объектуудын тэмдэг заана.
+    std::vector<MapMarker> markers;
+    CollectMapMarkers(markers);
+    const float margin = 64.0f;
+    for (const MapMarker& marker : markers)
+    {
+        const float distance = HorizontalDistance(me, marker.position);
+        if (distance < 30.0f || (marker.objective < 0 && distance > 400.0f)) continue;
+        const bool chosen = Vector2Distance(target, { marker.position.x, marker.position.z }) < 3.0f;
+        const Vector3 at = { marker.position.x, marker.position.y + 4.0f, marker.position.z };
+        const bool behind = Vector3DotProduct(Vector3Subtract(at, view.position), forward) <= 0.0f;
+        Vector2 p = ViewWorldToScreen(at, view);
+        const bool inside = !behind && p.x > margin && p.y > margin && p.x < width - margin && p.y < height - margin;
+        const float radius = marker.focus || chosen ? 17.0f : 12.0f;
+        const float alpha = marker.focus || chosen ? 1.0f : 0.8f;
+        if (!inside)
+        {
+            // Ирмэг дээр: дэлгэцийн төвөөс тэмдгийн зүг (ард байвал эсрэг тийш) рүү, сумтай
+            Vector2 dir = Vector2Subtract(p, center);
+            if (behind) dir = Vector2Negate(dir);
+            if (Vector2Length(dir) < 1.0f) dir = { 0.0f, 1.0f };
+            dir = Vector2Normalize(dir);
+            const float sx = (width * 0.5f - margin) / std::max(0.001f, std::fabs(dir.x));
+            const float sy = (height * 0.5f - margin) / std::max(0.001f, std::fabs(dir.y));
+            p = Vector2Add(center, Vector2Scale(dir, std::min(sx, sy)));
+            const Vector2 side = { -dir.y, dir.x };
+            const Vector2 tip = Vector2Add(p, Vector2Scale(dir, radius + 14.0f));
+            const Vector2 b = Vector2Add(Vector2Add(p, Vector2Scale(dir, radius + 3.0f)), Vector2Scale(side, 8.0f));
+            const Vector2 c = Vector2Add(Vector2Add(p, Vector2Scale(dir, radius + 3.0f)), Vector2Scale(side, -8.0f));
+            const float cross = (b.x - tip.x) * (c.y - tip.y) - (b.y - tip.y) * (c.x - tip.x);
+            const Color arrow = Fade(MarkerColor(marker.kind), alpha);
+            if (cross < 0.0f) DrawTriangle(tip, b, c, arrow);
+            else DrawTriangle(tip, c, b, arrow);
+        }
+        if (chosen)
+        {
+            const float pulse = std::fmod((float)GetTime() * 0.9f, 1.0f);
+            DrawRing(p, radius * (1.05f + 0.6f * pulse), radius * (1.2f + 0.6f * pulse), 0.0f, 360.0f, 32, Fade(WHITE, 0.8f * (1.0f - pulse)));
+        }
+        DrawMarkerBadge(marker.kind, p, radius, alpha, marker.objective >= 0 ? marker.objective + 1 : 0);
+        // Зай (доор нь); одоо хийх / чиглэл заасан даалгаврын нэр (дээр нь)
+        const char* meters = distance < 1000.0f ? TextFormat("%d м", (int)distance) : TextFormat("%.1f км", distance / 1000.0f);
+        const int mw = Ui::MeasureBold(meters, 15);
+        Ui::TextBold(meters, (int)(p.x - (float)mw * 0.5f) + 1, (int)(p.y + radius + 4.0f) + 1, 15, Fade(BLACK, 0.6f * alpha));
+        Ui::TextBold(meters, (int)(p.x - (float)mw * 0.5f), (int)(p.y + radius + 4.0f), 15, Fade(WHITE, alpha));
+        if ((marker.focus || chosen) && inside)
+        {
+            const int tw = Ui::MeasureBold(marker.title, 15);
+            const Rectangle pill = { p.x - (float)tw * 0.5f - 8.0f, p.y - radius - 28.0f, (float)tw + 16.0f, 22.0f };
+            DrawRectangleRounded(pill, 0.5f, 8, Fade({ 14, 16, 22, 255 }, 0.8f));
+            Ui::TextBold(marker.title, (int)pill.x + 8, (int)pill.y + 3, 15, MarkerColor(marker.kind));
+        }
+    }
 }
 
 void Game::DrawMission() const
@@ -5080,6 +5265,7 @@ void Game::DrawMission() const
     // Одоо хийх даалгавар: нэр, явц, хүртэлх зай
     char objectiveText[200] = "";
     char objectiveDetail[120] = "";
+    char objectiveNext[200] = "";
     const int focus = mission.FocusObjective();
     if (focus >= 0)
     {
@@ -5091,6 +5277,18 @@ void Game::DrawMission() const
         else std::snprintf(objectiveDetail, sizeof(objectiveDetail), "%s    %d м", progressText.c_str(), meters);
         info.objective = objectiveText;
         info.objectiveDetail = objectiveDetail;
+        const ObjectiveDef& focusDef = mission.Stage().objectives[(size_t)focus];
+        info.objectiveKind = (int)KindOf(focusDef.type);
+        info.objectiveHint = focusDef.description;
+        info.objectiveProgress = mission.ProgressFraction(focus);
+        for (int i = 0; i < mission.ObjectiveCount(); ++i)
+        {
+            if (i == focus || mission.State(i).status != ObjectiveStatus::Active) continue;
+            std::snprintf(objectiveNext, sizeof(objectiveNext), "+ %d. %s  ·  %d м", i + 1, mission.Stage().objectives[(size_t)i].title,
+                          (int)mission.DistanceTo(i, player.Position()));
+            info.objectiveNext = objectiveNext;
+            break;
+        }
     }
     else if (!mission.QuotaMet())
     {
@@ -5242,9 +5440,8 @@ void Game::DrawMission() const
         }
     }
 
-    std::vector<Vector3> markers;
-    mission.Markers(markers);
-    events.Markers(markers); // гэнэтийн үйл явдал: ачаа, зомбийн бөөгнөрөл, аврах хүн
+    std::vector<MapMarker> markers;
+    CollectMapMarkers(markers); // даалгаврууд ба гэнэтийн үйл явдал (ачаа, зомбийн бөөгнөрөл, аврах хүн)
 
     // Хамтарсан тоглолт: газрын зураг дээр өөрийн ба эсрэг багийг ялгаж харуулна (тулаангүй үед нөгөө тоглогч
     // хамт тоглогч). Хост: зочин ба түүний баг; зочин: хост ба түүний баг (snapshot).
@@ -5277,7 +5474,8 @@ void Game::DrawMission() const
 
     if (fullMap.IsOpen())
     {
-        fullMap.Draw(world, player, horde, squad, garage, markers, medKits.Positions(), info.provinceName);
+        fullMap.SetMarkers(markers);
+        fullMap.Draw(world, player, horde, squad, garage, medKits.Positions(), info.provinceName);
         return;
     }
 
@@ -5293,11 +5491,14 @@ void Game::DrawMission() const
     }
 
     DrawCoinPopups();
+    DrawObjectiveGuides();
     DrawMinimap(world, player, camera.Yaw(), horde, squad, garage, markers, medKits.Positions());
     {
         PROFILE_SCOPE("draw hud");
         DrawHud(config, player, info, showDebug);
     }
+    mission.DrawBanner();
+    mission.DrawBriefing();
     navigator.DrawHud(player.Position(), camera.Yaw());
     DrawCoopOverlay();
     DrawChat();

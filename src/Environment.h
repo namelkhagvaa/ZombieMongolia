@@ -33,11 +33,20 @@ public:
     Environment& operator=(const Environment&) = delete;
 
     // Өдөр шөнийн мөчлөг: t 0..1 (0 = өглөө, 0.3 = үд, 0.6 = үдэш, 0.8 = шөнө дунд). Тэнгэр, нарны гэрэл,
-    // орчны гэрэл, манангийн өнгө, нягтыг шилжүүлж бүх shader-т тавина. Нарны чиглэл өөрчлөгдөхгүй (сүүдэр).
+    // орчны гэрэл, манангийн өнгө, нягтыг шилжүүлж бүх shader-т тавина. Нар зүүнээс баруун тийш тэнгэрээр явна
+    // (өглөө, орой урт сүүдэр); "бага" графикт нар хөдлөхгүй (барилгын хуурамч сүүдэр тогтмол чиглэлтэй).
     void SetTimeOfDay(float t);
     float Night() const { return night; } // 0 = өдөр, 1 = шөнө
+    Vector3 SunDirection() const { return sunDirection; } // гэрлийн чиглэл (шөнө сарных)
+    // Гэрэлтүүлэггүй зурдаг утаа, тоос, цусны өнгөнд үржүүлэх гэрэл (өдөр ~цагаан, үдэш дулаан, шөнө бараан хөх)
+    Color ParticleLight() const { return particleLight; }
 
-    void SetWeather(WeatherKind kind);
+    // instant: даалгаврын эхэнд шууд (үгүй бол тэнгэр, манан, гадаргуу ~20 секундэд аажмаар шилжинэ)
+    void SetWeather(WeatherKind kind, bool instant = false);
+    // Бороо, цасны одоогийн хүч 0..1 (бороо шиврээд, хүчтэй орж, ээлжилнэ)
+    float PrecipitationAmount() const { return precipitation; }
+    // Камерын доорх газрын өндөр: намхан газрын манан (хотгор, голын хөндийд өтгөн)
+    void SetGroundLevel(float y) { groundTarget = y; }
     // Аймгийн хуурайшил: 0 = ногоон (хойд ой), 1 = говь
     void SetDryness(float value);
     // Алсын уулсын өндөр: 1 = Алтайн цастай нуруу, 0.4 = зүүн талын намхан толгод
@@ -49,8 +58,11 @@ public:
     float Time() const { return time; }
     Vector2 Wind() const { return wind; } // салхины чиглэл x хүч (м/с орчим)
 
-    // 2D: BeginMode3D-ээс өмнө дуудна. Тэнгэрийн өнгөний шилжилт, үүл, нар (шөнө сар, од).
+    // 2D: BeginMode3D-ээс өмнө дуудна. Дэвсгэрийг тэнгэрийн хаяаны өнгөөр цэвэрлэнэ.
     void DrawSky(const Camera3D& camera) const;
+    // Begin/End хооронд, бүх тунгалаг бус зүйлийн (газар, барилга, дүрс) дараа, хагас тунгалагаас өмнө:
+    // тэнгэр (үүл, нар), шөнө од, сар. Гүнээр далдлагдсан пикселийг тооцохгүй.
+    void DrawSkyDome(const Camera3D& camera) const;
 
     // BeginMode3D дотор: Begin/End хоёрын хооронд зурсан бүх зүйл гэрэлтэж, мананд уусна.
     void Begin(const Camera3D& camera) const;
@@ -87,9 +99,13 @@ public:
     // Сүүдрийн зураг: center орчмыг нарны зүгээс зурна. Begin/End хооронд сүүдэр тусгах зүйлсийг
     // DepthMaterial-аар (эсвэл өөрсдийн shader-ээр) зурна. Нэг frame-д нэг удаа, Begin(camera)-с өмнө.
     bool BeginShadowPass(Vector3 center); // false: сүүдэр унтраалттай (шөнө г.м.), зурах шаардлагагүй
+    // Холын сүүдэр (зөвхөн "өндөр" график): ойрын сүүдрийн гадна ~4 дахин том хүрээ, бүдүүн нягтралтай.
+    // Зөвхөн хөдөлдөггүй зүйлс (барилга, мод, газар); хэд хэдэн frame тутам. EndShadowPass-аар дуусгана.
+    bool BeginFarShadowPass(Vector3 center);
     void EndShadowPass();
     const Material& DepthMaterial() const { return depthMaterial; }
     float ShadowRadius() const { return shadowRadius; }
+    float FarShadowRadius() const { return farShadowRadius; }
 
     // --- Дэлгэцийн эффект: 3D зургийг тусдаа текстурт зурж, өнгө засаад дэлгэцэнд гаргана ---
     void SetPostEnabled(bool enabled) { postEnabled = enabled; }
@@ -128,6 +144,10 @@ private:
     Color skyZenith = { 64, 112, 182, 255 };
     Color skyHorizon = { 196, 212, 226, 255 };
     Vector3 sunHaze = { 1.0f, 0.86f, 0.66f };
+    Vector3 sunLightColor = { 1.38f, 1.24f, 1.02f };
+    Color particleLight = WHITE;
+    Vector3 sunDirection = { 0.0f, 1.0f, 0.0f };    // гэрэл, сүүдрийн чиглэл (нар бага байхад 10°-аас доош буухгүй)
+    Vector3 skySunDirection = { 0.0f, 1.0f, 0.0f }; // тэнгэр дэх нарны жинхэнэ байрлал (хаяанд жаргана)
     float night = 0.0f;
     float golden = 0.0f;
     float lastApplied = -1.0f;
@@ -135,6 +155,18 @@ private:
     float cloudCover = 0.35f;
     float time = 0.0f;
     Vector2 wind = { 0.7f, 0.35f };
+
+    // Цаг агаарын аажим шилжилт: өмнөх -> одоогийн (weatherMix 0..1), гадаргуу аажим норж, хатаж, цас хунгарлана
+    WeatherKind previousWeather = WeatherKind::Clear;
+    float weatherMix = 1.0f;
+    float precipitation = 0.0f; // бороо, цасны одоогийн хүч
+    float wetness = 0.0f;
+    float snowCover = 0.0f;
+    float appliedWeather[4] = { -1.0f, -1.0f, -1.0f, -1.0f }; // shader-т сүүлд тавьсан (mix, норолт, цас, газар)
+    // Намхан газрын манан
+    float groundLevel = 0.0f;
+    float groundTarget = 0.0f;
+    bool groundKnown = false;
 
     // Сүүдэр
     bool shadowsEnabled = true;
@@ -146,6 +178,16 @@ private:
     bool shadowReady = false;
     bool shadowPassActive = false;
     unsigned shadowFrame = 0;
+    // Холын сүүдэр
+    RenderTexture2D farShadowMap = {};
+    int farShadowSize = 0;
+    float farShadowRadius = 280.0f;
+    Matrix farLightViewProj = {};
+    bool farShadowReady = false;
+    unsigned farShadowFrame = 0;
+    bool FarShadowsEnabled() const { return ShadowsEnabled() && quality >= 2 && farShadowSize >= 0; } // (-1: ачаалж чадаагүй)
+    // Сүүдрийн зураг руу нарны зүгээс зурж эхэлнэ (ойрын ба холын pass-ын нийтлэг хэсэг)
+    void BeginLightPass(const RenderTexture2D& map, int slot, Vector3 center, float radius, int size, float distance, Matrix& viewProj);
 
     // Дэлгэцийн эффект
     bool postEnabled = true;
@@ -157,4 +199,19 @@ private:
     bool sceneShaded = false; // текстурыг эффектийн shader-ээр гаргана (үгүй бол зөвхөн сунгана)
     int quality = 2;
     bool shadersBroken = false; // видео карт эффектийн shader-ийг хүлээж аваагүй: зөвхөн "бага" график
+
+    // "Өндөр" график: булан, завсрын сүүдэр (SSAO) ба нарны туяа (сценийн гүнээс, хагас/дөрөвний нэг нягтралтай)
+    Shader aoShader = {};
+    Shader shaftShader = {};
+    RenderTexture2D aoA = {};
+    RenderTexture2D aoB = {};
+    RenderTexture2D shafts = {};
+    bool sceneHasDepth = false; // сцений гүн уншигдах текстурт
+    bool screenEffects = false; // энэ кадрт AO, туяа тооцсон
+    float shaftStrength = 0.0f;
+    bool shaftVisible = false;  // энэ кадрт туяа зурсан (нар харагдаж байна)
+    Vector2 sunScreen = {};
+    mutable Camera3D sceneCamera = {}; // Begin()-д дамжсан камер (AO, нарны туяанд)
+    void UnloadScreenEffects();
+    void RenderScreenEffects();
 };

@@ -34,7 +34,8 @@ constexpr int kCharacterStudentBoy = 15;  // assets\survivor_student_boy
 constexpr int kCharacterStudentGirl = 16; // assets\survivor_student_girl
 constexpr int kCharacterMonk = 17;        // assets\survivor_monk
 constexpr int kCharacterModel2 = 18;       // assets\model2 (1-р дайчны сонгож болох дүр)
-constexpr int kCharacterCount = 19;
+constexpr int kCharacterZombieWoman = 19;  // assets\woman_zombie (гүйгч зомбины тал нь)
+constexpr int kCharacterCount = 20;
 
 // shader: текстур, гэрэлтүүлэг, манантай дүрийн shader (Environment::CharacterShader).
 void LoadCharacterModels(Shader shader);
@@ -57,6 +58,7 @@ struct CharacterFrames
 // Гар бууны үед rightForearm нь гар бууны орон зай (эх нь бариулын төв, +Z нь ам, +Y нь дээш).
 // direct: байрлалын өнцгүүдийг (гуя, өвдөг, мөр, тохой) найруулагчгүйгээр шууд хэрэглэнэ (зомби: өөрийн алхаатай).
 // tint: загварын өнгийг үржүүлнэ (нэг загвартай олон дүрийг ялгахад).
-// lowDetail: холын дүрд загварын хөнгөн хувилбар (ачаалахдаа оройг нүдээр бүлэглэж үүсгэсэн).
+// lowDetail: холын дүрд загварын хөнгөн хувилбар (ачаалахдаа оройг нүдээр бүлэглэж үүсгэсэн): 0 бүтэн, 1 хөнгөн,
+// 2 маш хөнгөн (манан дунд жижиг харагдах дүрд).
 CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem held, bool direct = false,
-                                   Color tint = WHITE, bool lowDetail = false);
+                                   Color tint = WHITE, int lowDetail = 0);

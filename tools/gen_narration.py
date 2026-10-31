@@ -28,7 +28,8 @@ MEMBERS = ["Дайчин нэг", "Дайчин хоёр", "Мэргэн буу�
 
 LINES = {
     # Дэлхийн үйл явдал
-    "airdrop": "Нисэх онгоц ачаа хаялаа! Сум, гранат, эм байна. Ногоон утааг хай.",
+    # ("Нисэх онгоц"-ыг TTS "хэсэх онгоц" гэж уншдаг тул зөвхөн "Онгоц")
+    "airdrop": "Онгоц ачаа хаялаа! Сум, гранат, эм байна. Ногоон утааг хай.",
     "crash": "Урд талд сүйрсэн машин байна. Ачааг нь ав!",
     "horde": "Урд талд зомбины бөөгнөрөл байна. Болгоомжтой!",
     "survivor": "Аврах хүн байна! Газрын зураг дээрх тэмдэг рүү оч.",
@@ -115,6 +116,7 @@ def main():
     parser.add_argument("--voice", help="хоолойн ID (nlv_...)")
     parser.add_argument("--estimate", action="store_true", help="зардлыг тооцох (төлбөргүй)")
     parser.add_argument("--yes", action="store_true", help="төлбөртэй үүсгэлтийг зөвшөөрөх")
+    parser.add_argument("--only", help="зөвхөн энэ мэдэгдлийг (key) дахин үүсгэх: бусдыг нь хөндөхгүй, кредит хэмнэнэ")
     parser.add_argument("--sample", help="зөвхөн энэ мэдэгдлийг жишээ болгон үүсгэх (build_web/narration_samples, тоглоомд орохгүй)")
     args = parser.parse_args()
 
@@ -138,6 +140,10 @@ def main():
         raise SystemExit("--voice nlv_... заана уу (--voices-оор жагсаана)")
     state = load_state()
     todo = pending(state, args.voice)
+    if args.only:
+        if args.only not in LINES:
+            raise SystemExit("Ийм мэдэгдэл алга: " + args.only)
+        todo = [(args.only, LINES[args.only])]
     out_folder = OUT
     if args.sample:
         if args.sample not in LINES:
@@ -153,7 +159,7 @@ def main():
     multiplier = float(caps.get("credit_multiplier", 1) or 1)
     chars = sum(len(text) for _, text in todo)
     print(f"{len(todo)} мэдэгдэл үүсгэх, {chars} тэмдэгт, ойролцоогоор {chars * multiplier:.0f} кредит "
-          f"(үржүүлэгч {multiplier}); {len(LINES) - len(todo)} нь аль хэдийн бэлэн")
+          f"(үржүүлэгч {multiplier}); {len(LINES) - len(todo)} нь аль хэдийн бэлэн (эсвэл --only-оор алгассан)")
     if args.estimate or not todo:
         return
     if not args.yes:

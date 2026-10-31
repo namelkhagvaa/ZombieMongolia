@@ -194,6 +194,10 @@ int main(int argc, char** argv)
         {
             options.journal = true;
         }
+        else if (std::strcmp(argv[i], "--briefing") == 0)
+        {
+            options.briefing = true;
+        }
         else if (std::strcmp(argv[i], "--shop") == 0)
         {
             options.shop = true;

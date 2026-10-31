@@ -2,6 +2,7 @@
 
 #include "Campaign.h"
 #include "CampaignData.h"
+#include "ObjectiveIcons.h"
 #include "Player.h"
 #include "Progress.h"
 #include "Soldier.h"
@@ -102,6 +103,28 @@ public:
 
     // Газрын зурагт: идэвхтэй даалгавруудын байршил (бүгд биелсний дараа хамгаалагч үлдсэн газрууд).
     void Markers(std::vector<Vector3>& out) const;
+    // Мөн адил, төрөл ба нэртэй (газрын зураг, дэлгэц дээрх чиглүүлэгчид)
+    void MapMarkers(std::vector<MapMarker>& out) const;
+    float ProgressFraction(int index) const; // 0..1 (тоо, хугацаатай даалгавар); бусад төрөлд -1
+
+    // --- Даалгаврыг ойлгомжтой болгох ---
+    // Шинэ даалгавар нээгдэх, даалгавар биелэхэд дэлгэцийн дээд хэсэгт гарах баннер (дараалан нэг нэгээр)
+    struct Banner
+    {
+        int objective;
+        bool completed;
+        float age = 0.0f;
+    };
+    const Banner* CurrentBanner() const { return banners.empty() || BriefingOpen() ? nullptr : &banners.front(); }
+    int TakeBannerSound(); // 0 = байхгүй, 1 = шинэ даалгавар, 2 = биеллээ (Game дуу тоглуулна)
+    // Баннер, танилцуулгын цаг, гацахад зөвлөгөө: frame бүрд (Update зогссон, зочин үед ч)
+    void UpdatePresentation(float dt, Vector3 player);
+    // Аймгийн танилцуулга: аймгийн нэр, зорилго, даалгаврын жагсаалт (эхлэхэд; дурын товчоор хаагдана)
+    bool BriefingOpen() const { return briefingTimer > 0.0f; }
+    void DismissBriefing() { briefingTimer = std::min(briefingTimer, 0.35f); }
+    void SetBriefing(bool enabled) { briefingEnabled = enabled; }
+    void DrawBanner() const;
+    void DrawBriefing() const;
 
     void Draw(Vector3 viewPosition) const;                           // гэрэлтүүлэгтэй хэсэг
     void DrawBeacons(const World& world, Vector3 viewPosition) const; // чиглүүлэх тэмдэг (shader-ийн гадна)
@@ -114,6 +137,9 @@ public:
 private:
     void Activate(int index);
     void Complete(int index);
+    void PushBanner(int objective, bool completed);
+    // Гацахад зөвлөгөө: одоогийн даалгаварт ойртохгүй, явц гарахгүй удвал газрын зургийг ашиглахыг сануулна
+    void UpdateHint(float dt, Vector3 player);
     Vector3 ResolveSite(const World& world, SiteRef site) const;
     void UpdateZone(int index, float dt, const World& world, const Player& player, ZombieHorde& horde);
     // Баг ойртсон даалгаврын газарт хамгаалагч зомби гаргана, хол хоцорсныг нөөцөд буцаана.
@@ -137,6 +163,15 @@ private:
 
     std::string prompt;
     std::string notice;
+    std::vector<Banner> banners;
+    int bannerSound = 0;
+    float briefingTimer = 0.0f;
+    bool briefingEnabled = true;
+    bool syncedOnce = false;     // зочин: эхний синк (тэр үеийн нээгдсэн даалгавруудад баннер гаргахгүй)
+    int hintObjective = -1;
+    float hintTimer = 0.0f, hintBest = 1e9f;
+    int hintProgress = -1;
+    unsigned int hintShown = 0;  // зөвлөгөө гарсан даалгаврууд (нэг удаа)
     float noticeTimer = 0.0f;
     float guardTimer = 0.0f;
     float autoTimer = 0.0f;

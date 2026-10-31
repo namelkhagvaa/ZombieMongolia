@@ -3,14 +3,18 @@
 #include "Environment.h"
 #include "raylib.h"
 
+#include <functional>
 #include <vector>
 
 // Камерыг тойрсон цаг агаарын бөөмс: бороо (судал), цас (ширхэг), шороон шуурга (нисэх тоос).
 // Бөөмс камерын эргэн тойрны хайрцагт ороогдон байрлана: хэчнээн хол явсан ч үргэлж эргэн тойронд.
+// Бороонд газар дээр дусал үсэрнэ.
 class Precipitation
 {
 public:
-    void Update(float dt, Vector3 viewPosition, WeatherKind kind, Vector2 wind);
+    // amount: бороо, цасны хүч 0..1 (Environment::PrecipitationAmount); ground: газрын өндөр (дусал үсрэх цэгт)
+    void Update(float dt, Vector3 viewPosition, WeatherKind kind, Vector2 wind, float amount,
+                const std::function<float(float, float)>& ground);
     // Гэрэлтүүлэггүй хэсэгт (environment.End()-ийн дараа) зурна. brightness: өдөр 1, шөнө бүдэг.
     void Draw(const Camera3D& camera, float brightness) const;
 
@@ -21,12 +25,21 @@ private:
         float phase;
         float speed;
     };
+    struct Splash
+    {
+        Vector3 position;
+        float age;
+        float life;
+    };
     void Reset(WeatherKind kind);
 
     WeatherKind kind = WeatherKind::Clear;
     bool initialized = false;
     std::vector<Drop> drops;
+    std::vector<Splash> splashes;
     Vector3 center = { 0.0f, 0.0f, 0.0f };
     Vector2 wind = { 0.0f, 0.0f };
     float time = 0.0f;
+    float amount = 1.0f;
+    unsigned seed = 12345u;
 };

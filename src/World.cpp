@@ -17,6 +17,7 @@ namespace
 {
     const float kPieceSize = 240.0f;          // хөдөлгөөнгүй геометрийг хуваах бүсийн хэмжээ
     const float kSceneryNear = 55.0f;         // үүнээс ойр мод, торхыг текстуртай загвараар зурна
+    const float kLandmarkDistance = 900.0f;   // хөшөө (Чингис, Сүхбаатар): хөнгөн хувилбаргүй тул холоос ч загвараар
     const float kStructureDistance = 720.0f;  // барилга, замыг зурах дээд зай (цааш нь мананд уусна)
     const float kShadowDistance = 320.0f;
     const float kGlassDistance = 320.0f;
@@ -75,13 +76,17 @@ void World::BuildStatic()
     doors.clear();
     passages.clear();
     walls.clear();
+    facades.clear();
     panels.clear();
     brokenPanels.clear();
+    fallingPanels.clear();
+    debris.clear();
 
     MeshBuilder solidBuilder, shadowBuilder, glassBuilder, sceneryBuilder;
     std::vector<SceneryPlacement> placements;
     BuildStaticStructures(layout, terrain, obstacles, solidBuilder, shadowBuilder, glassBuilder, interiors, doors,
-                          passages, walls, panels, sceneryBuilder, placements);
+                          passages, walls, panels, sceneryBuilder, placements, &facades);
+    staticFacadeCount = facades.size();
     sceneryPieces = UploadScenery(sceneryBuilder, placements, false);
     staticSceneryCount = scenery.size();
     staticSceneryCpu = sceneryCpu.size();
@@ -246,14 +251,22 @@ void World::BuildFarLand()
         const float lift = road ? 0.1f : -0.2f; // зам гол дээгүүр (гүүр)
         for (size_t i = 0; i + 1 < line.points.size(); ++i)
         {
-            const Vector2 a = line.points[i], b = line.points[i + 1];
-            if (std::fabs(a.x) < inner && std::fabs(a.y) < inner && std::fabs(b.x) < inner && std::fabs(b.y) < inner) continue;
-            const float length = Vector2Distance(a, b);
-            if (length < 0.5f) continue;
-            const Vector2 side = { -(b.y - a.y) / length * width, (b.x - a.x) / length * width };
-            const float ya = grid.Sample(a.x, a.y) + lift, yb = grid.Sample(b.x, b.y) + lift;
-            add(Vector2Add(a, side), ya); add(Vector2Subtract(a, side), ya); add(Vector2Add(b, side), yb);
-            add(Vector2Add(b, side), yb); add(Vector2Subtract(a, side), ya); add(Vector2Subtract(b, side), yb);
+            const Vector2 from = line.points[i], to = line.points[i + 1];
+            const float total = Vector2Distance(from, to);
+            if (total < 0.5f) continue;
+            const Vector2 side = { -(to.y - from.y) / total * width, (to.x - from.x) / total * width };
+            // Газрын торны нүд тутамд хуваана: өндрийг зөвхөн төгсгөлд авбал (хэдэн арван км урт хэсэг байдаг) дунд хэсэг нь
+            // газраас хэдэн зуун метр дээш хөөрч, тэнгэрт дөрвөлжин тууз болж харагддаг байв
+            const int steps = std::max(1, (int)std::ceil(total / cell));
+            for (int k = 0; k < steps; ++k)
+            {
+                const Vector2 a = Vector2Lerp(from, to, (float)k / (float)steps), b = Vector2Lerp(from, to, (float)(k + 1) / (float)steps);
+                if (std::fabs(a.x) < inner && std::fabs(a.y) < inner && std::fabs(b.x) < inner && std::fabs(b.y) < inner) continue;
+                if (!grid.Covers(a.x, a.y) || !grid.Covers(b.x, b.y)) continue; // холын газрын гадна: газар байхгүй
+                const float ya = grid.Sample(a.x, a.y) + lift, yb = grid.Sample(b.x, b.y) + lift;
+                add(Vector2Add(a, side), ya); add(Vector2Subtract(a, side), ya); add(Vector2Add(b, side), yb);
+                add(Vector2Add(b, side), yb); add(Vector2Subtract(a, side), ya); add(Vector2Subtract(b, side), yb);
+            }
         }
     }
     if (!positions.empty())
@@ -306,9 +319,14 @@ void World::BuildSettlements(int variant)
     passages.resize(staticPassageCount);
     ropes.clear();
     walls.resize(staticWallCount);
+    facades.resize(staticFacadeCount);
     panels.resize(staticPanelCount);
     brokenPanels.erase(std::remove_if(brokenPanels.begin(), brokenPanels.end(), [&](int i) { return (size_t)i >= staticPanelCount; }),
                        brokenPanels.end());
+    fallingPanels.erase(std::remove_if(fallingPanels.begin(), fallingPanels.end(),
+                                       [&](const FallingPanel& f) { return (size_t)f.panel >= staticPanelCount; }),
+                        fallingPanels.end());
+    debris.clear(); // (нуранги түр зуурын)
 
     // Буянт-Ухаа нисэх буудлын хучилт зөвхөн хуучин (зохиомол) Улаанбаатарын үед (өвс ургахгүй, засмал замын хурд)
     layout.SetAirfieldActive(variant == kUlaanbaatarProvince && cityProvince < 0);
@@ -316,7 +334,7 @@ void World::BuildSettlements(int variant)
     MeshBuilder solidBuilder, shadowBuilder, glassBuilder, sceneryBuilder;
     std::vector<SceneryPlacement> placements;
     BuildSettlementStructures(variant, layout, terrain, obstacles, solidBuilder, shadowBuilder, glassBuilder, interiors,
-                              doors, passages, walls, panels, sceneryBuilder, placements);
+                              doors, passages, walls, panels, sceneryBuilder, placements, &facades);
     settlementSceneryPieces = UploadScenery(sceneryBuilder, placements, true);
     settlementFences = ExtractFences(solidBuilder, staticPanelCount, true);
 
@@ -359,9 +377,12 @@ void World::BuildObstacleGrid()
         panelGrid[(size_t)GridCell(mid.y) * gridSide + GridCell(mid.x)].push_back(i);
     }
     sceneryGrid.assign((size_t)gridSide * gridSide, {});
+    landmarks.clear();
     for (int i = 0; i < (int)scenery.size(); ++i)
     {
-        sceneryGrid[(size_t)GridCell(scenery[(size_t)i].base.z) * gridSide + GridCell(scenery[(size_t)i].base.x)].push_back(i);
+        // Хөшөө (хөнгөн хувилбаргүй): холоос ч харагдана, тор биш тусдаа жагсаалтаар
+        if (scenery[(size_t)i].count == 0) landmarks.push_back(i);
+        else sceneryGrid[(size_t)GridCell(scenery[(size_t)i].base.z) * gridSide + GridCell(scenery[(size_t)i].base.x)].push_back(i);
     }
     interiorGrid.assign((size_t)gridSide * gridSide, {});
     doorGrid.assign((size_t)gridSide * gridSide, {});
@@ -403,6 +424,17 @@ void World::BuildObstacleGrid()
         for (int z = z0; z <= z1; ++z)
         {
             for (int x = x0; x <= x1; ++x) wallGrid[(size_t)z * gridSide + x].push_back(i);
+        }
+    }
+    facadeGrid.assign((size_t)gridSide * gridSide, {});
+    for (int i = 0; i < (int)facades.size(); ++i)
+    {
+        const Facade& f = facades[(size_t)i];
+        const int x0 = GridCell(std::min(f.a.x, f.b.x)), x1 = GridCell(std::max(f.a.x, f.b.x));
+        const int z0 = GridCell(std::min(f.a.y, f.b.y)), z1 = GridCell(std::max(f.a.y, f.b.y));
+        for (int z = z0; z <= z1; ++z)
+        {
+            for (int x = x0; x <= x1; ++x) facadeGrid[(size_t)z * gridSide + x].push_back(i);
         }
     }
 
@@ -634,6 +666,13 @@ void World::UpdateScenery(Vector3 viewPosition)
             }
         }
     }
+    for (int index : landmarks)
+    {
+        const SceneryItem& item = scenery[(size_t)index];
+        if (!HasSceneryModel((SceneryModelId)item.kind)) continue;
+        const float dx = item.base.x - viewPosition.x, dz = item.base.z - viewPosition.z;
+        if (dx * dx + dz * dz < kLandmarkDistance * kLandmarkDistance) wanted.push_back(index);
+    }
     // Ойроос гарсан: хөнгөн хувилбарыг буцаана; шинээр орсон: нууна
     for (int index : sceneryNear)
     {
@@ -648,7 +687,8 @@ void World::DrawNearScenery(const ViewCone* view, const Material* depth) const
     for (int index : sceneryNear)
     {
         const SceneryItem& item = scenery[(size_t)index];
-        if (view && !view->Sees({ item.base.x, item.base.y + item.height * 0.5f, item.base.z }, item.height * 0.6f, kSceneryNear + 10.0f))
+        const float range = item.count == 0 ? kLandmarkDistance : kSceneryNear + 10.0f;
+        if (view && !view->Sees({ item.base.x, item.base.y + item.height * 0.5f, item.base.z }, item.height * 0.8f, range))
         {
             continue;
         }
@@ -684,7 +724,42 @@ std::vector<MeshPiece> World::ExtractFences(MeshBuilder& solid, size_t from, boo
     return pieces;
 }
 
-void World::BreakPanel(int index, Vector2 direction)
+namespace
+{
+    Color Jitter(Color c, Rng& rng, float amount)
+    {
+        const float k = 1.0f + rng.Range(-amount, amount);
+        return { (unsigned char)std::clamp(c.r * k, 0.0f, 255.0f), (unsigned char)std::clamp(c.g * k, 0.0f, 255.0f),
+                 (unsigned char)std::clamp(c.b * k, 0.0f, 255.0f), 255 };
+    }
+
+    // Хавтгайн дотоод тэнхлэг (x урт дагуу, y босоо -> унах зүг рүү angle-аар хазайна) ба эхлэлээс ертөнцийн матриц
+    Matrix PanelMatrix(Vector3 origin, Vector2 along, Vector2 fall, float angle)
+    {
+        const Vector3 x = { along.x, 0.0f, along.y };
+        const Vector3 f = { fall.x, 0.0f, fall.y };
+        const float c = std::cos(angle), s = std::sin(angle);
+        const Vector3 y = { f.x * s, c, f.z * s };
+        const Vector3 z = { f.x * c, -s, f.z * c };
+        return { x.x, y.x, z.x, origin.x, x.y, y.y, z.y, origin.y, x.z, y.z, z.z, origin.z, 0.0f, 0.0f, 0.0f, 1.0f };
+    }
+}
+
+void World::AddDebris(Vector3 position, Vector3 velocity, Vector3 size, Color color)
+{
+    if (debris.size() >= 320) debris.erase(debris.begin()); // хамгийн хуучин
+    Rng& rng = debrisRng;
+    Debris d = {};
+    d.position = position;
+    d.velocity = velocity;
+    d.angular = { rng.Range(-9.0f, 9.0f), rng.Range(-5.0f, 5.0f), rng.Range(-9.0f, 9.0f) };
+    d.rotation = QuaternionFromAxisAngle({ 0.0f, 1.0f, 0.0f }, rng.Range(0.0f, 2.0f * PI));
+    d.size = size;
+    d.color = color;
+    debris.push_back(d);
+}
+
+void World::BreakPanel(int index, Vector2 direction, float speed)
 {
     FencePanel& panel = panels[(size_t)index];
     panel.broken = true;
@@ -707,6 +782,114 @@ void World::BreakPanel(int index, Vector2 direction)
         UpdateMeshBuffer(list[(size_t)panel.piece].mesh, 0, collapsed.data(), (int)(collapsed.size() * sizeof(float)),
                          panel.vertexStart * 3 * (int)sizeof(float));
     }
+
+    // --- Нурж унах хэсгүүд (төрлөөр нь: шавар хана бутарна, банзан хашаа нугаран унаж банз нь салж нисэнэ) ---
+    Rng& rng = debrisRng;
+    const Vector2 mid = Vector2Lerp(panel.a, panel.b, 0.5f);
+    const float length = Vector2Distance(panel.a, panel.b);
+    const float base = GroundHeight(mid.x, mid.y);
+    const float h = panel.height;
+    const Vector3 push = { panel.fall.x, 0.0f, panel.fall.y };
+    auto worldAt = [&](float u, float v) { return Vector3{ mid.x + along.x * u, base + v, mid.y + along.y * u }; };
+    // Чөлөөт хэлтэрхий: хашааны чиглэлтэй зэрэгцэн эхэлнэ (дотоод x = урт дагуу)
+    const Quaternion facing = QuaternionFromAxisAngle({ 0.0f, 1.0f, 0.0f }, std::atan2(-along.y, along.x));
+
+    if (panel.breakSpeed >= 6.0f)
+    {
+        // Шавар, тоосгон хана: хэсэг хэсгээрээ бутарна. Дээд хэсэг нь хүчтэй, хол нисэж, доод нь дэргэдээ нурна.
+        const int columns = std::clamp((int)std::round(length / 0.55f), 2, 6), rows = std::clamp((int)std::round(h / 0.5f), 2, 5);
+        for (int r = 1; r < rows; ++r) // (доод эгнээ үлдэнэ: доор)
+        {
+            for (int c = 0; c < columns; ++c)
+            {
+                const float lift = ((float)r + 0.5f) / (float)rows;
+                const Vector3 size = { length / (float)columns * rng.Range(0.7f, 1.0f), h / (float)rows * rng.Range(0.7f, 1.0f), rng.Range(0.16f, 0.28f) };
+                const Vector3 at = worldAt(-length * 0.5f + ((float)c + 0.5f) * length / (float)columns, ((float)r + 0.5f) * h / (float)rows);
+                const Vector3 velocity = Vector3Add(Vector3Scale(push, speed * rng.Range(0.25f, 0.6f) * (0.3f + lift)),
+                                                    { rng.Range(-1.2f, 1.2f), rng.Range(0.3f, 2.5f) * lift, rng.Range(-1.2f, 1.2f) });
+                AddDebris(at, velocity, size, Jitter(panel.color, rng, 0.14f));
+                debris.back().rotation = facing;
+            }
+        }
+        // Хугарсан ёроол: тэгш бус намхан үлдэгдэл
+        FallingPanel stub;
+        stub.panel = index;
+        stub.origin = { mid.x, base, mid.y };
+        stub.along = along;
+        stub.fall = panel.fall;
+        stub.settled = true;
+        stub.height = h;
+        for (int c = 0; c < columns; ++c)
+        {
+            const float top = h / (float)rows * rng.Range(0.35f, 1.1f);
+            stub.parts.push_back({ { -length * 0.5f + ((float)c + 0.5f) * length / (float)columns, top * 0.5f, 0.0f },
+                                   { length / (float)columns * 0.98f, top, 0.24f }, Jitter(panel.color, rng, 0.1f) });
+        }
+        fallingPanels.push_back(stub);
+        return;
+    }
+
+    FallingPanel fall;
+    fall.panel = index;
+    fall.origin = { mid.x, base, mid.y };
+    fall.along = along;
+    fall.fall = panel.fall;
+    fall.height = h;
+    fall.rest = PI * 0.5f - 0.03f;
+    // Мөргөлтийн түлхэлтээр эхлээд хурдан хазайна (хурдан мөргөвөл бараг тэр дороо хэвтэнэ)
+    fall.spin = std::min(5.0f, speed / std::max(0.6f, h) * 0.45f);
+    if (panel.count > 4)
+    {
+        // Банзан хашаа (Structures: багана, хоёр хөндлөвч, доод банз, өргөн нь янз бүр банзнууд)
+        const Color rail = ScaleColor(panel.color, 0.8f);
+        fall.parts.push_back({ { -length * 0.5f + 0.07f, (h + 0.1f) * 0.5f, -0.04f }, { 0.13f, h + 0.1f, 0.13f }, ScaleColor(panel.color, 0.6f) });
+        fall.parts.push_back({ { 0.0f, 0.6f, -0.08f }, { length, 0.09f, 0.07f }, rail });
+        fall.parts.push_back({ { 0.0f, 1.6f, -0.08f }, { length, 0.09f, 0.07f }, rail });
+        fall.parts.push_back({ { 0.0f, 0.08f, 0.03f }, { length, 0.16f, 0.08f }, ScaleColor(panel.color, 0.6f) });
+        const float detach = std::clamp((speed - 4.0f) * 0.05f, 0.08f, 0.5f); // хурдтай мөргөвөл олон банз салж нисэнэ
+        float cursor = -length * 0.5f + 0.02f;
+        const float end = length * 0.5f - 0.02f;
+        int loose = 0;
+        while (cursor < end - 0.08f)
+        {
+            const float width = std::min(end - cursor, rng.Range(0.36f, 0.56f));
+            const float ph = h + rng.Range(-0.16f, 0.1f);
+            const Color color = Jitter(panel.color, rng, 0.12f);
+            const float u = cursor + width * 0.5f;
+            if (loose < 3 && rng.Chance(detach))
+            {
+                ++loose;
+                const Vector3 velocity = Vector3Add(Vector3Scale(push, speed * rng.Range(0.35f, 0.8f)),
+                                                    { rng.Range(-1.0f, 1.0f), rng.Range(1.0f, 3.5f), rng.Range(-1.0f, 1.0f) });
+                AddDebris(worldAt(u, ph * 0.5f), velocity, { width - 0.04f, ph, 0.035f }, color);
+                debris.back().rotation = facing;
+            }
+            else
+            {
+                fall.parts.push_back({ { u, ph * 0.5f, 0.03f }, { width - rng.Range(0.02f, 0.07f), ph, 0.035f }, color });
+            }
+            cursor += width;
+        }
+    }
+    else
+    {
+        // Нимгэн хашаа (төмөр хуудас, банзан хавтан): нэг хавтгай. Хурдтай мөргөвөл нэг хэсэг нь тасарч нисэнэ.
+        if (speed > 9.0f && length > 1.2f)
+        {
+            const float piece = length * rng.Range(0.3f, 0.45f);
+            AddDebris(worldAt(length * 0.5f - piece * 0.5f, h * 0.5f),
+                      Vector3Add(Vector3Scale(push, speed * 0.5f), { 0.0f, rng.Range(1.0f, 3.0f), 0.0f }), { piece, h, 0.04f },
+                      Jitter(panel.color, rng, 0.08f));
+            debris.back().rotation = facing;
+            fall.parts.push_back({ { -piece * 0.5f, h * 0.5f, 0.02f }, { length - piece, h, 0.04f }, panel.color });
+        }
+        else
+        {
+            fall.parts.push_back({ { 0.0f, h * 0.5f, 0.02f }, { length, h, 0.04f }, panel.color });
+        }
+    }
+    if (fallingPanels.size() >= 240) fallingPanels.erase(fallingPanels.begin());
+    fallingPanels.push_back(fall);
 }
 
 int World::BreakFences(Vector3 position, float radius, Vector2 direction, float speed)
@@ -728,7 +911,7 @@ int World::BreakFences(Vector3 position, float radius, Vector2 direction, float 
                 const Vector2 to = Vector2Subtract(closest, at);
                 if (Vector2Length(to) > radius || Vector2DotProduct(to, direction) <= 0.0f) continue;
                 if (std::fabs(GroundHeight(closest.x, closest.y) - position.y) > 2.0f) continue;
-                BreakPanel(index, direction);
+                BreakPanel(index, direction, speed);
                 ++broken;
             }
         }
@@ -749,6 +932,62 @@ void World::CloseAllDoors()
         door.open = false;
         door.swing = 0.0f;
         door.pound = 0.0f;
+    }
+}
+
+
+void World::UpdateDebris(float dt)
+{
+    const float gravity = 14.0f; // (Particles-тэй ижил: тоглоомын хэмнэлд)
+    for (FallingPanel& f : fallingPanels)
+    {
+        if (f.settled) continue;
+        // Ёроолоороо эргэх саваа: θ'' = 3g / (2h) · sin θ (бага өнцөгт ч хөдлөхөөр доод хязгаартай)
+        f.spin += 1.5f * gravity / std::max(0.6f, f.height) * std::sin(std::max(f.angle, 0.06f)) * dt;
+        f.angle += f.spin * dt;
+        if (f.angle >= f.rest)
+        {
+            f.angle = f.rest;
+            // Газарт тусаад бага зэрэг ойж, тогтоно
+            if (f.spin > 1.4f) f.spin = -f.spin * 0.22f;
+            else
+            {
+                f.spin = 0.0f;
+                f.settled = true;
+            }
+        }
+    }
+
+    for (Debris& d : debris)
+    {
+        if (d.settled) continue;
+        d.velocity.y -= gravity * dt;
+        d.position = Vector3Add(d.position, Vector3Scale(d.velocity, dt));
+        const float w = Vector3Length(d.angular);
+        if (w > 1e-4f)
+        {
+            d.rotation = QuaternionNormalize(QuaternionMultiply(QuaternionFromAxisAngle(Vector3Scale(d.angular, 1.0f / w), w * dt), d.rotation));
+        }
+        // Хамгийн доод булан: эргэсэн хайрцгийн тэнхлэгүүдийн босоо хэсгээс
+        const Matrix m = QuaternionToMatrix(d.rotation);
+        const float reach = 0.5f * (std::fabs(m.m1) * d.size.x + std::fabs(m.m5) * d.size.y + std::fabs(m.m9) * d.size.z);
+        const float ground = GroundHeight(d.position.x, d.position.z);
+        if (d.position.y - reach < ground)
+        {
+            d.position.y = ground + reach;
+            if (d.velocity.y < -1.6f)
+            {
+                // Ойно: хурд, эргэлт буурна, эргэлтийн тэнхлэг санамсаргүй өөрчлөгдөнө (газар мөргөсөн булан)
+                d.velocity = { d.velocity.x * 0.45f, -d.velocity.y * 0.28f, d.velocity.z * 0.45f };
+                d.angular = Vector3Add(Vector3Scale(d.angular, 0.4f), { debrisRng.Range(-2.0f, 2.0f), 0.0f, debrisRng.Range(-2.0f, 2.0f) });
+            }
+            else
+            {
+                d.velocity = { 0.0f, 0.0f, 0.0f };
+                d.angular = { 0.0f, 0.0f, 0.0f };
+                d.settled = true;
+            }
+        }
     }
 }
 
@@ -986,19 +1225,25 @@ void World::DrawDoors(Vector3 viewPosition) const
         rlPopMatrix();
     }
 
-    // Унаагаар нураасан хашааны хэсэг: газар хэвтэнэ
-    for (int index : brokenPanels)
+    // Унаагаар нураасан хашаа: ёроолоороо нугаран унасан хэсэг (банз, багана, хөндлөвч)
+    for (const FallingPanel& f : fallingPanels)
     {
-        const FencePanel& panel = panels[(size_t)index];
-        const Vector2 mid = Vector2Lerp(panel.a, panel.b, 0.5f);
-        if (std::fabs(mid.x - viewPosition.x) > kDoorDrawDistance || std::fabs(mid.y - viewPosition.z) > kDoorDrawDistance) continue;
-        const Vector2 along = Vector2Normalize(Vector2Subtract(panel.b, panel.a));
-        const Vector2 lying = Vector2Add(mid, Vector2Scale(panel.fall, panel.height * 0.5f + 0.1f));
+        if (std::fabs(f.origin.x - viewPosition.x) > kDoorDrawDistance || std::fabs(f.origin.z - viewPosition.z) > kDoorDrawDistance) continue;
+        // (хэвтэхдээ зузааныхаа хэрээр газраас дээш: банз газарт шигдэхгүй)
+        const Vector3 origin = { f.origin.x, f.origin.y + 0.07f * std::sin(f.angle), f.origin.z };
         rlPushMatrix();
-        rlTranslatef(lying.x, GroundHeight(lying.x, lying.y) + 0.05f, lying.y);
-        rlRotatef(std::atan2(along.x, along.y) * RAD2DEG, 0.0f, 1.0f, 0.0f);
-        rlRotatef(4.0f, 1.0f, 0.0f, 0.0f); // бага зэрэг хазгай
-        DrawCubeV({ 0.0f, 0.0f, 0.0f }, { panel.height, 0.07f, Vector2Distance(panel.a, panel.b) }, ScaleColor(panel.color, 0.8f));
+        rlMultMatrixf(MatrixToFloat(PanelMatrix(origin, f.along, f.fall, f.angle)));
+        for (const DebrisBox& part : f.parts) DrawCubeV(part.offset, part.size, part.color);
+        rlPopMatrix();
+    }
+    // Нисэж, газар хэвтэх хэлтэрхий (салсан банз, хананы хэсэг)
+    for (const Debris& d : debris)
+    {
+        if (std::fabs(d.position.x - viewPosition.x) > kDoorDrawDistance || std::fabs(d.position.z - viewPosition.z) > kDoorDrawDistance) continue;
+        rlPushMatrix();
+        rlTranslatef(d.position.x, d.position.y, d.position.z);
+        rlMultMatrixf(MatrixToFloat(QuaternionToMatrix(d.rotation)));
+        DrawCubeV({ 0.0f, 0.0f, 0.0f }, d.size, d.color);
         rlPopMatrix();
     }
 }
@@ -1538,6 +1783,43 @@ float World::RayDistance(Ray ray, float maxDistance) const
         previous = current;
     }
     return std::min(distance, WallRayDistance(ray, maxDistance));
+}
+
+bool World::FacadeHit(Ray ray, float maxDistance, float& distance, Vector3& normal) const
+{
+    if (facadeGrid.empty()) return false;
+    // Хэвтээ хавтгайд: туяа (o + t d) ба хана (a + u (b - a)) огтлолцол; t нь 3D зай (чиглэл нэгж урттай)
+    const Vector3 end = Vector3Add(ray.position, Vector3Scale(ray.direction, maxDistance));
+    const int x0 = GridCell(std::min(ray.position.x, end.x)), x1 = GridCell(std::max(ray.position.x, end.x));
+    const int z0 = GridCell(std::min(ray.position.z, end.z)), z1 = GridCell(std::max(ray.position.z, end.z));
+    const Vector2 o = { ray.position.x, ray.position.z }, d = { ray.direction.x, ray.direction.z };
+    bool found = false;
+    distance = maxDistance;
+    for (int cz = z0; cz <= z1; ++cz)
+    {
+        for (int cx = x0; cx <= x1; ++cx)
+        {
+            for (int index : facadeGrid[(size_t)cz * gridSide + cx])
+            {
+                const Facade& f = facades[(size_t)index];
+                const Vector2 e = Vector2Subtract(f.b, f.a);
+                const float denom = d.x * e.y - d.y * e.x;
+                if (std::fabs(denom) < 1e-6f) continue;
+                const Vector2 ao = Vector2Subtract(f.a, o);
+                const float t = (ao.x * e.y - ao.y * e.x) / denom;
+                const float u = (ao.x * d.y - ao.y * d.x) / denom;
+                if (t <= 0.05f || t >= distance || u < 0.0f || u > 1.0f) continue;
+                const float y = ray.position.y + ray.direction.y * t;
+                if (y < f.bottom || y > f.top) continue;
+                distance = t;
+                Vector3 n = Vector3Normalize({ -e.y, 0.0f, e.x });
+                if (Vector3DotProduct(n, ray.direction) > 0.0f) n = Vector3Negate(n);
+                normal = n;
+                found = true;
+            }
+        }
+    }
+    return found;
 }
 
 // ---------------------------------------------------------------- Зураглал

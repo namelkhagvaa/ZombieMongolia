@@ -5,6 +5,7 @@
 #include "Structures.h"
 #include "Obstacle.h"
 #include "Polygon.h"
+#include "Procedural.h"
 #include "Terrain.h"
 #include "raylib.h"
 
@@ -97,6 +98,8 @@ public:
 
     // Туяа саад эсвэл газарт тусах хүртэлх зай; юунд ч тусахгүй бол maxDistance (сум, харааны шугамд).
     float RayDistance(Ray ray, float maxDistance) const;
+    // Барилгын гадна хананд (Facade) туяа тусах эсэх: зай ба хананы normal (туяа руу харсан). Сумны оромд.
+    bool FacadeHit(Ray ray, float maxDistance, float& distance, Vector3& normal) const;
 
     float HalfSize() const { return halfSize; }
 
@@ -136,6 +139,8 @@ public:
     void CloseAllDoors();
     // Хаалганы эргэх хөдөлгөөнийг шинэчилнэ.
     void UpdateDoors(float dt);
+    // Нурсан хашааны унах, хэлтэрхий нисэх хөдөлгөөн.
+    void UpdateDebris(float dt);
     // Зомби хаалттай хаалгыг нүднэ: position-ий дэргэдэх хаалга хангалттай нүдүүлбэл эвдэрч нээгдэнэ.
     void PoundDoors(Vector3 position, float dt);
     // (x, z) цэг аль барилгын дотор байгаа; -1 = гадаа.
@@ -166,6 +171,8 @@ public:
               const Material& detailMaterial, float detailDistance, bool realShadows) const;
     // Сүүдрийн зураг руу: газар, барилга (center орчмын radius зайд)
     void DrawShadowCasters(Vector3 center, float radius, const Material& material) const;
+    // Аймгийн чийглэг байдал 0 (говь) .. 1 (Хангай): өвс, цэцгийн өнгө, тоо
+    void SetLushness(float value) { terrain.SetLushness(value); }
     // Хагас тунгалаг хэсгүүд (торон хашаа): бусад бүх зүйлийн дараа зурна.
     void DrawTransparent(const Camera3D& camera, const Material& material) const;
     void DrawColliders(Vector3 viewPosition) const;
@@ -214,6 +221,9 @@ private:
     size_t staticInteriorCount = 0, staticDoorCount = 0; // хотын орж болох барилга (суурингийнх араас нь)
     std::vector<std::vector<int>> interiorGrid, doorGrid; // obstacleGrid-тэй ижил нүд
     std::vector<std::vector<int>> wallGrid; // obstacleGrid-тэй ижил нүд
+    std::vector<Facade> facades;            // барилгын гадна хана (сумны ором): тогтмол хэсгийнх эхэнд
+    size_t staticFacadeCount = 0;
+    std::vector<std::vector<int>> facadeGrid;
     std::vector<PitchedRoof> pitchedRoofs;  // тогтмол ба суурингийн налуу дээвэр (BuildObstacleGrid)
     std::vector<std::vector<int>> roofGrid; // obstacleGrid-тэй ижил нүд
     std::vector<std::vector<int>> panelGrid; // нурдаг хашааны хэсгүүд (дундаж цэгээр)
@@ -240,6 +250,7 @@ private:
     std::vector<MeshPiece> sceneryPieces, settlementSceneryPieces;
     std::vector<std::vector<int>> sceneryGrid; // obstacleGrid-тэй ижил нүд
     std::vector<int> sceneryNear;
+    std::vector<int> landmarks; // хөнгөн хувилбаргүй хөшөөнүүд (count == 0)
 
     // Бүсчилсэн хөдөлгөөнгүй геометр: тогтмол хэсэг
     std::vector<MeshPiece> structures;
@@ -257,7 +268,40 @@ private:
     std::vector<MeshPiece> fences;
     std::vector<MeshPiece> settlementFences;
     std::vector<MeshPiece> ExtractFences(MeshBuilder& solid, size_t from, bool settlement);
-    void BreakPanel(int index, Vector2 direction);
+    void BreakPanel(int index, Vector2 direction, float speed);
+
+    // Нурсан хашаа: ёроолоороо нугаран унах хавтгай (банзан хашаа, төмөр хуудас) ба чөлөөтэй нисэх хэлтэрхий
+    // (салсан банз, шавар хананы хэсэг). Анхны mesh-ийн CPU хуулбар хадгалагддаггүй тул хэлбэрийг төрлөөр нь дахин үүсгэнэ.
+    struct DebrisBox
+    {
+        Vector3 offset; // хавтгайн дотоод координат: x урт дагуу, y өндөр, z зузаан (унах зүг)
+        Vector3 size;
+        Color color;
+    };
+    struct FallingPanel
+    {
+        int panel = -1;
+        Vector3 origin = {};  // ёроолын төв, газар дээр
+        Vector2 along = {}, fall = {};
+        float angle = 0.0f;   // 0 босоо .. rest хэвтсэн, рад
+        float spin = 0.0f;    // өнцгийн хурд, рад/с
+        float rest = 1.5f;
+        float height = 2.0f;
+        bool settled = false;
+        std::vector<DebrisBox> parts;
+    };
+    struct Debris
+    {
+        Vector3 position, velocity, angular; // angular: ертөнцийн тэнхлэгт, рад/с
+        Quaternion rotation;
+        Vector3 size;
+        Color color;
+        bool settled;
+    };
+    std::vector<FallingPanel> fallingPanels;
+    std::vector<Debris> debris;
+    Rng debrisRng{ 9127u };
+    void AddDebris(Vector3 position, Vector3 velocity, Vector3 size, Color color);
     size_t staticObstacleCount = 0; // obstacles-ийн эхний хэсэг нь тогтмол, үлдсэн нь суурингийнх
     int settlementVariant = -1;
     int cityProvince = -1;          // идэвхтэй хотын аймаг (-1 = зохиомол хээр тал)

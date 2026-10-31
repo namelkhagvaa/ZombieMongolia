@@ -1,5 +1,6 @@
 #include "VehicleModel.h"
 
+#include "MeshBuilder.h"
 #include "Platform.h"
 #include "UiStyle.h"
 
@@ -15,6 +16,7 @@ namespace
     struct Part
     {
         Mesh mesh = {};
+        Mesh lod = {};         // хөнгөн хувилбар (холоос): байхгүй бол vertexCount = 0
         Vector3 pivot = {};
         unsigned int kind = 0; // 0 их бие, 1 урд дугуй, 2 хойд дугуй, 3 үндсэн сэнс, 4 сүүлний сэнс
     };
@@ -25,8 +27,35 @@ namespace
         Texture2D texture = {};
         Material material = {};
         float wheelRadius = 0.42f;
+        float lodDistance = 0.0f; // камераас үүнээс хол бол хөнгөн хувилбар (0 = байхгүй)
         bool loaded = false;
     };
+
+    // Загварууд (Tripo3D) 36-90 мянган гурвалжинтай: холоос жижиг харагдах үед хэдэн мянгаар хангалттай.
+    void BuildLods(Model3& model, float cell, float distance, float uvStep = 1.0f / 40.0f)
+    {
+        if (!model.loaded) return;
+        int full = 0, light = 0;
+        for (Part& part : model.parts)
+        {
+            part.lod = SimplifyMesh(part.mesh, cell, uvStep);
+            full += part.mesh.triangleCount;
+            light += part.lod.vertexCount > 0 ? part.lod.triangleCount : part.mesh.triangleCount;
+        }
+        model.lodDistance = distance;
+        TraceLog(LOG_INFO, "VEHICLE: low-detail version %d of %d triangles (beyond %.0f m)", light, full, distance);
+    }
+
+    // Энэ кадрт зурах mesh: холоос хөнгөн хувилбар
+    const Mesh& PickMesh(const Part& part, bool far)
+    {
+        return far && part.lod.vertexCount > 0 ? part.lod : part.mesh;
+    }
+
+    bool IsFar(const Model3& model)
+    {
+        return model.lodDistance > 0.0f && ModelViewDistance() > model.lodDistance;
+    }
 
     Model3 models[(int)VehicleModelId::Count];
 
@@ -189,6 +218,7 @@ namespace
     const char* kSceneryNames[(int)SceneryModelId::Count][2] = {
         { "trees", "larch" }, { "trees", "birch" }, { "trees", "elm" }, { "trees", "saxaul" },
         { "pooshig", "barrel_old" }, { "pooshig", "barrel_fuel" },
+        { "monuments", "chinggis" }, { "monuments", "sukhbaatar" },
     };
 
     // Файлын байрлал: компьютер дээр exe-ийн хажуу эсвэл төслийн assets/<sub>, утсан дээр APK-ийн assets/<sub>
@@ -209,7 +239,11 @@ namespace
     void UnloadOne(Model3& model)
     {
         if (!model.loaded) return;
-        for (Part& part : model.parts) UnloadMesh(part.mesh);
+        for (Part& part : model.parts)
+        {
+            UnloadMesh(part.mesh);
+            if (part.lod.vertexCount > 0) UnloadMesh(part.lod);
+        }
         model.parts.clear();
         if (model.texture.id != 0) UnloadTexture(model.texture);
         RL_FREE(model.material.maps);
@@ -298,7 +332,7 @@ void LoadVehicleModels(Shader shader)
 #if !defined(__ANDROID__)
         if (!FileExists(mesh.c_str())) continue;
 #endif
-        LoadOne(models[i], mesh, texture, shader);
+        if (LoadOne(models[i], mesh, texture, shader)) BuildLods(models[i], 0.1f, 30.0f, 1.0f / 10.0f);
     }
     LoadPlates(shader);
 }
@@ -328,23 +362,31 @@ Vector3 VehicleModelPivot(VehicleModelId id, unsigned int kind)
     return { 0.0f, 0.0f, 0.0f };
 }
 
-void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Material* depth, Color tint, float rotor, float pitch)
+void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Material* depth, Color tint, float rotor, float pitch,
+                      unsigned int flatMask)
 {
     Model3& model = models[(int)id];
     if (!model.loaded) return;
     const Material& material = depth ? *depth : model.material;
     if (!depth) model.material.maps[MATERIAL_MAP_DIFFUSE].color = tint;
     const float spin = distance / model.wheelRadius;
+    const bool far = IsFar(model);
+    int wheel = 0;
     for (const Part& part : model.parts)
     {
         if (part.kind == 0)
         {
-            DrawMesh(part.mesh, material, MatrixIdentity());
-            if (!depth) DrawPlates(id, tint);
+            DrawMesh(PickMesh(part, far), material, MatrixIdentity());
+            if (!depth && !far) DrawPlates(id, tint); // (холоос дугаар уншигдахгүй)
             continue;
         }
         rlPushMatrix();
         rlTranslatef(part.pivot.x, part.pivot.y, part.pivot.z);
+        if ((part.kind == 1 || part.kind == 2) && (flatMask >> wheel++ & 1u))
+        {
+            // Хагарсан дугуй: доороо хавтгайрч, хажуу тийш бага зэрэг тэлнэ (их бие тэр буланд сууна: Garage::Draw)
+            rlScalef(1.08f, 0.84f, 1.05f);
+        }
         if (part.kind == 3)
         {
             rlRotatef(rotor * RAD2DEG, 0.0f, 1.0f, 0.0f);   // үндсэн сэнс, пулемёт: босоо тэнхлэг
@@ -356,9 +398,41 @@ void DrawVehicleModel(VehicleModelId id, float distance, float steer, const Mate
             if (part.kind == 1) rlRotatef(-steer * 30.0f, 0.0f, 1.0f, 0.0f); // урд дугуйнууд жолоогоор эргэнэ
             rlRotatef(spin * RAD2DEG, 1.0f, 0.0f, 0.0f);
         }
-        DrawMesh(part.mesh, material, MatrixIdentity());
+        DrawMesh(PickMesh(part, far), material, MatrixIdentity());
         rlPopMatrix();
     }
+}
+
+int VehicleModelWheels(VehicleModelId id, Vector3* centers, int max)
+{
+    const Model3& model = models[(int)id];
+    int count = 0;
+    if (!model.loaded) return 0;
+    for (const Part& part : model.parts)
+    {
+        if ((part.kind == 1 || part.kind == 2) && count < max) centers[count++] = part.pivot;
+    }
+    return count;
+}
+
+bool RaycastVehicleModel(VehicleModelId id, Ray local, float maxDistance, float& distance, Vector3& normal)
+{
+    const Model3& model = models[(int)id];
+    if (!model.loaded) return false;
+    bool found = false;
+    distance = maxDistance;
+    for (const Part& part : model.parts)
+    {
+        if (part.kind != 0 || !part.mesh.vertices) continue; // их бие л (дугуй, сэнс, пулемёт эргэдэг)
+        const RayCollision hit = GetRayCollisionMesh(local, part.mesh, MatrixIdentity());
+        if (hit.hit && hit.distance < distance)
+        {
+            distance = hit.distance;
+            normal = hit.normal;
+            found = true;
+        }
+    }
+    return found;
 }
 
 void LoadSceneryModels(Shader shader)
@@ -371,7 +445,8 @@ void LoadSceneryModels(Shader shader)
 #if !defined(__ANDROID__)
         if (!FileExists(mesh.c_str())) continue;
 #endif
-        LoadOne(scenery[i], mesh, texture, shader);
+        const bool monument = i >= (int)SceneryModelId::Chinggis; // (өндөр нь 5-10 м: нүд нь ~15-25 см)
+        if (LoadOne(scenery[i], mesh, texture, shader)) BuildLods(scenery[i], monument ? 0.025f : 0.15f, monument ? 90.0f : 35.0f); // мод
     }
 }
 
@@ -390,7 +465,8 @@ void DrawSceneryModel(SceneryModelId id, const Material* depth)
     Model3& model = scenery[(int)id];
     if (!model.loaded) return;
     const Material& material = depth ? *depth : model.material;
-    for (const Part& part : model.parts) DrawMesh(part.mesh, material, MatrixIdentity());
+    const bool far = IsFar(model);
+    for (const Part& part : model.parts) DrawMesh(PickMesh(part, far), material, MatrixIdentity());
 }
 
 void LoadPropModels(Shader shader)
@@ -403,7 +479,7 @@ void LoadPropModels(Shader shader)
 #if !defined(__ANDROID__)
         if (!FileExists(mesh.c_str())) continue;
 #endif
-        LoadOne(props[i], mesh, texture, shader);
+        if (LoadOne(props[i], mesh, texture, shader)) BuildLods(props[i], 0.025f, 7.0f); // буу (дүрсийн гарт)
     }
 }
 
@@ -428,5 +504,6 @@ void DrawPropModel(PropModelId id, Color tint)
     if (!model.loaded) return;
     if (!propDepth) model.material.maps[MATERIAL_MAP_DIFFUSE].color = tint;
     const Material& material = propDepth ? *propDepth : model.material;
-    for (const Part& part : model.parts) DrawMesh(part.mesh, material, MatrixIdentity());
+    const bool far = IsFar(model);
+    for (const Part& part : model.parts) DrawMesh(PickMesh(part, far), material, MatrixIdentity());
 }

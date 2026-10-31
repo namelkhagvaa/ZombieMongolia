@@ -76,6 +76,7 @@ struct Zombie
     bool oneEye = false;
     bool headWound = false;
     int hairStyle = 0;
+    bool woman = false; // гүйгч зомбины тал нь эмэгтэй загвартай (assets\woman_zombie)
     float headRoll = 0.0f; // толгойн хазайлт, градус
     float limp = 0.0f;     // 0..1 баруун хөлөө чирэх хэмжээ
     int armStyle = 0;      // гараа барих хэлбэр
@@ -104,6 +105,8 @@ struct Zombie
     bool IsAlive() const { return health > 0.0f; }
     bool IsBear() const { return type == ZombieType::Bear; }
     float Radius() const { return (IsBear() ? 0.85f : 0.4f) * scale; }
+    // Биеийн бодит өргөн (гар, мөрөө оруулаад): бие биедээ, хүн рүү шингэхгүй байх зай. Том зомби өргөн мөртэй.
+    float BodyRadius() const { return (IsBear() ? 0.85f : type == ZombieType::Brute ? 0.58f : 0.42f) * scale; }
     float Height() const { return (IsBear() ? 1.45f : 1.92f) * scale; } // толгойн оройг оруулаад
     Vector3 Chest() const;
 };

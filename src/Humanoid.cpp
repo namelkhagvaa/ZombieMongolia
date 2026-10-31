@@ -1038,8 +1038,25 @@ HumanoidPose MakeSoldierPose(float walkCycle, float moveAmount, bool grounded, f
 
 void DrawBlobShadow(Vector3 ground, float radius)
 {
-    DrawCylinder({ ground.x + 0.18f, ground.y + 0.13f, ground.z + 0.13f }, radius, radius, 0.01f, 8,
-                 { 10, 12, 22, 90 });
+    // Хөлийн яг доорх зөөлөн бараан толбо (газар хүрсэн мэдрэмж): төв нь бараан, зах руу ул мөргүй алга болно.
+    // (Нарны сүүдрийг shadow map гаргана; хуучин 8 өнцөгт хатуу толбо нарны тогтмол чиглэл рүү шилжсэн байв.)
+    const int segments = 18;
+    const float y = ground.y + 0.13f, r = radius * 1.15f;
+    rlBegin(RL_TRIANGLES);
+    for (int i = 0; i < segments; ++i)
+    {
+        const float a0 = 2.0f * PI * (float)i / (float)segments, a1 = 2.0f * PI * (float)(i + 1) / (float)segments;
+        for (int side = 0; side < 2; ++side) // (хоёр эргэлтээр: ар талыг тасдах тохиргооноос үл хамаарна)
+        {
+            const float first = side ? a0 : a1, second = side ? a1 : a0;
+            rlColor4ub(10, 12, 20, 110);
+            rlVertex3f(ground.x, y, ground.z);
+            rlColor4ub(10, 12, 20, 0);
+            rlVertex3f(ground.x + std::cos(first) * r, y, ground.z + std::sin(first) * r);
+            rlVertex3f(ground.x + std::cos(second) * r, y, ground.z + std::sin(second) * r);
+        }
+    }
+    rlEnd();
 }
 
 HumanoidPose MakeGunnerPose(Vector3 feet, float facing, const Vector3 grips[2], float time)

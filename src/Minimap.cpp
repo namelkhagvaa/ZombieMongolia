@@ -300,30 +300,66 @@ namespace
         }
     }
 
-    // Идэвхтэй даалгаврын байршил: шар ромбо. Хүрээнээс гарсан бол ирмэг дээр наагдаж зүгийг заана.
-    void DrawObjectives(const MapView& view, const std::vector<Vector3>& markers, float markerScale)
+    const char* DistanceText(float meters)
+    {
+        return meters < 1000.0f ? TextFormat("%d м", (int)std::round(meters / 10.0f) * 10) : TextFormat("%.1f км", meters / 1000.0f);
+    }
+
+    // Идэвхтэй даалгаврууд: төрлийн тэмдэг (туг, хүн, хайрцаг, бамбай ...), дугаартай; одоо хийх ёстой нь лугшдаг
+    // цагирагтай. Хүрээнээс гарсан бол ирмэг дээр наагдаж зүгийг заана.
+    // from: (бүтэн зураг) тоглогчийн байрлал: тэмдгийн хажууд нэр, зай бичнэ. selected: чиглэл заагдаж буй цэг.
+    void DrawObjectives(const MapView& view, const std::vector<MapMarker>& markers, float markerScale, const Vector3* from = nullptr,
+                        const Vector2* selected = nullptr)
     {
         const Vector2 center = view.Center();
-        const float limitX = view.area.width * 0.5f - 8.0f;
-        const float limitY = view.area.height * 0.5f - 8.0f;
-        for (const Vector3& marker : markers)
+        const float limitX = view.area.width * 0.5f - 12.0f * markerScale;
+        const float limitY = view.area.height * 0.5f - 12.0f * markerScale;
+        // Үйл явдлууд эхэнд, даалгаврууд дээр нь (давхцвал даалгавар харагдана)
+        for (int pass = 0; pass < 2; ++pass)
         {
-            Vector2 p = view.ToScreen(marker.x, marker.z);
-            const float dx = p.x - center.x, dy = p.y - center.y;
-            const float overflow = std::max(std::fabs(dx) / limitX, std::fabs(dy) / limitY);
-            if (overflow > 1.0f)
+            for (const MapMarker& marker : markers)
             {
-                p = { center.x + dx / overflow, center.y + dy / overflow };
+                if ((marker.objective >= 0) != (pass == 1)) continue;
+                Vector2 p = view.ToScreen(marker.position.x, marker.position.z);
+                const float dx = p.x - center.x, dy = p.y - center.y;
+                const float overflow = std::max(std::fabs(dx) / limitX, std::fabs(dy) / limitY);
+                const bool edge = overflow > 1.0f;
+                if (edge) p = { center.x + dx / overflow, center.y + dy / overflow };
+                const float radius = (marker.objective >= 0 ? 10.0f : 8.0f) * markerScale;
+                const Color color = MarkerColor(marker.kind);
+                const bool chosen = selected && Vector2Distance(*selected, { marker.position.x, marker.position.z }) < 3.0f;
+                if (marker.focus || chosen)
+                {
+                    const float pulse = std::fmod((float)GetTime() * 0.9f, 1.0f);
+                    DrawRing(p, radius * (1.0f + 0.7f * pulse), radius * (1.15f + 0.7f * pulse), 0.0f, 360.0f, 32,
+                             Fade(chosen ? WHITE : color, 0.85f * (1.0f - pulse)));
+                }
+                if (edge)
+                {
+                    // Ирмэг дээр: гадагш заасан жижиг гурвалжин
+                    const float length = std::sqrt(dx * dx + dy * dy);
+                    const Vector2 dir = { dx / length, dy / length }, side = { -dir.y, dir.x };
+                    const Vector2 tip = { p.x + dir.x * radius * 1.6f, p.y + dir.y * radius * 1.6f };
+                    const Vector2 b = { p.x + dir.x * radius * 0.9f + side.x * radius * 0.6f, p.y + dir.y * radius * 0.9f + side.y * radius * 0.6f };
+                    const Vector2 c = { p.x + dir.x * radius * 0.9f - side.x * radius * 0.6f, p.y + dir.y * radius * 0.9f - side.y * radius * 0.6f };
+                    const float cross = (b.x - tip.x) * (c.y - tip.y) - (b.y - tip.y) * (c.x - tip.x);
+                    if (cross < 0.0f) DrawTriangle(tip, b, c, color);
+                    else DrawTriangle(tip, c, b, color);
+                }
+                DrawMarkerBadge(marker.kind, p, radius, 1.0f, marker.objective >= 0 && markerScale > 1.2f ? marker.objective + 1 : 0);
+                if (from && !edge)
+                {
+                    // Бүтэн зураг: баруун талд нь нэр ба зай ("Эмнэлэгт оч · 240 м")
+                    const float meters = std::sqrt((marker.position.x - from->x) * (marker.position.x - from->x) +
+                                                   (marker.position.z - from->z) * (marker.position.z - from->z));
+                    const char* text = TextFormat("%s  ·  %s", marker.title, DistanceText(meters));
+                    const int w = Ui::MeasureBold(text, 15);
+                    const Rectangle pill = { p.x + radius + 6.0f, p.y - 11.0f, (float)w + 16.0f, 22.0f };
+                    DrawRectangleRounded(pill, 0.5f, 8, Fade({ 14, 16, 22, 255 }, chosen ? 0.95f : 0.8f));
+                    if (chosen) DrawRectangleRoundedLinesEx(pill, 0.5f, 8, 1.5f, WHITE);
+                    Ui::TextBold(text, (int)(pill.x + 8.0f), (int)pill.y + 3, 15, marker.objective >= 0 ? color : Ui::kText);
+                }
             }
-            const float icon = 16.0f * markerScale;
-            // Идэвхтэй даалгавар: лугшдаг алтан цагираг (бусад тэмдгээс тод)
-            const float pulse = std::fmod((float)GetTime() * 0.9f, 1.0f);
-            DrawRing(p, icon * (0.55f + 0.6f * pulse), icon * (0.65f + 0.6f * pulse), 0.0f, 360.0f, 32, Fade(kObjective, 0.8f * (1.0f - pulse)));
-            DrawCircleV(p, icon * 0.55f, Fade(BLACK, 0.45f));
-            if (Ui::DrawIcon(Ui::Icon::MapMission, { p.x - icon * 0.5f, p.y - icon * 0.5f, icon, icon })) continue;
-            const float r = 6.5f * markerScale;
-            DrawPoly(p, 4, r + 2.0f, 0.0f, BLACK);
-            DrawPoly(p, 4, r, 0.0f, kObjective);
         }
     }
 
@@ -354,6 +390,27 @@ namespace
         }
     }
 
+    // Дэлгүүрийн тэмдэг: алтан дугуй дээр цүнхний дүрс (газрын зураг, тайлбарт)
+    void DrawShopBadge(Vector2 p, float r)
+    {
+        DrawCircleV(p, r + 2.0f, { 20, 14, 4, 230 });
+        DrawCircleV(p, r, { 242, 178, 48, 255 });
+        // Цүнх: бие ба бариул
+        const Color ink = { 40, 26, 6, 255 };
+        const Rectangle bag = { p.x - r * 0.5f, p.y - r * 0.2f, r, r * 0.7f };
+        DrawRectangleRounded(bag, 0.25f, 4, ink);
+        DrawRing({ p.x, bag.y }, r * 0.24f, r * 0.36f, 180.0f, 360.0f, 12, ink);
+    }
+
+    // Баавгайн тэмдэг: хүрэн цэг, цагаан хүрээтэй (уурласан бол улбар хүрээ)
+    void DrawBearBadge(Vector2 p, float r, bool alerted)
+    {
+        DrawCircleV(p, r + 1.6f, alerted ? Color{ 255, 140, 40, 255 } : Color{ 236, 228, 214, 255 });
+        DrawCircleV(p, r, Color{ 120, 78, 44, 255 });
+        DrawCircleV({ p.x - r * 0.45f, p.y - r * 0.55f }, r * 0.32f, Color{ 120, 78, 44, 255 }); // чих
+        DrawCircleV({ p.x + r * 0.45f, p.y - r * 0.55f }, r * 0.32f, Color{ 120, 78, 44, 255 });
+    }
+
     // Дэлгүүр (сум, гранат, амь, цэрэг): алтан дугуй дээр цүнхний дүрс. Жижиг зурагт хүрээнээс гарвал ирмэг дээр
     // наагдаж зүгийг заана, бүтэн зураг дээр том.
     void DrawShop(const MapView& view, float markerScale, bool clampToEdge)
@@ -368,14 +425,7 @@ namespace
             if (!clampToEdge) return;
             p = { center.x + dx / overflow, center.y + dy / overflow };
         }
-        const float r = 8.5f * markerScale;
-        DrawCircleV(p, r + 2.0f, { 20, 14, 4, 230 });
-        DrawCircleV(p, r, { 242, 178, 48, 255 });
-        // Цүнх: бие ба бариул
-        const Color ink = { 40, 26, 6, 255 };
-        const Rectangle bag = { p.x - r * 0.5f, p.y - r * 0.2f, r, r * 0.7f };
-        DrawRectangleRounded(bag, 0.25f, 4, ink);
-        DrawRing({ p.x, bag.y }, r * 0.24f, r * 0.36f, 180.0f, 360.0f, 12, ink);
+        DrawShopBadge(p, 8.5f * markerScale);
     }
 
     // Застав (бааз): Structures.cpp-ийн BuildCheckpoint-ийн төв, бүтэн зургийн "ЗАСТАВ" бичвэртэй ижил цэг.
@@ -486,8 +536,7 @@ namespace
             {
                 // Баавгай: хүрэн цэг (уурласан бол улбар хүрээтэй); газрын зургийн ирмэгт гаргахгүй
                 if (outside) continue;
-                DrawCircleV(p, 3.6f * markerScale, zombie.alerted ? Color{ 230, 120, 40, 255 } : Color{ 40, 26, 16, 255 });
-                DrawCircleV(p, 2.6f * markerScale, Color{ 130, 86, 50, 255 });
+                DrawBearBadge(p, 3.4f * markerScale, zombie.alerted);
                 continue;
             }
             const float radius = (zombie.type == ZombieType::Brute ? 4.0f : 3.0f) * markerScale;
@@ -500,34 +549,78 @@ namespace
             }
             DrawCircleV(p, radius, outside ? Fade(kZombie, 0.55f) : kZombie);
         }
-
-        // Тоглогч: биеийн харж буй зүг рүү заасан сум
-        Vector2 p = view.ToScreen(player.Position().x, player.Position().z);
-        bool outside = false;
-        if (place(p, outside))
-        {
-            const float relative = player.Facing() - view.yaw;
-            const float dirX = -std::sin(relative), dirY = -std::cos(relative);
-            const float size = markerScale;
-            const float icon = 15.0f * size;
-            const float degrees = std::atan2(dirX, -dirY) * RAD2DEG; // зураг дээш заасан: харах зүг рүү эргүүлнэ
-            DrawCircleV(p, icon * 0.42f, Fade(BLACK, 0.4f));
-            if (Ui::DrawIcon(Ui::Icon::MapPlayer, { p.x - icon * 0.5f, p.y - icon * 0.5f, icon, icon }, WHITE, degrees)) return;
-            const Vector2 tip = { p.x + dirX * 8.0f * size, p.y + dirY * 8.0f * size };
-            const Vector2 backLeft = { p.x - dirX * 5.0f * size + dirY * 5.0f * size,
-                                       p.y - dirY * 5.0f * size - dirX * 5.0f * size };
-            const Vector2 backRight = { p.x - dirX * 5.0f * size - dirY * 5.0f * size,
-                                        p.y - dirY * 5.0f * size + dirX * 5.0f * size };
-            DrawTriangle(tip, backLeft, backRight, kPlayer);
-            DrawTriangle(tip, backRight, backLeft, kPlayer); // эргэлтийн чиглэлээс үл хамааран харагдуулна
-            DrawCircleV(p, 2.0f * size, BLACK);
-        }
     }
 
-    void DrawLegendEntry(int x, int y, Color color, const char* text)
+    // Тоглогчийн тэмдэг: цагаан хүрээтэй бараан дугуй дээр харж буй зүг (dirX, dirY: дэлгэцийн чиглэл) рүү
+    // заасан шар сум (навигацийн газрын зураг шиг; "анхааруулга" гурвалжин дүрс шиг биш)
+    void DrawPlayerBadge(Vector2 p, float radius, float dirX, float dirY)
     {
-        DrawCircle(x + 7, y + 9, 6.0f, color);
-        UiText(text, x + 20, y, 18, kFrame);
+        DrawCircleV(p, radius, WHITE);
+        DrawCircleV(p, radius * 0.84f, { 24, 28, 36, 255 });
+        const float s = radius * 0.62f;
+        const Vector2 tip = { p.x + dirX * s, p.y + dirY * s };
+        const Vector2 left = { p.x - dirX * s * 0.7f + dirY * s * 0.75f, p.y - dirY * s * 0.7f - dirX * s * 0.75f };
+        const Vector2 right = { p.x - dirX * s * 0.7f - dirY * s * 0.75f, p.y - dirY * s * 0.7f + dirX * s * 0.75f };
+        const Vector2 notch = { p.x - dirX * s * 0.25f, p.y - dirY * s * 0.25f };
+        // Сумны хоёр хагас (эргэлтийн чиглэлээс үл хамааран харагдахаар хоёр талаас нь)
+        DrawTriangle(tip, left, notch, kPlayer);
+        DrawTriangle(tip, notch, left, kPlayer);
+        DrawTriangle(tip, notch, right, kPlayer);
+        DrawTriangle(tip, right, notch, kPlayer);
+    }
+
+    // Тоглогч: бусад бүх тэмдгийн дээр (даалгавар, эмнэлэгтэй давхцаж дарагдахгүй). Лугшдаг гэрэлт хүрээ,
+    // цагаан хүрээтэй дугуй дээр харж буй зүг рүү заасан сум.
+    void DrawPlayer(const MapView& view, const Player& player, float markerScale)
+    {
+        Vector2 p = view.ToScreen(player.Position().x, player.Position().z);
+        const Vector2 center = view.Center();
+        const float limitX = view.area.width * 0.5f - 5.0f, limitY = view.area.height * 0.5f - 5.0f;
+        const float overflow = std::max(std::fabs(p.x - center.x) / limitX, std::fabs(p.y - center.y) / limitY);
+        if (overflow > 1.0f) p = { center.x + (p.x - center.x) / overflow, center.y + (p.y - center.y) / overflow };
+
+        const float relative = player.Facing() - view.yaw;
+        const float pulse = std::fmod((float)GetTime() * 0.8f, 1.0f);
+        const float icon = 15.0f * markerScale;
+        DrawCircleV(p, icon * (0.6f + 0.7f * pulse), Fade(kPlayer, 0.35f * (1.0f - pulse)));
+        DrawPlayerBadge(p, icon * 0.56f, -std::sin(relative), -std::cos(relative));
+    }
+
+    // Газрын нэр: бараан бөөрөнхий шошго дээр (газрын зургийн өнгөнөөс үл хамааран уншигдана)
+    void DrawPlaceLabel(Vector2 p, const char* name, Color color)
+    {
+        const int w = Ui::MeasureBold(name, 15);
+        const Rectangle pill = { p.x - (float)w * 0.5f - 9.0f, p.y - 11.0f, (float)w + 18.0f, 22.0f };
+        DrawRectangleRounded(pill, 0.5f, 8, { 16, 18, 22, 210 });
+        DrawRectangleRoundedLinesEx(pill, 0.5f, 8, 1.0f, Fade(color, 0.35f));
+        Ui::TextBold(name, (int)(pill.x + 9.0f), (int)pill.y + 3, 15, color);
+    }
+
+    // Тайлбарын нэг мөр: газрын зураг дээрхтэй ижил дүрс + нэр. Дараагийн мөрийн x-ийг буцаана.
+    int DrawLegendItem(int x, int y, Ui::Icon icon, Color fallback, const char* text)
+    {
+        const Rectangle box = { (float)x, (float)y - 1.0f, 20.0f, 20.0f };
+        if (!Ui::DrawIcon(icon, box)) DrawCircle(x + 10, y + 9, 6.0f, fallback);
+        UiText(text, x + 25, y, 17, kFrame);
+        return x + 25 + UiMeasure(text, 17) + 20;
+    }
+
+    // Тайлбарын мөр, икон биш өнгөт тэмдэгтэй (хамтрагч: дугуй, дайсан: ромбо; газрын зураг дээрхтэй ижил)
+    int DrawLegendShape(int x, int y, Color color, bool diamond, const char* text)
+    {
+        const Vector2 c = { (float)x + 10.0f, (float)y + 9.0f };
+        if (diamond)
+        {
+            DrawPoly(c, 4, 8.0f, 0.0f, BLACK);
+            DrawPoly(c, 4, 6.5f, 0.0f, color);
+        }
+        else
+        {
+            DrawCircleV(c, 7.5f, WHITE);
+            DrawCircleV(c, 6.0f, color);
+        }
+        UiText(text, x + 25, y, 17, kFrame);
+        return x + 25 + UiMeasure(text, 17) + 20;
     }
 }
 
@@ -544,7 +637,7 @@ int MinimapSize()
 }
 
 void DrawMinimap(const World& world, const Player& player, float cameraYaw, const ZombieHorde& horde,
-                 const SoldierSquad& squad, const Garage& garage, const std::vector<Vector3>& markers,
+                 const SoldierSquad& squad, const Garage& garage, const std::vector<MapMarker>& markers,
                  const std::vector<Vector3>& medKits)
 {
     const int side = MinimapSize();
@@ -567,6 +660,7 @@ void DrawMinimap(const World& world, const Player& player, float cameraYaw, cons
     DrawObjectives(view, markers, 1.0f);
     DrawMarkers(view, player, horde, squad, true, 1.0f);
     DrawMedKits(view, medKits, 1.0f);
+    DrawPlayer(view, player, 1.0f);
     DrawRectangleLinesEx(view.area, 1.0f, Ui::kBorder);
 
     // Хойд зүгийн (+Z) тэмдэг хүрээн дээр
@@ -575,9 +669,18 @@ void DrawMinimap(const World& world, const Player& player, float cameraYaw, cons
     const float reach = std::max(std::fabs(northX), std::fabs(northY));
     const Vector2 north = { center.x + northX / reach * (size * 0.5f - 9.0f),
                             center.y + northY / reach * (size * 0.5f - 9.0f) };
-    DrawCircleV(north, 10.0f, Ui::kAccent);
-    const int northWidth = Ui::MeasureBold("Х", 14);
-    Ui::TextBold("Х", (int)north.x - northWidth / 2, (int)north.y - 8, 14, { 20, 16, 8, 255 });
+    // Улаан гурвалжин гадагш заана (шар дугуй дээрх "Х" үсэг даалгаврын шар "X" тэмдэгтэй андуурагддаг байв)
+    {
+        const Vector2 out = { northX, northY }; // хүрээ рүү
+        const Vector2 side = { -northY, northX };
+        // Нарийн, урт сум (тэгш талт гурвалжин аль зүг рүү заасан нь ялгагддаггүй)
+        const Vector2 tip = { north.x + out.x * 8.0f, north.y + out.y * 8.0f };
+        const Vector2 a = { north.x - out.x * 6.0f + side.x * 4.0f, north.y - out.y * 6.0f + side.y * 4.0f };
+        const Vector2 b = { north.x - out.x * 6.0f - side.x * 4.0f, north.y - out.y * 6.0f - side.y * 4.0f };
+        DrawCircleV(north, 10.0f, { 16, 18, 22, 220 });
+        DrawTriangle(tip, a, b, { 235, 70, 60, 255 });
+        DrawTriangle(tip, b, a, { 235, 70, 60, 255 });
+    }
 
     // Луужин: зүүн дээд буланд, зүү нь хойд зүг рүү заана (зураг камертай хамт эргэдэг)
     const float compass = 30.0f;
@@ -595,6 +698,20 @@ namespace
         const float margin = 60.0f;
         return { margin, margin + 10.0f, (float)ViewWidth() - margin * 2.0f,
                  (float)ViewHeight() - margin * 2.0f - 20.0f };
+    }
+
+    // Зүүн дээд буланд даалгаврын жагсаалт: мөр бүр дээр товшвол тэр даалгавар руу чиглэл заана
+    constexpr int kListRows = 7;
+    Rectangle ObjectiveList(int rows)
+    {
+        const Rectangle area = FullMapArea();
+        const float width = std::min(360.0f, area.width * 0.42f);
+        return { area.x + 10.0f, area.y + 10.0f, width, 36.0f + 40.0f * (float)rows + 8.0f };
+    }
+    Rectangle ObjectiveRow(int index, int rows)
+    {
+        const Rectangle list = ObjectiveList(rows);
+        return { list.x + 6.0f, list.y + 36.0f + 40.0f * (float)index, list.width - 12.0f, 36.0f };
     }
 }
 
@@ -668,7 +785,43 @@ void FullMap::Update(const World& world, const Player& player)
     {
         // Чирэлгүй товшилт: очих газар тэмдэглэнэ (одоо байгаа тэмдэглэгээн дээр товшвол арилна)
         pressing = false;
-        if (dragged < 8.0f && CheckCollisionPointRec(pressAt, area))
+        const int rows = std::min((int)markers.size(), kListRows);
+        int row = -1;
+        for (int i = 0; i < rows && dragged < 8.0f; ++i)
+        {
+            if (CheckCollisionPointRec(pressAt, ObjectiveRow(i, rows))) row = i;
+        }
+        // Газрын зураг дээрх даалгаврын тэмдэг (товшилтын 22 пикселийн дотор)
+        int picked = row;
+        if (picked < 0 && dragged < 8.0f && CheckCollisionPointRec(pressAt, area) &&
+            !(rows > 0 && CheckCollisionPointRec(pressAt, ObjectiveList(rows))))
+        {
+            const float scale = BaseScale(world) * zoom;
+            float best = 22.0f;
+            for (int i = 0; i < (int)markers.size(); ++i)
+            {
+                const Vector2 p = { center.x - (markers[(size_t)i].position.x - focus.x) * scale,
+                                    center.y - (markers[(size_t)i].position.z - focus.y) * scale };
+                const float d = Vector2Distance(p, pressAt);
+                if (d < best)
+                {
+                    best = d;
+                    picked = i;
+                }
+            }
+        }
+        if (picked >= 0)
+        {
+            // Даалгавар: аль хэдийн чиглэл заасан бол арилгана, үгүй бол яг байршил руу чиглэл
+            const Vector2 target = { markers[(size_t)picked].position.x, markers[(size_t)picked].position.z };
+            if (navigation && navigation->Active() && Vector2Distance(target, navigation->Target()) < 3.0f) clearWaypoint = true;
+            else
+            {
+                hasWaypoint = true;
+                waypoint = target;
+            }
+        }
+        else if (dragged < 8.0f && CheckCollisionPointRec(pressAt, area) && !(rows > 0 && CheckCollisionPointRec(pressAt, ObjectiveList(rows))))
         {
             const float scale = BaseScale(world) * zoom;
             const Vector2 point = { focus.x - (pressAt.x - center.x) / scale, focus.y - (pressAt.y - center.y) / scale };
@@ -696,8 +849,7 @@ void FullMap::Update(const World& world, const Player& player)
 }
 
 void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& horde, const SoldierSquad& squad,
-                   const Garage& garage, const std::vector<Vector3>& markers, const std::vector<Vector3>& medKits,
-                   const char* title) const
+                   const Garage& garage, const std::vector<Vector3>& medKits, const char* title) const
 {
     const int width = ViewWidth();
     const int height = ViewHeight();
@@ -759,14 +911,13 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     {
         if (place.name == nullptr) continue;
         const Vector2 p = view.ToScreen(place.x, place.z);
-        const int textWidth = UiMeasure(place.name, 16);
         const bool shop = place.x == kShopCenter.x && place.z == kShopCenter.y + 5.5f;
-        UiText(place.name, (int)p.x - textWidth / 2 + 1, (int)p.y - 7, 16, Fade(BLACK, 0.8f));
-        UiText(place.name, (int)p.x - textWidth / 2, (int)p.y - 8, 16, shop ? Color{ 255, 205, 90, 255 } : kFrame);
+        DrawPlaceLabel(p, place.name, shop ? Color{ 255, 205, 90, 255 } : kFrame);
         if (place.x == kOutpost.x && place.z == kOutpost.y)
         {
-            // Застав (бааз): нэрийн зүүн талд икон
-            Ui::DrawIcon(Ui::Icon::MapBase, { p.x - (float)textWidth * 0.5f - 26.0f, p.y - 11.0f, 22.0f, 22.0f });
+            // Застав (бааз): шошгын зүүн талд икон
+            const float textWidth = (float)Ui::MeasureBold(place.name, 15);
+            Ui::DrawIcon(Ui::Icon::MapBase, { p.x - textWidth * 0.5f - 34.0f, p.y - 11.0f, 22.0f, 22.0f });
         }
     }
     if (city)
@@ -784,33 +935,119 @@ void FullMap::Draw(const World& world, const Player& player, const ZombieHorde& 
     EndScissorMode();
 
     DrawVehicles(view, garage, 1.3f);
-    DrawObjectives(view, markers, 1.5f);
+    const Vector3 from = player.Position();
+    const Vector2 target = navigation && navigation->Active() ? navigation->Target() : Vector2{ 1e9f, 1e9f };
     DrawMarkers(view, player, horde, squad, true, 1.5f);
     DrawMedKits(view, medKits, 1.5f);
+    DrawPlayer(view, player, 1.5f);
+    DrawObjectives(view, markers, 1.4f, &from, &target);
     DrawRectangleLinesEx(view.area, 1.0f, Ui::kBorder);
 
-    // Гарчиг, томруулалт, тайлбар
+    // Зүүн дээд: даалгаврын жагсаалт (товшвол чиглэл заана)
+    const int rows = std::min((int)markers.size(), kListRows);
+    if (rows > 0)
+    {
+        const Rectangle list = ObjectiveList(rows);
+        DrawRectangleRounded(list, 0.08f, 8, { 14, 16, 22, 225 });
+        DrawRectangleRoundedLinesEx(list, 0.08f, 8, 1.0f, Fade(kFrame, 0.3f));
+        Ui::TextBold("ДААЛГАВРУУД", (int)list.x + 14, (int)list.y + 10, 15, kObjective);
+        const char* tip = "дарж чиглэл авах";
+        Ui::Text(tip, (int)(list.x + list.width) - 14 - Ui::Measure(tip, 13), (int)list.y + 12, 13, Fade(kFrame, 0.6f));
+        const Vector2 mouse = InPointer();
+        for (int i = 0; i < rows; ++i)
+        {
+            const MapMarker& marker = markers[(size_t)i];
+            const Rectangle r = ObjectiveRow(i, rows);
+            const bool chosen = Vector2Distance(target, { marker.position.x, marker.position.z }) < 3.0f;
+            const bool hover = !InTouchMode() && CheckCollisionPointRec(mouse, r);
+            if (chosen || hover || marker.focus)
+            {
+                DrawRectangleRounded(r, 0.3f, 6, Fade(MarkerColor(marker.kind), chosen ? 0.28f : hover ? 0.16f : 0.08f));
+            }
+            if (chosen) DrawRectangleRoundedLinesEx(r, 0.3f, 6, 1.5f, WHITE);
+            DrawMarkerBadge(marker.kind, { r.x + 18.0f, r.y + r.height * 0.5f }, 13.0f);
+            const float meters = Vector2Distance({ from.x, from.z }, { marker.position.x, marker.position.z });
+            const char* right = DistanceText(meters);
+            const int rightWidth = Ui::MeasureBold(right, 15);
+            Ui::TextBold(right, (int)(r.x + r.width) - 10 - rightWidth, (int)r.y + 10, 15, chosen ? WHITE : Fade(kFrame, 0.8f));
+            // Нэр: багтахгүй бол таслана
+            std::string name = marker.objective >= 0 ? TextFormat("%d. %s", marker.objective + 1, marker.title) : marker.title;
+            const int maxWidth = (int)r.width - 44 - rightWidth - 16;
+            while (Ui::MeasureBold(name.c_str(), 16) > maxWidth && name.size() > 4)
+            {
+                if (name.size() >= 3 && name.compare(name.size() - 3, 3, "\xE2\x80\xA6") == 0) name.erase(name.size() - 3);
+                name.pop_back();
+                while (!name.empty() && ((unsigned char)name.back() & 0xC0) == 0x80) name.pop_back();
+                if (!name.empty() && ((unsigned char)name.back() & 0xC0) == 0xC0) name.pop_back(); // (олон байтын эхлэл)
+                name += "\xE2\x80\xA6";
+            }
+            Ui::TextBold(name.c_str(), (int)r.x + 40, (int)r.y + 9, 16, marker.objective >= 0 ? Ui::kText : MarkerColor(marker.kind));
+        }
+    }
+
+    // Хойд зүг: газрын зургийн баруун дээд буланд луужин ("Х" үсэг ганцаараа ойлгомжгүй байв)
+    {
+        const Vector2 c = { view.area.x + view.area.width - 34.0f, view.area.y + 34.0f };
+        DrawCircleV(c, 24.0f, { 16, 18, 22, 215 });
+        DrawRing(c, 22.0f, 24.0f, 0.0f, 360.0f, 32, Fade(kFrame, 0.35f));
+        DrawTriangle({ c.x, c.y - 17.0f }, { c.x - 6.0f, c.y }, { c.x + 6.0f, c.y }, { 230, 70, 60, 255 });
+        DrawTriangle({ c.x, c.y + 17.0f }, { c.x + 6.0f, c.y }, { c.x - 6.0f, c.y }, Fade(kFrame, 0.8f));
+        const int w = Ui::MeasureBold("ХОЙД", 12);
+        Ui::TextBold("ХОЙД", (int)c.x - w / 2, (int)c.y + 26, 12, kFrame);
+    }
+
+    // Гарчиг, томруулалт, удирдлага (дээд мөрөнд), тайлбар (доод мөрөнд)
     Ui::TextBold("ГАЗРЫН ЗУРАГ", (int)view.area.x, 18, 28, Ui::kText);
     Ui::Text(title, (int)view.area.x + Ui::MeasureBold("ГАЗРЫН ЗУРАГ", 28) + 16, 26, 20, Ui::kAccent);
     const char* zoomText = TextFormat("%d%%", (int)std::round(zoom * 100.0f));
     Ui::Chip(zoomText, width - (int)view.area.x, 18, Ui::kText, Ui::kInfo, true);
-    UiText("Х", width / 2 - 7, (int)view.area.y + 6, 22, kFrame);
+    const char* help = InTouchMode() ? "Даалгавар дээр товш: чиглэл   Чир: зөөх   Чимх: томруулах"
+                                     : "Даалгавар дээр дар: чиглэл   X: арилгах   Дугуй: томруулах   Чир: зөөх   C: өөр дээрээ   M: хаах";
+    const int zoomWidth = UiMeasure(zoomText, 18) + 40;
+    UiText(help, width - (int)view.area.x - zoomWidth - 16 - UiMeasure(help, 15), 28, 15, Fade(kFrame, 0.7f));
 
-    const int legendY = height - 40;
-    int x = (int)view.area.x;
-    DrawLegendEntry(x, legendY, kPlayer, "та");
-    DrawLegendEntry(x + 60, legendY, kZombie, "зомби");
-    DrawLegendEntry(x + 150, legendY, kSoldier, "цэрэг");
-    DrawLegendEntry(x + 240, legendY, kVehicle, "унаа");
-    DrawLegendEntry(x + 320, legendY, kObjective, "даалгавар");
-    DrawLegendEntry(x + 450, legendY, kMedKit, "эмнэлэг");
-    bool enemies = false;
+    // Тайлбар: газрын зураг дээрх яг тэр дүрсүүд (өнгөт цэг биш); байгаа зүйлсээ л
+    bool enemies = false, bears = false, horses = false, towers = false;
     if (mapPeople)
     {
         for (const MapPerson& person : *mapPeople) enemies = enemies || person.enemy;
     }
-    if (enemies) DrawLegendEntry(x + 570, legendY, kEnemy, "дайсан");
-    const char* help = InTouchMode() ? "Товш — очих газар (дахин товшвол арилна)   Чир — зөөх   Чимх — томруулах"
-                                     : "Товш — очих газар   X — арилгах   Дугуй — томруулах   Чир — зөөх   C — өөр дээрээ   M — хаах";
-    UiText(help, width - (int)view.area.x - UiMeasure(help, 16), legendY + 1, 16, kFrame);
+    for (int i = 0; i < horde.Count(); ++i) bears = bears || (horde.At(i).IsAlive() && horde.At(i).IsBear());
+    for (int i = 0; i < garage.Count(); ++i) horses = horses || garage.At(i).type == VehicleType::Horse;
+    for (int i = 0; i < world.PassageCount(); ++i) towers = towers || world.GetPassage(i).kind == PassageKind::LadderUp;
+
+    const int legendY = height - 36;
+    const Rectangle bar = { view.area.x, (float)legendY - 9.0f, view.area.width, 36.0f };
+    DrawRectangleRounded(bar, 0.4f, 8, { 16, 18, 22, 200 });
+    int x = (int)view.area.x + 14;
+    {
+        // Та: тоглогчийн тэмдэг (газрын зураг дээрхтэй ижил сум)
+        DrawPlayerBadge({ (float)x + 10.0f, (float)legendY + 9.0f }, 10.0f, 0.0f, -1.0f);
+        UiText("Та", x + 25, legendY, 17, kFrame);
+        x += 25 + UiMeasure("Та", 17) + 20;
+    }
+    {
+        // Даалгавар: төрлийн тэмдэг (туг, хүн, хайрцаг ...); дарвал чиглэл заана
+        DrawMarkerBadge(MarkerKind::Reach, { (float)x + 10.0f, (float)legendY + 9.0f }, 10.0f);
+        UiText("Даалгавар", x + 25, legendY, 17, kFrame);
+        x += 25 + UiMeasure("Даалгавар", 17) + 20;
+    }
+    x = DrawLegendItem(x, legendY, Ui::Icon::MapZombie, kZombie, "Зомби");
+    x = DrawLegendItem(x, legendY, Ui::Icon::MapElite, kZombie, "Том зомби");
+    if (bears)
+    {
+        DrawBearBadge({ (float)x + 10.0f, (float)legendY + 10.0f }, 6.0f, false);
+        UiText("Баавгай", x + 25, legendY, 17, kFrame);
+        x += 25 + UiMeasure("Баавгай", 17) + 20;
+    }
+    if (mapPeople) x = DrawLegendShape(x, legendY, kPartner, false, "Хамтрагч");
+    x = DrawLegendItem(x, legendY, Ui::Icon::MapAlly, kSoldier, "Цэрэг");
+    if (enemies) x = DrawLegendShape(x, legendY, kEnemy, true, "Дайсан");
+    x = DrawLegendItem(x, legendY, Ui::Icon::MapVehicle, kVehicle, "Машин");
+    if (horses) x = DrawLegendItem(x, legendY, Ui::Icon::MapHorse, kVehicle, "Морь");
+    x = DrawLegendItem(x, legendY, Ui::Icon::MapSupply, kMedKit, "Эм");
+    DrawShopBadge({ (float)x + 10.0f, (float)legendY + 9.0f }, 8.0f);
+    UiText("Дэлгүүр", x + 25, legendY, 17, kFrame);
+    x += 25 + UiMeasure("Дэлгүүр", 17) + 20;
+    if (towers) x = DrawLegendItem(x, legendY, Ui::Icon::MapTower, kFrame, "Цамхаг");
 }
