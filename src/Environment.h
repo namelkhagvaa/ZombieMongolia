@@ -193,6 +193,9 @@ private:
     bool postEnabled = true;
     bool bloomEnabled = true;
     RenderTexture2D scene = {};
+    // Нягтрал (render scale) өөрчлөгдөхөд өмнөх хэмжээний сценийн зураг: буцаж ирэхэд дахин үүсгэхгүй (үүсгэх нь вэб,
+    // сул төхөөрөмж дээр кадрыг гацаадаг байв). (зураг, гүн уншигдах эсэх)
+    std::vector<std::pair<RenderTexture2D, bool>> sceneCache;
     RenderTexture2D bloomA = {};
     RenderTexture2D bloomB = {};
     bool sceneActive = false;

@@ -421,6 +421,8 @@ private:
     // урьдчилан ачаална: тоглож байхад анх харагдахдаа гацахгүй
     void WarmUpRendering();
     float renderScale = 1.0f;
+    int scaleSlowWindows = 0; // дараалсан удаан хэмжилтийн цонх (1.5 с бүр): 2 бол нягтрал нэг шат буурна
+    int scaleFastWindows = 0; // дараалсан хурдан цонх: 4 бол нэг шат өснө
     float scaleTime = 0.0f;
     int scaleFrames = 0;
     std::vector<uint8_t> wreckSeen;                   // унаа бүрийн эвдэрснийг мэдсэн эсэх (дэлбэрэлт нэг удаа)

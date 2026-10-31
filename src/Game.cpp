@@ -4272,9 +4272,40 @@ void Game::UpdateRenderScale(float dt)
     // Зорилт: утсанд 30, компьютерт 45 FPS. Бага бол нягтралыг 10%-аар бууруулж (55% хүртэл), хангалттай их бол
     // аажим (5%) өсгөнө: хэлбэлзэхгүй.
     const float target = InTouchMode() ? 30.0f : 45.0f;
+    // Цөөн тогтмол шат (100 / 85 / 70%), хоцролттой: 2 удаа дараалан удаан бол буурна, 4 удаа дараалан хурдан бол өснө.
+    // Өмнө нь 1.5 с тутам 5-10%-иар өсч буурч, сценийн зураг дахин үүсгэх бүрт гацаж, 55% хүртэл бүдгэрдэг байв.
+    static const float kLevels[] = { 1.0f, 0.85f, 0.7f };
+    int level = 0;
+    for (int i = 0; i < 3; ++i)
+    {
+        if (std::fabs(renderScale - kLevels[i]) < std::fabs(renderScale - kLevels[level])) level = i;
+    }
+    if (fps < target - 3.0f)
+    {
+        ++scaleSlowWindows;
+        scaleFastWindows = 0;
+    }
+    else if (fps > target + 10.0f)
+    {
+        ++scaleFastWindows;
+        scaleSlowWindows = 0;
+    }
+    else
+    {
+        scaleSlowWindows = scaleFastWindows = 0;
+    }
+    if (scaleSlowWindows >= 2 && level < 2)
+    {
+        ++level;
+        scaleSlowWindows = 0;
+    }
+    else if (scaleFastWindows >= 4 && level > 0)
+    {
+        --level;
+        scaleFastWindows = 0;
+    }
     const float before = renderScale;
-    if (fps < target - 3.0f) renderScale = std::max(0.55f, renderScale - 0.1f);
-    else if (fps > target + 10.0f) renderScale = std::min(1.0f, renderScale + 0.05f);
+    renderScale = kLevels[level];
     if (renderScale != before) TraceLog(LOG_INFO, "PERF: %.1f fps, render scale %.0f%%", fps, renderScale * 100.0f);
 }
 
@@ -4288,7 +4319,7 @@ void Game::WatchPerformance(float dt)
     const float fps = (float)perfFrames / perfTime;
     perfTime = 0.0f;
     perfFrames = 0;
-    if (fps >= 20.0f || renderScale > 0.56f) return; // эхлээд нягтралыг бууруулна (UpdateRenderScale)
+    if (fps >= 20.0f || renderScale > 0.71f) return; // эхлээд нягтралыг бууруулна (UpdateRenderScale, доод шат 70%)
     progress.graphics = environment.Quality() - 1;
     progress.graphicsAuto = false; // энэ төхөөрөмжид хэт хүнд байсан: дахин автоматаар өсгөхгүй
     environment.SetQuality(progress.graphics);

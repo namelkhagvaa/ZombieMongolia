@@ -1536,6 +1536,8 @@ Environment::~Environment()
     UnloadShadowTarget(shadowMap);
     UnloadShadowTarget(farShadowMap);
     if (scene.id) UnloadRenderTexture(scene);
+    for (auto& cached : sceneCache) UnloadRenderTexture(cached.first);
+    sceneCache.clear();
     if (bloomA.id) UnloadRenderTexture(bloomA);
     if (bloomB.id) UnloadRenderTexture(bloomB);
     UnloadScreenEffects();
@@ -2221,14 +2223,35 @@ bool Environment::BeginScene(int width, int height, bool lowRes)
     const bool effects = sceneShaded && quality >= 2 && (aoShader.id != 0 || shaftShader.id != 0);
     if (scene.id == 0 || scene.texture.width != width || scene.texture.height != height || (effects && !sceneHasDepth))
     {
-        if (scene.id) UnloadRenderTexture(scene);
+        // Одоогийнхыг кэшэд хадгалж, тохирох хэмжээтэйг кэшээс авна (нягтрал хэдхэн түвшний хооронд шилждэг)
+        if (scene.id) sceneCache.push_back({ scene, sceneHasDepth });
+        scene = {};
+        for (size_t i = 0; i < sceneCache.size(); ++i)
+        {
+            const RenderTexture2D& cached = sceneCache[i].first;
+            if (cached.texture.width == width && cached.texture.height == height && (!effects || sceneCache[i].second))
+            {
+                scene = cached;
+                sceneHasDepth = sceneCache[i].second;
+                sceneCache.erase(sceneCache.begin() + (long)i);
+                break;
+            }
+        }
+        while (sceneCache.size() > 3)
+        {
+            UnloadRenderTexture(sceneCache.front().first);
+            sceneCache.erase(sceneCache.begin());
+        }
         if (bloomA.id) UnloadRenderTexture(bloomA);
         if (bloomB.id) UnloadRenderTexture(bloomB);
         bloomA = {};
         bloomB = {};
         UnloadScreenEffects();
-        scene = LoadSceneTarget(width, height, effects, sceneHasDepth);
-        SetTextureFilter(scene.texture, TEXTURE_FILTER_BILINEAR);
+        if (scene.id == 0)
+        {
+            scene = LoadSceneTarget(width, height, effects, sceneHasDepth);
+            SetTextureFilter(scene.texture, TEXTURE_FILTER_BILINEAR);
+        }
     }
     screenEffects = effects && sceneHasDepth;
     if (screenEffects && aoA.id == 0)
