@@ -5114,6 +5114,7 @@ void Game::RenderShadows() const
     garage.Draw(center, radius * 1.4f, &environment.DepthMaterial(), true);
     SetPropDepthMaterial(&environment.DepthMaterial()); // хүмүүсийн барьсан бууны загвар
     Profile::SetShadowPass(true);
+    SetCharacterShadowMaterial(&environment.CharacterDepthMaterial());
     {
         PROFILE_SCOPE("shadow: characters");
         squad.Draw(center, false);
@@ -5130,6 +5131,7 @@ void Game::RenderShadows() const
         DrawRemoteFigure(hostFigure, TeamMemberLook(hostFigure.member, hostFigure.skin));
         for (const RemoteFigure& soldier : hostSoldiers) DrawRemoteFigure(soldier, TeamMemberLook(soldier.member, soldier.skin));
     }
+    SetCharacterShadowMaterial(nullptr);
     SetPropDepthMaterial(nullptr);
     environment.EndShadowPass();
 }

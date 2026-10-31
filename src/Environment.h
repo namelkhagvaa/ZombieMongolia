@@ -104,6 +104,8 @@ public:
     bool BeginFarShadowPass(Vector3 center);
     void EndShadowPass();
     const Material& DepthMaterial() const { return depthMaterial; }
+    // Сүүдрийн зурлагад дүрүүд: араг ястай, гэрэлтүүлэггүй (бүтэн дүрийн shader-ийн оронд)
+    const Material& CharacterDepthMaterial() const { return characterDepthMaterial; }
     float ShadowRadius() const { return shadowRadius; }
     float FarShadowRadius() const { return farShadowRadius; }
 
@@ -124,6 +126,7 @@ private:
     Shader detailShader = {};
     Shader skyShader = {};
     Shader depthShader = {};
+    Shader characterDepthShader = {};
     Shader postShader = {};
     Shader brightShader = {};
     Shader blurShader = {};
@@ -136,6 +139,7 @@ private:
     void LoadSurfaceTextures();
     Material detailMaterial = {};
     Material depthMaterial = {};
+    Material characterDepthMaterial = {};
     Mesh mountains = {};
     int offsetLocation = -1;
     float mountainScale = 0.8f;

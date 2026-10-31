@@ -820,6 +820,13 @@ void SetCharacterBindPose(bool enabled)
     bindPoseOnly = enabled;
 }
 
+namespace
+{
+    const Material* shadowMaterial = nullptr;
+}
+
+void SetCharacterShadowMaterial(const Material* material) { shadowMaterial = material; }
+
 bool HasCharacterModel(int id)
 {
     return id >= 0 && id < kCharacterCount && characters[id].loaded;
@@ -1453,15 +1460,18 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
     rlScalef(s, s, s);
     for (int index = 0; index < c.model.meshCount; ++index)
     {
-        const std::vector<Mesh>& level = lowDetail >= 2 ? c.lodFar : c.lod;
-        const bool light = lowDetail > 0 && index < (int)level.size() && level[(size_t)index].vertexCount > 0;
+        // Сүүдэрт: хөнгөн хувилбар (сүүдрийн хэлбэрт ялгаагүй), гэрэлтүүлэггүй shader
+        const int detail = shadowMaterial ? std::max(lowDetail, 1) : lowDetail;
+        const std::vector<Mesh>& level = detail >= 2 ? c.lodFar : c.lod;
+        const bool light = detail > 0 && index < (int)level.size() && level[(size_t)index].vertexCount > 0;
         const Mesh& mesh = light ? level[(size_t)index] : c.model.meshes[index];
+        const Material& material = shadowMaterial ? *shadowMaterial : c.material;
         {
             PROFILE_CHARACTER("char 4 bone upload");
-            UploadBoneRows(c.material.shader, mesh.boneMatrices, mesh.boneCount);
+            UploadBoneRows(material.shader, mesh.boneMatrices, mesh.boneCount);
         }
         PROFILE_CHARACTER("char 5 drawmesh");
-        DrawMesh(mesh, c.material, MatrixIdentity());
+        DrawMesh(mesh, material, MatrixIdentity());
     }
     rlPopMatrix();
     rlEnableBackfaceCulling();

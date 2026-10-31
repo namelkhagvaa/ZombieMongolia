@@ -84,5 +84,9 @@ struct CharacterFrames
 // tint: загварын өнгийг үржүүлнэ (нэг загвартай олон дүрийг ялгахад).
 // lowDetail: холын дүрд загварын хөнгөн хувилбар (ачаалахдаа оройг нүдээр бүлэглэж үүсгэсэн): 0 бүтэн, 1 хөнгөн,
 // 2 маш хөнгөн (манан дунд жижиг харагдах дүрд).
+// Сүүдрийн зурлага (Game::RenderShadows): material != nullptr үед дүрүүдийг энэ (араг ястай гүний) материалаар,
+// хөнгөн хувилбараар зурна. nullptr бол ердийн.
+void SetCharacterShadowMaterial(const Material* material);
+
 CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem held, bool direct = false,
                                    Color tint = WHITE, int lowDetail = 0);

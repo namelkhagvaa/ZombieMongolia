@@ -1325,6 +1325,8 @@ Environment::Environment()
     propMaterial = MaterialWith(propShader);
     depthShader = LoadVersionedShader(kDepthVertexShader, kDepthFragmentShader, false);
     depthMaterial = MaterialWith(depthShader);
+    characterDepthShader = LoadVersionedShader(kCharacterVertexShader, kDepthFragmentShader, false);
+    characterDepthMaterial = MaterialWith(characterDepthShader);
     skyShader = LoadVersionedShader(kScreenVertexShader, kSkyFragmentShader, false);
     postShader = LoadVersionedShader(kScreenVertexShader, kPostFragmentShader, false);
     brightShader = LoadVersionedShader(kScreenVertexShader, kBrightFragmentShader, false);
@@ -1516,14 +1518,14 @@ Environment::~Environment()
     }
     UnloadBuiltMesh(mountains);
     // Material-ууд shader-ээ хуваалцаж болох тул (орлуулсан үед) shader бүрийг нэг л удаа чөлөөлнө.
-    for (Material* m : { &material, &terrainMaterial, &detailMaterial, &propMaterial, &depthMaterial })
+    for (Material* m : { &material, &terrainMaterial, &detailMaterial, &propMaterial, &depthMaterial, &characterDepthMaterial })
     {
         RL_FREE(m->maps);
         m->maps = nullptr;
     }
     unsigned int released[16] = {};
     int count = 0;
-    for (Shader s : { shader, terrainShader, detailShader, propShader, depthShader, characterShader, vehicleShader, skyShader, postShader,
+    for (Shader s : { shader, terrainShader, detailShader, propShader, depthShader, characterDepthShader, characterShader, vehicleShader, skyShader, postShader,
                       brightShader, blurShader, aoShader, shaftShader })
     {
         if (s.id == 0 || s.id == rlGetShaderIdDefault()) continue;
