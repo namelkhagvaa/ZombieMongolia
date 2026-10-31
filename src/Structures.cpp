@@ -2393,6 +2393,9 @@ namespace
         const float top = ground + (float)floors * floorHeight + 0.5f;
         const Color body = JitterColor(wall, s.rng, 0.04f);
         const Color trim = ScaleColor(body, 0.84f);
+        // Цонхны хүрээ: ихэнх байшинд цагаан хуванцар, заримд нь хуучин хүрэн мод (байшин бүрт нэг төрөл)
+        const Color frame = s.rng.Chance(0.7f) ? Color{ 226, 224, 216, 255 } : JitterColor({ 104, 72, 48, 255 }, s.rng, 0.08f);
+        const Color sill = { 168, 166, 158, 255 };
 
         s.solid.Box({ cx, (bottom + top) * 0.5f, cz }, { w, top - bottom, d }, body);
         s.solid.Box({ cx, (bottom + ground + 0.8f) * 0.5f, cz }, { w + 0.16f, ground + 0.8f - bottom, d + 0.16f },
@@ -2424,12 +2427,23 @@ namespace
                         continue;
                     }
 
-                    Color pane = kWindow;
+                    // Цонх: шил (тэнгэр тусгана; заримд нь шөнө гэрэл асна), эргэн тойрон хүрээ, дундаа босоо хүрээ,
+                    // дээд гуравны нэгт хэвтээ хүрээ (салхивч), доор нь урагш цухуйсан бетон тавцан
+                    Color pane = { 58, 70, 82, s.rng.Chance(0.3f) ? kGlassLampTag : kGlassTag };
                     const float roll = s.rng.Next();
-                    if (roll < 0.1f) pane = JitterColor(kWood, s.rng, 0.1f);           // банзаар хадсан
+                    const bool boarded = roll < 0.1f;
+                    if (boarded) pane = JitterColor(kWood, s.rng, 0.1f);                // банзаар хадсан
                     else if (roll < 0.2f) pane = { 146, 148, 132, 255 };               // хөшигтэй
                     else if (roll < 0.27f) pane = { 14, 14, 16, 255 };                 // хагарсан, харанхуй
-                    FacePanel(s, cx, cz, w, d, face, along, base + 1.8f, 1.5f, 1.4f, 0.1f, pane);
+                    const float sillY = base + 1.1f, headY = base + 2.5f, mid = (sillY + headY) * 0.5f;
+                    FacePanel(s, cx, cz, w, d, face, along, mid, 1.66f, 1.56f, 0.08f, frame);
+                    FacePanel(s, cx, cz, w, d, face, along, mid, 1.5f, 1.4f, 0.1f, pane);
+                    if (!boarded)
+                    {
+                        FacePanel(s, cx, cz, w, d, face, along, mid, 0.07f, 1.4f, 0.13f, frame);
+                        FacePanel(s, cx, cz, w, d, face, along, headY - 0.45f, 1.5f, 0.06f, 0.13f, frame);
+                    }
+                    FacePanel(s, cx, cz, w, d, face, along, sillY - 0.1f, 1.78f, 0.06f, 0.3f, sill);
 
                     // Тагт: урт талуудын гурав дахь багана бүрд, 2-р давхраас дээш
                     if (longFace && floor > 0 && i % 3 == 0)
@@ -4804,22 +4818,35 @@ namespace
         s.solid.Quad(q(t1, y0), q(t0, y0), q(t0, y1), q(t1, y1), color);
     }
 
-    // Нэг давхрын цонхны эгнээ: шил (framed бол цайвар жаазтай), хооронд нь ижил зай. Олон давхар барилгад
-    // жаазгүй: хот бүрт хэдэн зуун мянган цонх гардаг тул утсанд хүнд.
+    // Нэг давхрын цонхны эгнээ: шил, хооронд нь ижил зай. Цонх бүр жааз (framed бол өргөн цайвар, үгүй бол нарийн),
+    // доор нь урагш цухуйсан тавцантай (урд, дээд тал). Шилний босоо хүрээг shader зурна (гурвалжин нэмэхгүй).
     void WindowRow(Scene& s, Vector2 a, Vector2 c, float y, float width, float height, float spacing, Color frame, Color glass, bool framed = true)
     {
         const float length = Vector2Distance(a, c);
         const int count = (int)((length - 0.8f) / spacing);
         if (count < 1) return;
         const float start = (length - (float)count * spacing) * 0.5f + spacing * 0.5f;
-        const float half = width * 0.5f, rim = 0.09f;
+        const float half = width * 0.5f, rim = framed ? 0.09f : 0.06f;
+        const Vector2 normal = { (c.y - a.y) / length, -(c.x - a.x) / length };
+        const Color sill = { 170, 168, 160, 255 };
+        // (шилгүй харанхуй нүхийг бараан хөх шил болгоно: тэнгэр тусгаж цонх шиг харагдана; хагарсан цөөн нь харанхуй)
+        const bool hole = glass.r < 30 && glass.g < 30 && glass.b < 30;
         for (int k = 0; k < count; ++k)
         {
             const float mid = start + spacing * (float)k;
-            if (framed) WallFace(s, a, c, (mid - half - rim) / length, (mid + half + rim) / length, y - rim, y + height + rim, 0.04f, frame);
+            const float t0 = (mid - half - rim) / length, t1 = (mid + half + rim) / length;
+            WallFace(s, a, c, t0, t1, y - rim, y + height + rim, 0.04f, frame);
             Color pane = glass;
+            if (hole) pane = s.rng.Chance(0.1f) ? Color{ 16, 17, 20, 255 } : Color{ 54, 64, 74, 255 };
             pane.a = s.rng.Chance(0.35f) ? kGlassLampTag : kGlassTag; // шөнө зарим цонхонд гэрэл асна
             WallFace(s, a, c, (mid - half) / length, (mid + half) / length, y, y + height, 0.07f, pane);
+            // Тавцан: урд тал (5 см өндөр) ба дээд тал
+            auto q = [&](float t, float h, float out) {
+                return Vector3{ a.x + (c.x - a.x) * t + normal.x * out, h, a.y + (c.y - a.y) * t + normal.y * out };
+            };
+            const float s0 = t0 - 0.05f / length, s1 = t1 + 0.05f / length, top = y - rim, low = top - 0.06f;
+            s.solid.Quad(q(s1, low, 0.16f), q(s0, low, 0.16f), q(s0, top, 0.16f), q(s1, top, 0.16f), sill);
+            s.solid.Quad(q(s1, top, 0.16f), q(s0, top, 0.16f), q(s0, top, 0.0f), q(s1, top, 0.0f), ScaleColor(sill, 1.05f));
         }
     }
 
