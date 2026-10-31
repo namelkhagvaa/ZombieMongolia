@@ -28,7 +28,7 @@ namespace
 {
     // --- Уур амьсгалын тохиргоо: Монголын цэлмэг хөх тэнгэр, хуурай тунгалаг агаар ---
     const Color kSunCore = { 255, 250, 236, 255 };
-    const float kFogDensity = 0.0011f;   // 300 м-т ~10%, 600 м-т ~35%, 1000 м-т ~70% манан
+    const float kFogDensity = 0.0012f;   // 300 м-т ~12%, 600 м-т ~40%, 1000 м-т ~76% манан (агаарын гүн)
     const int kShadowSlot = 9;           // сүүдрийн зургийн текстурын нэгж (материалын map-уудаас хол)
     const int kFarShadowSlot = 10;       // холын сүүдрийн зураг
     const float kMinSunElevation = 10.0f * DEG2RAD; // гэрэл, сүүдрийн нар үүнээс доош буухгүй (хэт урт сүүдэр)
@@ -223,7 +223,7 @@ vec3 ApplyFog(vec3 color, vec3 pos)
     float d = fogDist * fogDensity;
     float fog = 1.0 - exp(-d * d);
     float toward = max(dot(ray / max(dist, 0.001), sunDirection), 0.0);
-    vec3 haze = mix(fogColor, fogSunColor, pow(toward, 6.0) * 0.7);
+    vec3 haze = mix(fogColor, fogSunColor, pow(toward, 3.0) * 0.8);
     color = mix(color, haze, fog);
     if (mistDensity > 0.0)
     {
@@ -859,8 +859,9 @@ void main()
     float s = max(dot(dir, sunDirection), 0.0);
 
     // Тэнгэрийн хаяа (манантай ижил өнгө, нар руу улбар) -> оргил руу гүн хөх
-    vec3 haze = mix(horizon, fogSunColor, pow(s, 6.0) * 0.7);
+    vec3 haze = mix(horizon, fogSunColor, pow(s, 3.0) * 0.8);
     vec3 sky = mix(haze, zenith, pow(clamp(e, 0.0, 1.0), 0.5));
+    sky += fogSunColor * pow(s, 2.0) * 0.12 * (1.0 - night); // нарны талын өргөн дулаан гэгээ (тоос, агаар)
     sky = mix(sky, haze, 1.0 - smoothstep(0.0, 0.2, e));
     sky += fogSunColor * (pow(s, 4.0) * 0.1 + pow(s, 24.0) * 0.35 + pow(s, 300.0) * 0.6) * (1.0 - night);
     sky += haze * 0.12 * pow(1.0 - clamp(abs(e), 0.0, 1.0), 10.0) * (1.0 - night); // хаяаны цайвар бүс
@@ -897,6 +898,11 @@ uniform sampler2D aoTexture;    // булан, завсрын сүүдэр (1 = 
 uniform float aoStrength;       // 0 = унтраастай
 uniform sampler2D shaftTexture; // нарны туяа (R)
 uniform vec3 shaftColor;        // туяаны өнгө x хүч (0 = унтраастай)
+// Кино маягийн өнгө: сүүдэр хүйтэн, тод хэсэг дулаан (split toning), зөөлөн S муруй, хар нь бага зэрэг өргөгдсөн
+// (хальс шиг), хэт тод хэсэг бага зэрэг бүдэг
+uniform vec3 gradeShadow;
+uniform vec3 gradeHighlight;
+uniform float gradeAmount;
 out vec4 finalColor;
 
 // FXAA (Lottes-ийн хялбаршуулсан): тодролын ялгаанаас ирмэгийн чиглэлийг олж, түүний дагуу бүдгэрүүлнэ
@@ -935,6 +941,16 @@ void main()
     color = (color - 0.5) * contrast + 0.5;
     float luma = dot(color, vec3(0.299, 0.587, 0.114));
     color = mix(vec3(luma), color, saturation) * tint;
+    if (gradeAmount > 0.0)
+    {
+        vec3 c = clamp(color, 0.0, 1.0);
+        float l = dot(c, vec3(0.299, 0.587, 0.114));
+        vec3 toned = c * mix(gradeShadow, gradeHighlight, smoothstep(0.05, 0.85, l));
+        toned = mix(toned, toned * toned * (3.0 - 2.0 * toned), 0.22);
+        toned = mix(gradeShadow * 0.04, vec3(1.0), toned);
+        toned = mix(toned, vec3(dot(toned, vec3(0.299, 0.587, 0.114))), smoothstep(0.78, 1.0, l) * 0.3);
+        color = mix(c, toned, gradeAmount);
+    }
     vec2 d = fragTexCoord - 0.5;
     color *= mix(1.0 - vignette, 1.0, 1.0 - smoothstep(0.2, 0.75, length(d) * 1.15));
     finalColor = vec4(clamp(color, 0.0, 1.0), 1.0);
@@ -1810,13 +1826,13 @@ void Environment::SetTimeOfDay(float t)
     day.zenith = Mix3(Mix3({ 0.16f, 0.36f, 0.72f }, { 0.20f, 0.27f, 0.52f }, golden), { 0.02f, 0.04f, 0.10f }, night);
     day.horizon = Mix3(Mix3({ 0.66f, 0.76f, 0.88f }, { 1.05f, 0.62f, 0.38f }, golden), { 0.10f, 0.13f, 0.20f }, night);
     day.haze = Mix3(Mix3({ 1.15f, 0.98f, 0.76f }, { 1.35f, 0.70f, 0.32f }, golden), { 0.12f, 0.15f, 0.24f }, night);
-    day.sun = Mix3(Mix3({ 1.38f, 1.24f, 1.02f }, { 1.55f, 0.86f, 0.46f }, golden), { 0.13f, 0.17f, 0.28f }, night);
-    day.ambient = Mix3(Mix3({ 0.32f, 0.42f, 0.60f }, { 0.28f, 0.31f, 0.48f }, golden), { 0.17f, 0.20f, 0.31f }, night);
+    day.sun = Mix3(Mix3({ 1.45f, 1.28f, 1.02f }, { 1.75f, 0.95f, 0.48f }, golden), { 0.13f, 0.17f, 0.28f }, night);
+    day.ambient = Mix3(Mix3({ 0.28f, 0.37f, 0.54f }, { 0.24f, 0.26f, 0.40f }, golden), { 0.17f, 0.20f, 0.31f }, night);
     day.ground = Mix3(Mix3({ 0.30f, 0.26f, 0.18f }, { 0.34f, 0.22f, 0.14f }, golden), { 0.07f, 0.07f, 0.09f }, night);
     day.cloudLit = Mix3(Mix3({ 0.98f, 0.98f, 1.0f }, { 1.0f, 0.76f, 0.58f }, golden), { 0.16f, 0.18f, 0.25f }, night);
     day.cloudDark = Mix3(Mix3({ 0.64f, 0.68f, 0.76f }, { 0.50f, 0.40f, 0.46f }, golden), { 0.07f, 0.08f, 0.12f }, night);
     day.fogDensity = kFogDensity * (1.0f + 0.8f * night);
-    day.shadowStrength = 0.72f * (1.0f - night) * (1.0f - golden * 0.3f);
+    day.shadowStrength = 0.8f * (1.0f - night) * (1.0f - golden * 0.3f);
     // Өнгөний шилжилтийн гэрэлтүүлэг: шөнө бага зэрэг өндөр (харанхуйд ч харагдахуйц)
     const float exposure = 0.64f + 0.5f * night;
 
@@ -1853,7 +1869,7 @@ void Environment::SetTimeOfDay(float t)
     const float mist = (0.0003f + 0.0035f * morning + 0.0012f * night + 0.0018f * wetness + 0.001f * snowCover) * (1.0f - dust);
 
     // Өнгөлөг байдал: өдөр тод (тал нутгийн тунгалаг агаар), шөнө, бороо, цасанд бүдэг
-    const float vibrance = 1.22f - 0.18f * night - 0.1f * std::max(wetness, snowCover);
+    const float vibrance = 1.12f - 0.14f * night - 0.1f * std::max(wetness, snowCover);
     SetFloat(skyShader, "vibrance", vibrance);
     for (Shader s : { shader, terrainShader, detailShader, characterShader, propShader, vehicleShader })
     {
@@ -1895,15 +1911,22 @@ void Environment::SetTimeOfDay(float t)
 
     // Нарны туяа: нар тэнгэрт байхад; үүлэрхэг, бороонд бүдэг, жаргах үед тод (дулаан өнгөтэй)
     const float clearSky = 1.0f - std::clamp((cloudCover - 0.35f) * 1.4f, 0.0f, 0.85f);
-    shaftStrength = DayCurve(-0.02f, 0.1f, skySunDirection.y) * (1.0f - night) * clearSky * (0.32f + golden * 0.35f) * (1.0f + dust * 0.5f);
+    shaftStrength = DayCurve(-0.02f, 0.1f, skySunDirection.y) * (1.0f - night) * clearSky * (0.4f + golden * 0.45f) * (1.0f + dust * 0.5f);
 
     // Дэлгэцийн өнгө: өдөр тод, үдэш дулаан, шөнө хөхөвтөр бүдэг
     const float wet = std::max(wetness, snowCover);
-    const float saturation = (1.1f + golden * 0.06f) * (1.0f - night * 0.3f) * (1.0f - wet * 0.15f);
-    const Vector3 tint = Mix3(Mix3({ 1.02f, 1.0f, 0.97f }, { 1.06f, 0.98f, 0.9f }, golden), { 0.88f, 0.94f, 1.1f }, night);
+    // (ханалт бага: өмнө нь тонмап, дэлгэц хоёулаа нэмж, өвс хэт шар, хүүхэлдэйн кино шиг харагддаг байв)
+    const float saturation = (0.97f + golden * 0.06f) * (1.0f - night * 0.3f) * (1.0f - wet * 0.15f);
+    const Vector3 tint = Mix3(Mix3({ 1.01f, 1.0f, 0.98f }, { 1.05f, 0.99f, 0.92f }, golden), { 0.88f, 0.94f, 1.1f }, night);
     SetFloat(postShader, "saturation", saturation);
-    SetFloat(postShader, "contrast", 1.02f); // тодролыг Tonemap өгнө
+    SetFloat(postShader, "contrast", 1.04f);
     SetVec3(postShader, "tint", tint);
+    // Сүүдэр цэнхэр-ногоон хүйтэн, тод хэсэг шаргал дулаан; үдэш дулаан нь хүчтэй, шөнө сул
+    const Vector3 gradeShadow = Mix3(Mix3({ 0.93f, 0.99f, 1.06f }, { 0.9f, 0.96f, 1.1f }, golden), { 0.92f, 0.97f, 1.08f }, night);
+    const Vector3 gradeHighlight = Mix3(Mix3({ 1.05f, 1.0f, 0.93f }, { 1.12f, 0.98f, 0.82f }, golden), { 1.0f, 1.0f, 1.0f }, night);
+    SetVec3(postShader, "gradeShadow", gradeShadow);
+    SetVec3(postShader, "gradeHighlight", gradeHighlight);
+    SetFloat(postShader, "gradeAmount", 1.0f - night * 0.5f);
     SetFloat(postShader, "vignette", 0.28f + night * 0.12f);
     SetFloat(postShader, "bloomStrength", bloomEnabled ? 0.55f : 0.0f);
 }
