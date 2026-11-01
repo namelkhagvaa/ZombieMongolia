@@ -81,6 +81,10 @@ namespace
         std::vector<Mesh> lod;            // хөнгөн хувилбар (холын дүрд): ясны матрицыг үндсэн mesh-тэй хуваалцана
         std::vector<Mesh> lodFar;         // маш хөнгөн (манан дунд жижиг харагдах дүрд)
         std::vector<Mesh> arms;           // зөвхөн гарын гурвалжнууд (1-р этгээд): ясны матрицыг үндсэн mesh-тэй хуваалцана
+        // Сарвууны (бугуй, хуруу) хэмжээ: загварын сарвуу гартаа харьцуулахад хэт том бол (Tripo-гийн булчинлаг дүр)
+        // бугуйг тойрон жижигрүүлнэ. handBone: яс сарвууны (RightHand/LeftHand ба доорх) хэсэгт байгаа эсэх.
+        float handScale = 1.0f;
+        std::vector<char> handBone;
     };
 
     Character characters[kCharacterCount];
@@ -127,9 +131,9 @@ namespace
         {
             Follow(c, parent);
             c.rotation[(size_t)bone] = c.rotation[(size_t)parent];
-            c.position[(size_t)bone] =
-                Vector3Add(c.position[(size_t)parent],
-                           Rotate(c.rotation[(size_t)parent], Vector3Subtract(c.bind[(size_t)bone], c.bind[(size_t)parent])));
+            Vector3 offset = Vector3Subtract(c.bind[(size_t)bone], c.bind[(size_t)parent]);
+            if (!c.handBone.empty() && c.handBone[(size_t)parent]) offset = Vector3Scale(offset, c.handScale);
+            c.position[(size_t)bone] = Vector3Add(c.position[(size_t)parent], Rotate(c.rotation[(size_t)parent], offset));
         }
         c.solved[(size_t)bone] = 1;
     }
@@ -517,10 +521,17 @@ namespace
         for (int bone = 0; bone < boneCount; ++bone)
         {
             Follow(c, bone);
-            // v' = position + R * (v - bind)
+            // v' = position + R * s * (v - bind)   (s: сарвууны хэмжээ, бусад ясанд 1)
             const Quaternion rotation = c.rotation[(size_t)bone];
-            const Vector3 offset = Vector3Subtract(c.position[(size_t)bone], Rotate(rotation, c.bind[(size_t)bone]));
+            const float s = !c.handBone.empty() && c.handBone[(size_t)bone] ? c.handScale : 1.0f;
+            const Vector3 offset = Vector3Subtract(c.position[(size_t)bone], Vector3Scale(Rotate(rotation, c.bind[(size_t)bone]), s));
             Matrix matrix = QuaternionToMatrix(rotation);
+            if (s != 1.0f)
+            {
+                matrix.m0 *= s; matrix.m1 *= s; matrix.m2 *= s;
+                matrix.m4 *= s; matrix.m5 *= s; matrix.m6 *= s;
+                matrix.m8 *= s; matrix.m9 *= s; matrix.m10 *= s;
+            }
             matrix.m12 = offset.x;
             matrix.m13 = offset.y;
             matrix.m14 = offset.z;
@@ -748,6 +759,24 @@ void LoadCharacterModels(Shader shader)
             // хүртэлх уртаар (0.55 м) томруулна
             const float arm = Vector3Distance(c.bind[(size_t)c.joints[RightArm]], c.bind[(size_t)c.joints[RightHand]]);
             if (arm > 0.001f) c.scale = 0.55f / arm;
+            // Сарвуу (бугуйнаас дунд хурууны үзүүр) бодит хүнд гарын уртын ~35% (19 / 55 см). Загварынх 61% байсан
+            // (сарвуу 1.75 дахин том: бууны дэргэд хэт том харагдана) тул бугуйг тойрон жижигрүүлнэ.
+            int tip = FindBone(c.model, "RightHandMiddle4");
+            if (tip < 0) tip = FindBone(c.model, "RightHandMiddle3");
+            if (tip >= 0 && arm > 0.001f)
+            {
+                const float hand = Vector3Distance(c.bind[(size_t)c.joints[RightHand]], c.bind[(size_t)tip]);
+                c.handScale = std::clamp(0.35f * arm / std::max(hand, 0.001f), 0.4f, 1.0f);
+                c.handBone.assign((size_t)c.model.boneCount, 0);
+                for (int bone = 0; bone < c.model.boneCount; ++bone)
+                {
+                    for (int b = bone; b >= 0; b = c.model.bones[b].parent)
+                    {
+                        if (b == c.joints[RightHand] || b == c.joints[LeftHand]) { c.handBone[(size_t)bone] = 1; break; }
+                    }
+                }
+                TraceLog(LOG_INFO, "CHARACTER: %s hand %.0f%% of arm length: scaled by %.2f", kNames[id], 100.0f * hand / arm, c.handScale);
+            }
         }
         // Холын дүрд: ~4.5 см нүдээр бүлэглэсэн хөнгөн хувилбар
         int lodTriangles = 0;

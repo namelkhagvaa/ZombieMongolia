@@ -1719,7 +1719,7 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
         // Буудахад ам нь дээш үсэрч гар хойш түлхэгдэнэ; алхахад, тайван үед бага зэрэг хазайна.
         // Загварын (бодит хэмжээтэй) гар кодоор угсарсан нударгаас том: буу арай хол, гар нь бууны доор (гулсуур
         // нь гарын дээгүүр харагдана).
-        const float px = viewModelArms ? -0.1f : -0.08f, py = viewModelArms ? -0.18f : -0.14f, pz = viewModelArms ? 0.55f : 0.32f,
+        const float px = viewModelArms ? -0.09f : -0.08f, py = viewModelArms ? -0.16f : -0.14f, pz = viewModelArms ? 0.42f : 0.32f,
                     ps = viewModelArms ? 0.85f : 0.8f;
         rlTranslatef(Lerp(px, 0.0f, aim), Lerp(py, -0.128f, aim) + 0.03f * recoil - 0.07f * sprint, Lerp(pz, 0.5f, aim) - 0.08f * recoil);
         rlRotatef(-22.0f * sprint, 1.0f, 0.0f, 0.0f);
@@ -1732,7 +1732,7 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
         DrawPistolUpright();
         // Баруун гар: бариулыг атгана (бариул дээш, бага зэрэг урагш хазайсан; бугуй доош хойш)
         rlPushMatrix();
-        if (viewModelArms) rlTranslatef(0.0f, -0.07f, -0.03f);
+        if (viewModelArms) rlTranslatef(0.0f, -0.025f, -0.01f);
         const Vector3 rightWrist = DrawFistAt({ 0.0f, -0.035f, -0.012f }, { 0.0f, 1.0f, 0.5f }, { -0.15f, -0.7f, -1.0f }, false);
         // Зүүн гар: баруун гарыг доор, зүүн талаас нь тэвэрнэ (толин тусгал)
         const Vector3 leftWrist = DrawFistAt({ 0.03f, -0.058f, 0.006f }, { -0.15f, 1.0f, 0.55f }, { 0.9f, -0.6f, -0.7f }, true);
