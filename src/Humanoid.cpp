@@ -1690,13 +1690,16 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
                     hipZ = launcher ? 0.13f : 0.28f, hipYaw = launcher ? 3.0f : 4.0f, hipRoll = launcher ? 0.0f : -8.0f,
                     hipPitch = launcher ? 0.0f : -2.0f;
         // Counter-Strike маягаар: буу дэлгэцийн баруун талд (10 см баруун тийш), ам нь хараа руу 9° дотогш
-        const float scale = Lerp(hipScale, 0.55f, aim);
-        const float gx = launcher ? hipX : -0.1f, gyaw = launcher ? hipYaw : 9.0f, gy = launcher ? hipY : -0.35f, groll = launcher ? hipRoll : -6.0f;
+        // (CS-ийн AWP, AK шиг: буу бараг хэвтээ, дэлгэцийн баруун доор, ам нь төв рүү 14°; бөгс баруун доод булангаас
+        // гарна, зүүн гар урд модыг доороос, баруун гарын зөвхөн ар тал буланд харагдана)
+        const float scale = Lerp(launcher ? hipScale : 0.9f, 0.55f, aim);
+        const float gx = launcher ? hipX : -0.17f, gyaw = launcher ? hipYaw : 14.0f, gy = launcher ? hipY : -0.44f, groll = launcher ? hipRoll : -6.0f;
+        const float gz = launcher ? hipZ : 0.3f, gpitch = launcher ? hipPitch : 8.0f;
         rlTranslatef(Lerp(gx, 0.132f, aim), Lerp(gy, launcher ? -0.25f : -0.25f, aim) - 0.06f * sprint,
-                     Lerp(hipZ, 0.24f, aim) - 0.04f * recoil - 0.03f * sprint);
+                     Lerp(gz, 0.24f, aim) - 0.04f * recoil - 0.03f * sprint);
         rlRotatef(gyaw * (1.0f - aim) + 28.0f * sprint, 0.0f, 1.0f, 0.0f);
         rlRotatef(groll * (1.0f - aim), 0.0f, 0.0f, 1.0f);
-        rlRotatef(10.0f * sprint + hipPitch * (1.0f - aim), 1.0f, 0.0f, 0.0f);
+        rlRotatef(10.0f * sprint + gpitch * (1.0f - aim), 1.0f, 0.0f, 0.0f);
         rlRotatef(-12.0f * sprint, 0.0f, 0.0f, 1.0f);
         rlScalef(scale, scale, scale);
         rlRotatef(-5.0f * recoil - 18.0f * reloading, 1.0f, 0.0f, 0.0f);
@@ -1751,7 +1754,7 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
             }
             else
             {
-                lw = DrawFistAt({ x + 0.005f, y - 0.085f + lowY, (viewModelArms ? 0.62f : 0.78f) - 0.24f * reloading }, { 0.0f, 0.0f, 1.0f },
+                lw = DrawFistAt({ x + 0.005f, y - 0.085f + lowY, (viewModelArms ? 0.72f : 0.78f) - 0.24f * reloading }, { 0.0f, 0.0f, 1.0f },
                                 Vector3Add(viewModelArms ? underWrist : Vector3{ 0.85f, -0.75f, -0.2f }, viewModelArms ? lowWrist : Vector3{ 0.0f, 0.0f, 0.0f }),
                                 true);
             }
@@ -1883,7 +1886,7 @@ Vector3 ViewModelMuzzle(const Camera3D& camera, HeldItem held, float aim)
     const Matrix basis = ViewBasis(camera);
     aim = std::clamp(aim, 0.0f, 1.0f);
     // Бууны амны цэг: бэлэн үеийн байрлал (72%, DrawViewModel-ийн шилжилт, эргэлтийн дараа); онилоход (55%) төв рүү шилжинэ.
-    Vector3 hip = { -0.116f, 0.009f, 1.0f }, sight = { 0.0f, -0.075f, 0.83f }; // автомат, үрлэн буу, дурантай буу (дэлгэцээс хэмжсэн)
+    Vector3 hip = { -0.094f, -0.15f, 1.0f }, sight = { 0.0f, -0.075f, 0.83f }; // автомат, үрлэн буу, дурантай буу (дэлгэцээс хэмжсэн)
     if (held == HeldItem::Pistol) { hip = { -0.13f, -0.09f, 0.6f }; sight = { 0.0f, -0.04f, 0.54f }; }
     else if (held == HeldItem::Launcher) { hip = { -0.223f, -0.172f, 0.69f }; sight = { 0.0f, -0.08f, 0.93f }; }
     return Vector3Transform(Vector3Lerp(hip, sight, aim), basis);
