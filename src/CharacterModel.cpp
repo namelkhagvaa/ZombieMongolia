@@ -813,7 +813,9 @@ void LoadCharacterModels(Shader shader)
             {
                 // Бүтэн биетэй дүр (нүцгэн, хуягтай): зөвхөн шуу, сарвуу (тохойноос доош). Бугалга, мөр 1-р этгээдэд
                 // харагддаггүй; хуягтай дүрийн мөрөвч дэлгэцийн захад хөвж харагддаг байв. fp_arms бүтнээрээ (ханцуйтай).
-                const bool full = id == kCharacterFpArms;
+                // (нүцгэн биетэй model2: шуу тохойн дээр тасарч, урт бууны зүүн гарт тасархай нь дэлгэцэнд харагддаг байв;
+                // ханцуйтай дүрүүд шуугаараа: бугалгын ханцуй, хуяг дэлгэцэнд хөвдөг)
+                const bool full = id == kCharacterFpArms || id == kCharacterModel2;
                 c.arms.push_back(ExtractArms(c.model, c.model.meshes[index], c.joints[full ? RightArm : RightForeArm],
                                              c.joints[full ? LeftArm : LeftForeArm]));
                 armTriangles += c.arms.back().triangleCount;
