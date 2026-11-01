@@ -1785,7 +1785,7 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
             // 40 см доор: нүцгэн model2-ийн бугалга дэлгэцэнд орохгүй),
             // эс бөгөөс гар урд модонд хүрэхгүй (71 см / 53 см))
             const bool restPose = viewModelArms && (held == HeldItem::Rifle || held == HeldItem::Sniper);
-            AnchorViewBody({ Lerp(-0.2f, -0.12f, aim), Lerp(restPose ? -0.4f : -0.27f, restPose ? -0.32f : -0.25f, aim), Lerp(restPose ? 0.12f : -0.06f, restPose ? 0.02f : -0.12f, aim) },
+            AnchorViewBody({ Lerp(-0.2f, -0.12f, aim), Lerp(restPose ? -0.48f : -0.27f, restPose ? -0.32f : -0.25f, aim), Lerp(restPose ? 0.3f : -0.06f, restPose ? 0.02f : -0.12f, aim) },
                            Lerp(restPose ? -65.0f : -35.0f, restPose ? -45.0f : -10.0f, aim));
             // Бэлэн байрлал (LongGunHip) ба онилсон байрлал (гол төмөр хараан доор, 55%) хооронд: бариулын байрлал,
             // эргэлт, хэмжээг зөөлөн шилжүүлнэ. Гүйх, ухрах, цэнэглэх хөдөлгөөн бариулыг тойрно.
@@ -1861,10 +1861,10 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
                 // төмрөөс 1 см доор, 9 см өргөн) ар хэсэгт, зүүн хажууд нь наалдаж, хуруу нь дээгүүр нь ороож атгана
                 // (гарын ар тал камер руу харна; эрхий хуруу доогуур нь ороогдохоор хуруу 95 градус нугарна);
                 // сарвуу шууны шугамаар (бугуй нугарахгүй)
-                const float tp[8] = { 0.055f, -0.03f, 0.66f, -1.0f, 0.5f, 0.3f, -1.0f, -0.3f };
+                const float tp[8] = { 0.0f, -0.065f, 0.88f, 0.0f, 1.0f, 0.4f, -1.0f, 0.3f };
                 viewLeftPole = { tp[5], tp[6], tp[7] };
                 lw = DrawSupportPalmAt({ x + tp[0], y + tp[1] + lowY, tp[2] - 0.06f * aim - 0.24f * reloading }, { tp[3], tp[4], 0.0f }, Vector3Lerp({ -1.0f, 0.0f, 0.35f }, { -0.2f, 0.0f, 1.0f }, aim),
-                                       Lerp(95.0f, 45.0f, aim));
+                                       Lerp(20.0f, 95.0f, aim));
             }
             else if (held == HeldItem::Sniper)
             {
