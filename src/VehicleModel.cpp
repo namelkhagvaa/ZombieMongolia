@@ -466,7 +466,19 @@ void DrawSceneryModel(SceneryModelId id, const Material* depth)
     if (!model.loaded) return;
     const Material& material = depth ? *depth : model.material;
     const bool far = IsFar(model);
+    // Мод: машины будагны гялбаа, тэнгэрийн тусгалгүй (навч саарал гялгар харагддаг байв)
+    const bool tree = !depth && id <= SceneryModelId::Saxaul;
+    static unsigned int cachedShader = 0;
+    static int location = -1;
+    if (tree && material.shader.id != cachedShader)
+    {
+        cachedShader = material.shader.id;
+        location = GetShaderLocation(material.shader, "foliage");
+    }
+    const float on = 1.0f, off = 0.0f;
+    if (tree && location >= 0) SetShaderValue(material.shader, location, &on, SHADER_UNIFORM_FLOAT);
     for (const Part& part : model.parts) DrawMesh(PickMesh(part, far), material, MatrixIdentity());
+    if (tree && location >= 0) SetShaderValue(material.shader, location, &off, SHADER_UNIFORM_FLOAT);
 }
 
 void LoadPropModels(Shader shader)

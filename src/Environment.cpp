@@ -787,12 +787,25 @@ in vec2 fragTexCoord;
 in vec3 fragNormal;
 uniform sampler2D texture0;
 uniform vec4 colDiffuse;
+uniform float foliage; // 1 = мод (навч, холтос): гялбаагүй, зөөлөн гэрэл, ар талаас нар гэрэлтүүлнэ
 out vec4 finalColor;
 void main()
 {
     vec3 normal = normalize(fragNormal);
     if (!gl_FrontFacing) normal = -normal;
     vec3 albedo = texture(texture0, fragTexCoord).rgb * colDiffuse.rgb;
+    if (foliage > 0.5)
+    {
+        // Навчны бөөгнөрөл: тус бүрийн хавтгай normal нь хурц бараан ирмэг гаргадаг тул дээш чиглэлтэй хольж зөөлрүүлнэ;
+        // нар навчны цаанаас тусахад (эсрэг гэрэл) навч нэвт гэрэлтэнэ
+        vec3 soft = normalize(mix(normal, vec3(0.0, 1.0, 0.0), 0.4));
+        vec3 leafLit = Shade(albedo * 1.08, soft, fragPosition);
+        vec3 toFrag = normalize(fragPosition - viewPos);
+        float back = pow(max(dot(toFrag, sunDirection), 0.0), 4.0);
+        leafLit += albedo * sunLight * back * 0.45 * SunShadow(fragPosition, 1.0);
+        finalColor = vec4(ApplyFog(leafLit, fragPosition), 1.0);
+        return;
+    }
     vec3 lit = Shade(albedo, normal, fragPosition);
     // Будагны гялбаа: нарны тусгал (сүүдэрт бүдэгрэнэ)
     vec3 view = normalize(viewPos - fragPosition);
