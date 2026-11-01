@@ -2344,7 +2344,7 @@ namespace
 
     const Color kBronze = { 64, 76, 66, 255 };
     const Color kGranite = { 146, 100, 90, 255 };
-    const Color kPaving = { 166, 162, 154, 255 };
+    const Color kPaving = { 146, 143, 136, 255 }; // (166 байхад хүчтэй наранд цав цагаан болж бүтэц нь алга болдог байв)
 
     // Өндөр барилгын сүүдэр. Урт тул газрын хотгор гүдгэрийг дагуулж жижиг дөрвөлжнүүдэд хуваана;
     // барилгын суурийн доорх хэсгийг зурахгүй.
@@ -6984,7 +6984,11 @@ namespace
             {
                 // Сүхбаатарын талбай: жижиг хавтан биш цул бетон
                 Color paving = kPaving;
-                if (!town && Vector2Length(MeasureFootprint(area.outline).center) < 120.0f) paving.a = kConcreteTag;
+                if (!town && Vector2Length(MeasureFootprint(area.outline).center) < 120.0f)
+                {
+                    paving = ScaleColor(kPaving, 0.84f); // (цайвар хавтан хүчтэй наранд цайрч харагддаг байв)
+                    paving.a = kConcreteTag;
+                }
                 PavePolygon(s, area.outline, 0.04f, paving, 0.03f);
             }
         }
@@ -7608,7 +7612,8 @@ namespace
         x0 += margin; x1 -= margin; z0 += margin; z1 -= margin;
         const float cx = 0.0f, cz = 0.0f; // хөшөө (загалмайн төв)
         // (цул бетон: жижиг хавтангийн бүтэцгүй)
-        const Color slab = { 150, 151, 152, kConcreteTag }, joint = { 176, 176, 174, kConcreteTag }, walk = { 204, 196, 178, kConcreteTag };
+        // (зам, зааг нь өмнө 204, 176 байсан: хүчтэй наранд цав цагаан болж бүтэц нь алга болдог байв)
+        const Color slab = { 150, 151, 152, kConcreteTag }, joint = { 162, 162, 160, kConcreteTag }, walk = { 174, 168, 154, kConcreteTag };
         // Газрын өндрийг дагасан тэгш өнцөгт (талбай налуу: хавтгай хайрцаг нэг хэсэгтээ хөвж, нөгөөдөө шигдэнэ)
         auto flat = [&](float ax, float az, float bx, float bz, float lift, Color color) {
             if (bx - ax < 0.05f || bz - az < 0.05f) return;

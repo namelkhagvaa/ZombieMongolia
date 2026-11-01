@@ -264,6 +264,7 @@ uniform float surfaceBump;   // 1 = ханын бүтэц товгор (нарн
 // Бодит гадаргуугийн бүтэц (assets/surfaces, CC0): саарал, дундаж 0.5. Өнгө нь оройн өнгөнөөс, ширхэг нь эндээс.
 uniform sampler2D wallDetail;  // R шавардлага, G тоосго, B бетон, A банз
 uniform sampler2D roofDetail;  // R вааран дээвэр, G атираат төмөр, B асфальт, A хавтан зам
+uniform sampler2D natureDetail; // R элс, G хайрга, B жижиг чулуу, A хагарсан хөрс (шороон зам, талбай)
 uniform float surfaceTextures; // 0 = текстургүй (файл олдоогүй)
 // 1 бол оройн alpha нь газраас дээших өндөр (MeshBuilder::EncodeGroundHeight, 0.4 м-ийн нэгж): барилга
 uniform float aoMode;
@@ -328,13 +329,21 @@ vec3 SurfaceDetail(vec3 albedo, vec3 normal, vec3 pos, float concrete)
             vec4 t = texture(roofDetail, pos.xz * 0.45);
             d = mix(t.b, t.a, smoothstep(0.38, 0.5, lumC));
             mask = grayW;
+            if (grayW < 0.5)
+            {
+                // Шороон зам, талбай (өнгөтэй хэвтээ гадаргуу): элс, хайрга, хагарсан хөрс холилдоно
+                vec4 n = texture(natureDetail, pos.xz * 0.35);
+                float mixer = SurfaceNoise(pos.xz * 0.08 + 2.0);
+                d = mix(mix(n.r, n.g, smoothstep(0.35, 0.65, mixer)), n.a, smoothstep(0.6, 0.85, mixer));
+                mask = 1.0 - grayW;
+            }
             if (concrete > 0.5)
             {
                 d = mix(0.5, texture(wallDetail, pos.xz * 0.3).b, 0.6);
                 mask = 1.0;
             }
         }
-        albedo *= 1.0 + (d - 0.5) * 1.3 * near * mask;
+        albedo *= 1.0 + (d - 0.5) * 1.5 * near * mask;
     }
     float broad = SurfaceNoise(uv * 0.35);
     float fine = SurfaceNoise(uv * 3.1);
@@ -352,10 +361,15 @@ vec3 SurfaceDetail(vec3 albedo, vec3 normal, vec3 pos, float concrete)
         float crackZone = smoothstep(0.45, 0.75, SurfaceNoise(uv * 0.07 + 5.0));
         albedo *= 1.0 + paved * near * (grain * 0.14 * grainNear - repair * 0.16 - crackLine * crackZone * 0.32);
     }
+    // Элэгдэл: том бохир толбо (ус, тос, утаа), хана, хучилтад; хэвтээ дээр бага зэрэг хүрэн
+    float stain = smoothstep(0.55, 0.85, SurfaceNoise(uv * 0.11 + 7.0)) * (0.6 + 0.4 * SurfaceNoise(uv * 0.9 + 1.0));
+    albedo *= mix(vec3(1.0), an.y > 0.85 ? vec3(0.8, 0.77, 0.7) : vec3(0.78, 0.76, 0.72), stain * near * 0.75);
     if (an.y < 0.3)
     {
+        // Дээрээс урссан зосны судал: босоо, жигд биш (хуучирсан фасад)
         float streak = SurfaceNoise(vec2(uv.x * 1.6, uv.y * 0.12 + 4.0));
-        albedo *= 1.0 - near * 0.14 * smoothstep(0.55, 0.9, streak);
+        float run = smoothstep(0.5, 0.9, streak) * (0.5 + 0.5 * SurfaceNoise(vec2(uv.x * 0.4, 1.0)));
+        albedo *= mix(vec3(1.0), vec3(0.74, 0.71, 0.66), near * 0.5 * run);
     }
     return albedo;
 }
@@ -441,6 +455,15 @@ void main()
     bool polished = abs(tag - 253.0) < 0.5;
     vec3 vertexAlbedo = fragColor.rgb * colDiffuse.rgb;
     vec3 albedo = glass || polished ? vertexAlbedo : SurfaceDetail(vertexAlbedo, normal, fragPosition, step(253.5, tag) * step(tag, 254.5));
+    if (aoMode > 0.5 && !glass && !polished && surfaceDetail > 0.5)
+    {
+        // Хананы ёроолын шороо, шавар (бороо цацаж, тоос хуримтлагдана): ~1 м хүртэл, ирмэг нь жигд биш
+        float h = fragColor.a * 255.0 * 0.4;
+        float wall = 1.0 - smoothstep(0.35, 0.7, abs(faceNormal.y));
+        float edge = (SurfaceNoise(vec2(fragPosition.x + fragPosition.z, fragPosition.y) * 1.7) - 0.5) * 0.5;
+        float splash = (1.0 - smoothstep(0.0, 1.0, h + edge)) * wall * (1.0 - smoothstep(30.0, 90.0, distance(viewPos, fragPosition)));
+        albedo = mix(albedo, albedo * vec3(0.7, 0.64, 0.56), splash * 0.65);
+    }
     if (surfaceBump > 0.5 && surfaceDetail > 0.5)
     {
         // Товгор (~1.5 см): бүтцийн тодролын (оройн өнгөтэй харьцуулсан) өөрчлөлтөөс; 40 м-ээс цааш алга.
@@ -1569,6 +1592,7 @@ void Environment::LoadSurfaceTextures()
     const bool buildings = surfaceTextures[0].id != 0 && surfaceTextures[1].id != 0;
     SetInt(shader, "wallDetail", kSurfaceSlot);
     SetInt(shader, "roofDetail", kSurfaceSlot + 1);
+    SetInt(shader, "natureDetail", kSurfaceSlot + 2);
     SetFloat(shader, "surfaceTextures", buildings ? 1.0f : 0.0f);
     SetInt(terrainShader, "natureDetail", kSurfaceSlot + 2);
     SetFloat(terrainShader, "natureTextures", surfaceTextures[2].id != 0 ? 1.0f : 0.0f);

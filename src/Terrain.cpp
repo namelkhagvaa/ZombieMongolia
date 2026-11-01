@@ -373,7 +373,7 @@ Color Terrain::CityGroundColor(float x, float z, Vector3 normal) const
     case 2: color = { 92, 124, 70, 255 }; break;                                                 // спорт талбай
     case 3: color = MixColor({ 74, 96, 54, 255 }, kGrassGreen, moisture); break;                 // ой
     case 4: color = MixColor(kGrassDry, kGrassGreen, 0.35f); break;                              // оршуулгын газар
-    case 5: color = { 150, 146, 138, 255 }; break;                                               // хучилттай талбай
+    case 5: color = { 126, 123, 116, 255 }; break; // хучилттай талбай (150 байхад хүчтэй наранд цав цагаан болдог байв)
     case 6: color = { 112, 104, 86, 255 }; break;                                                // голын шавар
     default: break;
     }
