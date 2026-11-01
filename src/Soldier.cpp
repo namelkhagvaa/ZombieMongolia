@@ -915,7 +915,11 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
             soldier.mover.facing += std::remainder(want - soldier.mover.facing, 2.0f * PI) * std::min(1.0f, 12.0f * dt);
         }
 
-        if (soldier.fireCooldown <= 0.0f)
+        // Эхлээд буугаа мөрөндөө өргөж (онилсон байрлал), дараа нь буудна: гүйж байхад бэлэн байрлалаас (ам нь доош,
+        // хажуу тийш) шууд буудахад сум далий барьсан буунаас гардаг байв.
+        const bool raised = soldier.aimPose > 0.8f;
+        if (soldier.fireCooldown <= 0.0f && !raised) soldier.aimHold = std::max(soldier.aimHold, 1.4f);
+        if (soldier.fireCooldown <= 0.0f && raised)
         {
             const Ray ray = { muzzle, Vector3Scale(toTarget, 1.0f / distance) };
             const bool clearShot = world.RayDistance(ray, distance) >= distance - 0.05f;

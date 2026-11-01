@@ -1659,8 +1659,13 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
     const float bobX = std::sin(walkPhase) * 0.012f * sway + 0.004f * still * std::sin(time * 0.9f);
     const float bobY = -std::fabs(std::cos(walkPhase)) * 0.016f * sway + 0.005f * still * std::sin(time * 1.6f);
     const float reloading = reload >= 0.0f ? std::sin(reload * PI) : 0.0f;
-    // Гүйж байна: зэвсэг доош, дотогш хазайна (онилоход, цэнэглэхэд үгүй)
-    const float sprint = std::clamp((moveAmount - 1.1f) / 0.35f, 0.0f, 1.0f) * (1.0f - aim) * (1.0f - reloading);
+    // Гүйж байна: зэвсэг доош, дотогш хазайна (онилоход, цэнэглэхэд, буудаж байхад үгүй: буудсанаас хойш 0.4 с
+    // буу шулуун урагшаа; эс бөгөөс гүйж буудахад сум далий барьсан буунаас гардаг байв)
+    static float firingHold = 0.0f, firing = 0.0f;
+    const float frame = std::min(0.1f, GetFrameTime());
+    firingHold = recoil > 0.05f ? 0.4f : std::max(0.0f, firingHold - frame);
+    firing += ((firingHold > 0.0f ? 1.0f : 0.0f) - firing) * std::min(1.0f, 18.0f * frame);
+    const float sprint = std::clamp((moveAmount - 1.1f) / 0.35f, 0.0f, 1.0f) * (1.0f - aim) * (1.0f - reloading) * (1.0f - firing);
 
     viewModelArms = HasCharacterArms(viewArmsId);
     viewTargets[0] = viewTargets[1] = ViewArmTarget{};
