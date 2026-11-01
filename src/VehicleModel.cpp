@@ -220,6 +220,7 @@ namespace
         { "trees", "larch" }, { "trees", "birch" }, { "trees", "elm" }, { "trees", "saxaul" },
         { "pooshig", "barrel_old" }, { "pooshig", "barrel_fuel" },
         { "monuments", "chinggis" }, { "monuments", "sukhbaatar" },
+        { "broken_cars", "truck" }, { "broken_cars", "prius" },
     };
 
     // Файлын байрлал: компьютер дээр exe-ийн хажуу эсвэл төслийн assets/<sub>, утсан дээр APK-ийн assets/<sub>
@@ -447,10 +448,11 @@ void LoadSceneryModels(Shader shader)
 #if !defined(__ANDROID__)
         if (!FileExists(mesh.c_str())) continue;
 #endif
-        const bool monument = i >= (int)SceneryModelId::Chinggis; // (өндөр нь 5-10 м: нүд нь ~15-25 см)
+        const bool monument = i == (int)SceneryModelId::Chinggis || i == (int)SceneryModelId::Sukhbaatar; // (өндөр нь 5-10 м: нүд нь ~15-25 см)
+        const bool car = i >= (int)SceneryModelId::BrokenTruck; // (урт 1: нүд нь ~9 см)
         if (LoadOne(scenery[i], mesh, texture, shader))
         {
-            BuildLods(scenery[i], monument ? 0.025f : 0.15f, monument ? 90.0f : 35.0f); // мод
+            BuildLods(scenery[i], monument ? 0.025f : car ? 0.02f : 0.15f, monument ? 90.0f : car ? 30.0f : 35.0f); // мод
             if (i <= (int)SceneryModelId::Saxaul)
             {
                 // Холын мод (55 м-ээс цааш, харагдах хязгаар хүртэл): ижил загвар, текстур, маш цөөн гурвалжин

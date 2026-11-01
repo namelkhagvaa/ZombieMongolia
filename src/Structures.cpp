@@ -137,11 +137,11 @@ namespace
             sceneryFirst = (size_t)out.TriangleCount();
             return out;
         }
-        void EndScenery(int kind, Vector3 localBase, float height)
+        void EndScenery(int kind, Vector3 localBase, float height, float yaw = -1000.0f)
         {
             if (!scenery) return;
             const Vector3 base = solid.Placed(localBase);
-            placements->push_back({ base, height, SceneryYaw(base), kind, sceneryFirst,
+            placements->push_back({ base, height, yaw > -999.0f ? yaw : SceneryYaw(base), kind, sceneryFirst,
                                     (size_t)scenery->TriangleCount() - sceneryFirst });
             scenery->ResetPlacement();
         }
@@ -4372,7 +4372,8 @@ namespace
     std::vector<Vector3> gCityVehicleSpots; // унаж болох машины байрлал (x, z, y = чиглэл)
 
     // Хотын гудамжинд орхигдсон машин: энгийн хэлбэр (нэг машинд ~70 гурвалжин), газрын налууг дагана.
-    // heading: урд тал (sin, cos) зүг рүү.
+    // heading: урд тал (sin, cos) зүг рүү. Загвар (assets/broken_cars) ачаалагдсан бол ойроос (55 м) Зөвлөлтийн ачааны
+    // машин эсвэл Prius-ийн загвараар зурагдана; энэ хайрцган хувилбар нь холынх (шатсан машин үргэлж хайрцгаар).
     void CityParkedCar(Scene& s, float x, float z, float heading)
     {
         static const Color paints[] = { { 186, 182, 170, 255 }, { 40, 42, 46, 255 },   { 196, 198, 200, 255 }, { 138, 62, 50, 255 },
@@ -4380,12 +4381,20 @@ namespace
         const float ground = s.terrain.HeightAt(x, z);
         const bool suv = s.rng.Chance(0.35f); // жийп (Land Cruiser, X-Trail) эсвэл суудлын (Prius)
         const bool burnt = s.rng.Chance(0.12f);
-        Color body = burnt ? Color{ 46, 40, 36, 255 } : JitterColor(paints[s.rng.Int(0, 7)], s.rng, 0.06f);
+        // Ачааны машин уу: байрлалын хэшээр (rng-ийн дарааллыг өөрчлөхгүй: хотын бусад зүйл хэвээр)
+        const uint32_t hash = (uint32_t)(int)(x * 3.7f) * 2654435761u ^ (uint32_t)(int)(z * 5.3f) * 40503u;
+        const SceneryModelId kind = hash % 100u < 22u ? SceneryModelId::BrokenTruck : SceneryModelId::BrokenPrius;
+        const bool model = !burnt && HasSceneryModel(kind);
+        const bool truck = model && kind == SceneryModelId::BrokenTruck;
+        const Color paint = burnt ? Color{} : JitterColor(paints[s.rng.Int(0, 7)], s.rng, 0.06f); // (загвартай үед ч rng-ийг ижил дарааллаар)
+        // (холын хайрцаг загварынхаа өнгөөр: цэнхэр ачааны машин, цагаан Prius)
+        Color body = burnt ? Color{ 46, 40, 36, 255 } : truck ? Color{ 92, 132, 150, 255 } : model ? Color{ 214, 214, 210, 255 } : paint;
         const Color glass = burnt ? Color{ 24, 22, 20, 255 } : kGlassDark;
-        const float length = suv ? 4.6f : 4.4f, width = suv ? 1.85f : 1.75f, sill = 0.32f, belt = suv ? 1.05f : 0.9f;
-        const float roof = suv ? 1.8f : 1.45f;
+        const float length = truck ? 5.7f : model ? 4.5f : suv ? 4.6f : 4.4f, width = truck ? 2.2f : suv ? 1.85f : 1.75f, sill = 0.32f,
+                    belt = truck ? 1.3f : suv ? 1.05f : 0.9f;
+        const float roof = truck ? 2.15f : model ? 1.5f : suv ? 1.8f : 1.45f;
         const float tilt = s.rng.Chance(0.15f) ? s.rng.Range(-0.08f, 0.08f) : 0.0f; // хий гарсан дугуй
-        MeshBuilder& m = s.solid;
+        MeshBuilder& m = model ? s.BeginScenery(false) : s.solid;
         m.SetTransform(MatrixMultiply(MatrixMultiply(MatrixRotateZ(tilt), MatrixRotateY(heading)), MatrixTranslate(x, ground, z)));
         m.Box({ 0.0f, (sill + belt) * 0.5f, 0.0f }, { width, belt - sill, length }, body);                   // их бие
         // Бүхээг: доороо өргөн, дээрээ нарийн (шил), дээвэр нь биеийн өнгөтэй
@@ -4410,6 +4419,7 @@ namespace
             m.Box({ side * width * 0.5f, belt - 0.15f, -length * 0.5f - 0.01f }, { 0.3f, 0.12f, 0.04f }, burnt ? glass : Color{ 150, 30, 26, 255 });
         }
         m.ResetTransform();
+        if (model) s.EndScenery((int)kind, Vector3{ x, ground, z }, length, heading);
 
         // Мөргөлдөөн: эргэлдсэн биеийг хоёр хайрцгаар (урд, хойд хагас)
         const float fx = std::sin(heading), fz = std::cos(heading);

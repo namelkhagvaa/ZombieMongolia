@@ -132,6 +132,10 @@ namespace
             zombie.limp = 0.0f;
             zombie.woman = GetRandomValue(0, 1) == 0;
         }
+        else if (zombie.type == ZombieType::Walker)
+        {
+            zombie.woman = GetRandomValue(0, 1) == 0; // (тал нь хөгшин эмэгтэй: assets\emgen)
+        }
     }
 
     // Онцлогийн гадаад төрх: бөөн нь хавдсан ногоон, орилогч цонхигор туранхай
@@ -176,7 +180,8 @@ namespace
         look.model = zombie.boss ? kCharacterZombieBoss
                    : zombie.type == ZombieType::Runner ? (zombie.woman && HasCharacterModel(kCharacterZombieWoman) ? kCharacterZombieWoman
                                                                                                      : kCharacterZombieRunner)
-                   : zombie.type == ZombieType::Brute ? kCharacterZombieBrute : kCharacterZombieWalker;
+                   : zombie.type == ZombieType::Brute ? kCharacterZombieBrute
+                   : zombie.woman && HasCharacterModel(kCharacterZombieElder) ? kCharacterZombieElder : kCharacterZombieWalker;
         look.modelTint = zombie.boss ? Color{ 255, 255, 255, 255 } // аварга өөрийн загвартай: өнгөө хэвээр
                                      : Color{ (unsigned char)(200 + zombie.skin.r % 56), (unsigned char)(200 + zombie.skin.g % 56),
                                               (unsigned char)(200 + zombie.shirt.b % 56), 255 };

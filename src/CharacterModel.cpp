@@ -23,7 +23,8 @@ namespace
                                                   "model-1",       "model-3",       "demon",
                                                   "iron",          "survivor_doctor_man", "survivor_doctor_woman",
                                                   "survivor_student_boy", "survivor_student_girl", "survivor_monk",
-                                                  "model2",        "woman_zombie", "fp_arms" };
+                                                  "model2",        "woman_zombie", "fp_arms",
+                                                  "emgen" };
 
     // Загварын өндөр тоглоомын хүний өндөртэй (~1.9 м) таарахаар томруулна. Аврах иргэд бодит харьцаагаар:
     // эрэгтэй цэргээс бага зэрэг намхан, эмэгтэй, сурагч (15 настай) нь түүнээс намхан.
@@ -36,6 +37,7 @@ namespace
         case kCharacterSurvivorWoman:
         case kCharacterDoctorWoman:
         case kCharacterZombieWoman: return 1.72f;
+        case kCharacterZombieElder: return 1.62f; // (хөгшин эмэгтэй, бөгтөр)
         case kCharacterStudentBoy: return 1.70f;
         case kCharacterStudentGirl: return 1.64f;
         case kCharacterMonk: return 1.78f;

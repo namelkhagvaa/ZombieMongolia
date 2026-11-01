@@ -84,7 +84,7 @@ struct Zombie
     bool oneEye = false;
     bool headWound = false;
     int hairStyle = 0;
-    bool woman = false; // гүйгч зомбины тал нь эмэгтэй загвартай (assets\woman_zombie)
+    bool woman = false; // гүйгч зомбины тал нь эмэгтэй загвартай (assets\woman_zombie), алхагчийнх хөгшин эмэгтэй (assets\emgen)
     float headRoll = 0.0f; // толгойн хазайлт, градус
     float limp = 0.0f;     // 0..1 баруун хөлөө чирэх хэмжээ
     int armStyle = 0;      // гараа барих хэлбэр

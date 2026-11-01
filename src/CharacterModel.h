@@ -39,7 +39,8 @@ constexpr int kCharacterZombieWoman = 19;  // assets\woman_zombie (гүйгч з
 // нь зурна). tools\prepare_character.ps1 -Name fp_arms -> assets/fp_arms_mesh.glb, assets/fp_arms_color.png.
 // Байхгүй бол кодоор угсарсан бээлийтэй гар (Humanoid.cpp: BuildFist).
 constexpr int kCharacterFpArms = 20;
-constexpr int kCharacterCount = 21;
+constexpr int kCharacterZombieElder = 21; // assets\emgen (алхагч зомбины тал нь: хөгшин эмэгтэй)
+constexpr int kCharacterCount = 22;
 
 // shader: текстур, гэрэлтүүлэг, манантай дүрийн shader (Environment::CharacterShader).
 void LoadCharacterModels(Shader shader);

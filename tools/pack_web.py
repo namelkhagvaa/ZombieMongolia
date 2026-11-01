@@ -25,7 +25,7 @@ from PIL import Image
 import soundfile
 
 KEEP_PNG = ("assets/huds/", "assets/icons/")  # жижиг, тунгалаг дүрсүүд
-WORLD = ("assets/cars/", "assets/trees/", "assets/pooshig/", "assets/monuments/")
+WORLD = ("assets/cars/", "assets/trees/", "assets/pooshig/", "assets/monuments/", "assets/broken_cars/")
 JPEG_QUALITY = 85
 OGG_LEVEL = 0.5  # libsndfile: 0 = хамгийн өндөр чанар, 1 = хамгийн бага хэмжээ
 
