@@ -10,6 +10,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
 
 // Буу баруун талд (+Z рүү харахад баруун тал нь -X), цээжний өндөрт.
 const Vector3 kHumanoidMuzzle = { -0.24f, 1.2f, 1.04f };
@@ -1370,10 +1374,61 @@ namespace
         return b;
     }
 
+    // Загварын гар (assets/fp_hands: tools/bake_fp_hands.py rigged_arms.glb-ээс атгуулж бэлтгэнэ): мөр бүр нэг
+    // гурвалжин "r g b  x y z  x y z  x y z". Файл байхгүй бол хоосон (кодоор угсарсан гар зурагдана).
+    MeshBuilder LoadHandMesh(const char* name)
+    {
+        MeshBuilder b;
+        // (туршилт, ZM_MODEL_HANDS=1: rigged_arms.glb нь дөрвөлжин хэсгүүдээс бүтсэн тул кодоор угсарсан гараас
+        // илүү хайрцаг шиг харагдсан; анхдагчаар кодоор угсарсан гар)
+        if (!std::getenv("ZM_MODEL_HANDS")) return b;
+        const std::string application = GetApplicationDirectory();
+        for (const std::string& folder : { std::string("assets/fp_hands/"), application + "assets/fp_hands/", application + "../assets/fp_hands/" })
+        {
+            char* text = LoadFileText((folder + name).c_str());
+            if (!text) continue;
+            const char* p = text;
+            while (*p)
+            {
+                int r, g, bl;
+                float v[9];
+                int used = 0;
+                if (std::sscanf(p, "%d %d %d %f %f %f %f %f %f %f %f %f%n", &r, &g, &bl, &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6],
+                                &v[7], &v[8], &used) == 12)
+                {
+                    const Color c = { (unsigned char)r, (unsigned char)g, (unsigned char)bl, 255 };
+                    b.Triangle({ v[0], v[1], v[2] }, { v[3], v[4], v[5] }, { v[6], v[7], v[8] }, c);
+                }
+                const char* next = std::strchr(p, '\n');
+                if (!next) break;
+                p = next + 1;
+            }
+            UnloadFileText(text);
+            TraceLog(LOG_INFO, "VIEWMODEL: hand mesh %s loaded (%d triangles)", name, b.TriangleCount());
+            break;
+        }
+        return b;
+    }
+
+    const MeshBuilder& ModelFist(bool ball)
+    {
+        static const MeshBuilder tight = LoadHandMesh("fist_tight.txt");
+        static const MeshBuilder round = LoadHandMesh("fist_round.txt");
+        return ball ? round : tight;
+    }
+
+    const MeshBuilder& ModelForearm()
+    {
+        static const MeshBuilder forearm = LoadHandMesh("forearm.txt");
+        return forearm;
+    }
+
     const MeshBuilder& Fist(bool ball)
     {
         static const MeshBuilder tight = BuildFist(0.015f);
         static const MeshBuilder round = BuildFist(0.03f);
+        const MeshBuilder& model = ModelFist(ball);
+        if (model.TriangleCount() > 0) return model;
         return ball ? round : tight;
     }
 
@@ -1467,6 +1522,7 @@ namespace
         rlDrawRenderBatchActive();
         rlEnableBackfaceCulling();
         const float rh = ball ? 0.03f : 0.015f;
+        if (ModelFist(ball).TriangleCount() > 0) return Vector3Add(center, Vector3Add(Vector3Scale(x, -(rh + 0.015f)), Vector3Scale(y, 0.082f)));
         return Vector3Add(center, Vector3Add(Vector3Scale(x, -FistWrist(rh)), Vector3Scale(y, 0.098f)));
     }
 
@@ -1474,6 +1530,32 @@ namespace
     void ViewForearm(Vector3 elbow, Vector3 wrist)
     {
         if (viewModelArms) return; // (загварын гар өөрийн ханцуйтай)
+        const MeshBuilder& model = ModelForearm();
+        if (model.TriangleCount() > 0)
+        {
+            // Загварын шуу: бугуй эх, тохой +Y (урт 0.232 м-ийг тохой хүртэл сунгана); нуруу (+Z) дээш
+            const Vector3 along = Vector3Subtract(elbow, wrist);
+            const float length = Vector3Length(along);
+            const Vector3 y = Vector3Scale(along, 1.0f / std::max(length, 0.001f));
+            Vector3 z = Vector3Subtract({ 0.0f, 1.0f, 0.0f }, Vector3Scale(y, y.y));
+            z = Vector3Length(z) < 0.01f ? Vector3{ 0.0f, 0.0f, 1.0f } : Vector3Normalize(z);
+            const Vector3 x = Vector3CrossProduct(y, z);
+            const float stretch = length / 0.232f;
+            Matrix m = MatrixIdentity();
+            m.m0 = x.x; m.m1 = x.y; m.m2 = x.z;
+            m.m4 = y.x * stretch; m.m5 = y.y * stretch; m.m6 = y.z * stretch;
+            m.m8 = z.x; m.m9 = z.y; m.m10 = z.z;
+            m.m12 = wrist.x; m.m13 = wrist.y; m.m14 = wrist.z;
+            rlDrawRenderBatchActive();
+            rlDisableBackfaceCulling();
+            rlPushMatrix();
+            rlMultMatrixf(MatrixToFloat(m));
+            model.DrawImmediate();
+            rlPopMatrix();
+            rlDrawRenderBatchActive();
+            rlEnableBackfaceCulling();
+            return;
+        }
         MeshBuilder b;
         const Vector3 cuff = Vector3Lerp(elbow, wrist, 0.84f);
         b.Tube(elbow, cuff, 0.047f, 0.037f, 16, kSleeve, false);
@@ -1529,17 +1611,22 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
                          held == HeldItem::Launcher;
     if (longGun)
     {
-        // Буу дэлгэцийн баруун доор, гол төмөр нь хараа руу бага зэрэг чиглэнэ (Counter-Strike маягийн).
-        // Жинхэнэ хэмжээгээр (1.1 м) зурвал дэлгэцийг дүүргэнэ: 48% болгож, дэлгэцийн баруун доод хэсэгт
-        // (зэвсгийн үүрнүүд ба мини газрын зургийн хооронд) байрлуулна. Бөгс нь дэлгэцийн гадна үлдэнэ.
+        // Бэлэн (онилоогүй) үед: буу дэлгэцийн баруун доороос төв рүү, ам нь хараа руу; хоёр гар, шуунууд харагдана
+        // (баруун гар бариулд дэлгэцийн доод захад, зүүн гар урд модонд, ханцуйтай шуу зүүн доод булангаас).
+        // Буу 72% хэмжээтэй, бага зэрэг дотогш эргэсэн (-8° эргэлт). Өмнө нь 48% хэмжээтэй, дэлгэцийн баруун доод
+        // буланд жижигхэн (Counter-Strike маягийн) байж гар бараг харагддаггүй байв.
         // Онилоход (aim) гол төмөр нь дэлгэцийн төвд, хараан доор ирнэ (x = 0); ар тал нь харааг халхлахгүй
-        // байхаар бага зэрэг урагш, доош байрлана.
+        // байхаар бага зэрэг урагш, доош байрлана. Гранат харвагч мөрөн дээр (хуучин байрлалаараа).
         const bool launcher = held == HeldItem::Launcher;
-        const float scale = Lerp(0.48f, 0.55f, aim);
-        rlTranslatef(Lerp(-0.11f, 0.132f, aim), Lerp(launcher ? -0.32f : -0.335f, launcher ? -0.25f : -0.25f, aim) - 0.06f * sprint,
-                     Lerp(0.13f, 0.24f, aim) - 0.04f * recoil - 0.03f * sprint);
-        rlRotatef(3.0f * (1.0f - aim) + 28.0f * sprint, 0.0f, 1.0f, 0.0f);
-        rlRotatef(10.0f * sprint, 1.0f, 0.0f, 0.0f);
+        const float hipScale = launcher ? 0.48f : 0.72f, hipX = launcher ? -0.11f : 0.02f, hipY = launcher ? -0.32f : -0.37f,
+                    hipZ = launcher ? 0.13f : 0.28f, hipYaw = launcher ? 3.0f : 4.0f, hipRoll = launcher ? 0.0f : -8.0f,
+                    hipPitch = launcher ? 0.0f : -2.0f;
+        const float scale = Lerp(hipScale, 0.55f, aim);
+        rlTranslatef(Lerp(hipX, 0.132f, aim), Lerp(hipY, launcher ? -0.25f : -0.25f, aim) - 0.06f * sprint,
+                     Lerp(hipZ, 0.24f, aim) - 0.04f * recoil - 0.03f * sprint);
+        rlRotatef(hipYaw * (1.0f - aim) + 28.0f * sprint, 0.0f, 1.0f, 0.0f);
+        rlRotatef(hipRoll * (1.0f - aim), 0.0f, 0.0f, 1.0f);
+        rlRotatef(10.0f * sprint + hipPitch * (1.0f - aim), 1.0f, 0.0f, 0.0f);
         rlRotatef(-12.0f * sprint, 0.0f, 0.0f, 1.0f);
         rlScalef(scale, scale, scale);
         rlRotatef(-5.0f * recoil - 18.0f * reloading, 1.0f, 0.0f, 0.0f);
@@ -1675,8 +1762,8 @@ Vector3 ViewModelMuzzle(const Camera3D& camera, HeldItem held, float aim)
 {
     const Matrix basis = ViewBasis(camera);
     aim = std::clamp(aim, 0.0f, 1.0f);
-    // Бууны амны цэг: 48%-ийн хэмжээ ба шилжилтийн дараа (DrawViewModel); онилоход (55%) төв рүү шилжинэ.
-    Vector3 hip = { -0.224f, -0.182f, 0.64f }, sight = { 0.0f, -0.075f, 0.83f }; // автомат, үрлэн буу, дурантай буу
+    // Бууны амны цэг: бэлэн үеийн байрлал (72%, DrawViewModel-ийн шилжилт, эргэлтийн дараа); онилоход (55%) төв рүү шилжинэ.
+    Vector3 hip = { -0.101f, -0.087f, 1.037f }, sight = { 0.0f, -0.075f, 0.83f }; // автомат, үрлэн буу, дурантай буу
     if (held == HeldItem::Pistol) { hip = { -0.13f, -0.09f, 0.6f }; sight = { 0.0f, -0.04f, 0.54f }; }
     else if (held == HeldItem::Launcher) { hip = { -0.223f, -0.172f, 0.69f }; sight = { 0.0f, -0.08f, 0.93f }; }
     return Vector3Transform(Vector3Lerp(hip, sight, aim), basis);
