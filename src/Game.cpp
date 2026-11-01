@@ -5203,18 +5203,6 @@ void Game::DrawMissionScene() const
     grenades.Draw();
     rlDrawRenderBatchActive(); // дүрүүдийг хагас тунгалаг хашаанаас өмнө зурж дуусгана
     world.DrawTransparent(view, material);
-    if (!cinematic && camera.IsFirstPerson() && player.IsAlive() && !player.IsSwimming())
-    {
-        // Зэвсэг солих: доороос өргөгдөнө (дэлгэцийн доош чиглэлд шилжүүлнэ)
-        const float lower = 0.22f * (1.0f - weaponRaise) * (1.0f - weaponRaise);
-        const Vector3 forward = Vector3Normalize(Vector3Subtract(view.target, view.position));
-        const Vector3 down = Vector3Negate(Vector3Normalize(Vector3CrossProduct(Vector3CrossProduct(forward, view.up), forward)));
-        rlPushMatrix();
-        rlTranslatef(down.x * lower, down.y * lower, down.z * lower);
-        DrawViewModel(view, player.Held(), player.Recoil(), player.WalkPhase(), player.HorizontalSpeed() / config.walkSpeed,
-                      player.ReloadProgress(), player.ActionProgress(), camera.AimBlend());
-        rlPopMatrix();
-    }
     environment.End();
     movingHoles.clear();
     garage.CollectHoles(view.position, 90.0f, movingHoles);
@@ -5240,6 +5228,34 @@ void Game::DrawMissionScene() const
     if (showDebug)
     {
         world.DrawColliders(view.position);
+    }
+    if (!cinematic && camera.IsFirstPerson() && player.IsAlive() && !player.IsSwimming())
+    {
+        // 1-р этгээдийн зэвсэг, гар: хамгийн сүүлд, гүнийг цэвэрлээд өөрийн проекцоор (ойрын хавтгай 1 см) зурна.
+        // Ингэснээр гар камерт ойр (том, CS маягийн) байж болно, хана руу тулахад зэвсэг ханан дотор орохгүй.
+        // (Өмнө нь ертөнцийн проекцоор (ойрын хавтгай 25 см) зурдаг тул гар хол, жижиг, ханаар нэвтэрдэг байв.)
+        environment.ClearDepth();
+        rlMatrixMode(RL_PROJECTION);
+        rlPushMatrix();
+        rlLoadIdentity();
+        const double aspect = (double)rlGetFramebufferWidth() / (double)std::max(1, rlGetFramebufferHeight());
+        rlMultMatrixf(MatrixToFloat(MatrixPerspective(view.fovy * DEG2RAD, aspect, 0.01, 60.0)));
+        rlMatrixMode(RL_MODELVIEW);
+        environment.Begin(view);
+        // Зэвсэг солих: доороос өргөгдөнө (дэлгэцийн доош чиглэлд шилжүүлнэ)
+        const float lower = 0.22f * (1.0f - weaponRaise) * (1.0f - weaponRaise);
+        const Vector3 forward = Vector3Normalize(Vector3Subtract(view.target, view.position));
+        const Vector3 down = Vector3Negate(Vector3Normalize(Vector3CrossProduct(Vector3CrossProduct(forward, view.up), forward)));
+        rlPushMatrix();
+        rlTranslatef(down.x * lower, down.y * lower, down.z * lower);
+        DrawViewModel(view, player.Held(), player.Recoil(), player.WalkPhase(), player.HorizontalSpeed() / config.walkSpeed,
+                      player.ReloadProgress(), player.ActionProgress(), camera.AimBlend());
+        rlPopMatrix();
+        environment.End();
+        rlDrawRenderBatchActive();
+        rlMatrixMode(RL_PROJECTION);
+        rlPopMatrix();
+        rlMatrixMode(RL_MODELVIEW);
     }
     ViewCull::End();
     EndMode3D();

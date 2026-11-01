@@ -1526,6 +1526,31 @@ namespace
         return Vector3Add(center, Vector3Add(Vector3Scale(x, -FistWrist(rh)), Vector3Scale(y, 0.098f)));
     }
 
+    // Сул гар (хутга, гранат барьж байхад зүүн гар): хуруунууд хагас нугалсан (5 см-ийн бөмбөрцөг атгаж буй мэт)
+    Vector3 DrawRelaxedHandAt(Vector3 center, Vector3 axis, Vector3 wristDir, bool left)
+    {
+        if (viewModelArms) return center;
+        static const MeshBuilder relaxed = BuildFist(0.05f);
+        const Vector3 z = Vector3Normalize(axis);
+        const Vector3 y = Vector3Normalize(Vector3Subtract(wristDir, Vector3Scale(z, Vector3DotProduct(wristDir, z))));
+        Vector3 x = Vector3CrossProduct(y, z);
+        if (!left) x = Vector3Negate(x);
+        Matrix m = MatrixIdentity();
+        m.m0 = x.x; m.m1 = x.y; m.m2 = x.z;
+        m.m4 = y.x; m.m5 = y.y; m.m6 = y.z;
+        m.m8 = z.x; m.m9 = z.y; m.m10 = z.z;
+        m.m12 = center.x; m.m13 = center.y; m.m14 = center.z;
+        rlDrawRenderBatchActive();
+        rlDisableBackfaceCulling();
+        rlPushMatrix();
+        rlMultMatrixf(MatrixToFloat(m));
+        relaxed.DrawImmediate();
+        rlPopMatrix();
+        rlDrawRenderBatchActive();
+        rlEnableBackfaceCulling();
+        return Vector3Add(center, Vector3Add(Vector3Scale(x, -FistWrist(0.05f)), Vector3Scale(y, 0.098f)));
+    }
+
     // Шуу: тохойноос (дэлгэцийн гадна) бугуй хүртэл ханцуй (атираатай), ханцуйн ам, бээлийн ам
     void ViewForearm(Vector3 elbow, Vector3 wrist)
     {
@@ -1675,15 +1700,16 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
     }
     else if (held == HeldItem::Pistol)
     {
-        // Гар буу: хоёр гараар урагш сунган барина
+        // Гар буу: хоёр гараар урагш сунган барина (CS маягаар камерт ойр: гар том харагдана)
         // Буудахад ам нь дээш үсэрч гар хойш түлхэгдэнэ; алхахад, тайван үед бага зэрэг хазайна
-        rlTranslatef(Lerp(-0.15f, 0.0f, aim), Lerp(-0.2f, -0.128f, aim) + 0.03f * recoil - 0.07f * sprint, 0.54f - 0.04f * aim - 0.08f * recoil);
+        const float px = -0.08f, py = -0.14f, pz = 0.32f, ps = 0.8f;
+        rlTranslatef(Lerp(px, 0.0f, aim), Lerp(py, -0.128f, aim) + 0.03f * recoil - 0.07f * sprint, Lerp(pz, 0.5f, aim) - 0.08f * recoil);
         rlRotatef(-22.0f * sprint, 1.0f, 0.0f, 0.0f);
         rlRotatef(-24.0f * recoil - 30.0f * reloading, 1.0f, 0.0f, 0.0f);
         rlRotatef(3.0f * sway * std::sin(walkPhase) + 2.0f * still * std::sin(time * 0.6f), 0.0f, 0.0f, 1.0f);
         rlRotatef(Lerp(4.0f, 0.0f, aim), 0.0f, 1.0f, 0.0f); // бэлэн үед ам нь хараа руу бага зэрэг дотогш
         rlRotatef(Lerp(7.0f, 0.0f, aim), 1.0f, 0.0f, 0.0f); // бэлэн үед ам нь бага зэрэг доош
-        rlScalef(0.85f, 0.85f, 0.85f);
+        rlScalef(Lerp(ps, 0.85f, aim), Lerp(ps, 0.85f, aim), Lerp(ps, 0.85f, aim));
         AnchorViewBody({ -0.17f, -0.3f, -0.5f });
         DrawPistolUpright();
         // Баруун гар: бариулыг атгана (бариул дээш, бага зэрэг урагш хазайсан; бугуй доош хойш)
@@ -1703,17 +1729,28 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
         const float lunge = p < 0.28f ? 0.0f : p < 0.5f ? (p - 0.28f) / 0.22f : std::max(0.0f, 1.0f - (p - 0.55f) / 0.45f);
         const float thrust = held == HeldItem::Knife ? lunge : (action > 0.0f ? std::sin((1.0f - action) * PI) : 0.0f);
         const float cock = held == HeldItem::Knife ? windUp : 0.0f;
-        rlTranslatef(-0.16f + 0.09f * thrust - 0.04f * cock + 0.02f * still * std::sin(time * 1.3f),
-                     -0.17f + 0.07f * thrust + 0.07f * cock + 0.015f * still * std::sin(time * 2.1f),
-                     0.44f + 0.22f * thrust - 0.1f * cock);
+        // CS маягаар камерт ойр, дэлгэцийн баруун доор: хутганы ир урагш, зүүн тийш хөндлөн (бүтнээрээ харагдана),
+        // гранат босоо (дээд таг, хөшүүрэг нь харагдана). Өмнө нь хол, жижиг байж хутганы зөвхөн бариулын үзүүр харагддаг байв.
+        const bool knife = held == HeldItem::Knife;
+        const float bx = -0.12f, by = knife ? -0.14f : -0.13f, bz = 0.26f, bs = knife ? 0.9f : 1.0f;
+        const float byaw = knife ? 60.0f : -10.0f, bpitch = knife ? -30.0f : -50.0f, broll = knife ? -45.0f : 40.0f;
+        {
+            // Зүүн гар: сул, хагас нээлттэй, дэлгэцийн зүүн доод хэсэгт (шидэх, хатгахад бага зэрэг хойш)
+            const float lx = 0.14f, ly = -0.18f, lz = 0.3f;
+            const Vector3 lw = DrawRelaxedHandAt({ lx, ly - 0.02f * thrust, lz }, { -0.35f, 0.25f, 1.0f }, { 0.35f, -1.0f, -0.35f }, true);
+            ViewForearm({ lx + 0.08f, ly - 0.3f, lz - 0.28f }, lw);
+        }
+        rlTranslatef(bx + 0.09f * thrust - 0.04f * cock + 0.02f * still * std::sin(time * 1.3f),
+                     by + 0.07f * thrust + 0.07f * cock + 0.015f * still * std::sin(time * 2.1f),
+                     bz + 0.22f * thrust - 0.1f * cock);
         if (held == HeldItem::Knife) rlRotatef(-20.0f * cock + 8.0f * still * std::sin(time * 1.1f), 0.0f, 0.0f, 1.0f);
         if (held == HeldItem::Knife)
         {
             // Ир нь урагш, бага зэрэг дотогш (хараа руу), дээш; хатгахад шулуун урагш
-            rlRotatef(14.0f - 10.0f * thrust, 0.0f, 1.0f, 0.0f);
-            rlRotatef(-8.0f - 22.0f * cock + 10.0f * thrust, 1.0f, 0.0f, 0.0f);
-            rlRotatef(-18.0f, 0.0f, 0.0f, 1.0f);
-            rlScalef(0.9f, 0.9f, 0.9f);
+            rlRotatef(byaw - 10.0f * thrust, 0.0f, 1.0f, 0.0f);
+            rlRotatef(bpitch - 22.0f * cock + 10.0f * thrust, 1.0f, 0.0f, 0.0f);
+            rlRotatef(broll, 0.0f, 0.0f, 1.0f);
+            rlScalef(bs, bs, bs);
             AnchorViewBody({ -0.12f, -0.38f, -0.48f });
             // Нударга: хутганы бариул Z тэнхлэгийн дагуу (эх нь бариулын төв), долоовор хуруу ир рүү, бугуй доош хойш
             const Vector3 wrist = DrawFistAt({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }, { -0.15f, -1.0f, -0.55f }, false);
@@ -1727,7 +1764,10 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
         }
         else
         {
-            rlScalef(0.8f, 0.8f, 0.8f);
+            rlRotatef(byaw, 0.0f, 1.0f, 0.0f);
+            rlRotatef(bpitch, 1.0f, 0.0f, 0.0f);
+            rlRotatef(broll, 0.0f, 0.0f, 1.0f);
+            rlScalef(bs, bs, bs);
             AnchorViewBody({ -0.1f, -0.4f, -0.45f });
             // Гранатыг алган дээрээ атгана (их бие дээш, хуруунууд ороосон), шидэх үед гартай хамт урагш
             if (thrust < 0.6f)

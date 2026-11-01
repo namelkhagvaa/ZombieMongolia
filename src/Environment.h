@@ -110,6 +110,8 @@ public:
     bool BeginFarShadowPass(Vector3 center);
     void EndShadowPass();
     const Material& DepthMaterial() const { return depthMaterial; }
+    // Гүний буферийг цэвэрлэнэ (өнгийг үлдээнэ): 1-р этгээдийн зэвсэг, гарыг ертөнцөөс тусад нь зурахад
+    void ClearDepth() const;
     // Сүүдрийн зурлагад дүрүүд: араг ястай, гэрэлтүүлэггүй (бүтэн дүрийн shader-ийн оронд)
     const Material& CharacterDepthMaterial() const { return characterDepthMaterial; }
     float ShadowRadius() const { return shadowRadius; }

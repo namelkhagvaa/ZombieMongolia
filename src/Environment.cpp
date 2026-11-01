@@ -9,12 +9,13 @@
 #include "raymath.h"
 #include "rlgl.h"
 
-#if defined(__EMSCRIPTEN__)
-#include <GLES3/gl3.h> // сүүдрийн гүний текстур (LoadShadowTarget)
+#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
+#include <GLES3/gl3.h> // сүүдрийн гүний текстур (LoadShadowTarget), гүнийг цэвэрлэх (ClearDepth)
 #elif defined(_WIN32)
 // OpenGL 1.1-ийн функцууд (opengl32.dll-ээс шууд): сүүдрийн өнгөгүй framebuffer-т draw buffer-гүй гэж заана
 extern "C" __declspec(dllimport) void __stdcall glDrawBuffer(unsigned int mode);
 extern "C" __declspec(dllimport) void __stdcall glReadBuffer(unsigned int mode);
+extern "C" __declspec(dllimport) void __stdcall glClear(unsigned int mask);
 #endif
 
 #include <algorithm>
@@ -2191,6 +2192,12 @@ void Environment::Begin(const Camera3D& camera) const
         SetVec2(s, "wind", wind);
     }
     BeginShaderMode(shader);
+}
+
+void Environment::ClearDepth() const
+{
+    rlDrawRenderBatchActive();
+    glClear(0x00000100); // GL_DEPTH_BUFFER_BIT
 }
 
 void Environment::End() const
