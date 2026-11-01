@@ -1590,6 +1590,23 @@ namespace
     }
 
     // Сул гар (хутга, гранат барьж байхад зүүн гар): хуруунууд хагас нугалсан (5 см-ийн бөмбөрцөг атгаж буй мэт)
+    // Загварын гар: зүүн гарын алгыг дээш харуулан буугаа алган дээрээ тавина (хуруу бага зэрэг нугалсан, бууг
+    // атгахгүй). palm: алганы төв (одоогийн rlgl орон зайд), up: алганы харах зүг (буу руу), fingers: хурууны зүг.
+    Vector3 DrawSupportPalmAt(Vector3 palm, Vector3 up, Vector3 fingers, float curl)
+    {
+        if (!viewModelArms) return palm;
+        const Matrix toWorld = rlGetMatrixTransform();
+        const Vector3 origin = Vector3Transform({ 0.0f, 0.0f, 0.0f }, toWorld);
+        ViewArmTarget& target = viewTargets[1];
+        target.active = true;
+        target.palm = Vector3Transform(palm, toWorld);
+        target.facing = Vector3Normalize(Vector3Subtract(Vector3Transform(up, toWorld), origin));
+        target.fingers = Vector3Normalize(Vector3Subtract(Vector3Transform(fingers, toWorld), origin));
+        target.framed = true;
+        target.curl = curl;
+        return palm;
+    }
+
     Vector3 DrawRelaxedHandAt(Vector3 center, Vector3 axis, Vector3 wristDir, bool left)
     {
         if (viewModelArms)
@@ -1762,7 +1779,12 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
             // Бие (мөр) камерт бэхлэгдэнэ: баруун мөр дэлгэцийн баруун доод захаас гадна, зүүн мөр урагш (35 градус):
             // баруун шуу баруун доод булангаас бариул руу, зүүн шуу доороос урд мод руу орж ирнэ.
             // Онилоход мөр төв рүү, бие шулуун.
-            AnchorViewBody({ Lerp(-0.2f, -0.12f, aim), Lerp(-0.27f, -0.25f, aim), Lerp(-0.06f, -0.12f, aim) }, Lerp(-35.0f, -10.0f, aim));
+            // (автомат, дурантай буу: зүүн гар урд модыг алган дээрээ тавина: зүүн мөр илүү урагш (65 градус, 12 см урд,
+            // 40 см доор: нүцгэн model2-ийн бугалга дэлгэцэнд орохгүй),
+            // эс бөгөөс гар урд модонд хүрэхгүй (71 см / 53 см))
+            const bool restPose = viewModelArms && (held == HeldItem::Rifle || held == HeldItem::Sniper);
+            AnchorViewBody({ Lerp(-0.2f, -0.12f, aim), Lerp(restPose ? -0.4f : -0.27f, restPose ? -0.32f : -0.25f, aim), Lerp(restPose ? 0.12f : -0.06f, restPose ? 0.02f : -0.12f, aim) },
+                           Lerp(restPose ? -65.0f : -35.0f, restPose ? -45.0f : -10.0f, aim));
             // Бэлэн байрлал (LongGunHip) ба онилсон байрлал (гол төмөр хараан доор, 55%) хооронд: бариулын байрлал,
             // эргэлт, хэмжээг зөөлөн шилжүүлнэ. Гүйх, ухрах, цэнэглэх хөдөлгөөн бариулыг тойрно.
             const LongGunPose hip = LongGunHip(camera.fovy);
@@ -1815,7 +1837,10 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
             // доороос нь алгаа дээш харуулан барина (хажуугаас нь биш)
             const Vector3 rightWristDir = viewModelArms ? Vector3{ -0.6f, -0.9f, -0.4f } : Vector3{ -0.2f, -0.6f, -1.0f };
             const Vector3 underWrist = { 0.4f, -0.4f, -0.3f };
-            const Vector3 rw = DrawFistAt({ x, y - 0.16f, 0.3f }, { 0.0f, 1.0f, 0.3f }, rightWristDir, false);
+            // Загварын гартай автомат, дурантай буу: зөвхөн зүүн гар (алган дээрээ тавьсан); баруун гар дэлгэцэнд
+            // харагдахгүй (доош унжина)
+            const bool palmRest = viewModelArms && (held == HeldItem::Rifle || held == HeldItem::Sniper);
+            const Vector3 rw = palmRest ? Vector3{ x, y - 0.16f, 0.3f } : DrawFistAt({ x, y - 0.16f, 0.3f }, { 0.0f, 1.0f, 0.3f }, rightWristDir, false);
             Vector3 lw;
             if (held == HeldItem::Shotgun)
             {
@@ -1823,6 +1848,15 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
                 lw = DrawFistAt({ x, y - (viewModelArms ? 0.075f : 0.035f) + lowY, (viewModelArms ? 0.58f : 0.66f) - 0.09f * pump - 0.15f * reloading }, { 0.0f, 0.0f, 1.0f },
                                 Vector3Add(viewModelArms ? underWrist : Vector3{ 0.8f, -0.8f, -0.15f }, viewModelArms ? lowWrist : Vector3{ 0.0f, 0.0f, 0.0f }),
                                 true);
+            }
+            else if (palmRest)
+            {
+                // Алга урд модны (улаан модон хэсэг, z 0.8-0.9) доор, гол төмрөөс 7.5 см доош, дээш харна; хуруу бууны баруун
+                // тал руу, бага зэрэг урагш. Онилоход бага зэрэг хойш (хараанаас холдуулна).
+                const float restZ = 0.84f - 0.06f * aim - 0.24f * reloading;
+                // (онилоход хуруу гол төмрийн дагуу урагш, бага зэрэг ороосон: ардаас харахад бууны хажуугаар цухуйхгүй)
+                lw = DrawSupportPalmAt({ x, y - 0.075f + lowY, restZ }, { 0.0f, 1.0f, 0.0f }, Vector3Lerp({ -1.0f, 0.0f, 0.35f }, { -0.2f, 0.0f, 1.0f }, aim),
+                                       Lerp(22.0f, 45.0f, aim));
             }
             else if (held == HeldItem::Sniper)
             {
