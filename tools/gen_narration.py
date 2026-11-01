@@ -57,6 +57,15 @@ LINES = {
     # Зэрэг
     "rank_up": "Баяр хүргэе! Таны зэрэг ахилаа.",
 }
+# Дуудлагын туршилт (--sample-аар л: тоглоомд орохгүй). TTS "Нисдэг тэрэг"-ийг "Хэсдэг тэрэг" гэж уншдаг: аль бичлэг нь
+# зөв сонсогдохыг харьцуулна, сайныг нь дээрх heli_* мөрүүдэд хэрэглэнэ.
+SAMPLES = {
+    "heli_try_a": "Нийсдэг тэрэг оногдлоо! Унаж байна!",
+    "heli_try_b": "Вертолёт оногдлоо! Унаж байна!",
+    "heli_try_c": "Манай нисдэг тэрэг оногдлоо! Унаж байна!",
+    "heli_try_d": "Нис-дэг тэрэг оногдлоо! Унаж байна!",
+}
+
 for i, name in enumerate(MEMBERS):
     LINES[f"member_drives_{i}"] = f"{name} жолоодож байна, та буудна."
     LINES[f"you_drive_{i}"] = f"Та жолоодож байна, {name} буудна."
@@ -146,7 +155,7 @@ def main():
         todo = [(args.only, LINES[args.only])]
     out_folder = OUT
     if args.sample:
-        if args.sample not in LINES:
+        if args.sample not in LINES and args.sample not in SAMPLES:
             raise SystemExit("Ийм мэдэгдэл алга: " + args.sample)
         # Хоолой сонгох жишээ: тусдаа төлөв, тусдаа хавтас (тоглоомын бичлэгүүдийг хөндөхгүй)
         global STATE
@@ -154,7 +163,8 @@ def main():
         out_folder = os.path.join(ROOT, "build_web", "narration_samples")
         state = load_state()
         tag = args.voice[-8:]
-        todo = [] if os.path.exists(os.path.join(out_folder, f"{args.sample}_{tag}.wav")) else [(f"{args.sample}_{tag}", LINES[args.sample])]
+        text = LINES.get(args.sample) or SAMPLES[args.sample]
+        todo = [] if os.path.exists(os.path.join(out_folder, f"{args.sample}_{tag}.wav")) else [(f"{args.sample}_{tag}", text)]
     _, caps = request("GET", "/capabilities", key)
     multiplier = float(caps.get("credit_multiplier", 1) or 1)
     chars = sum(len(text) for _, text in todo)
