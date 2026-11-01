@@ -84,6 +84,7 @@ namespace
         std::vector<Mesh> lod;            // хөнгөн хувилбар (холын дүрд): ясны матрицыг үндсэн mesh-тэй хуваалцана
         std::vector<Mesh> lodFar;         // маш хөнгөн (манан дунд жижиг харагдах дүрд)
         std::vector<Mesh> arms;           // зөвхөн гарын гурвалжнууд (1-р этгээд): ясны матрицыг үндсэн mesh-тэй хуваалцана
+        std::vector<Mesh> glove;          // зүүн сарвуу (1-р этгээд): бээлийн өнгөөр тусад нь зурна (arms-аас хасагдсан)
         // Сарвууны (бугуй, хуруу) хэмжээ: загварын сарвуу гартаа харьцуулахад хэт том бол (Tripo-гийн булчинлаг дүр)
         // бугуйг тойрон жижигрүүлнэ. handBone: яс сарвууны (RightHand/LeftHand ба доорх) хэсэгт байгаа эсэх.
         float handScale = 1.0f;
@@ -637,33 +638,36 @@ namespace
 
     // Гурвалжны гурван орой бүгд гарын (мөрнөөс доош) ясанд голлон жинлэгдсэн бол үлдээж, шинэ mesh үүсгэнэ.
     // Ясны матрицыг үндсэн mesh-тэй хуваалцана (Skin нэг удаа бичнэ).
-    Mesh ExtractArms(const Model& model, const Mesh& source, int rightArm, int leftArm)
+    // glove >= 0: тэр ясны (зүүн сарвуу) доорх гурвалжнуудыг part 0-оос хасаж, part 1-д зөвхөн тэднийг авна.
+    Mesh ExtractArms(const Model& model, const Mesh& source, int rightArm, int leftArm, int glove = -1, int part = 0)
     {
         Mesh arms = {};
         if (!source.boneIds || !source.boneWeights || source.vertexCount <= 0) return arms;
-        auto armVertex = [&](int v) {
+        auto weightUnder = [&](int v, int root) {
             float weight = 0.0f;
             for (int k = 0; k < 4; ++k)
             {
                 const int bone = source.boneIds[v * 4 + k];
-                if (bone < model.boneCount && (UnderBone(model, bone, rightArm) || UnderBone(model, bone, leftArm)))
-                    weight += source.boneWeights[v * 4 + k];
+                if (root >= 0 && bone < model.boneCount && UnderBone(model, bone, root)) weight += source.boneWeights[v * 4 + k];
             }
-            return weight > 0.6f;
+            return weight;
         };
+        auto armVertex = [&](int v) { return weightUnder(v, rightArm) + weightUnder(v, leftArm) > 0.6f; };
+        auto gloveVertex = [&](int v) { return glove >= 0 && weightUnder(v, glove) > 0.5f; };
         std::vector<int> remap((size_t)source.vertexCount, -1);
         std::vector<int> used;
         std::vector<unsigned short> indices;
         for (int t = 0; t < source.triangleCount; ++t)
         {
             int corner[3];
-            bool keep = true;
+            bool keep = true, hand = glove >= 0;
             for (int k = 0; k < 3; ++k)
             {
                 corner[k] = source.indices ? source.indices[t * 3 + k] : t * 3 + k;
                 keep = keep && armVertex(corner[k]);
+                hand = hand && gloveVertex(corner[k]);
             }
-            if (!keep) continue;
+            if (!keep || (glove >= 0 && hand != (part == 1))) continue;
             for (int k = 0; k < 3; ++k)
             {
                 int& slot = remap[(size_t)corner[k]];
@@ -862,9 +866,11 @@ void LoadCharacterModels(Shader shader)
                 // (нүцгэн биетэй model2: шуу тохойн дээр тасарч, урт бууны зүүн гарт тасархай нь дэлгэцэнд харагддаг байв;
                 // ханцуйтай дүрүүд шуугаараа: бугалгын ханцуй, хуяг дэлгэцэнд хөвдөг)
                 const bool full = id == kCharacterFpArms || id == kCharacterModel2;
-                c.arms.push_back(ExtractArms(c.model, c.model.meshes[index], c.joints[full ? RightArm : RightForeArm],
-                                             c.joints[full ? LeftArm : LeftForeArm]));
-                armTriangles += c.arms.back().triangleCount;
+                // Зүүн сарвуу: бээлий (тусдаа mesh, бээлийн өнгөөр)
+                const int right = c.joints[full ? RightArm : RightForeArm], left = c.joints[full ? LeftArm : LeftForeArm];
+                c.arms.push_back(ExtractArms(c.model, c.model.meshes[index], right, left, c.joints[LeftHand], 0));
+                c.glove.push_back(ExtractArms(c.model, c.model.meshes[index], right, left, c.joints[LeftHand], 1));
+                armTriangles += c.arms.back().triangleCount + c.glove.back().triangleCount;
             }
             TraceLog(LOG_INFO, "CHARACTER: %s first-person arms %d triangles", kNames[id], armTriangles);
         }
@@ -901,7 +907,7 @@ void UnloadCharacterModels()
             c.material.maps[MATERIAL_MAP_ALBEDO].texture = {};
             UnloadMaterial(c.material);
             UnloadTexture(c.texture);
-            for (std::vector<Mesh>* list : { &c.lod, &c.lodFar, &c.arms })
+            for (std::vector<Mesh>* list : { &c.lod, &c.lodFar, &c.arms, &c.glove })
             {
                 for (Mesh& mesh : *list)
                 {
@@ -1064,6 +1070,26 @@ void DrawCharacterArms(int id, const Matrix& bodyToWorld, const ViewArmTarget ta
         FacePalm(c, side, direction(target.facing));
         CurlFingers(c, side, target.curl);
     }
+    // Зүүн гар бээлийтэй (зөвхөн эрхий хуруутай): долоовор, ядам, чигчий хурууг дунд хуруу руу 70% ойртуулж
+    // нэг хэсэг болгоно (хуруунуудын хоорондох зай алга)
+    if (targets[1].active)
+    {
+        const int middle = c.fingers[1][1][0];
+        for (int finger : { 0, 2, 3 })
+        {
+            const int base = c.fingers[1][finger][0];
+            if (base < 0 || middle < 0) continue;
+            Follow(c, middle);
+            Follow(c, base);
+            const Vector3 shift = Vector3Scale(Vector3Subtract(c.position[(size_t)middle], c.position[(size_t)base]), 0.7f);
+            for (int bone = 0; bone < c.model.boneCount; ++bone)
+            {
+                if (!UnderBone(c.model, bone, base)) continue;
+                Follow(c, bone);
+                c.position[(size_t)bone] = Vector3Add(c.position[(size_t)bone], shift);
+            }
+        }
+    }
     Skin(c);
 
     c.material.maps[MATERIAL_MAP_ALBEDO].color = tint;
@@ -1077,6 +1103,15 @@ void DrawCharacterArms(int id, const Matrix& bodyToWorld, const ViewArmTarget ta
         UploadBoneRows(c.material.shader, mesh.boneMatrices, mesh.boneCount);
         DrawMesh(mesh, c.material, MatrixIdentity());
     }
+    // Зүүн гарт зөвхөн эрхий хуруутай бээлий (бээлий): хар саарал
+    c.material.maps[MATERIAL_MAP_ALBEDO].color = { 52, 52, 50, 255 };
+    for (const Mesh& mesh : c.glove)
+    {
+        if (mesh.vertexCount <= 0) continue;
+        UploadBoneRows(c.material.shader, mesh.boneMatrices, mesh.boneCount);
+        DrawMesh(mesh, c.material, MatrixIdentity());
+    }
+    c.material.maps[MATERIAL_MAP_ALBEDO].color = tint;
     rlPopMatrix();
     rlEnableBackfaceCulling();
     armsPass = false;
