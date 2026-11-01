@@ -1593,7 +1593,7 @@ namespace
     // Сул гар (хутга, гранат барьж байхад зүүн гар): хуруунууд хагас нугалсан (5 см-ийн бөмбөрцөг атгаж буй мэт)
     // Загварын гар: зүүн гарын алгыг дээш харуулан буугаа алган дээрээ тавина (хуруу бага зэрэг нугалсан, бууг
     // атгахгүй). palm: алганы төв (одоогийн rlgl орон зайд), up: алганы харах зүг (буу руу), fingers: хурууны зүг.
-    Vector3 DrawSupportPalmAt(Vector3 palm, Vector3 up, Vector3 fingers, float curl)
+    Vector3 DrawSupportPalmAt(Vector3 palm, Vector3 up, Vector3 fingers, float curl, float thumb = -1.0f)
     {
         if (!viewModelArms) return palm;
         const Matrix toWorld = rlGetMatrixTransform();
@@ -1605,6 +1605,7 @@ namespace
         target.fingers = Vector3Normalize(Vector3Subtract(Vector3Transform(fingers, toWorld), origin));
         target.framed = false; // (сарвуу шууны шугамыг үргэлжлүүлнэ: бугуй нугарч "хугарсан" мэт харагдахгүй)
         target.curl = curl;
+        target.thumb = thumb;
         return palm;
     }
 
@@ -1864,7 +1865,7 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
                 const float tp[8] = { 0.0f, -0.065f, 0.88f, 0.0f, 1.0f, 0.4f, -1.0f, 0.3f };
                 viewLeftPole = { tp[5], tp[6], tp[7] };
                 lw = DrawSupportPalmAt({ x + tp[0], y + tp[1] + lowY, tp[2] - 0.06f * aim - 0.24f * reloading }, { tp[3], tp[4], 0.0f }, Vector3Lerp({ -1.0f, 0.0f, 0.35f }, { -0.2f, 0.0f, 1.0f }, aim),
-                                       Lerp(20.0f, 95.0f, aim));
+                                       Lerp(20.0f, 95.0f, aim), 110.0f);
             }
             else if (held == HeldItem::Sniper)
             {

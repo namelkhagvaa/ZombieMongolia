@@ -253,7 +253,7 @@ namespace
     }
 
     // Хуруунуудыг алга руу нугална: үе бүрийг degrees өнцгөөр (эрхий хурууг хагасаар).
-    void CurlFingers(Character& c, int side, float degrees)
+    void CurlFingers(Character& c, int side, float degrees, float thumbDegrees = -1.0f)
     {
         const int hand = c.joints[side == 0 ? RightHand : LeftHand];
         Follow(c, hand);
@@ -262,7 +262,8 @@ namespace
         {
             const Vector3 axis = Rotate(handRotation, c.fingerAxis[side][finger]);
             // (эрхий хуруу 1.3 дахин: 0.45 байхад нүцгэн гартай дүрийн эрхий хуруу бариулыг ороолгүй шулуун цухуйдаг байв)
-            const Quaternion bend = QuaternionFromAxisAngle(axis, (finger == 4 ? 1.3f : 1.0f) * degrees * DEG2RAD);
+            const float angle = finger != 4 ? degrees : thumbDegrees >= 0.0f ? thumbDegrees : 1.3f * degrees;
+            const Quaternion bend = QuaternionFromAxisAngle(axis, angle * DEG2RAD);
             for (int segment = 0; segment < 3; ++segment)
             {
                 const int bone = c.fingers[side][finger][segment];
@@ -825,7 +826,7 @@ void LoadCharacterModels(Shader shader)
             if (id == kCharacterFpArms)
             {
                 // "Realistic FPS Hands"-ийн гар туранхай (шуу ~6 см): 1-р этгээдэд бүдүүн, булчинлаг харагдуулна
-                c.girth = 1.6f;
+                c.girth = 1.8f;
                 c.handScale = 1.15f; // (CS-ийн бээлийтэй гар шиг бага зэрэг том сарвуу)
                 c.girthAxis.assign((size_t)c.model.boneCount, Vector3{ 0.0f, 0.0f, 0.0f });
                 for (int bone = 0; bone < c.model.boneCount; ++bone)
@@ -1063,12 +1064,12 @@ void DrawCharacterArms(int id, const Matrix& bodyToWorld, const ViewArmTarget ta
                 Follow(c, handBone);
                 c.rotation[(size_t)handBone] = orient[side]; // (анхныхаас шууд: эцгийн эргэлтээс үл хамаарна)
             }
-            CurlFingers(c, side, target.curl);
+            CurlFingers(c, side, target.curl, target.thumb);
             continue;
         }
         Reach(c, upper, lower, hand, point(target.palm), direction(target.pole), 0.08f / s);
         FacePalm(c, side, direction(target.facing));
-        CurlFingers(c, side, target.curl);
+        CurlFingers(c, side, target.curl, target.thumb);
     }
     // Зүүн гар бээлийтэй (зөвхөн эрхий хуруутай): долоовор, ядам, чигчий хурууг дунд хуруу руу 70% ойртуулж
     // нэг хэсэг болгоно (хуруунуудын хоорондох зай алга)
