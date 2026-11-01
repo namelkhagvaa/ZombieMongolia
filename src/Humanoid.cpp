@@ -1321,8 +1321,8 @@ namespace
     const Vector3 kLongGripLocal = { -0.24f, 0.14f, 0.3f }; // гар бариул (DrawGun-ийн орон зай: x, y - 0.16, 0.3)
     const float kLongBore = 0.16f;                          // бариулаас гол төмөр хүртэл
     const float kLongScale = 1.0f;                          // бодит хэмжээ
-    const Vector2 kLongBodyScreen = { 0.56f, -0.38f }, kLongMuzzleScreen = { 0.18f, -0.2f };
-    const float kLongBodyDepth = 0.4f;                     // их бие камераас урд (м)
+    const Vector2 kLongBodyScreen = { 0.56f, -0.5f }, kLongMuzzleScreen = { 0.17f, -0.17f };
+    const float kLongBodyDepth = 0.55f;                    // их бие камераас урд (м)
     const float kLongCant = -6.0f;                          // бууг бага зэрэг баруун тийш хазайлгана (градус)
 
     struct LongGunPose
@@ -1857,11 +1857,11 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
                 // тал руу, бага зэрэг урагш. Онилоход бага зэрэг хойш (хараанаас холдуулна).
                 const float restZ = 0.72f - 0.06f * aim - 0.24f * reloading;
                 // (онилоход хуруу гол төмрийн дагуу урагш, бага зэрэг ороосон: ардаас харахад бууны хажуугаар цухуйхгүй)
-                // Зүүн шуу дэлгэцийн зүүн доороос ташуу дээш (тохой зүүн доош). Алга урд модны (z 0.65-0.87, төв нь гол
+                // Зүүн шуу дэлгэцийн доороос бараг босоо дээш (тохой доош). Алга урд модны (z 0.65-0.87, төв нь гол
                 // төмрөөс 1 см доор, 9 см өргөн) ар хэсэгт, зүүн хажууд нь наалдаж, хуруу нь дээгүүр нь ороож атгана
                 // (гарын ар тал камер руу харна; эрхий хуруу доогуур нь ороогдохоор хуруу 95 градус нугарна);
                 // сарвуу шууны шугамаар (бугуй нугарахгүй)
-                const float tp[8] = { 0.055f, -0.03f, 0.68f, -1.0f, 0.5f, 0.6f, -1.0f, -0.2f };
+                const float tp[8] = { 0.055f, -0.03f, 0.66f, -1.0f, 0.5f, 0.3f, -1.0f, -0.3f };
                 viewLeftPole = { tp[5], tp[6], tp[7] };
                 lw = DrawSupportPalmAt({ x + tp[0], y + tp[1] + lowY, tp[2] - 0.06f * aim - 0.24f * reloading }, { tp[3], tp[4], 0.0f }, Vector3Lerp({ -1.0f, 0.0f, 0.35f }, { -0.2f, 0.0f, 1.0f }, aim),
                                        Lerp(95.0f, 45.0f, aim));
