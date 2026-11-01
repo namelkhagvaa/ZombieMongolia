@@ -1478,11 +1478,14 @@ namespace
 
     // Одоогийн rlgl орон зайд (зэвсгийн орон зай, масштабтайгаа) баруун мөрийг shoulder цэгт тавьж биеийг бэхэлнэ:
     // бие зэвсэгтэйгээ хамт масштаблагдаж, 3-р этгээдийнх шиг гар бариулд хүрнэ.
-    void AnchorViewBody(Vector3 shoulder)
+    // yaw: биеийг баруун мөрийг тойрон эргүүлнэ (градус; сөрөг бол зүүн мөр урагш: урт буу барих зогсолт)
+    void AnchorViewBody(Vector3 shoulder, float yaw = 0.0f)
     {
         if (!viewModelArms) return;
         const Vector3 body = CharacterRightShoulder(kCharacterFpArms);
-        viewBody = MatrixMultiply(MatrixTranslate(shoulder.x - body.x, shoulder.y - body.y, shoulder.z - body.z), rlGetMatrixTransform());
+        const Matrix local = MatrixMultiply(MatrixMultiply(MatrixTranslate(-body.x, -body.y, -body.z), MatrixRotateY(yaw * DEG2RAD)),
+                                            MatrixTranslate(shoulder.x, shoulder.y, shoulder.z));
+        viewBody = MatrixMultiply(local, rlGetMatrixTransform());
         viewBodySet = true;
     }
 
@@ -1507,8 +1510,10 @@ namespace
             const Vector3 origin = Vector3Transform({ 0.0f, 0.0f, 0.0f }, toWorld);
             ViewArmTarget& target = viewTargets[left ? 1 : 0];
             target.active = true;
-            target.palm = Vector3Transform(Vector3Subtract(center, Vector3Scale(x, rh + 0.016f)), toWorld);
+            target.palm = Vector3Transform(Vector3Subtract(center, Vector3Scale(x, rh + 0.012f)), toWorld);
             target.facing = Vector3Normalize(Vector3Subtract(Vector3Transform(x, toWorld), origin));
+            target.fingers = Vector3Normalize(Vector3Subtract(Vector3Transform(Vector3Negate(y), toWorld), origin));
+            target.framed = true;
             target.curl = ball ? 50.0f : 74.0f; // (гранат: хуруу хагас ороосон, гранат хурууны дээгүүр харагдана)
             return center;
         }
@@ -1542,6 +1547,8 @@ namespace
             target.active = true;
             target.palm = Vector3Transform(center, toWorld);
             target.facing = Vector3Normalize(Vector3Subtract(Vector3Transform(xAxis, toWorld), origin));
+            target.fingers = Vector3Normalize(Vector3Subtract(Vector3Transform(Vector3Negate(yAxis), toWorld), origin));
+            target.framed = true;
             target.curl = 28.0f;
             return center;
         }
@@ -1678,7 +1685,7 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
 
         // Баруун гар бариулд, зүүн гар урд модонд (бууны орон зайд, DrawGun-ийн хэмжээсээр)
         const float x = kHumanoidMuzzle.x, y = kHumanoidMuzzle.y - kHipHeight;
-        AnchorViewBody({ x - 0.02f, y + 0.02f, -0.17f }); // бөгс (z ≈ -0.05) мөрөнд
+        AnchorViewBody({ x - 0.02f, y + 0.02f, -0.17f }, -25.0f); // бөгс (z ≈ -0.05) мөрөнд; зүүн мөр урагш (25°)
         if (launcher)
         {
             const Vector3 rw = DrawFistAt({ x, y - 0.13f, 0.42f }, { 0.0f, 1.0f, 0.15f }, { -0.3f, -0.6f, -1.0f }, false);
@@ -1697,16 +1704,16 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
             if (held == HeldItem::Shotgun)
             {
                 const float pump = std::clamp(recoil * 1.6f, 0.0f, 1.0f); // буудсаны дараа гүйдэг гарыг татаж буцаана
-                lw = DrawFistAt({ x, y - 0.035f, 0.66f - 0.09f * pump - 0.15f * reloading }, { 0.0f, 0.0f, 1.0f }, { 0.8f, -0.8f, -0.15f },
+                lw = DrawFistAt({ x, y - 0.035f, (viewModelArms ? 0.58f : 0.66f) - 0.09f * pump - 0.15f * reloading }, { 0.0f, 0.0f, 1.0f }, { 0.8f, -0.8f, -0.15f },
                                 true);
             }
             else if (held == HeldItem::Sniper)
             {
-                lw = DrawFistAt({ x + 0.01f, y - 0.075f, 0.84f - 0.22f * reloading }, { 0.0f, 0.15f, 1.0f }, { 0.6f, -1.0f, -0.1f }, true);
+                lw = DrawFistAt({ x + 0.01f, y - 0.075f, (viewModelArms ? 0.66f : 0.84f) - 0.22f * reloading }, { 0.0f, 0.15f, 1.0f }, { 0.6f, -1.0f, -0.1f }, true);
             }
             else
             {
-                lw = DrawFistAt({ x + 0.005f, y - 0.085f, 0.78f - 0.24f * reloading }, { 0.0f, 0.0f, 1.0f }, { 0.85f, -0.75f, -0.2f },
+                lw = DrawFistAt({ x + 0.005f, y - 0.085f, (viewModelArms ? 0.62f : 0.78f) - 0.24f * reloading }, { 0.0f, 0.0f, 1.0f }, { 0.85f, -0.75f, -0.2f },
                                 true);
             }
             ViewForearm({ x - 0.16f, y - 0.46f, 0.0f }, rw);
@@ -1732,7 +1739,7 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
         DrawPistolUpright();
         // Баруун гар: бариулыг атгана (бариул дээш, бага зэрэг урагш хазайсан; бугуй доош хойш)
         rlPushMatrix();
-        if (viewModelArms) rlTranslatef(0.0f, -0.025f, -0.01f);
+
         const Vector3 rightWrist = DrawFistAt({ 0.0f, -0.035f, -0.012f }, { 0.0f, 1.0f, 0.5f }, { -0.15f, -0.7f, -1.0f }, false);
         // Зүүн гар: баруун гарыг доор, зүүн талаас нь тэвэрнэ (толин тусгал)
         const Vector3 leftWrist = DrawFistAt({ 0.03f, -0.058f, 0.006f }, { -0.15f, 1.0f, 0.55f }, { 0.9f, -0.6f, -0.7f }, true);
@@ -1802,7 +1809,7 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
                 rlPopMatrix();
             }
             // (загварын гар: гранатаас доош, хойш: гранат хурууны дээгүүр харагдана)
-            const Vector3 hold = viewModelArms ? Vector3{ 0.0f, -0.06f, -0.02f } : Vector3{ 0.0f, 0.0f, 0.0f };
+            const Vector3 hold = { 0.0f, 0.0f, 0.0f };
             const Vector3 wrist = DrawFistAt(hold, { 0.1f, 0.25f, 1.0f }, { -0.25f, -1.0f, -0.45f }, false, true);
             ViewForearm({ -0.1f, -0.36f, -0.22f }, wrist);
         }

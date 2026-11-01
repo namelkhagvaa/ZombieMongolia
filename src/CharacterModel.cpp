@@ -907,6 +907,60 @@ void DrawCharacterArms(int id, const Matrix& bodyToWorld, const ViewArmTarget ta
     // Анхны (bind) байрлалаас эхэлнэ: бие хөдөлгөөнгүй, зөвхөн гар IK-аар
     std::fill(c.solved.begin(), c.solved.end(), 0);
     for (int bone = 0; bone < c.model.boneCount; ++bone) Follow(c, bone);
+
+    // Бүрэн чиглэлтэй зорилт (framed): сарвууг яг тэр чиглэлд эргүүлж, алганы төвөөс бугуйн цэгийг тооцно
+    Quaternion orient[2] = { QuaternionIdentity(), QuaternionIdentity() };
+    Vector3 wristTarget[2] = {}, palmFacing[2] = {};
+    bool framed[2] = { false, false };
+    Vector3 shift = { 0.0f, 0.0f, 0.0f };
+    for (int side = 0; side < 2; ++side)
+    {
+        const ViewArmTarget& target = targets[side];
+        const int middle = c.fingers[side][1][0];
+        if (!target.active || !target.framed || middle < 0) continue;
+        framed[side] = true;
+        const Joint upper = side == 0 ? RightArm : LeftArm, lower = side == 0 ? RightForeArm : LeftForeArm;
+        const Joint hand = side == 0 ? RightHand : LeftHand;
+        // Сарвууны анхны чиглэл: бугуйнаас дунд хурууны үе мөч рүү (f), алганы зүг (n)
+        const Vector3 wrist = c.bind[(size_t)c.joints[hand]];
+        const Vector3 knuckle = c.bind[(size_t)middle];
+        const Vector3 f = Vector3Normalize(Vector3Subtract(knuckle, wrist));
+        Vector3 n = Vector3Subtract(c.palmNormal[side], Vector3Scale(f, Vector3DotProduct(c.palmNormal[side], f)));
+        n = Vector3Normalize(n);
+        // Хүссэн чиглэл (загварын орон зайд)
+        const Vector3 tf = direction(target.fingers);
+        Vector3 tn = direction(target.facing);
+        tn = Vector3Subtract(tn, Vector3Scale(tf, Vector3DotProduct(tn, tf)));
+        tn = Vector3Length(tn) > 0.01f ? Vector3Normalize(tn) : n;
+        palmFacing[side] = tn;
+        // (f, n, f x n) -> (tf, tn, tf x tn) эргэлт
+        const Vector3 b = Vector3CrossProduct(f, n), tb = Vector3CrossProduct(tf, tn);
+        Matrix from = MatrixIdentity(), to = MatrixIdentity();
+        from.m0 = f.x; from.m1 = f.y; from.m2 = f.z; from.m4 = n.x; from.m5 = n.y; from.m6 = n.z; from.m8 = b.x; from.m9 = b.y; from.m10 = b.z;
+        to.m0 = tf.x; to.m1 = tf.y; to.m2 = tf.z; to.m4 = tn.x; to.m5 = tn.y; to.m6 = tn.z; to.m8 = tb.x; to.m9 = tb.y; to.m10 = tb.z;
+        orient[side] = QuaternionNormalize(QuaternionFromMatrix(MatrixMultiply(MatrixTranspose(from), to)));
+        // Алганы төв: бугуйнаас үе мөч хүртэлх замын дунд, алганы гадаргуу руу (зузааны тал) шилжсэн
+        const Vector3 palmLocal = Vector3Add(Vector3Scale(Vector3Subtract(knuckle, wrist), 0.5f * c.handScale), Vector3Scale(n, 0.014f / s));
+        wristTarget[side] = Vector3Subtract(point(target.palm), Rotate(orient[side], palmLocal));
+        // Гар хүрэхгүй бол (автоматын урд мод) бүх биеийг (дэлгэцийн гадна) зорилт руу шилжүүлнэ: гар агаарт
+        // унжихгүй, мөрний хувцас сунахгүй
+        const Vector3 shoulder = c.position[(size_t)c.joints[upper]];
+        const float reach = (BoneLength(c, upper, lower) + BoneLength(c, lower, hand)) * 0.96f;
+        const Vector3 toWrist = Vector3Subtract(wristTarget[side], shoulder);
+        const float distance = Vector3Length(toWrist);
+        if (distance > reach)
+        {
+            const Vector3 need = Vector3Scale(toWrist, (distance - reach) / distance);
+            if (Vector3Length(need) > Vector3Length(shift)) shift = need;
+        }
+    }
+    if (Vector3Length(shift) > 0.0f)
+    {
+        // (дээд тал нь 8 см: илүү бол мөрний ханцуйн нүх дэлгэцэнд орно)
+        const float limit = 0.08f / s;
+        if (Vector3Length(shift) > limit) shift = Vector3Scale(Vector3Normalize(shift), limit);
+        for (Vector3& position : c.position) position = Vector3Add(position, shift);
+    }
     Unsolve(c, RightArm);
     Unsolve(c, LeftArm);
     for (int side = 0; side < 2; ++side)
@@ -920,6 +974,19 @@ void DrawCharacterArms(int id, const Matrix& bodyToWorld, const ViewArmTarget ta
             // Хэрэглэхгүй гар: доош унжина (дэлгэцэнд харагдахгүй)
             Aim(c, upper, lower, { side == 0 ? -0.15f : 0.15f, -1.0f, 0.05f });
             Aim(c, lower, hand, { 0.0f, -1.0f, 0.15f });
+            continue;
+        }
+        if (framed[side])
+        {
+            const Vector3 tn = palmFacing[side];
+            Reach(c, upper, lower, hand, wristTarget[side], direction(target.pole), 0.0f);
+            FacePalm(c, side, tn); // (шууг сарвуутай нь зэрэг эргүүлнэ: бугуй мушгирахгүй)
+            {
+                const int handBone = c.joints[hand];
+                Follow(c, handBone);
+                c.rotation[(size_t)handBone] = orient[side]; // (анхныхаас шууд: эцгийн эргэлтээс үл хамаарна)
+            }
+            CurlFingers(c, side, target.curl);
             continue;
         }
         Reach(c, upper, lower, hand, point(target.palm), direction(target.pole), 0.08f / s);
