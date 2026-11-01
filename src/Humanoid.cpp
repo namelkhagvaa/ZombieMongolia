@@ -1509,7 +1509,7 @@ namespace
             target.active = true;
             target.palm = Vector3Transform(Vector3Subtract(center, Vector3Scale(x, rh + 0.016f)), toWorld);
             target.facing = Vector3Normalize(Vector3Subtract(Vector3Transform(x, toWorld), origin));
-            target.curl = ball ? 46.0f : 74.0f;
+            target.curl = ball ? 50.0f : 74.0f; // (гранат: хуруу хагас ороосон, гранат хурууны дээгүүр харагдана)
             return center;
         }
         // (толин тусгал гурвалжны эргэлтийн чиглэлийг урвуулна: арын нүүр хасалтыг түр унтраана)
@@ -1529,7 +1529,22 @@ namespace
     // Сул гар (хутга, гранат барьж байхад зүүн гар): хуруунууд хагас нугалсан (5 см-ийн бөмбөрцөг атгаж буй мэт)
     Vector3 DrawRelaxedHandAt(Vector3 center, Vector3 axis, Vector3 wristDir, bool left)
     {
-        if (viewModelArms) return center;
+        if (viewModelArms)
+        {
+            // Загварын гар: зүүн гарыг энэ цэгт сул (хуруу бага зэрэг нугалсан) байрлуулна
+            const Vector3 zAxis = Vector3Normalize(axis);
+            const Vector3 yAxis = Vector3Normalize(Vector3Subtract(wristDir, Vector3Scale(zAxis, Vector3DotProduct(wristDir, zAxis))));
+            Vector3 xAxis = Vector3CrossProduct(yAxis, zAxis);
+            if (!left) xAxis = Vector3Negate(xAxis);
+            const Matrix toWorld = rlGetMatrixTransform();
+            const Vector3 origin = Vector3Transform({ 0.0f, 0.0f, 0.0f }, toWorld);
+            ViewArmTarget& target = viewTargets[left ? 1 : 0];
+            target.active = true;
+            target.palm = Vector3Transform(center, toWorld);
+            target.facing = Vector3Normalize(Vector3Subtract(Vector3Transform(xAxis, toWorld), origin));
+            target.curl = 28.0f;
+            return center;
+        }
         static const MeshBuilder relaxed = BuildFist(0.05f);
         const Vector3 z = Vector3Normalize(axis);
         const Vector3 y = Vector3Normalize(Vector3Subtract(wristDir, Vector3Scale(z, Vector3DotProduct(wristDir, z))));
@@ -1701,8 +1716,11 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
     else if (held == HeldItem::Pistol)
     {
         // Гар буу: хоёр гараар урагш сунган барина (CS маягаар камерт ойр: гар том харагдана)
-        // Буудахад ам нь дээш үсэрч гар хойш түлхэгдэнэ; алхахад, тайван үед бага зэрэг хазайна
-        const float px = -0.08f, py = -0.14f, pz = 0.32f, ps = 0.8f;
+        // Буудахад ам нь дээш үсэрч гар хойш түлхэгдэнэ; алхахад, тайван үед бага зэрэг хазайна.
+        // Загварын (бодит хэмжээтэй) гар кодоор угсарсан нударгаас том: буу арай хол, гар нь бууны доор (гулсуур
+        // нь гарын дээгүүр харагдана).
+        const float px = viewModelArms ? -0.1f : -0.08f, py = viewModelArms ? -0.18f : -0.14f, pz = viewModelArms ? 0.55f : 0.32f,
+                    ps = viewModelArms ? 0.85f : 0.8f;
         rlTranslatef(Lerp(px, 0.0f, aim), Lerp(py, -0.128f, aim) + 0.03f * recoil - 0.07f * sprint, Lerp(pz, 0.5f, aim) - 0.08f * recoil);
         rlRotatef(-22.0f * sprint, 1.0f, 0.0f, 0.0f);
         rlRotatef(-24.0f * recoil - 30.0f * reloading, 1.0f, 0.0f, 0.0f);
@@ -1713,9 +1731,12 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
         AnchorViewBody({ -0.17f, -0.3f, -0.5f });
         DrawPistolUpright();
         // Баруун гар: бариулыг атгана (бариул дээш, бага зэрэг урагш хазайсан; бугуй доош хойш)
+        rlPushMatrix();
+        if (viewModelArms) rlTranslatef(0.0f, -0.07f, -0.03f);
         const Vector3 rightWrist = DrawFistAt({ 0.0f, -0.035f, -0.012f }, { 0.0f, 1.0f, 0.5f }, { -0.15f, -0.7f, -1.0f }, false);
         // Зүүн гар: баруун гарыг доор, зүүн талаас нь тэвэрнэ (толин тусгал)
         const Vector3 leftWrist = DrawFistAt({ 0.03f, -0.058f, 0.006f }, { -0.15f, 1.0f, 0.55f }, { 0.9f, -0.6f, -0.7f }, true);
+        rlPopMatrix();
         // Шуунууд: бугуйнаас дэлгэцийн доод буланд (камерын ойрын хавтгайгаас цааш)
         ViewForearm({ -0.1f, -0.52f, -0.36f }, rightWrist);
         ViewForearm({ 0.14f, -0.52f, -0.34f }, leftWrist);
@@ -1732,11 +1753,14 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
         // CS маягаар камерт ойр, дэлгэцийн баруун доор: хутганы ир урагш, зүүн тийш хөндлөн (бүтнээрээ харагдана),
         // гранат босоо (дээд таг, хөшүүрэг нь харагдана). Өмнө нь хол, жижиг байж хутганы зөвхөн бариулын үзүүр харагддаг байв.
         const bool knife = held == HeldItem::Knife;
-        const float bx = -0.12f, by = knife ? -0.14f : -0.13f, bz = 0.26f, bs = knife ? 0.9f : 1.0f;
+        const bool grenadeModel = !knife && viewModelArms; // (бодит хэмжээтэй гар: гранат бүтэн далдлагдахгүй)
+        const float bx = -0.12f, by = knife ? -0.14f : grenadeModel ? -0.16f : -0.13f, bz = grenadeModel ? 0.32f : 0.26f,
+                    bs = knife ? 0.9f : 1.0f;
         const float byaw = knife ? 60.0f : -10.0f, bpitch = knife ? -30.0f : -50.0f, broll = knife ? -45.0f : 40.0f;
         {
-            // Зүүн гар: сул, хагас нээлттэй, дэлгэцийн зүүн доод хэсэгт (шидэх, хатгахад бага зэрэг хойш)
-            const float lx = 0.14f, ly = -0.18f, lz = 0.3f;
+            // Зүүн гар: сул, хагас нээлттэй, дэлгэцийн зүүн доод хэсэгт (шидэх, хатгахад бага зэрэг хойш).
+            // Загварын гар том тул арай доош, зүүн тийш (харааг халхлахгүй).
+            const float lx = viewModelArms ? 0.2f : 0.14f, ly = viewModelArms ? -0.24f : -0.18f, lz = viewModelArms ? 0.32f : 0.3f;
             const Vector3 lw = DrawRelaxedHandAt({ lx, ly - 0.02f * thrust, lz }, { -0.35f, 0.25f, 1.0f }, { 0.35f, -1.0f, -0.35f }, true);
             ViewForearm({ lx + 0.08f, ly - 0.3f, lz - 0.28f }, lw);
         }
@@ -1777,7 +1801,9 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
                 ViewGrenade().DrawImmediate();
                 rlPopMatrix();
             }
-            const Vector3 wrist = DrawFistAt({ 0.0f, 0.0f, 0.0f }, { 0.1f, 0.25f, 1.0f }, { -0.25f, -1.0f, -0.45f }, false, true);
+            // (загварын гар: гранатаас доош, хойш: гранат хурууны дээгүүр харагдана)
+            const Vector3 hold = viewModelArms ? Vector3{ 0.0f, -0.06f, -0.02f } : Vector3{ 0.0f, 0.0f, 0.0f };
+            const Vector3 wrist = DrawFistAt(hold, { 0.1f, 0.25f, 1.0f }, { -0.25f, -1.0f, -0.45f }, false, true);
             ViewForearm({ -0.1f, -0.36f, -0.22f }, wrist);
         }
     }
