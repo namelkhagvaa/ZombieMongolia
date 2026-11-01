@@ -88,6 +88,10 @@ namespace
         // бугуйг тойрон жижигрүүлнэ. handBone: яс сарвууны (RightHand/LeftHand ба доорх) хэсэгт байгаа эсэх.
         float handScale = 1.0f;
         std::vector<char> handBone;
+        // Гарын зузаан (1-р этгээд): бугалга, шууг ясны тэнхлэгт перпендикуляр томруулна (урт нь хэвээр).
+        // girthAxis: ясны анхны чиглэл (дараагийн үе рүү); тэг бол тэр ясанд хэрэглэхгүй.
+        float girth = 1.0f;
+        std::vector<Vector3> girthAxis;
     };
 
     Character characters[kCharacterCount];
@@ -541,13 +545,33 @@ namespace
             // v' = position + R * s * (v - bind)   (s: сарвууны хэмжээ, бусад ясанд 1)
             const Quaternion rotation = c.rotation[(size_t)bone];
             const float s = armsPass && !c.handBone.empty() && c.handBone[(size_t)bone] ? c.handScale : 1.0f;
-            const Vector3 offset = Vector3Subtract(c.position[(size_t)bone], Vector3Scale(Rotate(rotation, c.bind[(size_t)bone]), s));
+            Vector3 offset = Vector3Subtract(c.position[(size_t)bone], Vector3Scale(Rotate(rotation, c.bind[(size_t)bone]), s));
             Matrix matrix = QuaternionToMatrix(rotation);
             if (s != 1.0f)
             {
                 matrix.m0 *= s; matrix.m1 *= s; matrix.m2 *= s;
                 matrix.m4 *= s; matrix.m5 *= s; matrix.m6 *= s;
                 matrix.m8 *= s; matrix.m9 *= s; matrix.m10 *= s;
+            }
+            const Vector3 axis = armsPass && c.girth != 1.0f && (size_t)bone < c.girthAxis.size() ? c.girthAxis[(size_t)bone] : Vector3{ 0.0f, 0.0f, 0.0f };
+            if (Vector3LengthSqr(axis) > 0.5f)
+            {
+                // v' = position + R * G * (v - bind), G = I + (k - 1)(I - a aᵀ): ясны тэнхлэгт перпендикуляр томруулна
+                const float k = c.girth - 1.0f;
+                Vector3 column[3];
+                for (int i = 0; i < 3; ++i)
+                {
+                    const Vector3 e = { i == 0 ? 1.0f : 0.0f, i == 1 ? 1.0f : 0.0f, i == 2 ? 1.0f : 0.0f };
+                    const float along = i == 0 ? axis.x : i == 1 ? axis.y : axis.z;
+                    column[i] = Rotate(rotation, Vector3Add(e, Vector3Scale(Vector3Subtract(e, Vector3Scale(axis, along)), k)));
+                }
+                matrix.m0 = column[0].x; matrix.m1 = column[0].y; matrix.m2 = column[0].z;
+                matrix.m4 = column[1].x; matrix.m5 = column[1].y; matrix.m6 = column[1].z;
+                matrix.m8 = column[2].x; matrix.m9 = column[2].y; matrix.m10 = column[2].z;
+                const Vector3 b = c.bind[(size_t)bone];
+                offset = Vector3Subtract(c.position[(size_t)bone], { matrix.m0 * b.x + matrix.m4 * b.y + matrix.m8 * b.z,
+                                                                     matrix.m1 * b.x + matrix.m5 * b.y + matrix.m9 * b.z,
+                                                                     matrix.m2 * b.x + matrix.m6 * b.y + matrix.m10 * b.z });
             }
             matrix.m12 = offset.x;
             matrix.m13 = offset.y;
@@ -793,6 +817,28 @@ void LoadCharacterModels(Shader shader)
                     }
                 }
                 TraceLog(LOG_INFO, "CHARACTER: %s hand %.0f%% of arm length: scaled by %.2f", kNames[id], 100.0f * hand / arm, c.handScale);
+            }
+            if (id == kCharacterFpArms)
+            {
+                // "Realistic FPS Hands"-ийн гар туранхай (шуу ~6 см): 1-р этгээдэд бүдүүн, булчинлаг харагдуулна
+                c.girth = 1.4f;
+                c.handScale = 1.15f; // (CS-ийн бээлийтэй гар шиг бага зэрэг том сарвуу)
+                c.girthAxis.assign((size_t)c.model.boneCount, Vector3{ 0.0f, 0.0f, 0.0f });
+                for (int bone = 0; bone < c.model.boneCount; ++bone)
+                {
+                    std::string name = c.model.bones[bone].name;
+                    const size_t colon = name.rfind(':');
+                    if (colon != std::string::npos) name = name.substr(colon + 1);
+                    const bool limb = name == "RightArm" || name == "LeftArm" || name.rfind("RightForeArm", 0) == 0 || name.rfind("LeftForeArm", 0) == 0;
+                    if (!limb) continue;
+                    for (int child = 0; child < c.model.boneCount; ++child)
+                    {
+                        if (c.model.bones[child].parent != bone) continue;
+                        const Vector3 d = Vector3Subtract(c.bind[(size_t)child], c.bind[(size_t)bone]);
+                        if (Vector3Length(d) > 1e-5f) c.girthAxis[(size_t)bone] = Vector3Normalize(d);
+                        break;
+                    }
+                }
             }
         }
         // Холын дүрд: ~4.5 см нүдээр бүлэглэсэн хөнгөн хувилбар

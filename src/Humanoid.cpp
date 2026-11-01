@@ -1321,8 +1321,8 @@ namespace
     const Vector3 kLongGripLocal = { -0.24f, 0.14f, 0.3f }; // гар бариул (DrawGun-ийн орон зай: x, y - 0.16, 0.3)
     const float kLongBore = 0.16f;                          // бариулаас гол төмөр хүртэл
     const float kLongScale = 1.0f;                          // бодит хэмжээ
-    const Vector2 kLongBodyScreen = { 0.56f, -0.42f }, kLongMuzzleScreen = { 0.13f, -0.11f };
-    const float kLongBodyDepth = 0.38f;                     // их бие камераас урд (м)
+    const Vector2 kLongBodyScreen = { 0.46f, -0.52f }, kLongMuzzleScreen = { -0.04f, -0.04f };
+    const float kLongBodyDepth = 0.28f;                     // их бие камераас урд (м)
     const float kLongCant = -6.0f;                          // бууг бага зэрэг баруун тийш хазайлгана (градус)
 
     struct LongGunPose
@@ -1853,10 +1853,10 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
             {
                 // Алга урд модны (улаан модон хэсэг, z 0.8-0.9) доор, гол төмрөөс 7.5 см доош, дээш харна; хуруу бууны баруун
                 // тал руу, бага зэрэг урагш. Онилоход бага зэрэг хойш (хараанаас холдуулна).
-                const float restZ = 0.84f - 0.06f * aim - 0.24f * reloading;
+                const float restZ = 0.72f - 0.06f * aim - 0.24f * reloading;
                 // (онилоход хуруу гол төмрийн дагуу урагш, бага зэрэг ороосон: ардаас харахад бууны хажуугаар цухуйхгүй)
-                lw = DrawSupportPalmAt({ x, y - 0.075f + lowY, restZ }, { 0.0f, 1.0f, 0.0f }, Vector3Lerp({ -1.0f, 0.0f, 0.35f }, { -0.2f, 0.0f, 1.0f }, aim),
-                                       Lerp(22.0f, 45.0f, aim));
+                lw = DrawSupportPalmAt({ x, y - 0.07f + lowY, restZ }, { -0.6f, 0.8f, 0.0f }, Vector3Lerp({ -1.0f, 0.0f, 0.35f }, { -0.2f, 0.0f, 1.0f }, aim),
+                                       Lerp(60.0f, 45.0f, aim));
             }
             else if (held == HeldItem::Sniper)
             {
