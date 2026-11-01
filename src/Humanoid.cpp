@@ -1862,10 +1862,10 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
                 // төмрөөс 1 см доор, 9 см өргөн) ар хэсэгт, зүүн хажууд нь наалдаж, хуруу нь дээгүүр нь ороож атгана
                 // (гарын ар тал камер руу харна; эрхий хуруу доогуур нь ороогдохоор хуруу 95 градус нугарна);
                 // сарвуу шууны шугамаар (бугуй нугарахгүй)
-                const float tp[8] = { 0.0f, -0.065f, 0.88f, 0.0f, 1.0f, 0.4f, -1.0f, 0.3f };
+                const float tp[8] = { 0.04f, -0.05f, 0.76f, -1.0f, 0.4f, 1.0f, -0.6f, -0.2f };
                 viewLeftPole = { tp[5], tp[6], tp[7] };
                 lw = DrawSupportPalmAt({ x + tp[0], y + tp[1] + lowY, tp[2] - 0.06f * aim - 0.24f * reloading }, { tp[3], tp[4], 0.0f }, Vector3Lerp({ -1.0f, 0.0f, 0.35f }, { -0.2f, 0.0f, 1.0f }, aim),
-                                       Lerp(20.0f, 95.0f, aim), Lerp(30.0f, 95.0f, aim)); // (эрхий хуруу бууны наад талаар дээш)
+                                       Lerp(60.0f, 95.0f, aim), Lerp(0.0f, 95.0f, aim)); // (эрхий хуруу шулуун, бууны наад талаар урагш)
             }
             else if (held == HeldItem::Sniper)
             {

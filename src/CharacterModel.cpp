@@ -1104,14 +1104,18 @@ void DrawCharacterArms(int id, const Matrix& bodyToWorld, const ViewArmTarget ta
         UploadBoneRows(c.material.shader, mesh.boneMatrices, mesh.boneCount);
         DrawMesh(mesh, c.material, MatrixIdentity());
     }
-    // Зүүн гарт зөвхөн эрхий хуруутай бээлий (бээлий): хар саарал
-    c.material.maps[MATERIAL_MAP_ALBEDO].color = { 52, 52, 50, 255 };
+    // Зүүн гарт зөвхөн эрхий хуруутай бээлий: шаргал хүрэн (арьсны текстурыг үржүүлнэ)
+    // (арьсны текстургүй: цагаан текстур дээр шаргал хүрэн өнгө, гэрлээр сүүдэрлэнэ)
+    const unsigned int skinTexture = c.material.maps[MATERIAL_MAP_ALBEDO].texture.id;
+    c.material.maps[MATERIAL_MAP_ALBEDO].texture.id = rlGetTextureIdDefault();
+    c.material.maps[MATERIAL_MAP_ALBEDO].color = { 132, 112, 80, 255 }; // (CS-ийн тактикийн бээлий шиг шаргал хүрэн; арьснаас ялгарахаар бараан)
     for (const Mesh& mesh : c.glove)
     {
         if (mesh.vertexCount <= 0) continue;
         UploadBoneRows(c.material.shader, mesh.boneMatrices, mesh.boneCount);
         DrawMesh(mesh, c.material, MatrixIdentity());
     }
+    c.material.maps[MATERIAL_MAP_ALBEDO].texture.id = skinTexture;
     c.material.maps[MATERIAL_MAP_ALBEDO].color = tint;
     rlPopMatrix();
     rlEnableBackfaceCulling();
