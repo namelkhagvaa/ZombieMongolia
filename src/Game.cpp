@@ -2940,7 +2940,7 @@ void Game::UpdateSounds(float dt, float throttle)
 
     // Хөдөлгүүр: 0 = тоглогчийн унаа, 1 = ойрын бусад хөдөлж буй (багийн) унаа
     auto engineOf = [](const Vehicle& v) {
-        if (IsHelicopter(v.type)) return !v.wrecked && v.rotorSpeed > 0.05f ? EngineSound::Truck : EngineSound::Off; // сэнс
+        if (IsHelicopter(v.type)) return !v.wrecked && v.rotorSpeed > 0.05f ? EngineSound::Rotor : EngineSound::Off; // сэнс
         if (v.wrecked || SpecFor(v.type).fuelRange <= 0.0f || v.fuel <= 0.0f) return EngineSound::Off;
         switch (v.type)
         {
@@ -2963,7 +2963,8 @@ void Game::UpdateSounds(float dt, float throttle)
     {
         const Vehicle& v = garage.At(i);
         // Тоглогчийн унаа ба араас дагаж яваа багийн унаа: давхар хөдөлгүүрийн дуу гаргахгүй
-        if (i == garage.Driven() || i == garage.Escort() || std::fabs(v.speed) < 0.5f || engineOf(v) == EngineSound::Off) continue;
+        // (нисдэг тэрэг агаарт зогсож байхад ч сэнс нь сонсогдоно)
+        if (i == garage.Driven() || i == garage.Escort() || (std::fabs(v.speed) < 0.5f && !IsHelicopter(v.type)) || engineOf(v) == EngineSound::Off) continue;
         const float d = Vector3Distance(v.position, view.position);
         if (d < nearestDistance) { nearestDistance = d; nearest = i; }
     }

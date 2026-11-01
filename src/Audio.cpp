@@ -448,7 +448,48 @@ namespace
         int playing = -1;       // одоо тоглож буй давталт
         OnePole low, sub;
         Noise noise{ 99u };
+        // нисдэг тэрэг
+        float tail = 0.0f, whine = 0.0f;
+        OnePole slapLow, slapHigh, wash, washHigh, thump;
     };
+
+    // Нисдэг тэрэг (Ми-8): машины дуунаас огт өөр. Гол сэнсний ир бүр агаарыг цохих "пах пах" давталт
+    // (5 ир × ~3.2 эрг/с ≈ 16 Гц хүртэл: эхлэхэд удаан, дараа нь нягт), сүүлний сэнсний дүнгэнээ,
+    // турбины исгэрээ, сэнсний доорх салхины шуугиан.
+    void SynthesizeRotor(Engine& e, float* out, unsigned int frames)
+    {
+        const float targetRpm = e.rpm.load(), targetThrottle = e.throttle.load(), targetGain = e.gain.load();
+        for (unsigned int i = 0; i < frames; ++i)
+        {
+            e.curRpm += (targetRpm - e.curRpm) * 0.00015f; // сэнс аажим эргэлтээ авна
+            e.curThrottle += (targetThrottle - e.curThrottle) * 0.0008f;
+            e.curGain += (targetGain - e.curGain) * 0.0012f;
+            const float r = e.curRpm;
+            // Гол сэнс: ир өнгөрөх давтамж
+            e.phase += (2.5f + 13.5f * r) / (float)kRate;
+            if (e.phase > 1000.0f) e.phase -= 1000.0f;
+            const float frac = e.phase - std::floor(e.phase);
+            const float x = e.noise.Next();
+            const float env = std::exp(-frac * (7.0f + 3.0f * e.curThrottle));
+            // цохилт: дунд давтамжийн шуугиан (ирний үзүүрийн "пах") + бага давтамжийн түлхэлт
+            const float band = e.slapLow.Low(x, 1400.0f) - e.slapHigh.Low(x, 180.0f);
+            const float slap = band * env * (1.6f + 0.8f * e.curThrottle);
+            const float body = e.thump.Low(std::sin(kTau * frac * 1.0f) * env, 120.0f) * 1.4f;
+            // Сүүлний сэнс: гол сэнснээс ~5 дахин хурдан, жижиг дүнгэнээ
+            e.tail += (12.0f + 60.0f * r) / (float)kRate;
+            if (e.tail > 1000.0f) e.tail -= 1000.0f;
+            const float tf = e.tail - std::floor(e.tail);
+            const float tailBuzz = std::exp(-tf * 9.0f) * std::sin(kTau * tf * 3.0f) * 0.12f;
+            // Турбин: эргэлтээр өсөх исгэрээ
+            e.whine += (380.0f + 820.0f * r) / (float)kRate;
+            if (e.whine > 1000.0f) e.whine -= 1000.0f;
+            const float turbine = (std::sin(kTau * e.whine) + 0.4f * std::sin(kTau * e.whine * 2.03f)) * (0.025f + 0.04f * r);
+            // Салхины шуугиан: сэнсний цохилтоор бага зэрэг хэлбэлзэнэ
+            const float air = (e.wash.Low(x, 500.0f) - e.washHigh.Low(x, 60.0f)) * (0.35f + 0.4f * r) * (0.75f + 0.25f * env);
+            const float v = (slap + body) * (0.4f + 0.6f * r) + tailBuzz * r + turbine + air;
+            out[i] = std::tanh(v * 1.3f) * e.curGain;
+        }
+    }
     Engine engines[2];
 
     // Бичлэгтэй хөдөлгүүрийн давталт (залгаасыг нь crossfade хийсэн, урсгалын давтамжаар): 0 = намхан, 1 = өндөр
@@ -458,6 +499,16 @@ namespace
     void Synthesize(Engine& e, float* out, unsigned int frames)
     {
         const int kind = e.kind.load();
+        if (kind == (int)EngineSound::Rotor || (kind < 0 && e.playing == 100))
+        {
+            // (нисдэг тэргийн дуу унтрахад мөн энэ замаар намсна: огцом тасрахгүй)
+            if (kind < 0) e.gain.store(0.0f);
+            e.playing = 100;
+            SynthesizeRotor(e, out, frames);
+            if (kind < 0 && e.curGain < 0.001f) e.playing = -1;
+            return;
+        }
+        if (e.playing == 100) { e.playing = -1; e.curGain = 0.0f; } // (нисдэг тэрэгнээс машин руу шилжсэн)
         const float targetRpm = e.rpm.load(), targetThrottle = e.throttle.load(), targetGain = kind < 0 ? 0.0f : e.gain.load();
         if (engineRecorded)
         {
@@ -852,12 +903,14 @@ namespace Audio
     {
         if (!ready || index < 0 || index > 1) return;
         float pan = 0.5f;
-        const float gain = kind == EngineSound::Off ? 0.0f : Attenuation(position, index == 0 ? 30.0f : 12.0f, 90.0f, pan);
+        const bool rotor = kind == EngineSound::Rotor;
+        // (нисдэг тэрэг хол сонсогдоно)
+        const float gain = kind == EngineSound::Off ? 0.0f : Attenuation(position, rotor ? 40.0f : index == 0 ? 30.0f : 12.0f, rotor ? 300.0f : 90.0f, pan);
         Engine& e = engines[index];
         e.kind.store((int)kind);
         e.rpm.store(std::clamp(rpm, 0.0f, 1.0f));
         e.throttle.store(std::clamp(throttle, 0.0f, 1.0f));
-        e.gain.store(gain * (engineRecorded ? (kind == EngineSound::Truck ? 0.6f : 0.48f) : (kind == EngineSound::Truck ? 0.75f : 0.6f)));
+        e.gain.store(gain * (rotor ? 0.7f : engineRecorded ? (kind == EngineSound::Truck ? 0.6f : 0.48f) : (kind == EngineSound::Truck ? 0.75f : 0.6f)));
         SetAudioStreamPan(e.stream, pan);
     }
 
