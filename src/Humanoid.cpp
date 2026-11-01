@@ -1473,6 +1473,7 @@ namespace
     // орон зайд) энд бүртгэнэ; DrawViewModel-ийн төгсгөлд DrawCharacterArms нэг дор зурна.
     bool viewModelArms = false;
     int viewArmsId = kCharacterFpArms; // SetViewModelArms
+    Color viewArmsTint = WHITE;
     ViewArmTarget viewTargets[2];
     Matrix viewBody = MatrixIdentity(); // загварын гарын биеийн орон зай -> ертөнц (AnchorViewBody)
     bool viewBodySet = false;
@@ -1643,6 +1644,8 @@ void SetViewModelArms(int characterModel)
 {
     // Дүр өөрийн гартай бол (нүцгэн биетэй, хуягтай дүр) түүгээр, үгүй бол тактикийн бээлийтэй гараар (fp_arms)
     viewArmsId = characterModel >= 0 && HasCharacterArms(characterModel) ? characterModel : kCharacterFpArms;
+    // Iron (хуягт робот): бээлийтэй гарыг хуяг шиг хүрэл өнгөөр
+    viewArmsTint = characterModel == kCharacterIron ? Color{ 196, 150, 96, 255 } : WHITE;
 }
 
 void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float walkPhase, float moveAmount, float reload,
@@ -1750,8 +1753,8 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
         // Гар буу: хоёр гараар урагш сунган барина (CS маягаар камерт ойр: гар том харагдана)
         // Буудахад ам нь дээш үсэрч гар хойш түлхэгдэнэ; алхахад, тайван үед бага зэрэг хазайна.
         // Загварын (бодит хэмжээтэй) гар кодоор угсарсан нударгаас том: буу арай хол, гар нь бууны доор (гулсуур
-        // нь гарын дээгүүр харагдана).
-        const float px = viewModelArms ? -0.09f : -0.08f, py = viewModelArms ? -0.16f : -0.14f, pz = viewModelArms ? 0.42f : 0.32f,
+        // нь гарын дээгүүр харагдана). 60 см урагш, 22 см доош: ойр байхад хоёр сарвуу бөөн болж буугаа далдалдаг байв.
+        const float px = viewModelArms ? -0.06f : -0.08f, py = viewModelArms ? -0.22f : -0.14f, pz = viewModelArms ? 0.6f : 0.32f,
                     ps = viewModelArms ? 0.85f : 0.8f;
         rlTranslatef(Lerp(px, 0.0f, aim), Lerp(py, -0.128f, aim) + 0.03f * recoil - 0.07f * sprint, Lerp(pz, 0.5f, aim) - 0.08f * recoil);
         rlRotatef(-22.0f * sprint, 1.0f, 0.0f, 0.0f);
@@ -1852,7 +1855,7 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
             const Vector3 local = { side == 0 ? -0.4f : 0.4f, -1.0f, 0.1f }; // (тохой голдуу доош: бугалга дэлгэцэнд орохгүй)
             viewTargets[side].pole = Vector3Normalize(Vector3Subtract(Vector3Transform(local, basis), origin));
         }
-        DrawCharacterArms(viewArmsId, bodyToWorld, viewTargets, WHITE);
+        DrawCharacterArms(viewArmsId, bodyToWorld, viewTargets, viewArmsTint);
     }
 }
 

@@ -8,6 +8,7 @@
 #include "rlgl.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -93,7 +94,8 @@ namespace
     // тактикийн бээлий, ногоон ханцуйг хэрэглэнэ)
     bool WantsArms(int id)
     {
-        return id == kCharacterFpArms || id == kCharacterModel2 || id == kCharacterModel3 || id == kCharacterDemon || id == kCharacterIron;
+        // (iron-ы өөрийн гар: асар том хуяг дэлгэцийг дүүргэж, мөрөвч хөвж харагдана: хүрэл өнгөтэй бээлийтэй гараар)
+        return id == kCharacterFpArms || id == kCharacterModel2 || id == kCharacterModel3 || id == kCharacterDemon;
     }
 
     // Сарвууны жижигрүүлэлт зөвхөн 1-р этгээдийн гарыг зурах үед (DrawCharacterArms): 3-р этгээдийн дүр хэвээр
@@ -252,7 +254,8 @@ namespace
         for (int finger = 0; finger < 5; ++finger)
         {
             const Vector3 axis = Rotate(handRotation, c.fingerAxis[side][finger]);
-            const Quaternion bend = QuaternionFromAxisAngle(axis, (finger == 4 ? 0.45f : 1.0f) * degrees * DEG2RAD);
+            // (эрхий хуруу 1.3 дахин: 0.45 байхад нүцгэн гартай дүрийн эрхий хуруу бариулыг ороолгүй шулуун цухуйдаг байв)
+            const Quaternion bend = QuaternionFromAxisAngle(axis, (finger == 4 ? 1.3f : 1.0f) * degrees * DEG2RAD);
             for (int segment = 0; segment < 3; ++segment)
             {
                 const int bone = c.fingers[side][finger][segment];
@@ -804,7 +807,11 @@ void LoadCharacterModels(Shader shader)
             int armTriangles = 0;
             for (int index = 0; index < c.model.meshCount; ++index)
             {
-                c.arms.push_back(ExtractArms(c.model, c.model.meshes[index], c.joints[RightArm], c.joints[LeftArm]));
+                // Бүтэн биетэй дүр (нүцгэн, хуягтай): зөвхөн шуу, сарвуу (тохойноос доош). Бугалга, мөр 1-р этгээдэд
+                // харагддаггүй; хуягтай дүрийн мөрөвч дэлгэцийн захад хөвж харагддаг байв. fp_arms бүтнээрээ (ханцуйтай).
+                const bool full = id == kCharacterFpArms;
+                c.arms.push_back(ExtractArms(c.model, c.model.meshes[index], c.joints[full ? RightArm : RightForeArm],
+                                             c.joints[full ? LeftArm : LeftForeArm]));
                 armTriangles += c.arms.back().triangleCount;
             }
             TraceLog(LOG_INFO, "CHARACTER: %s first-person arms %d triangles", kNames[id], armTriangles);

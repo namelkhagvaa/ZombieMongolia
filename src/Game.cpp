@@ -4351,7 +4351,8 @@ void Game::AdvanceDay(float dt)
 void Game::UpdateMission(float dt)
 {
     // Даалгаврын баннер, аймгийн танилцуулга (зочин, зогссон үед ч хөдөлнө); танилцуулгыг дурын товчоор хаана
-    if (mission.BriefingOpen() && (GetKeyPressed() != 0 || InMousePressed(MOUSE_BUTTON_LEFT))) mission.DismissBriefing();
+    // (утсан дээр: дэлгэцийн аль ч хэсэгт хүрэхэд; төв хэсэгт хүрэхэд камер эргүүлэх гэж ойлгогдоод хаагддаггүй байв)
+    if (mission.BriefingOpen() && (GetKeyPressed() != 0 || InMousePressed(MOUSE_BUTTON_LEFT) || InAnyTap())) mission.DismissBriefing();
     mission.UpdatePresentation(dt, player.Position());
     switch (mission.TakeBannerSound())
     {

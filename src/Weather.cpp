@@ -151,25 +151,48 @@ void Precipitation::Draw(const Camera3D& camera, float brightness) const
     }
     else
     {
-        // Цас: цагаан ширхэг, шороо: шаргал жижиг толбо (камер руу харсан дөрвөлжин)
+        // Цас: цагаан ширхэг, шороо: шаргал жижиг толбо. Камер руу харсан дөрвөлжин дээр төв нь тод, зах руугаа
+        // уусдаг дугуй зураг (өмнө нь цул дөрвөлжин: цас "дөрвөлжин" харагддаг байв). Ширхэг бүр өөр хэмжээтэй.
+        static Texture2D flake = {};
+        if (flake.id == 0)
+        {
+            Image image = GenImageColor(32, 32, BLANK);
+            for (int y = 0; y < 32; ++y)
+            {
+                for (int x = 0; x < 32; ++x)
+                {
+                    const float dx = ((float)x + 0.5f) / 16.0f - 1.0f, dy = ((float)y + 0.5f) / 16.0f - 1.0f;
+                    const float r = std::sqrt(dx * dx + dy * dy);
+                    const float a = std::clamp(1.0f - r, 0.0f, 1.0f);
+                    ImageDrawPixel(&image, x, y, { 255, 255, 255, (unsigned char)(255.0f * a * a * (3.0f - 2.0f * a)) });
+                }
+            }
+            flake = LoadTextureFromImage(image);
+            UnloadImage(image);
+            SetTextureFilter(flake, TEXTURE_FILTER_BILINEAR);
+        }
         const bool snow = kind == WeatherKind::Snow;
-        const Color color = snow ? shade(242, 244, 250, 220) : shade(196, 164, 118, 150);
+        const Color color = snow ? shade(246, 248, 252, 235) : shade(196, 164, 118, 150);
+        rlSetTexture(flake.id);
         rlBegin(RL_QUADS);
         rlColor4ub(color.r, color.g, color.b, color.a);
         for (size_t i = 0; i < count; ++i)
         {
             const Drop& d = drops[i];
             const Vector3 p = Vector3Add(base, d.offset);
-            const float s = (snow ? 0.045f : 0.03f) * d.speed;
+            // (тоон хувьд санамсаргүй хэмжээ: ширхэг бүрийн байрлалаас)
+            const float vary = 0.6f + 0.8f * (0.5f + 0.5f * std::sin((float)i * 12.9898f));
+            const float s = (snow ? 0.06f : 0.04f) * d.speed * vary;
             const Vector3 r = Vector3Scale(right, s), u = Vector3Scale(up, s);
             const Vector3 a = Vector3Subtract(Vector3Subtract(p, r), u), b = Vector3Add(Vector3Subtract(p, u), r);
             const Vector3 c = Vector3Add(Vector3Add(p, r), u), e = Vector3Subtract(Vector3Add(p, u), r);
-            rlVertex3f(a.x, a.y, a.z);
-            rlVertex3f(b.x, b.y, b.z);
-            rlVertex3f(c.x, c.y, c.z);
-            rlVertex3f(e.x, e.y, e.z);
+            rlTexCoord2f(0.0f, 1.0f); rlVertex3f(a.x, a.y, a.z);
+            rlTexCoord2f(1.0f, 1.0f); rlVertex3f(b.x, b.y, b.z);
+            rlTexCoord2f(1.0f, 0.0f); rlVertex3f(c.x, c.y, c.z);
+            rlTexCoord2f(0.0f, 0.0f); rlVertex3f(e.x, e.y, e.z);
         }
         rlEnd();
+        rlSetTexture(0);
     }
     rlDrawRenderBatchActive();
     rlEnableDepthMask();

@@ -107,6 +107,8 @@ bool InKeyDown(int key);
 bool InKeyPressed(int key);
 bool InMouseDown(int button);
 bool InMousePressed(int button);
+// Мэдрэгчтэй дэлгэц: энэ кадрт дэлгэцийн аль ч хэсэгт шинээр хүрсэн (камер эргүүлэх хэсэгт ч). Цонх хаахад.
+bool InAnyTap();
 // Туршилт (--screenshot): энэ кадрт заасан цэг дээр хулганаар дарсан мэт (InBeginFrame-ийн дараа дуудна)
 void InTestClick(Vector2 at);
 // Утас: мэргэн буудагчийн дурангийн томруулалт (1 эсвэл 2; "ДУРАН" товчийг дахин товшвол 2x)

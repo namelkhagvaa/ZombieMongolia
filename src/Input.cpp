@@ -37,6 +37,7 @@ namespace
     bool aimLatched = false;
     int scopeZoom = 1; // мэргэн буудагчийн "ДУРАН" товч: 1x -> 2x -> хаах
     bool pointerDown = false, pointerPressed = false;
+    bool anyTap = false; // энэ кадрт дэлгэцэнд шинээр хүрсэн (аль ч хэсэгт: камер, хүрд, товч)
     Vector2 pointer = { 0.0f, 0.0f };
     bool testClick = false; // InTestClick
     Vector2 look = { 0.0f, 0.0f };
@@ -627,6 +628,7 @@ void InBeginFrame(const TouchState& state)
     firePressed = false;
     fireDown = false;
     pointerPressed = false;
+    anyTap = false;
     pointerDown = false;
     testClick = false;
     look = { 0.0f, 0.0f };
@@ -697,6 +699,7 @@ void InBeginFrame(const TouchState& state)
 
             *finger = Finger{};
             finger->fresh = true;
+            anyTap = true;
             finger->id = ids[i];
             finger->start = finger->position = position;
 
@@ -893,6 +896,11 @@ bool InMouseDown(int button)
 int InScopeZoom()
 {
     return touchMode && aimLatched ? scopeZoom : 1;
+}
+
+bool InAnyTap()
+{
+    return !muted && touchMode && anyTap;
 }
 
 bool InMousePressed(int button)
