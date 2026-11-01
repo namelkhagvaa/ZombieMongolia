@@ -29,6 +29,8 @@ enum class Surface
 class World
 {
 public:
+    // Ойрын өтгөн өвс (Terrain::SetGrass)
+    void SetGrass(const Material* material, float radius, float density) const { terrain.SetGrass(material, radius, density); }
     // Цонх нээгдсэний дараа үүсгэнэ (GPU mesh үүсгэдэг).
     explicit World(float halfSize);
     ~World();

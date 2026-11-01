@@ -583,8 +583,201 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
     return builder.Upload();
 }
 
+// ---------------------------------------------------------------- Ойрын өтгөн өвс
+
+namespace
+{
+    const float kGrassCell = 8.0f;
+}
+
+void Terrain::SetGrass(const Material* material, float radius, float density) const
+{
+    if (density != grassDensity) ClearGrass(); // (график солигдсон: шинэ нягтаар дахин ургуулна)
+    grassMaterial = material;
+    grassRadius = radius;
+    grassDensity = density;
+}
+
+void Terrain::ClearGrass() const
+{
+    for (GrassCell& cell : grassCells) UnloadMesh(cell.mesh);
+    grassCells.clear();
+}
+
+Mesh Terrain::BuildGrassCell(int cx, int cz) const
+{
+    const float x0 = (float)cx * kGrassCell, z0 = (float)cz * kGrassCell;
+    const Vector3 center = { x0 + kGrassCell * 0.5f, 0.0f, z0 + kGrassCell * 0.5f };
+    std::vector<const Obstacle*> nearby;
+    if (obstacles)
+    {
+        for (const Obstacle& o : *obstacles)
+        {
+            if (std::fabs(o.center.x - center.x) <= kGrassCell * 0.5f + o.size.x * 0.5f + 1.0f &&
+                std::fabs(o.center.z - center.z) <= kGrassCell * 0.5f + o.size.z * 0.5f + 1.0f)
+            {
+                nearby.push_back(&o);
+            }
+        }
+    }
+
+    // Нягтын тор (1 м): зам, хучилт, ус, барилгын дотор өвсгүй; толбо толбоор өтгөн, сийрэг; суурин дотор гишгэгдсэн
+    const int samples = (int)kGrassCell + 1;
+    float mask[9][9] = {};
+    const bool urbanLayout = layout.IsCity();
+    for (int iz = 0; iz < samples; ++iz)
+    {
+        for (int ix = 0; ix < samples; ++ix)
+        {
+            const float x = x0 + (float)ix, z = z0 + (float)iz;
+            float d = 0.0f;
+            if (!layout.Paved(x, z) && layout.RoadDistance(x, z) >= 0.6f && layout.LakeDepth(x, z) <= 0.2f)
+            {
+                d = 0.3f + 0.7f * SmoothStep(0.28f, 0.56f, Fbm(x * 0.05f, z * 0.05f, 2));
+                if (urbanLayout && (layout.IsCapital() || layout.CityBuiltDistance(x, z) < 150.0f))
+                {
+                    const int ground = layout.CityGround(x, z);
+                    if (ground >= 5) d = 0.0f;
+                    else if (ground == 0) d *= 0.3f;
+                }
+                if (layout.FlatDistance(x, z) < 0.0f) d *= 0.55f;
+                d *= 0.65f + 0.35f * lushness;
+            }
+            mask[iz][ix] = d;
+        }
+    }
+
+    Rng rng((uint32_t)(cx * 73856093) ^ (uint32_t)(cz * 19349663) ^ 0x51ed27u);
+    // Бут (5-8 ир) болгон ургуулна: ганц ирүүд тараагдвал "өргөс" шиг, бут нь хивс шиг харагдана
+    const int tufts = (int)(kGrassCell * kGrassCell * grassDensity / 6.5f);
+    std::vector<float> positions, normals, texcoords;
+    std::vector<unsigned char> colors;
+    positions.reserve((size_t)tufts * 6 * 9);
+    for (int i = 0; i < tufts; ++i)
+    {
+        const float u = rng.Next() * kGrassCell, v = rng.Next() * kGrassCell;
+        const int ix = std::min((int)u, samples - 2), iz = std::min((int)v, samples - 2);
+        const float fx = u - (float)ix, fz = v - (float)iz;
+        const float d = (mask[iz][ix] * (1.0f - fx) + mask[iz][ix + 1] * fx) * (1.0f - fz) +
+                        (mask[iz + 1][ix] * (1.0f - fx) + mask[iz + 1][ix + 1] * fx) * fz;
+        const float roll = rng.Next();
+        if (roll >= d) continue;
+        const float tx = x0 + u, tz = z0 + v;
+        if (InsideObstacle(nearby, tx, tz, 0.1f)) continue;
+        const float ty = HeightAt(tx, tz);
+
+        // Бут бүр нэг өнгөтэй (бага зэрэг хэлбэлзэлтэй): ёроол бараан (нягт өвсний сүүдэр), үзүүр цайвар,
+        // салхинд найгана (alpha < 255). Хэт тод бол газраас тасарч "өргөс" шиг харагдана.
+        // Өнгө нь хагас газрынх: газар шаргал бол өвс ч шаргалдуу (тод ногоон ир шар хөрсөн дээр тусдаа харагдана)
+        const Color palette = rng.Chance(0.2f + 0.65f * lushness) ? MixColor(kGrassLush, kGrassGreen, rng.Next() * (1.0f - 0.7f * lushness))
+                                                                 : MixColor(kGrassGreen, kGrassDry, rng.Next() * (1.0f - 0.6f * lushness));
+        const int gx = std::clamp((int)((tx + halfExtent) / cellSize + 0.5f), 0, cells);
+        const int gz = std::clamp((int)((tz + halfExtent) / cellSize + 0.5f), 0, cells);
+        const Color tint = MixColor(ScaleColor(GroundColor(gx, gz, GridNormal(gx, gz)), 1.1f), palette, 0.45f);
+        const float tall = rng.Range(0.16f, 0.42f) * (0.8f + 0.45f * lushness) * (0.6f + 0.4f * d);
+        const float seed = rng.Next();
+        const int blades = rng.Int(5, 8);
+        for (int b = 0; b < blades; ++b)
+        {
+            const float x = tx + rng.Range(-0.09f, 0.09f), z = tz + rng.Range(-0.09f, 0.09f);
+            const Color root = ScaleColor(JitterColor(tint, rng, 0.06f), 0.62f);
+            Color tip = ScaleColor(JitterColor(tint, rng, 0.08f), 1.3f);
+            tip.a = 150;
+            const float height = tall * rng.Range(0.6f, 1.15f);
+            const float width = rng.Range(0.018f, 0.032f);
+            const float angle = rng.Range(0.0f, 2.0f * PI);
+            const float side = angle + PI * 0.5f;
+            const float lean = rng.Range(0.15f, 0.5f) * height;
+            const float verts[9] = { x - std::cos(side) * width, ty, z - std::sin(side) * width,
+                                     x + std::cos(side) * width, ty, z + std::sin(side) * width,
+                                     x + std::cos(angle) * lean, ty + height, z + std::sin(angle) * lean };
+            positions.insert(positions.end(), verts, verts + 9);
+            for (int k = 0; k < 3; ++k)
+            {
+                const Color c = k < 2 ? root : tip;
+                colors.insert(colors.end(), { c.r, c.g, c.b, c.a });
+                normals.insert(normals.end(), { tx, seed, tz }); // (shader: бутны ёроол, санамсаргүй тоо: бут бүхэлдээ сийрэгжинэ)
+                texcoords.insert(texcoords.end(), { 0.0f, ty });
+            }
+        }
+    }
+
+    Mesh mesh = {};
+    const int vertexCount = (int)(positions.size() / 3);
+    if (vertexCount == 0) return mesh;
+    mesh.vertexCount = vertexCount;
+    mesh.triangleCount = vertexCount / 3;
+    mesh.vertices = (float*)MemAlloc((unsigned int)(positions.size() * sizeof(float)));
+    mesh.normals = (float*)MemAlloc((unsigned int)(normals.size() * sizeof(float)));
+    mesh.texcoords = (float*)MemAlloc((unsigned int)(texcoords.size() * sizeof(float)));
+    mesh.colors = (unsigned char*)MemAlloc((unsigned int)colors.size());
+    std::copy(positions.begin(), positions.end(), mesh.vertices);
+    std::copy(normals.begin(), normals.end(), mesh.normals);
+    std::copy(texcoords.begin(), texcoords.end(), mesh.texcoords);
+    std::copy(colors.begin(), colors.end(), mesh.colors);
+    UploadMesh(&mesh, false);
+    return mesh;
+}
+
+void Terrain::DrawGrass(const Camera3D& camera) const
+{
+    const float radius = grassRadius;
+    const Vector3 eye = camera.position;
+    // Холдсон нүдийг чөлөөлнө
+    for (size_t i = 0; i < grassCells.size();)
+    {
+        const float cx = ((float)grassCells[i].cx + 0.5f) * kGrassCell, cz = ((float)grassCells[i].cz + 0.5f) * kGrassCell;
+        if (std::fabs(cx - eye.x) > radius + kGrassCell * 1.5f || std::fabs(cz - eye.z) > radius + kGrassCell * 1.5f)
+        {
+            UnloadMesh(grassCells[i].mesh);
+            grassCells[i] = grassCells.back();
+            grassCells.pop_back();
+        }
+        else ++i;
+    }
+    // Дутуу нүдийг ойроос нь эхэлж үүсгэнэ (кадр бүрд цөөн: гацахгүй)
+    const int x0 = (int)std::floor((eye.x - radius) / kGrassCell), x1 = (int)std::floor((eye.x + radius) / kGrassCell);
+    const int z0 = (int)std::floor((eye.z - radius) / kGrassCell), z1 = (int)std::floor((eye.z + radius) / kGrassCell);
+    struct Missing { float distance; int cx, cz; };
+    std::vector<Missing> missing;
+    for (int cz = z0; cz <= z1; ++cz)
+    {
+        for (int cx = x0; cx <= x1; ++cx)
+        {
+            const float mx = ((float)cx + 0.5f) * kGrassCell, mz = ((float)cz + 0.5f) * kGrassCell;
+            if (std::fabs(mx) > halfExtent || std::fabs(mz) > halfExtent) continue;
+            const float distance = std::hypot(mx - eye.x, mz - eye.z);
+            if (distance > radius + kGrassCell * 0.71f) continue;
+            bool have = false;
+            for (const GrassCell& cell : grassCells) have = have || (cell.cx == cx && cell.cz == cz);
+            if (!have) missing.push_back({ distance, cx, cz });
+        }
+    }
+    std::sort(missing.begin(), missing.end(), [](const Missing& a, const Missing& b) { return a.distance < b.distance; });
+    const int budget = grassCells.empty() ? 1000 : 3;
+    for (int i = 0; i < (int)missing.size() && i < budget; ++i)
+    {
+        GrassCell cell;
+        cell.cx = missing[(size_t)i].cx;
+        cell.cz = missing[(size_t)i].cz;
+        cell.mesh = BuildGrassCell(cell.cx, cell.cz);
+        grassCells.push_back(cell);
+    }
+
+    const ViewCone view = ViewCone::From(camera);
+    for (const GrassCell& cell : grassCells)
+    {
+        if (cell.mesh.vertexCount == 0) continue;
+        const Vector3 center = { ((float)cell.cx + 0.5f) * kGrassCell, HeightAt(((float)cell.cx + 0.5f) * kGrassCell, ((float)cell.cz + 0.5f) * kGrassCell),
+                                 ((float)cell.cz + 0.5f) * kGrassCell };
+        if (!view.Sees(center, kGrassCell * 0.75f + 1.0f, radius + kGrassCell)) continue;
+        DrawMesh(cell.mesh, *grassMaterial, MatrixIdentity());
+    }
+}
+
 void Terrain::InvalidateDetails()
 {
+    ClearGrass();
     for (int index : loaded)
     {
         Chunk& chunk = chunks[(size_t)index];
@@ -795,4 +988,5 @@ void Terrain::Draw(const Camera3D& camera, const Material& material, const Mater
             ++lastDrawnChunks;
         }
     }
+    if (grassMaterial && grassRadius > 0.0f) DrawGrass(camera);
 }

@@ -52,6 +52,10 @@ public:
     void DrawShadowCasters(Vector3 center, float radius, const Material& material) const;
 
     int LastDrawnChunks() const { return lastDrawnChunks; }
+
+    // Ойрын өтгөн өвс (камерын эргэн тойронд radius хүртэл, 8 м нүднүүдээр): ир бүр нэг гурвалжин.
+    // material == nullptr эсвэл radius <= 0 бол зурахгүй. density: м2-д ногдох ирний дээд тоо.
+    void SetGrass(const Material* material, float radius, float density) const;
     int LoadedMeshes() const { return loadedMeshes; }
 
 private:
@@ -73,6 +77,19 @@ private:
     // step: нэг дөрвөлжинд орох нүдний тоо (1 = бүрэн, 2 = бүдүүн).
     Mesh BuildGround(const Chunk& chunk, int step) const;
     Mesh BuildDetails(const Chunk& chunk) const;
+
+    struct GrassCell
+    {
+        int cx = 0, cz = 0;
+        Mesh mesh = {};
+    };
+    Mesh BuildGrassCell(int cx, int cz) const;
+    void DrawGrass(const Camera3D& camera) const;
+    void ClearGrass() const;
+    mutable std::vector<GrassCell> grassCells;
+    mutable const Material* grassMaterial = nullptr;
+    mutable float grassRadius = 0.0f;
+    mutable float grassDensity = 0.0f;
     float lushness = 0.5f;
     Vector3 GridNormal(int ix, int iz) const;
     Color GroundColor(int ix, int iz, Vector3 normal) const;

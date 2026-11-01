@@ -5151,6 +5151,9 @@ void Game::DrawMissionScene() const
     // Гэрэлтүүлэг + манантай хэсэг. Ойрын зүйлс эхэлж: холын газар, тэнгэрийн далдлагдсан пикселийг
     // видео карт гүнээр нь шууд хаяна (shader ажиллахгүй)
     environment.Begin(view);
+    // Ойрын өтгөн өвс: тоглогч дундуур нь явахад хажуу тийш нална
+    world.SetGrass(environment.GrassMaterial(), environment.GrassRadius(), environment.GrassDensity());
+    environment.SetGrassPusher(player.Position());
     {
         PROFILE_SCOPE("draw world");
         world.Draw(view, material, environment.TerrainMaterial(), environment.DetailMaterial(), config.detailDistance,

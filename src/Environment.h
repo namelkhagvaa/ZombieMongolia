@@ -79,6 +79,12 @@ public:
     const Material& TerrainMaterial() const { return terrainMaterial; }
     // Өвс, цэцэг, бут: оройн alpha = салхинд найгах хэмжээ (255 = хөдлөхгүй)
     const Material& DetailMaterial() const { return detailMaterial; }
+    // Ойрын өтгөн өвс: материал (nullptr = унтраастай), зурах радиус, м2-д ногдох ир (графикийн түвшнээр)
+    const Material* GrassMaterial() const { return grassShader.id ? &grassMaterial : nullptr; }
+    float GrassRadius() const;
+    float GrassDensity() const { return quality >= 2 ? 200.0f : 110.0f; }
+    // Өвсийг түлхэх цэг (тоглогч): ир нь хажуу тийш налж зам гаргана
+    void SetGrassPusher(Vector3 position) const;
 
     // Гаднаас оруулсан ястай загваруудын shader: текстур + жинхэнэ normal-аар гөлгөр гэрэлтүүлэг + манан.
     Shader CharacterShader() const { return characterShader; }
@@ -124,6 +130,7 @@ private:
     Shader propShader = {};
     Shader terrainShader = {};
     Shader detailShader = {};
+    Shader grassShader = {};
     Shader skyShader = {};
     Shader depthShader = {};
     Shader characterDepthShader = {};
@@ -138,6 +145,7 @@ private:
     Texture2D surfaceTextures[3] = {}; // гадаргуугийн бүтэц: хана, дээвэр/зам, байгаль (assets/surfaces)
     void LoadSurfaceTextures();
     Material detailMaterial = {};
+    Material grassMaterial = {};
     Material depthMaterial = {};
     Material characterDepthMaterial = {};
     Mesh mountains = {};
