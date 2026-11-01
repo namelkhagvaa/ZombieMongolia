@@ -588,6 +588,18 @@ Mesh Terrain::BuildDetails(const Chunk& chunk) const
 namespace
 {
     const float kGrassCell = 8.0f;
+
+    // Зайгаар үлдэх бутны хувь (grass shader-ийн GrassKeep-тэй ижил): ойр бүгд, холдох тусам аажим сийрэгжиж
+    // radius-т алга (тоглогчийн эргэн тойронд л ургасан мэт хурц хил үүсэхгүй)
+    float GrassKeep(float distance, float radius)
+    {
+        const float d1 = radius * 0.27f, d2 = radius * 0.53f, d3 = radius * 0.87f;
+        if (distance < d1) return 1.0f;
+        if (distance < d2) return Lerp(1.0f, 0.3f, (distance - d1) / (d2 - d1));
+        if (distance < d3) return Lerp(0.3f, 0.08f, (distance - d2) / (d3 - d2));
+        if (distance < radius) return Lerp(0.08f, 0.0f, (distance - d3) / (radius - d3));
+        return 0.0f;
+    }
 }
 
 void Terrain::SetGrass(const Material* material, float radius, float density) const
@@ -604,7 +616,7 @@ void Terrain::ClearGrass() const
     grassCells.clear();
 }
 
-Mesh Terrain::BuildGrassCell(int cx, int cz) const
+Mesh Terrain::BuildGrassCell(int cx, int cz, float fraction) const
 {
     const float x0 = (float)cx * kGrassCell, z0 = (float)cz * kGrassCell;
     const Vector3 center = { x0 + kGrassCell * 0.5f, 0.0f, z0 + kGrassCell * 0.5f };
@@ -653,14 +665,18 @@ Mesh Terrain::BuildGrassCell(int cx, int cz) const
         }
     }
 
-    Rng rng((uint32_t)(cx * 73856093) ^ (uint32_t)(cz * 19349663) ^ 0x51ed27u);
+    const uint32_t cellSeed = (uint32_t)(cx * 73856093) ^ (uint32_t)(cz * 19349663) ^ 0x51ed27u;
     // Бут (5-8 ир) болгон ургуулна: ганц ирүүд тараагдвал "өргөс" шиг, бут нь хивс шиг харагдана
     const int tufts = (int)(kGrassCell * kGrassCell * grassDensity / 6.5f);
     std::vector<float> positions, normals, texcoords;
     std::vector<unsigned char> colors;
-    positions.reserve((size_t)tufts * 6 * 9);
+    positions.reserve((size_t)(tufts * fraction) * 6 * 9);
     for (int i = 0; i < tufts; ++i)
     {
+        // Бут бүр өөрийн санамсаргүй дараалалтай: нүд аль ч хувиар үүссэн бай ижил бутнууд ижил байрлалд гарна
+        Rng rng(cellSeed ^ ((uint32_t)i * 2654435761u));
+        const float seed = rng.Next(); // (shader: зайгаар энэ тооноос бага үлдэх хувьтай бол харагдана)
+        if (seed >= fraction) continue;
         const float u = rng.Next() * kGrassCell, v = rng.Next() * kGrassCell;
         const int ix = std::min((int)u, samples - 2), iz = std::min((int)v, samples - 2);
         const float fx = u - (float)ix, fz = v - (float)iz;
@@ -705,7 +721,6 @@ Mesh Terrain::BuildGrassCell(int cx, int cz) const
         float tall = rng.Range(0.16f, 0.42f) * (0.8f + 0.45f * lushness) * (0.6f + 0.4f * d);
         if (kind == Kind::Crack) tall = rng.Range(0.1f, 0.32f);
         else if (kind != Kind::Grass) tall = rng.Range(0.3f, 0.75f);
-        const float seed = rng.Next();
         const int blades = weed ? rng.Int(4, 7) : rng.Int(5, 8);
         const float spread = weed ? 0.14f : 0.09f;
         for (int b = 0; b < blades; ++b)
@@ -766,33 +781,49 @@ void Terrain::DrawGrass(const Camera3D& camera) const
         }
         else ++i;
     }
-    // Дутуу нүдийг ойроос нь эхэлж үүсгэнэ (кадр бүрд цөөн: гацахгүй)
+    // Дутуу нүдийг (эсвэл ойртсоноор илүү бут хэрэгтэй болсныг) ойроос нь эхэлж үүсгэнэ (кадр бүрд цөөн: гацахгүй).
+    // Нүд бүр хамгийн ойрын цэгийнхээ зайд хэрэгтэй хувиар (GrassKeep) үүснэ: хол нүд цөөн бутад хэмнэлттэй.
     const int x0 = (int)std::floor((eye.x - radius) / kGrassCell), x1 = (int)std::floor((eye.x + radius) / kGrassCell);
     const int z0 = (int)std::floor((eye.z - radius) / kGrassCell), z1 = (int)std::floor((eye.z + radius) / kGrassCell);
-    struct Missing { float distance; int cx, cz; };
+    struct Missing { float distance; int cx, cz; float fraction; int existing; };
     std::vector<Missing> missing;
     for (int cz = z0; cz <= z1; ++cz)
     {
         for (int cx = x0; cx <= x1; ++cx)
         {
-            const float mx = ((float)cx + 0.5f) * kGrassCell, mz = ((float)cz + 0.5f) * kGrassCell;
-            if (std::fabs(mx) > halfExtent || std::fabs(mz) > halfExtent) continue;
-            const float distance = std::hypot(mx - eye.x, mz - eye.z);
-            if (distance > radius + kGrassCell * 0.71f) continue;
-            bool have = false;
-            for (const GrassCell& cell : grassCells) have = have || (cell.cx == cx && cell.cz == cz);
-            if (!have) missing.push_back({ distance, cx, cz });
+            const float lx = (float)cx * kGrassCell, lz = (float)cz * kGrassCell;
+            if (std::fabs(lx + kGrassCell * 0.5f) > halfExtent || std::fabs(lz + kGrassCell * 0.5f) > halfExtent) continue;
+            const float nx = std::clamp(eye.x, lx, lx + kGrassCell), nz = std::clamp(eye.z, lz, lz + kGrassCell);
+            const float nearest = std::hypot(nx - eye.x, nz - eye.z);
+            if (nearest > radius) continue;
+            const float fraction = std::max(0.02f, GrassKeep(nearest, radius));
+            int existing = -1;
+            for (int k = 0; k < (int)grassCells.size(); ++k)
+            {
+                if (grassCells[(size_t)k].cx == cx && grassCells[(size_t)k].cz == cz) existing = k;
+            }
+            if (existing < 0 || grassCells[(size_t)existing].fraction < fraction - 0.04f)
+            {
+                missing.push_back({ nearest, cx, cz, std::min(1.0f, fraction + 0.08f), existing });
+            }
         }
     }
     std::sort(missing.begin(), missing.end(), [](const Missing& a, const Missing& b) { return a.distance < b.distance; });
-    const int budget = grassCells.empty() ? 1000 : 3;
+    const int budget = grassCells.empty() ? 1000 : 4;
     for (int i = 0; i < (int)missing.size() && i < budget; ++i)
     {
+        const Missing& want = missing[(size_t)i];
         GrassCell cell;
-        cell.cx = missing[(size_t)i].cx;
-        cell.cz = missing[(size_t)i].cz;
-        cell.mesh = BuildGrassCell(cell.cx, cell.cz);
-        grassCells.push_back(cell);
+        cell.cx = want.cx;
+        cell.cz = want.cz;
+        cell.fraction = want.fraction;
+        cell.mesh = BuildGrassCell(cell.cx, cell.cz, cell.fraction);
+        if (want.existing >= 0)
+        {
+            UnloadMesh(grassCells[(size_t)want.existing].mesh);
+            grassCells[(size_t)want.existing] = cell;
+        }
+        else grassCells.push_back(cell);
     }
 
     const ViewCone view = ViewCone::From(camera);

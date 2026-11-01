@@ -688,8 +688,17 @@ uniform mat4 mvp;
 uniform float time;
 uniform vec2 wind;
 uniform vec3 viewPos;
-uniform vec2 grassRange;
+uniform float grassRadius;
 uniform vec3 pusher;
+// Зайгаар үлдэх бутны хувь (Terrain.cpp GrassKeep-тэй ижил)
+float GrassKeep(float d, float r)
+{
+    float d1 = r * 0.27, d2 = r * 0.53, d3 = r * 0.87;
+    if (d < d1) return 1.0;
+    if (d < d2) return mix(1.0, 0.3, (d - d1) / (d2 - d1));
+    if (d < d3) return mix(0.3, 0.08, (d - d2) / (d3 - d2));
+    return mix(0.08, 0.0, clamp((d - d3) / (r - d3), 0.0, 1.0));
+}
 out vec3 fragPosition;
 out vec4 fragColor;
 void main()
@@ -697,7 +706,7 @@ void main()
     vec2 root = vertexNormal.xz;
     vec3 base = vec3(root.x, vertexTexCoord.y, root.y);
     float sway = clamp((1.0 - vertexColor.a) * 2.5, 0.0, 1.0);
-    float keep = 1.0 - smoothstep(grassRange.x, grassRange.y, distance(viewPos.xz, root));
+    float keep = GrassKeep(distance(viewPos.xz, root), grassRadius);
     float grow = clamp((keep - vertexNormal.y) * 6.0, 0.0, 1.0);
     vec3 p = mix(base, vertexPosition, grow);
     float phase = time * 2.1 + root.x * 0.37 + root.y * 0.29;
@@ -1785,14 +1794,14 @@ float Environment::GrassRadius() const
 {
     static const bool off = std::getenv("ZM_NOGRASS") != nullptr; // туршилт: өтгөн өвсгүй (харьцуулах)
     if (off || !grassShader.id) return 0.0f;
-    return quality >= 2 ? 26.0f : quality == 1 ? 16.0f : 0.0f;
+    return quality >= 2 ? 60.0f : quality == 1 ? 36.0f : 0.0f;
 }
 
 void Environment::SetGrassPusher(Vector3 position) const
 {
     SetVec3(grassShader, "pusher", position);
     const float radius = GrassRadius();
-    SetVec2(grassShader, "grassRange", { radius * 0.6f, radius });
+    SetFloat(grassShader, "grassRadius", radius);
 }
 
 void Environment::SetQuality(int level)

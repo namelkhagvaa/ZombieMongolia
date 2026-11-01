@@ -81,9 +81,10 @@ private:
     struct GrassCell
     {
         int cx = 0, cz = 0;
+        float fraction = 1.0f; // бутнуудын хэдэн хувийг агуулна (хол нүд цөөн: shader зайгаар сийрэгжүүлдэг)
         Mesh mesh = {};
     };
-    Mesh BuildGrassCell(int cx, int cz) const;
+    Mesh BuildGrassCell(int cx, int cz, float fraction) const;
     void DrawGrass(const Camera3D& camera) const;
     void ClearGrass() const;
     mutable std::vector<GrassCell> grassCells;
