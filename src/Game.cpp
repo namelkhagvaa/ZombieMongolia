@@ -5249,6 +5249,7 @@ void Game::DrawMissionScene() const
         const Vector3 down = Vector3Negate(Vector3Normalize(Vector3CrossProduct(Vector3CrossProduct(forward, view.up), forward)));
         rlPushMatrix();
         rlTranslatef(down.x * lower, down.y * lower, down.z * lower);
+        SetViewModelArms(TeamMemberLook(activeMember, progress.leaderSkin).model);
         DrawViewModel(view, player.Held(), player.Recoil(), player.WalkPhase(), player.HorizontalSpeed() / config.walkSpeed,
                       player.ReloadProgress(), player.ActionProgress(), camera.AimBlend());
         rlPopMatrix();

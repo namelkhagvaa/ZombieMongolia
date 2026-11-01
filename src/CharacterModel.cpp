@@ -89,6 +89,16 @@ namespace
 
     Character characters[kCharacterCount];
 
+    // 1-р этгээдэд өөрийн гараараа харагдах дүрүүд: нүцгэн биетэй, хуягтай, hoodie-той (бусад цэргүүд fp_arms-ийн
+    // тактикийн бээлий, ногоон ханцуйг хэрэглэнэ)
+    bool WantsArms(int id)
+    {
+        return id == kCharacterFpArms || id == kCharacterModel2 || id == kCharacterModel3 || id == kCharacterDemon || id == kCharacterIron;
+    }
+
+    // Сарвууны жижигрүүлэлт зөвхөн 1-р этгээдийн гарыг зурах үед (DrawCharacterArms): 3-р этгээдийн дүр хэвээр
+    bool armsPass = false;
+
     Quaternion AxisAngle(float x, float y, float z, float degrees)
     {
         return QuaternionFromAxisAngle({ x, y, z }, degrees * DEG2RAD);
@@ -132,7 +142,7 @@ namespace
             Follow(c, parent);
             c.rotation[(size_t)bone] = c.rotation[(size_t)parent];
             Vector3 offset = Vector3Subtract(c.bind[(size_t)bone], c.bind[(size_t)parent]);
-            if (!c.handBone.empty() && c.handBone[(size_t)parent]) offset = Vector3Scale(offset, c.handScale);
+            if (armsPass && !c.handBone.empty() && c.handBone[(size_t)parent]) offset = Vector3Scale(offset, c.handScale);
             c.position[(size_t)bone] = Vector3Add(c.position[(size_t)parent], Rotate(c.rotation[(size_t)parent], offset));
         }
         c.solved[(size_t)bone] = 1;
@@ -523,7 +533,7 @@ namespace
             Follow(c, bone);
             // v' = position + R * s * (v - bind)   (s: сарвууны хэмжээ, бусад ясанд 1)
             const Quaternion rotation = c.rotation[(size_t)bone];
-            const float s = !c.handBone.empty() && c.handBone[(size_t)bone] ? c.handScale : 1.0f;
+            const float s = armsPass && !c.handBone.empty() && c.handBone[(size_t)bone] ? c.handScale : 1.0f;
             const Vector3 offset = Vector3Subtract(c.position[(size_t)bone], Vector3Scale(Rotate(rotation, c.bind[(size_t)bone]), s));
             Matrix matrix = QuaternionToMatrix(rotation);
             if (s != 1.0f)
@@ -753,12 +763,12 @@ void LoadCharacterModels(Shader shader)
             }
         }
         c.scale = top > 0.01f ? TargetHeight(id) / top : 1.0f;
-        if (id == kCharacterFpArms && c.joints[RightArm] >= 0 && c.joints[RightHand] >= 0)
+        if (WantsArms(id) && c.joints[RightArm] >= 0 && c.joints[RightHand] >= 0)
         {
             // 1-р этгээдийн гар: загвар нь бүтэн хүн биш байж болно (зөвхөн гар, хөл): өндрөөр биш, мөрнөөс бугуй
-            // хүртэлх уртаар (0.55 м) томруулна
+            // хүртэлх уртаар (0.55 м) томруулна (бүтэн биетэй дүрүүд өндрөөрөө аль хэдийн бодит хэмжээтэй)
             const float arm = Vector3Distance(c.bind[(size_t)c.joints[RightArm]], c.bind[(size_t)c.joints[RightHand]]);
-            if (arm > 0.001f) c.scale = 0.55f / arm;
+            if (id == kCharacterFpArms && arm > 0.001f) c.scale = 0.55f / arm;
             // Сарвуу (бугуйнаас дунд хурууны үзүүр) бодит хүнд гарын уртын ~35% (19 / 55 см). Загварынх 61% байсан
             // (сарвуу 1.75 дахин том: бууны дэргэд хэт том харагдана) тул бугуйг тойрон жижигрүүлнэ.
             int tip = FindBone(c.model, "RightHandMiddle4");
@@ -788,9 +798,9 @@ void LoadCharacterModels(Shader shader)
         }
         int farTriangles = 0;
         for (const Mesh& mesh : c.lodFar) farTriangles += mesh.triangleCount;
-        if (id == kCharacterFpArms)
+        if (WantsArms(id))
         {
-            // 1-р этгээдийн гарын тусгай загвар: зөвхөн гарын хэсгийг тусгаарлана
+            // 1-р этгээдийн гар: зөвхөн гарын хэсгийг тусгаарлана
             int armTriangles = 0;
             for (int index = 0; index < c.model.meshCount; ++index)
             {
@@ -898,6 +908,8 @@ void DrawCharacterArms(int id, const Matrix& bodyToWorld, const ViewArmTarget ta
     if (!HasCharacterArms(id)) return;
     Character& c = characters[id];
     const float s = c.scale;
+    armsPass = true;
+    std::fill(c.solved.begin(), c.solved.end(), 0); // (3-р этгээдийн тооцооноос үлдсэн байрлал жижигрүүлэлтгүй)
     const Matrix worldToBody = MatrixInvert(bodyToWorld);
     auto point = [&](Vector3 p) { return Vector3Scale(Vector3Transform(p, worldToBody), 1.0f / s); }; // -> загварын нэгж
     auto direction = [&](Vector3 d) {
@@ -1008,6 +1020,8 @@ void DrawCharacterArms(int id, const Matrix& bodyToWorld, const ViewArmTarget ta
     }
     rlPopMatrix();
     rlEnableBackfaceCulling();
+    armsPass = false;
+    std::fill(c.solved.begin(), c.solved.end(), 0); // (дараагийн 3-р этгээдийн зураглал жижигрүүлэлтгүй байрлалаас эхэлнэ)
 }
 
 namespace

@@ -154,6 +154,8 @@ float HumanoidGaitRate(float speed);
 // 1-р этгээдийн камерт: дэлгэцийн баруун доор гар ба барьсан зэвсэг (Counter-Strike маягийн).
 // recoil 0..1, walkPhase алхааны үе, moveAmount 0..1, reload 0..1 (-1 = үгүй), action 1 -> 0 (хатгах / шидэх).
 // aim 0..1: онилох (баруун товч) үед буу дэлгэцийн төвд, гол төмөр нь хараатай нэг шугамд ирнэ.
+// 1-р этгээдийн гарыг аль дүрийн загвараас авах (тоглогчийн одоогийн дүр). Тэр дүр өөрийн гаргүй бол бээлийтэй гар.
+void SetViewModelArms(int characterModel);
 void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float walkPhase, float moveAmount, float reload,
                    float action, float aim = 0.0f);
 // 1-р этгээдийн үед сумны мөр, амны гал гарах цэг (ертөнцөд).
