@@ -689,6 +689,7 @@ uniform float time;
 uniform vec2 wind;
 uniform vec3 viewPos;
 uniform float grassRadius;
+uniform float grassZoom; // ойртуулалт (онилох, дуран): алс газрын өвс харагдах хэмжээгээрээ өтгөн (Terrain::DrawGrass)
 uniform vec3 pusher;
 // Зайгаар үлдэх бутны хувь (Terrain.cpp GrassKeep-тэй ижил)
 float GrassKeep(float d, float r)
@@ -706,7 +707,13 @@ void main()
     vec2 root = vertexNormal.xz;
     vec3 base = vec3(root.x, vertexTexCoord.y, root.y);
     float sway = clamp((1.0 - vertexColor.a) * 2.5, 0.0, 1.0);
-    float keep = GrassKeep(distance(viewPos.xz, root), grassRadius);
+    float dist = distance(viewPos.xz, root);
+    float keep = GrassKeep(dist, grassRadius);
+    if (grassZoom > 1.05)
+    {
+        float cap = mix(1.0, 0.15, smoothstep(grassRadius * 0.8, grassRadius * 1.5, dist)) * step(dist, 320.0);
+        keep = max(keep, GrassKeep(dist / grassZoom, grassRadius) * cap);
+    }
     float grow = clamp((keep - vertexNormal.y) * 6.0, 0.0, 1.0);
     vec3 p = mix(base, vertexPosition, grow);
     float phase = time * 2.1 + root.x * 0.37 + root.y * 0.29;

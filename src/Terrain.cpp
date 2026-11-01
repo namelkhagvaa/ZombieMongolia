@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <unordered_map>
 
 namespace
 {
@@ -769,11 +770,43 @@ void Terrain::DrawGrass(const Camera3D& camera) const
 {
     const float radius = grassRadius;
     const Vector3 eye = camera.position;
-    // Холдсон нүдийг чөлөөлнө
+    // Ойртуулалт (онилох, дуран): харах өнцөг нарийсах тусам хол газар том харагдана. Өвсний нягтыг харагдах
+    // хэмжээгээр тооцно: 9 дахин ойртуулбал 300 м-т буй өвс ~33 м-т буй мэт өтгөн (зөвхөн харах конус дотор).
+    // Жирийн радиусаас цааш дээд тал нь 15%, 320 м хүртэл (дурангаар ногоон харагдахад хангалттай, хэт олон биш).
+    const float zoom = std::max(1.0f, std::tan(30.0f * DEG2RAD) / std::tan(camera.fovy * 0.5f * DEG2RAD));
+    const bool zoomed = zoom > 1.05f;
+    const float reach = std::min(radius * zoom, 320.0f);
+    const ViewCone view = ViewCone::From(camera);
+    if (const int location = GetShaderLocation(grassMaterial->shader, "grassZoom"); location >= 0)
+    {
+        SetShaderValue(grassMaterial->shader, location, &zoom, SHADER_UNIFORM_FLOAT);
+    }
+    auto farCap = [&](float distance) { return Lerp(1.0f, 0.15f, SmoothStep(radius * 0.8f, radius * 1.5f, distance)); };
+    auto cellCenter = [&](int cx, int cz) {
+        const float x = ((float)cx + 0.5f) * kGrassCell, z = ((float)cz + 0.5f) * kGrassCell;
+        return Vector3{ x, HeightAt(x, z), z };
+    };
+    // Нүдэнд хэрэгтэй бутны хувь: эргэн тойрны цагираг (бүх чиглэлд), ойртуулсан бол харах конус дотор алс хүртэл
+    auto need = [&](int cx, int cz, float& nearestOut) {
+        const float lx = (float)cx * kGrassCell, lz = (float)cz * kGrassCell;
+        const float nx = std::clamp(eye.x, lx, lx + kGrassCell), nz = std::clamp(eye.z, lz, lz + kGrassCell);
+        const float nearest = std::hypot(nx - eye.x, nz - eye.z);
+        nearestOut = nearest;
+        float fraction = nearest < radius ? GrassKeep(nearest, radius) : 0.0f;
+        if (zoomed && nearest < reach && view.Sees(cellCenter(cx, cz), kGrassCell * 0.75f + 1.0f, reach))
+        {
+            fraction = std::max(fraction, GrassKeep(nearest / zoom, radius) * farCap(nearest));
+        }
+        return fraction;
+    };
+
+    // Хэрэггүй болсон нүдийг чөлөөлнө (цагиргаас, ойртуулсан конусаас гарсан)
     for (size_t i = 0; i < grassCells.size();)
     {
-        const float cx = ((float)grassCells[i].cx + 0.5f) * kGrassCell, cz = ((float)grassCells[i].cz + 0.5f) * kGrassCell;
-        if (std::fabs(cx - eye.x) > radius + kGrassCell * 1.5f || std::fabs(cz - eye.z) > radius + kGrassCell * 1.5f)
+        const Vector3 c = cellCenter(grassCells[i].cx, grassCells[i].cz);
+        const bool ring = std::fabs(c.x - eye.x) <= radius + kGrassCell * 1.5f && std::fabs(c.z - eye.z) <= radius + kGrassCell * 1.5f;
+        const bool cone = zoomed && view.Sees(c, kGrassCell * 2.0f, reach + kGrassCell);
+        if (!ring && !cone)
         {
             UnloadMesh(grassCells[i].mesh);
             grassCells[i] = grassCells.back();
@@ -783,8 +816,15 @@ void Terrain::DrawGrass(const Camera3D& camera) const
     }
     // Дутуу нүдийг (эсвэл ойртсоноор илүү бут хэрэгтэй болсныг) ойроос нь эхэлж үүсгэнэ (кадр бүрд цөөн: гацахгүй).
     // Нүд бүр хамгийн ойрын цэгийнхээ зайд хэрэгтэй хувиар (GrassKeep) үүснэ: хол нүд цөөн бутад хэмнэлттэй.
-    const int x0 = (int)std::floor((eye.x - radius) / kGrassCell), x1 = (int)std::floor((eye.x + radius) / kGrassCell);
-    const int z0 = (int)std::floor((eye.z - radius) / kGrassCell), z1 = (int)std::floor((eye.z + radius) / kGrassCell);
+    static std::unordered_map<long long, int> index;
+    index.clear();
+    for (int k = 0; k < (int)grassCells.size(); ++k)
+    {
+        index[((long long)grassCells[(size_t)k].cx << 32) ^ (unsigned int)grassCells[(size_t)k].cz] = k;
+    }
+    const float span = zoomed ? reach : radius;
+    const int x0 = (int)std::floor((eye.x - span) / kGrassCell), x1 = (int)std::floor((eye.x + span) / kGrassCell);
+    const int z0 = (int)std::floor((eye.z - span) / kGrassCell), z1 = (int)std::floor((eye.z + span) / kGrassCell);
     struct Missing { float distance; int cx, cz; float fraction; int existing; };
     std::vector<Missing> missing;
     for (int cz = z0; cz <= z1; ++cz)
@@ -793,23 +833,21 @@ void Terrain::DrawGrass(const Camera3D& camera) const
         {
             const float lx = (float)cx * kGrassCell, lz = (float)cz * kGrassCell;
             if (std::fabs(lx + kGrassCell * 0.5f) > halfExtent || std::fabs(lz + kGrassCell * 0.5f) > halfExtent) continue;
-            const float nx = std::clamp(eye.x, lx, lx + kGrassCell), nz = std::clamp(eye.z, lz, lz + kGrassCell);
-            const float nearest = std::hypot(nx - eye.x, nz - eye.z);
-            if (nearest > radius) continue;
-            const float fraction = std::max(0.02f, GrassKeep(nearest, radius));
-            int existing = -1;
-            for (int k = 0; k < (int)grassCells.size(); ++k)
-            {
-                if (grassCells[(size_t)k].cx == cx && grassCells[(size_t)k].cz == cz) existing = k;
-            }
+            float nearest = 0.0f;
+            const float wanted = need(cx, cz, nearest);
+            if (wanted <= 0.0f) continue;
+            const float fraction = std::max(0.02f, wanted);
+            const auto found = index.find(((long long)cx << 32) ^ (unsigned int)cz);
+            const int existing = found == index.end() ? -1 : found->second;
             if (existing < 0 || grassCells[(size_t)existing].fraction < fraction - 0.04f)
             {
-                missing.push_back({ nearest, cx, cz, std::min(1.0f, fraction + 0.08f), existing });
+                // (ойртуулсан үед дэлгэцэн дээр ойр харагдах нүднүүд эхэлж)
+                missing.push_back({ nearest / (nearest < radius ? 1.0f : zoom), cx, cz, std::min(1.0f, fraction + 0.08f), existing });
             }
         }
     }
     std::sort(missing.begin(), missing.end(), [](const Missing& a, const Missing& b) { return a.distance < b.distance; });
-    const int budget = grassCells.empty() ? 1000 : 4;
+    const int budget = grassCells.empty() ? 1000 : zoomed ? 6 : 4;
     for (int i = 0; i < (int)missing.size() && i < budget; ++i)
     {
         const Missing& want = missing[(size_t)i];
@@ -826,13 +864,10 @@ void Terrain::DrawGrass(const Camera3D& camera) const
         else grassCells.push_back(cell);
     }
 
-    const ViewCone view = ViewCone::From(camera);
     for (const GrassCell& cell : grassCells)
     {
         if (cell.mesh.vertexCount == 0) continue;
-        const Vector3 center = { ((float)cell.cx + 0.5f) * kGrassCell, HeightAt(((float)cell.cx + 0.5f) * kGrassCell, ((float)cell.cz + 0.5f) * kGrassCell),
-                                 ((float)cell.cz + 0.5f) * kGrassCell };
-        if (!view.Sees(center, kGrassCell * 0.75f + 1.0f, radius + kGrassCell)) continue;
+        if (!view.Sees(cellCenter(cell.cx, cell.cz), kGrassCell * 0.75f + 1.0f, (zoomed ? reach : radius) + kGrassCell)) continue;
         DrawMesh(cell.mesh, *grassMaterial, MatrixIdentity());
     }
 }
