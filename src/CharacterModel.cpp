@@ -742,6 +742,13 @@ void LoadCharacterModels(Shader shader)
             }
         }
         c.scale = top > 0.01f ? TargetHeight(id) / top : 1.0f;
+        if (id == kCharacterFpArms && c.joints[RightArm] >= 0 && c.joints[RightHand] >= 0)
+        {
+            // 1-р этгээдийн гар: загвар нь бүтэн хүн биш байж болно (зөвхөн гар, хөл): өндрөөр биш, мөрнөөс бугуй
+            // хүртэлх уртаар (0.55 м) томруулна
+            const float arm = Vector3Distance(c.bind[(size_t)c.joints[RightArm]], c.bind[(size_t)c.joints[RightHand]]);
+            if (arm > 0.001f) c.scale = 0.55f / arm;
+        }
         // Холын дүрд: ~4.5 см нүдээр бүлэглэсэн хөнгөн хувилбар
         int lodTriangles = 0;
         for (int index = 0; index < c.model.meshCount; ++index)
