@@ -623,7 +623,8 @@ Mesh Terrain::BuildGrassCell(int cx, int cz) const
 
     // Нягтын тор (1 м): зам, хучилт, ус, барилгын дотор өвсгүй; толбо толбоор өтгөн, сийрэг; суурин дотор гишгэгдсэн
     const int samples = (int)kGrassCell + 1;
-    float mask[9][9] = {};
+    // hard: зам, хучилт (хагарлаар нь хогийн ургамал ургана); edge: замын хажуугийн зурвас (хогийн ургамал өндөр)
+    float mask[9][9] = {}, hard[9][9] = {}, edge[9][9] = {};
     const bool urbanLayout = layout.IsCity();
     for (int iz = 0; iz < samples; ++iz)
     {
@@ -631,7 +632,12 @@ Mesh Terrain::BuildGrassCell(int cx, int cz) const
         {
             const float x = x0 + (float)ix, z = z0 + (float)iz;
             float d = 0.0f;
-            if (!layout.Paved(x, z) && layout.RoadDistance(x, z) >= 0.6f && layout.LakeDepth(x, z) <= 0.2f)
+            const bool paved = layout.Paved(x, z);
+            const float road = layout.RoadDistance(x, z);
+            const bool water = layout.LakeDepth(x, z) > 0.2f;
+            hard[iz][ix] = !water && (paved || road < 0.6f) ? 1.0f : 0.0f;
+            edge[iz][ix] = !water && !paved && road >= 0.6f && road < 2.2f ? 1.0f : 0.0f;
+            if (!paved && road >= 0.6f && !water)
             {
                 d = 0.3f + 0.7f * SmoothStep(0.28f, 0.56f, Fbm(x * 0.05f, z * 0.05f, 2));
                 if (urbanLayout && (layout.IsCapital() || layout.CityBuiltDistance(x, z) < 150.0f))
@@ -658,36 +664,61 @@ Mesh Terrain::BuildGrassCell(int cx, int cz) const
         const float u = rng.Next() * kGrassCell, v = rng.Next() * kGrassCell;
         const int ix = std::min((int)u, samples - 2), iz = std::min((int)v, samples - 2);
         const float fx = u - (float)ix, fz = v - (float)iz;
-        const float d = (mask[iz][ix] * (1.0f - fx) + mask[iz][ix + 1] * fx) * (1.0f - fz) +
-                        (mask[iz + 1][ix] * (1.0f - fx) + mask[iz + 1][ix + 1] * fx) * fz;
+        auto lerp = [&](const float (&m)[9][9]) {
+            return (m[iz][ix] * (1.0f - fx) + m[iz][ix + 1] * fx) * (1.0f - fz) + (m[iz + 1][ix] * (1.0f - fx) + m[iz + 1][ix + 1] * fx) * fz;
+        };
+        const float d = lerp(mask);
         const float roll = rng.Next();
-        if (roll >= d) continue;
         const float tx = x0 + u, tz = z0 + v;
+
+        // Хогийн ургамал (хаягдсан хот): замын хагарлаар намхан, замын хажуу, хана хашааны ёроолд өндөр, өтгөн
+        enum class Kind { Grass, Crack, Edge, Wall } kind = Kind::Grass;
+        if (lerp(hard) > 0.5f)
+        {
+            if (roll > 0.5f) continue;
+            // Хагарал: нарийн зураас (fbm-ийн дундаж түвшний шугам)
+            if (std::fabs(Fbm(tx * 0.35f + 11.0f, tz * 0.35f + 5.0f, 2) - 0.5f) > 0.02f) continue;
+            kind = Kind::Crack;
+        }
+        else
+        {
+            const float boost = std::max(d, 0.55f * lerp(edge));
+            const bool wallRoll = roll < 0.6f && !nearby.empty() && InsideObstacle(nearby, tx, tz, 0.6f);
+            if (roll >= std::max(boost, wallRoll ? 0.6f : 0.0f)) continue;
+            if (wallRoll) kind = Kind::Wall;
+            else if (roll >= d) kind = Kind::Edge;
+        }
         if (InsideObstacle(nearby, tx, tz, 0.1f)) continue;
         const float ty = HeightAt(tx, tz);
+        const bool weed = kind != Kind::Grass;
 
         // Бут бүр нэг өнгөтэй (бага зэрэг хэлбэлзэлтэй): ёроол бараан (нягт өвсний сүүдэр), үзүүр цайвар,
         // салхинд найгана (alpha < 255). Хэт тод бол газраас тасарч "өргөс" шиг харагдана.
-        // Өнгө нь хагас газрынх: газар шаргал бол өвс ч шаргалдуу (тод ногоон ир шар хөрсөн дээр тусдаа харагдана)
-        const Color palette = rng.Chance(0.2f + 0.65f * lushness) ? MixColor(kGrassLush, kGrassGreen, rng.Next() * (1.0f - 0.7f * lushness))
-                                                                 : MixColor(kGrassGreen, kGrassDry, rng.Next() * (1.0f - 0.6f * lushness));
+        // Өнгө нь хагас газрынх: газар шаргал бол өвс ч шаргалдуу (тод ногоон ир шар хөрсөн дээр тусдаа харагдана).
+        // Хогийн ургамал бараан ногоон (чийг хадгалдаг газар), цөөн нь хатсан.
+        const Color palette = weed ? (rng.Chance(0.75f) ? ScaleColor(MixColor(kGrassLush, kGrassGreen, rng.Next()), 0.85f) : kGrassDry)
+                                   : rng.Chance(0.2f + 0.65f * lushness) ? MixColor(kGrassLush, kGrassGreen, rng.Next() * (1.0f - 0.7f * lushness))
+                                                                         : MixColor(kGrassGreen, kGrassDry, rng.Next() * (1.0f - 0.6f * lushness));
         const int gx = std::clamp((int)((tx + halfExtent) / cellSize + 0.5f), 0, cells);
         const int gz = std::clamp((int)((tz + halfExtent) / cellSize + 0.5f), 0, cells);
-        const Color tint = MixColor(ScaleColor(GroundColor(gx, gz, GridNormal(gx, gz)), 1.1f), palette, 0.45f);
-        const float tall = rng.Range(0.16f, 0.42f) * (0.8f + 0.45f * lushness) * (0.6f + 0.4f * d);
+        const Color tint = MixColor(ScaleColor(GroundColor(gx, gz, GridNormal(gx, gz)), 1.1f), palette, weed ? 0.75f : 0.45f);
+        float tall = rng.Range(0.16f, 0.42f) * (0.8f + 0.45f * lushness) * (0.6f + 0.4f * d);
+        if (kind == Kind::Crack) tall = rng.Range(0.1f, 0.32f);
+        else if (kind != Kind::Grass) tall = rng.Range(0.3f, 0.75f);
         const float seed = rng.Next();
-        const int blades = rng.Int(5, 8);
+        const int blades = weed ? rng.Int(4, 7) : rng.Int(5, 8);
+        const float spread = weed ? 0.14f : 0.09f;
         for (int b = 0; b < blades; ++b)
         {
-            const float x = tx + rng.Range(-0.09f, 0.09f), z = tz + rng.Range(-0.09f, 0.09f);
+            const float x = tx + rng.Range(-spread, spread), z = tz + rng.Range(-spread, spread);
             const Color root = ScaleColor(JitterColor(tint, rng, 0.06f), 0.62f);
             Color tip = ScaleColor(JitterColor(tint, rng, 0.08f), 1.3f);
             tip.a = 150;
             const float height = tall * rng.Range(0.6f, 1.15f);
-            const float width = rng.Range(0.018f, 0.032f);
+            const float width = weed ? rng.Range(0.03f, 0.06f) : rng.Range(0.018f, 0.032f);
             const float angle = rng.Range(0.0f, 2.0f * PI);
             const float side = angle + PI * 0.5f;
-            const float lean = rng.Range(0.15f, 0.5f) * height;
+            const float lean = (weed ? rng.Range(0.3f, 0.8f) : rng.Range(0.15f, 0.5f)) * height;
             const float verts[9] = { x - std::cos(side) * width, ty, z - std::sin(side) * width,
                                      x + std::cos(side) * width, ty, z + std::sin(side) * width,
                                      x + std::cos(angle) * lean, ty + height, z + std::sin(angle) * lean };
