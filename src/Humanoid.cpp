@@ -1312,6 +1312,56 @@ namespace
         return m;
     }
 
+    // --- Урт бууны бэлэн (онилоогүй) байрлал: камерын орон зайд (+X зүүн, +Y дээш, +Z урагш) ---
+    // Counter-Strike-ийн AWP зургаас хэмжсэн дэлгэцийн цэгүүд (нормчилсон: баруун +, дээш +): бууны их бие (гол
+    // төмрийн ар хэсэг, бариулын дээр) дэлгэцийн баруун доор, ам нь хараанаас бага зэрэг баруун доор. Их биеийг
+    // тэр цэгт тавьж, ам нь нөгөө цэгийн туяан дээр байхаар чиглүүлнэ (камерын баруун, дээш, урд векторуудаар):
+    // буу баруун доороос төв рүү ташуу, дээд тал нь харагдана; бариул (баруун гар) баруун доод буланд.
+    // Бууны загварын эх 24 см зүүн тийш зөрүүтэй тул эргэлтийг бариулыг тойруулна.
+    const Vector3 kLongGripLocal = { -0.24f, 0.14f, 0.3f }; // гар бариул (DrawGun-ийн орон зай: x, y - 0.16, 0.3)
+    const float kLongBore = 0.16f;                          // бариулаас гол төмөр хүртэл
+    const float kLongScale = 1.0f;                          // бодит хэмжээ
+    const Vector2 kLongBodyScreen = { 0.62f, -0.42f }, kLongMuzzleScreen = { 0.13f, -0.11f };
+    const float kLongBodyDepth = 0.420f;                    // их бие камераас урд (м)
+    const float kLongCant = -6.0f;                          // бууг бага зэрэг баруун тийш хазайлгана (градус)
+
+    struct LongGunPose
+    {
+        Vector3 grip;    // бариулын байрлал (камерын орон зай)
+        Matrix rotation; // бууны орон зай -> камерын орон зай (байрлалгүй)
+        Vector3 muzzle;  // бууны ам (камерын орон зай)
+    };
+
+    LongGunPose LongGunHip(float fovy)
+    {
+        const float ty = std::tan(fovy * 0.5f * DEG2RAD);
+        const float tx = ty * (float)rlGetFramebufferWidth() / (float)std::max(1, rlGetFramebufferHeight());
+        auto ray = [&](Vector2 n, float depth) { return Vector3{ -n.x * tx * depth, n.y * ty * depth, depth }; };
+        const Vector3 bore = ray(kLongBodyScreen, kLongBodyDepth);
+        const Vector3 muzzleRay = Vector3Normalize(ray(kLongMuzzleScreen, 1.0f));
+        const float length = (kHumanoidMuzzle.z - kLongGripLocal.z) * kLongScale;
+        Vector3 up = { 0.0f, 1.0f, 0.0f }, forward = { 0.0f, 0.0f, 1.0f }, muzzle = {};
+        for (int pass = 0; pass < 4; ++pass)
+        {
+            // Ам нь туяан дээр, их биеэс length зайд
+            const float rb = Vector3DotProduct(muzzleRay, bore);
+            const float t = rb + std::sqrt(std::max(0.0f, rb * rb - Vector3DotProduct(bore, bore) + length * length));
+            muzzle = Vector3Scale(muzzleRay, t);
+            forward = Vector3Normalize(Vector3Subtract(muzzle, bore));
+            up = Vector3Normalize(Vector3Subtract({ 0.0f, 1.0f, 0.0f }, Vector3Scale(forward, forward.y)));
+            const Vector3 side = Vector3CrossProduct(up, forward);
+            const float cant = kLongCant * DEG2RAD;
+            up = Vector3Add(Vector3Scale(up, std::cos(cant)), Vector3Scale(side, std::sin(cant)));
+        }
+        const Vector3 left = Vector3CrossProduct(up, forward);
+        const Vector3 grip = Vector3Subtract(bore, Vector3Scale(up, kLongBore * kLongScale)); // бариул их биеийн доор
+        Matrix r = MatrixIdentity();
+        r.m0 = left.x;    r.m1 = left.y;    r.m2 = left.z;
+        r.m4 = up.x;      r.m5 = up.y;      r.m6 = up.z;
+        r.m8 = forward.x; r.m9 = forward.y; r.m10 = forward.z;
+        return { grip, r, muzzle };
+    }
+
     const Color kSleeve = { 82, 96, 62, 255 };   // дүрэмт хувцасны ханцуй
     const Color kGlove = { 38, 36, 32, 255 };    // бээлий
 
@@ -1695,18 +1745,39 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
         // Дэлгэцийн цэгүүдээс тооцсон (CS-ийн AWP зураг): ам нь хараанаас бага зэрэг баруун доор, их бие дэлгэцийн
         // баруун доор (дээд тал нь харагдана), бариул баруун доод буланд. Бууны эх нь зүүн тийш 24 см зөрүүтэй тул
         // эргэлтүүд том шилжилттэй хамт.
-        const float scale = Lerp(launcher ? hipScale : 1.05f, 0.55f, aim);
-        const float gx = launcher ? hipX : -0.58f, gyaw = launcher ? hipYaw : 27.0f, gy = launcher ? hipY : -0.642f, groll = launcher ? hipRoll : -12.0f;
-        const float gz = launcher ? hipZ : 0.252f, gpitch = launcher ? hipPitch : -8.0f;
-        rlTranslatef(Lerp(gx, 0.132f, aim), Lerp(gy, launcher ? -0.25f : -0.25f, aim) - 0.06f * sprint,
-                     Lerp(gz, 0.24f, aim) - 0.04f * recoil - 0.03f * sprint);
-        rlRotatef(gyaw * (1.0f - aim) + 28.0f * sprint, 0.0f, 1.0f, 0.0f);
-        rlRotatef(groll * (1.0f - aim), 0.0f, 0.0f, 1.0f);
-        rlRotatef(10.0f * sprint + gpitch * (1.0f - aim), 1.0f, 0.0f, 0.0f);
-        rlRotatef(-12.0f * sprint, 0.0f, 0.0f, 1.0f);
-        rlScalef(scale, scale, scale);
-        rlRotatef(-5.0f * recoil - 18.0f * reloading, 1.0f, 0.0f, 0.0f);
-        rlRotatef(-25.0f * reloading, 0.0f, 0.0f, 1.0f);
+        if (launcher)
+        {
+            const float scale = Lerp(hipScale, 0.55f, aim);
+            rlTranslatef(Lerp(hipX, 0.132f, aim), Lerp(hipY, -0.25f, aim) - 0.06f * sprint, Lerp(hipZ, 0.24f, aim) - 0.04f * recoil - 0.03f * sprint);
+            rlRotatef(hipYaw * (1.0f - aim) + 28.0f * sprint, 0.0f, 1.0f, 0.0f);
+            rlRotatef(hipRoll * (1.0f - aim), 0.0f, 0.0f, 1.0f);
+            rlRotatef(10.0f * sprint + hipPitch * (1.0f - aim), 1.0f, 0.0f, 0.0f);
+            rlRotatef(-12.0f * sprint, 0.0f, 0.0f, 1.0f);
+            rlScalef(scale, scale, scale);
+            rlRotatef(-5.0f * recoil - 18.0f * reloading, 1.0f, 0.0f, 0.0f);
+            rlRotatef(-25.0f * reloading, 0.0f, 0.0f, 1.0f);
+        }
+        else
+        {
+            // Бие (мөр) камерт бэхлэгдэнэ: баруун мөр дэлгэцийн баруун доод захаас гадна, зүүн мөр урагш (35 градус):
+            // баруун шуу баруун доод булангаас бариул руу, зүүн шуу доороос урд мод руу орж ирнэ.
+            // Онилоход мөр төв рүү, бие шулуун.
+            AnchorViewBody({ Lerp(-0.2f, -0.12f, aim), Lerp(-0.27f, -0.25f, aim), Lerp(-0.06f, -0.12f, aim) }, Lerp(-35.0f, -10.0f, aim));
+            // Бэлэн байрлал (LongGunHip) ба онилсон байрлал (гол төмөр хараан доор, 55%) хооронд: бариулын байрлал,
+            // эргэлт, хэмжээг зөөлөн шилжүүлнэ. Гүйх, ухрах, цэнэглэх хөдөлгөөн бариулыг тойрно.
+            const LongGunPose hip = LongGunHip(camera.fovy);
+            const Vector3 sightGrip = Vector3Add({ 0.132f, -0.25f, 0.24f }, Vector3Scale(kLongGripLocal, 0.55f));
+            const Quaternion turn = QuaternionSlerp(QuaternionFromMatrix(hip.rotation), QuaternionIdentity(), aim);
+            const float scale = Lerp(kLongScale, 0.55f, aim);
+            const Vector3 grip = Vector3Lerp(hip.grip, sightGrip, aim);
+            rlTranslatef(grip.x, grip.y - 0.06f * sprint, grip.z - 0.04f * recoil - 0.03f * sprint);
+            rlMultMatrixf(MatrixToFloat(QuaternionToMatrix(turn)));
+            rlScalef(scale, scale, scale);
+            rlRotatef(28.0f * sprint, 0.0f, 1.0f, 0.0f);
+            rlRotatef(10.0f * sprint - 5.0f * recoil - 18.0f * reloading, 1.0f, 0.0f, 0.0f);
+            rlRotatef(-12.0f * sprint - 25.0f * reloading, 0.0f, 0.0f, 1.0f);
+            rlTranslatef(-kLongGripLocal.x, -kLongGripLocal.y, -kLongGripLocal.z);
+        }
         if (held == HeldItem::Rifle) DrawGun(0.0f, true);
         else if (held == HeldItem::Shotgun) DrawShotgun(0.0f, true);
         else if (held == HeldItem::Sniper) DrawSniper(0.0f, true);
@@ -1719,8 +1790,11 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
         // Онилоход (загварын гар): мөр 40 см доош, 10 см хойш, бие бараг шулуун (10°): зүүн гар бууны ард хөндлөн
         // гарахгүй, урд модыг доороос нь барина
         const float aimDrop = 0.4f, aimYaw = -10.0f, aimBack = 0.1f;
-        AnchorViewBody({ x - 0.02f, y + 0.02f - (viewModelArms ? Lerp(0.3f, aimDrop, aim) : 0.0f), -0.17f - (viewModelArms ? aimBack * aim : 0.0f) },
-                       Lerp(-35.0f, viewModelArms ? aimYaw : -35.0f, aim));
+        if (launcher)
+        {
+            AnchorViewBody({ x - 0.02f, y + 0.02f - (viewModelArms ? Lerp(0.3f, aimDrop, aim) : 0.0f), -0.17f - (viewModelArms ? aimBack * aim : 0.0f) },
+                           Lerp(-35.0f, viewModelArms ? aimYaw : -35.0f, aim));
+        }
         // (онилоход загварын гарын зүүн гар урд модыг доороос нь: хуруу нь бууны дээгүүр гарч харааг халхлахгүй)
         const float lowY = viewModelArms ? -0.08f * aim : 0.0f; // (8 см доош: хуруу бууны дээгүүр гарч харааг халхлахгүй)
         const Vector3 lowWrist = { 0.0f, -0.5f * aim, 0.0f };
@@ -1889,7 +1963,7 @@ Vector3 ViewModelMuzzle(const Camera3D& camera, HeldItem held, float aim)
     const Matrix basis = ViewBasis(camera);
     aim = std::clamp(aim, 0.0f, 1.0f);
     // Бууны амны цэг: бэлэн үеийн байрлал (72%, DrawViewModel-ийн шилжилт, эргэлтийн дараа); онилоход (55%) төв рүү шилжинэ.
-    Vector3 hip = { -0.179f, -0.12f, 1.212f }, sight = { 0.0f, -0.075f, 0.83f }; // автомат, үрлэн буу, дурантай буу (дэлгэцээс хэмжсэн)
+    Vector3 hip = LongGunHip(camera.fovy).muzzle, sight = { 0.0f, -0.075f, 0.83f }; // автомат, үрлэн буу, дурантай буу (дэлгэцээс хэмжсэн)
     if (held == HeldItem::Pistol) { hip = { -0.13f, -0.09f, 0.6f }; sight = { 0.0f, -0.04f, 0.54f }; }
     else if (held == HeldItem::Launcher) { hip = { -0.223f, -0.172f, 0.69f }; sight = { 0.0f, -0.08f, 0.93f }; }
     return Vector3Transform(Vector3Lerp(hip, sight, aim), basis);
