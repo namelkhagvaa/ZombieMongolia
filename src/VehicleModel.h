@@ -73,6 +73,9 @@ void UnloadSceneryModels();
 bool HasSceneryModel(SceneryModelId id);
 // Одоогийн rlgl хувиргалтаар зурна. depth != nullptr бол сүүдрийн зурагт тэр материалаар.
 void DrawSceneryModel(SceneryModelId id, const Material* depth = nullptr);
+// Холын мод: маш хөнгөн хувилбарыг олноор нь нэг дор (instancing). instanced: Environment::TreeMaterial (текстурыг
+// энд тавина). transforms: мод бүрийн загвар -> ертөнц матриц.
+void DrawSceneryFar(SceneryModelId id, const Material& instanced, const Matrix* transforms, int count);
 
 void LoadPropModels(Shader shader);
 void UnloadPropModels();

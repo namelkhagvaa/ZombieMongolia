@@ -673,13 +673,51 @@ void World::UpdateScenery(Vector3 viewPosition)
         const float dx = item.base.x - viewPosition.x, dz = item.base.z - viewPosition.z;
         if (dx * dx + dz * dz < kLandmarkDistance * kLandmarkDistance) wanted.push_back(index);
     }
-    // Ойроос гарсан: хөнгөн хувилбарыг буцаана; шинээр орсон: нууна
+    // Ойроос гарсан: хөнгөн хувилбарыг буцаана (мод бол үгүй: холоос ч жинхэнэ загвараараа); шинээр орсон: нууна
+    const bool farTrees = treeMaterial != nullptr;
+    auto isTree = [&](int index) {
+        const SceneryItem& item = scenery[(size_t)index];
+        return farTrees && item.count > 0 && item.kind <= (int)SceneryModelId::Saxaul && HasSceneryModel((SceneryModelId)item.kind);
+    };
     for (int index : sceneryNear)
     {
-        if (std::find(wanted.begin(), wanted.end(), index) == wanted.end()) SetSceneryHidden(index, false);
+        scenery[(size_t)index].near = false;
+        if (std::find(wanted.begin(), wanted.end(), index) == wanted.end() && !isTree(index)) SetSceneryHidden(index, false);
     }
-    for (int index : wanted) SetSceneryHidden(index, true);
+    for (int index : wanted)
+    {
+        SetSceneryHidden(index, true);
+        scenery[(size_t)index].near = true;
+    }
     sceneryNear = wanted;
+    // Бүх мод: хөнгөн (кодоор угсарсан) хувилбарыг нууна, холынхыг DrawFarTrees загвараар зурна
+    if (farTrees)
+    {
+        for (int i = 0; i < (int)scenery.size(); ++i)
+        {
+            if (!scenery[(size_t)i].hidden && isTree(i)) SetSceneryHidden(i, true);
+        }
+    }
+}
+
+void World::DrawFarTrees(const ViewCone& view, float maxDistance) const
+{
+    if (!treeMaterial) return;
+    static std::vector<Matrix> transforms[4];
+    for (auto& list : transforms) list.clear();
+    for (const SceneryItem& item : scenery)
+    {
+        if (item.near || item.count == 0 || item.kind < 0 || item.kind > (int)SceneryModelId::Saxaul) continue;
+        if (!view.Sees({ item.base.x, item.base.y + item.height * 0.5f, item.base.z }, item.height * 0.7f, maxDistance)) continue;
+        const Matrix m = MatrixMultiply(MatrixMultiply(MatrixScale(item.height, item.height, item.height), MatrixRotateY(item.yaw)),
+                                        MatrixTranslate(item.base.x, item.base.y, item.base.z));
+        transforms[item.kind].push_back(m);
+    }
+    for (int kind = 0; kind < 4; ++kind)
+    {
+        if (transforms[kind].empty() || !HasSceneryModel((SceneryModelId)kind)) continue;
+        DrawSceneryFar((SceneryModelId)kind, *treeMaterial, transforms[kind].data(), (int)transforms[kind].size());
+    }
 }
 
 void World::DrawNearScenery(const ViewCone* view, const Material* depth) const
@@ -1861,6 +1899,7 @@ void World::Draw(const Camera3D& camera, const Material& material, const Materia
     DrawPieces(settlementSceneryPieces, material, view, kStructureDistance);
     DrawPieces(boundaryPosts, material, view, kBoundaryDistance);
     DrawNearScenery(&view, nullptr);
+    DrawFarTrees(view, kStructureDistance);
     DrawRopes();
 
     // Сүүдэр: газар дээр наалдсан хагас тунгалаг давхарга, гүний буферт бичихгүй.

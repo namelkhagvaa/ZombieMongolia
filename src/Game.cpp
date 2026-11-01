@@ -5153,6 +5153,7 @@ void Game::DrawMissionScene() const
     environment.Begin(view);
     // Ойрын өтгөн өвс: тоглогч дундуур нь явахад хажуу тийш нална
     world.SetGrass(environment.GrassMaterial(), environment.GrassRadius(), environment.GrassDensity());
+    world.SetTreeMaterial(environment.TreeMaterial());
     environment.SetGrassPusher(player.Position());
     {
         PROFILE_SCOPE("draw world");

@@ -815,6 +815,25 @@ void main()
 }
 )";
 
+    // Холын мод (instancing): мод бүрийн матриц оройн шинж чанараар (instanceTransform), бусад нь машины shader
+    const char* kTreeInstancedVertexShader = R"(in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec3 vertexNormal;
+in mat4 instanceTransform;
+uniform mat4 mvp;
+out vec3 fragPosition;
+out vec2 fragTexCoord;
+out vec3 fragNormal;
+void main()
+{
+    vec4 world = instanceTransform * vec4(vertexPosition, 1.0);
+    fragPosition = world.xyz;
+    fragTexCoord = vertexTexCoord;
+    fragNormal = mat3(instanceTransform) * vertexNormal;
+    gl_Position = mvp * world;
+}
+)";
+
     const char* kVehicleFragmentShader = R"(in vec3 fragPosition;
 in vec2 fragTexCoord;
 in vec3 fragNormal;
@@ -1424,6 +1443,14 @@ Environment::Environment()
     grassMaterial = MaterialWith(grassShader);
     characterShader = LoadVersionedShader(kCharacterVertexShader, kCharacterFragmentShader);
     vehicleShader = LoadVersionedShader(kVehicleVertexShader, kVehicleFragmentShader);
+    // (туршилт ZM_OLDTREES=1: холын модыг хуучин кодоор угсарсан хөнгөн дүрсээр, харьцуулах)
+    if (!std::getenv("ZM_OLDTREES")) treeShader = LoadVersionedShader(kTreeInstancedVertexShader, kVehicleFragmentShader);
+    if (treeShader.id != 0 && treeShader.id != rlGetShaderIdDefault())
+    {
+        treeShader.locs[SHADER_LOC_MATRIX_MODEL] = GetShaderLocationAttrib(treeShader, "instanceTransform");
+        treeMaterial = MaterialWith(treeShader);
+    }
+    else treeShader = {};
     propShader = LoadVersionedShader(kPropVertexShader, kFragmentShader);
     propMaterial = MaterialWith(propShader);
     depthShader = LoadVersionedShader(kDepthVertexShader, kDepthFragmentShader, false);
@@ -1456,7 +1483,7 @@ Environment::Environment()
     if (failed(shaftShader)) { TraceLog(LOG_WARNING, "ENVIRONMENT: light shaft shader failed"); shaftShader = {}; }
 
     sunDirection = skySunDirection = Vector3Normalize(kSunDirection);
-    for (Shader s : { shader, terrainShader, detailShader, grassShader, characterShader, propShader, vehicleShader })
+    for (Shader s : { shader, terrainShader, detailShader, grassShader, characterShader, propShader, vehicleShader, treeShader })
     {
         SetVec3(s, "sunDirection", sunDirection);
         SetInt(s, "shadowMap", kShadowSlot);
@@ -1623,14 +1650,14 @@ Environment::~Environment()
     }
     UnloadBuiltMesh(mountains);
     // Material-ууд shader-ээ хуваалцаж болох тул (орлуулсан үед) shader бүрийг нэг л удаа чөлөөлнө.
-    for (Material* m : { &material, &terrainMaterial, &detailMaterial, &grassMaterial, &propMaterial, &depthMaterial, &characterDepthMaterial })
+    for (Material* m : { &material, &terrainMaterial, &detailMaterial, &grassMaterial, &treeMaterial, &propMaterial, &depthMaterial, &characterDepthMaterial })
     {
         RL_FREE(m->maps);
         m->maps = nullptr;
     }
     unsigned int released[16] = {};
     int count = 0;
-    for (Shader s : { shader, terrainShader, detailShader, grassShader, propShader, depthShader, characterDepthShader, characterShader, vehicleShader, skyShader, postShader,
+    for (Shader s : { shader, terrainShader, detailShader, grassShader, propShader, depthShader, characterDepthShader, characterShader, vehicleShader, treeShader, skyShader, postShader,
                       brightShader, blurShader, aoShader, shaftShader })
     {
         if (s.id == 0 || s.id == rlGetShaderIdDefault()) continue;
@@ -1974,7 +2001,7 @@ void Environment::SetTimeOfDay(float t)
     // Өнгөлөг байдал: өдөр тод (тал нутгийн тунгалаг агаар), шөнө, бороо, цасанд бүдэг
     const float vibrance = 1.12f - 0.14f * night - 0.1f * std::max(wetness, snowCover);
     SetFloat(skyShader, "vibrance", vibrance);
-    for (Shader s : { shader, terrainShader, detailShader, grassShader, characterShader, propShader, vehicleShader })
+    for (Shader s : { shader, terrainShader, detailShader, grassShader, characterShader, propShader, vehicleShader, treeShader })
     {
         if (s.id == 0) continue;
         SetFloat(s, "vibrance", vibrance);
@@ -2002,7 +2029,7 @@ void Environment::SetTimeOfDay(float t)
     SetFloat(skyShader, "cloudCover", cloudCover);
     SetVec3(skyShader, "sunDirection", skySunDirection);
     dayShadow = shadowStrength;
-    for (Shader s : { shader, terrainShader, detailShader, grassShader, characterShader, propShader, vehicleShader })
+    for (Shader s : { shader, terrainShader, detailShader, grassShader, characterShader, propShader, vehicleShader, treeShader })
     {
         SetFloat(s, "snowCover", snowCover);
         SetFloat(s, "wetness", wetness);
@@ -2171,7 +2198,7 @@ void Environment::Begin(const Camera3D& camera) const
     const float depthRange = (float)(rlGetCullDistanceFar() - rlGetCullDistanceNear());
     const float bias = 0.15f / depthRange;
     const float farBias = 0.15f * (farShadowRadius / (float)std::max(1, farShadowSize)) / (shadowRadius / (float)shadowSize) / depthRange;
-    for (Shader s : { shader, terrainShader, detailShader, grassShader, characterShader, propShader, vehicleShader })
+    for (Shader s : { shader, terrainShader, detailShader, grassShader, characterShader, propShader, vehicleShader, treeShader })
     {
         if (s.id == 0) continue;
         SetVec3(s, "viewPos", camera.position);
@@ -2194,7 +2221,7 @@ void Environment::Begin(const Camera3D& camera) const
             SetFloat(s, "shadowBiasFar", farBias);
         }
     }
-    for (Shader s : { shader, terrainShader, detailShader, grassShader, characterShader, propShader, vehicleShader })
+    for (Shader s : { shader, terrainShader, detailShader, grassShader, characterShader, propShader, vehicleShader, treeShader })
     {
         if (s.id == 0) continue;
         SetFloat(s, "time", time);
@@ -2328,7 +2355,7 @@ void Environment::BeginLightPass(const RenderTexture2D& map, int slot, Vector3 c
     ClearBackground(WHITE);
     BeginMode3D(light);
     viewProj = MatrixMultiply(rlGetMatrixModelview(), rlGetMatrixProjection());
-    for (Shader s : { shader, terrainShader, detailShader, grassShader, characterShader, propShader, vehicleShader })
+    for (Shader s : { shader, terrainShader, detailShader, grassShader, characterShader, propShader, vehicleShader, treeShader })
     {
         SetFloat(s, "shadowStrength", 0.0f);
     }

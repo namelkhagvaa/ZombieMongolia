@@ -17,6 +17,7 @@ namespace
     {
         Mesh mesh = {};
         Mesh lod = {};         // хөнгөн хувилбар (холоос): байхгүй бол vertexCount = 0
+        Mesh far = {};         // маш хөнгөн хувилбар (мод: 55 м-ээс цааш, олноор нь нэг дор): байхгүй бол vertexCount = 0
         Vector3 pivot = {};
         unsigned int kind = 0; // 0 их бие, 1 урд дугуй, 2 хойд дугуй, 3 үндсэн сэнс, 4 сүүлний сэнс
     };
@@ -243,6 +244,7 @@ namespace
         {
             UnloadMesh(part.mesh);
             if (part.lod.vertexCount > 0) UnloadMesh(part.lod);
+            if (part.far.vertexCount > 0) UnloadMesh(part.far);
         }
         model.parts.clear();
         if (model.texture.id != 0) UnloadTexture(model.texture);
@@ -446,7 +448,21 @@ void LoadSceneryModels(Shader shader)
         if (!FileExists(mesh.c_str())) continue;
 #endif
         const bool monument = i >= (int)SceneryModelId::Chinggis; // (өндөр нь 5-10 м: нүд нь ~15-25 см)
-        if (LoadOne(scenery[i], mesh, texture, shader)) BuildLods(scenery[i], monument ? 0.025f : 0.15f, monument ? 90.0f : 35.0f); // мод
+        if (LoadOne(scenery[i], mesh, texture, shader))
+        {
+            BuildLods(scenery[i], monument ? 0.025f : 0.15f, monument ? 90.0f : 35.0f); // мод
+            if (i <= (int)SceneryModelId::Saxaul)
+            {
+                // Холын мод (55 м-ээс цааш, харагдах хязгаар хүртэл): ижил загвар, текстур, маш цөөн гурвалжин
+                int count = 0;
+                for (Part& part : scenery[i].parts)
+                {
+                    part.far = SimplifyMesh(part.mesh, 0.16f, 1.0f / 40.0f);
+                    count += part.far.vertexCount > 0 ? part.far.triangleCount : part.mesh.triangleCount;
+                }
+                TraceLog(LOG_INFO, "TREES: %s far model %d triangles", kSceneryNames[i][1], count);
+            }
+        }
     }
 }
 
@@ -479,6 +495,29 @@ void DrawSceneryModel(SceneryModelId id, const Material* depth)
     if (tree && location >= 0) SetShaderValue(material.shader, location, &on, SHADER_UNIFORM_FLOAT);
     for (const Part& part : model.parts) DrawMesh(PickMesh(part, far), material, MatrixIdentity());
     if (tree && location >= 0) SetShaderValue(material.shader, location, &off, SHADER_UNIFORM_FLOAT);
+}
+
+void DrawSceneryFar(SceneryModelId id, const Material& instanced, const Matrix* transforms, int count)
+{
+    Model3& model = scenery[(int)id];
+    if (!model.loaded || count <= 0) return;
+    Material material = instanced;
+    material.maps[MATERIAL_MAP_DIFFUSE].texture = model.texture;
+    static unsigned int cachedShader = 0;
+    static int location = -1;
+    if (material.shader.id != cachedShader)
+    {
+        cachedShader = material.shader.id;
+        location = GetShaderLocation(material.shader, "foliage");
+    }
+    const float on = 1.0f, off = 0.0f;
+    if (location >= 0) SetShaderValue(material.shader, location, &on, SHADER_UNIFORM_FLOAT);
+    for (const Part& part : model.parts)
+    {
+        const Mesh& mesh = part.far.vertexCount > 0 ? part.far : part.lod.vertexCount > 0 ? part.lod : part.mesh;
+        DrawMeshInstanced(mesh, material, transforms, count);
+    }
+    if (location >= 0) SetShaderValue(material.shader, location, &off, SHADER_UNIFORM_FLOAT);
 }
 
 void LoadPropModels(Shader shader)

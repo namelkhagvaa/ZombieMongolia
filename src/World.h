@@ -29,6 +29,8 @@ enum class Surface
 class World
 {
 public:
+    // Холын мод: жинхэнэ загварын маш хөнгөн хувилбараар (Environment::TreeMaterial; nullptr = хуучин хөнгөн дүрс)
+    void SetTreeMaterial(const Material* material) const { treeMaterial = material; }
     // Ойрын өтгөн өвс (Terrain::SetGrass)
     void SetGrass(const Material* material, float radius, float density) const { terrain.SetGrass(material, radius, density); }
     // Цонх нээгдсэний дараа үүсгэнэ (GPU mesh үүсгэдэг).
@@ -199,6 +201,7 @@ private:
     void ShowAllScenery();
     // Ойрын модыг текстуртай загвараар (view != nullptr бол харагдах конусаар шүүнэ; depth: сүүдрийн зураг)
     void DrawNearScenery(const ViewCone* view, const Material* depth) const;
+    void DrawFarTrees(const ViewCone& view, float maxDistance) const;
     // Цонхны гарцын зогсох цэгүүд хашаа, тавилга зэрэг саадтай давхцвал ойрын чөлөөт газар руу шилжүүлнэ;
     // хол шилжүүлэх шаардлагатай бол (давсны дараа гацна) гарцыг хасна.
     void FitWindowPassages();
@@ -245,7 +248,9 @@ private:
         int piece = -1, vertexStart = 0;
         size_t count = 0, cpu = 0; // гурвалжны тоо, sceneryCpu дахь эхлэл (байрлалыг сэргээхэд)
         bool hidden = false;
+        bool near = false; // ойрын жагсаалтад (sceneryNear): нэг бүрчлэн загвараар зурна
     };
+    mutable const Material* treeMaterial = nullptr; // SetTreeMaterial
     std::vector<SceneryItem> scenery;
     std::vector<float> sceneryCpu;
     size_t staticSceneryCount = 0, staticSceneryCpu = 0;

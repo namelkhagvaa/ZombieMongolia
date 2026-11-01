@@ -89,6 +89,8 @@ public:
     // Гаднаас оруулсан ястай загваруудын shader: текстур + жинхэнэ normal-аар гөлгөр гэрэлтүүлэг + манан.
     Shader CharacterShader() const { return characterShader; }
     Shader VehicleShader() const { return vehicleShader; } // текстуртай унааны загвар
+    // Холын мод (instancing): nullptr = дэмжигдэхгүй (холын модыг хөнгөн хувилбараар үлдээнэ)
+    const Material* TreeMaterial() const { return treeShader.id ? &treeMaterial : nullptr; }
 
     // Хөдөлдөг объектын (унаа) material: mesh-ийг rlgl-ийн одоогийн хувиргалтаар DrawMesh-ээр зурна.
     const Material& PropMaterial() const { return propMaterial; }
@@ -129,6 +131,8 @@ private:
     Shader shader = {};
     Shader characterShader = {};
     Shader vehicleShader = {};
+    Shader treeShader = {};
+    Material treeMaterial = {};
     Shader propShader = {};
     Shader terrainShader = {};
     Shader detailShader = {};
