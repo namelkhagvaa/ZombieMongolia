@@ -821,7 +821,7 @@ void LoadCharacterModels(Shader shader)
             if (id == kCharacterFpArms)
             {
                 // "Realistic FPS Hands"-ийн гар туранхай (шуу ~6 см): 1-р этгээдэд бүдүүн, булчинлаг харагдуулна
-                c.girth = 1.4f;
+                c.girth = 1.6f;
                 c.handScale = 1.15f; // (CS-ийн бээлийтэй гар шиг бага зэрэг том сарвуу)
                 c.girthAxis.assign((size_t)c.model.boneCount, Vector3{ 0.0f, 0.0f, 0.0f });
                 for (int bone = 0; bone < c.model.boneCount; ++bone)

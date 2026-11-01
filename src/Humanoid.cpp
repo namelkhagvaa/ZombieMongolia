@@ -1321,8 +1321,8 @@ namespace
     const Vector3 kLongGripLocal = { -0.24f, 0.14f, 0.3f }; // гар бариул (DrawGun-ийн орон зай: x, y - 0.16, 0.3)
     const float kLongBore = 0.16f;                          // бариулаас гол төмөр хүртэл
     const float kLongScale = 1.0f;                          // бодит хэмжээ
-    const Vector2 kLongBodyScreen = { 0.46f, -0.52f }, kLongMuzzleScreen = { -0.04f, -0.04f };
-    const float kLongBodyDepth = 0.28f;                     // их бие камераас урд (м)
+    const Vector2 kLongBodyScreen = { 0.56f, -0.38f }, kLongMuzzleScreen = { 0.18f, -0.2f };
+    const float kLongBodyDepth = 0.4f;                     // их бие камераас урд (м)
     const float kLongCant = -6.0f;                          // бууг бага зэрэг баруун тийш хазайлгана (градус)
 
     struct LongGunPose
@@ -1522,6 +1522,7 @@ namespace
     // Загварын гар (CharacterModel: цэргийн загвар) ашиглах үед: DrawFistAt зурахгүй, бариулын зорилтыг (ертөнцийн
     // орон зайд) энд бүртгэнэ; DrawViewModel-ийн төгсгөлд DrawCharacterArms нэг дор зурна.
     bool viewModelArms = false;
+    Vector3 viewLeftPole = { 0.4f, -1.0f, 0.1f }; // зүүн тохойн чиглэл (харах орон зайд), DrawViewModel бүрд анхны утга
     int viewArmsId = kCharacterFpArms; // SetViewModelArms
     Color viewArmsTint = WHITE;
     ViewArmTarget viewTargets[2];
@@ -1602,7 +1603,7 @@ namespace
         target.palm = Vector3Transform(palm, toWorld);
         target.facing = Vector3Normalize(Vector3Subtract(Vector3Transform(up, toWorld), origin));
         target.fingers = Vector3Normalize(Vector3Subtract(Vector3Transform(fingers, toWorld), origin));
-        target.framed = true;
+        target.framed = false; // (сарвуу шууны шугамыг үргэлжлүүлнэ: бугуй нугарч "хугарсан" мэт харагдахгүй)
         target.curl = curl;
         return palm;
     }
@@ -1736,6 +1737,7 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
 
     viewModelArms = HasCharacterArms(viewArmsId);
     viewTargets[0] = viewTargets[1] = ViewArmTarget{};
+    viewLeftPole = { 0.4f, -1.0f, 0.1f };
     viewBodySet = false;
 
     rlPushMatrix();
@@ -1855,7 +1857,11 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
                 // тал руу, бага зэрэг урагш. Онилоход бага зэрэг хойш (хараанаас холдуулна).
                 const float restZ = 0.72f - 0.06f * aim - 0.24f * reloading;
                 // (онилоход хуруу гол төмрийн дагуу урагш, бага зэрэг ороосон: ардаас харахад бууны хажуугаар цухуйхгүй)
-                lw = DrawSupportPalmAt({ x, y - 0.07f + lowY, restZ }, { -0.6f, 0.8f, 0.0f }, Vector3Lerp({ -1.0f, 0.0f, 0.35f }, { -0.2f, 0.0f, 1.0f }, aim),
+                // Зүүн шуу дэлгэцийн доороос шулуун дээш (тохой доош, хойш), алга урд модны зүүн доор, буу руу харна;
+                // сарвуу шууны шугамаар (бугуй нугарахгүй)
+                const float tp[8] = { 0.03f, -0.08f, 0.8f, -1.0f, 0.4f, -0.2f, -1.0f, -0.4f };
+                viewLeftPole = { tp[5], tp[6], tp[7] };
+                lw = DrawSupportPalmAt({ x + tp[0], y + tp[1] + lowY, tp[2] - 0.06f * aim - 0.24f * reloading }, { tp[3], tp[4], 0.0f }, Vector3Lerp({ -1.0f, 0.0f, 0.35f }, { -0.2f, 0.0f, 1.0f }, aim),
                                        Lerp(60.0f, 45.0f, aim));
             }
             else if (held == HeldItem::Sniper)
@@ -1985,7 +1991,7 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
         const Vector3 origin = Vector3Transform({ 0.0f, 0.0f, 0.0f }, basis);
         for (int side = 0; side < 2; ++side)
         {
-            const Vector3 local = { side == 0 ? -0.4f : 0.4f, -1.0f, 0.1f }; // (тохой голдуу доош: бугалга дэлгэцэнд орохгүй)
+            const Vector3 local = side == 0 ? Vector3{ -0.4f, -1.0f, 0.1f } : viewLeftPole; // (тохой голдуу доош: бугалга дэлгэцэнд орохгүй)
             viewTargets[side].pole = Vector3Normalize(Vector3Subtract(Vector3Transform(local, basis), origin));
         }
         DrawCharacterArms(viewArmsId, bodyToWorld, viewTargets, viewArmsTint);
