@@ -1731,24 +1731,28 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
             //   автомат — урд модыг доороос нь, цэнэглэхэд магазин руу хойш;
             //   үрлэн буу — гүйдэг гар (pump) дээр, буудах бүрт хойш татна;
             //   дурантай буу — урагш, доороос нь алган дээрээ тулгана (тогтвортой онилгоо).
-            const Vector3 rw = DrawFistAt({ x, y - 0.16f, 0.3f }, { 0.0f, 1.0f, 0.3f }, { -0.2f, -0.6f, -1.0f }, false);
+            // Загварын гар (CS маягаар): баруун шуу дэлгэцийн баруун доороос, гарын ар тал харагдана; зүүн гар урд модыг
+            // доороос нь алгаа дээш харуулан барина (хажуугаас нь биш)
+            const Vector3 rightWristDir = viewModelArms ? Vector3{ -0.6f, -0.9f, -0.4f } : Vector3{ -0.2f, -0.6f, -1.0f };
+            const Vector3 underWrist = { 0.4f, -0.4f, -0.3f };
+            const Vector3 rw = DrawFistAt({ x, y - 0.16f, 0.3f }, { 0.0f, 1.0f, 0.3f }, rightWristDir, false);
             Vector3 lw;
             if (held == HeldItem::Shotgun)
             {
                 const float pump = std::clamp(recoil * 1.6f, 0.0f, 1.0f); // буудсаны дараа гүйдэг гарыг татаж буцаана
-                lw = DrawFistAt({ x, y - 0.035f + lowY, (viewModelArms ? 0.58f : 0.66f) - 0.09f * pump - 0.15f * reloading }, { 0.0f, 0.0f, 1.0f },
-                                Vector3Add({ 0.8f, -0.8f, -0.15f }, viewModelArms ? lowWrist : Vector3{ 0.0f, 0.0f, 0.0f }),
+                lw = DrawFistAt({ x, y - (viewModelArms ? 0.075f : 0.035f) + lowY, (viewModelArms ? 0.58f : 0.66f) - 0.09f * pump - 0.15f * reloading }, { 0.0f, 0.0f, 1.0f },
+                                Vector3Add(viewModelArms ? underWrist : Vector3{ 0.8f, -0.8f, -0.15f }, viewModelArms ? lowWrist : Vector3{ 0.0f, 0.0f, 0.0f }),
                                 true);
             }
             else if (held == HeldItem::Sniper)
             {
                 lw = DrawFistAt({ x + 0.01f, y - 0.075f + lowY, (viewModelArms ? 0.66f : 0.84f) - 0.22f * reloading }, { 0.0f, 0.15f, 1.0f },
-                                Vector3Add({ 0.6f, -1.0f, -0.1f }, viewModelArms ? lowWrist : Vector3{ 0.0f, 0.0f, 0.0f }), true);
+                                Vector3Add(viewModelArms ? underWrist : Vector3{ 0.6f, -1.0f, -0.1f }, viewModelArms ? lowWrist : Vector3{ 0.0f, 0.0f, 0.0f }), true);
             }
             else
             {
                 lw = DrawFistAt({ x + 0.005f, y - 0.085f + lowY, (viewModelArms ? 0.62f : 0.78f) - 0.24f * reloading }, { 0.0f, 0.0f, 1.0f },
-                                Vector3Add({ 0.85f, -0.75f, -0.2f }, viewModelArms ? lowWrist : Vector3{ 0.0f, 0.0f, 0.0f }),
+                                Vector3Add(viewModelArms ? underWrist : Vector3{ 0.85f, -0.75f, -0.2f }, viewModelArms ? lowWrist : Vector3{ 0.0f, 0.0f, 0.0f }),
                                 true);
             }
             ViewForearm({ x - 0.16f, y - 0.46f, 0.0f }, rw);
