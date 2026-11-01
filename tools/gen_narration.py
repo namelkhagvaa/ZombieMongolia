@@ -24,6 +24,11 @@ OUT = os.path.join(ROOT, "assets", "sounds", "narration")
 STATE = os.path.join(ROOT, "build_web", "narration_jobs.json")
 API = "https://api.nomadlabs.mn/v1"
 
+# Тоглоомын мэдэгдлийн хоолой: "Оюун" (эмэгтэй, энгийн багц; тод, найрсаг, ойлгомжтой). 2026-11-01-нд бүх мэдэгдлийг
+# энэ хоолойгоор дахин үүсгэсэн ("Нисдэг тэрэг"-ийг зөв уншдаг). Шинэ мэдэгдэл нэмэхэд ижил хоолойгоор (--voice заахгүй).
+# (Pro хоолойнууд Creator/Pro багц шаарддаг.)
+DEFAULT_VOICE = "nlv_vYhMsRK8l4P1NLIOexV4toAvIy3CiY22PDS5gz06S7kKMUivpG87FvqsV7okDuuL"  # Оюун
+
 MEMBERS = ["Дайчин нэг", "Дайчин хоёр", "Мэргэн буудагч"]  # src/Team.cpp TeamMemberName (уншихад тоог үгээр)
 
 LINES = {
@@ -122,7 +127,7 @@ def pending(state, voice):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--voices", action="store_true", help="хоолойнуудыг жагсаах")
-    parser.add_argument("--voice", help="хоолойн ID (nlv_...)")
+    parser.add_argument("--voice", default=DEFAULT_VOICE, help="хоолойн ID (nlv_...; анхдагч: Оюун)")
     parser.add_argument("--estimate", action="store_true", help="зардлыг тооцох (төлбөргүй)")
     parser.add_argument("--yes", action="store_true", help="төлбөртэй үүсгэлтийг зөвшөөрөх")
     parser.add_argument("--only", help="зөвхөн энэ мэдэгдлийг (key) дахин үүсгэх: бусдыг нь хөндөхгүй, кредит хэмнэнэ")
