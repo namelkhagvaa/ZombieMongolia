@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
-#include <cstring>
 #include <cstdint>
 #include <cstdlib>
 #include <map>
@@ -790,12 +789,6 @@ namespace Audio
     void Announce(const char* key)
     {
         if (!ready || !enabled || key == nullptr) return;
-        // Түр унтраасан: TTS "Нисдэг тэрэг"-ийг "Хэсдэг тэрэг" гэж уншсан бичлэгүүд (дэлгэцийн мэдэгдэл хэвээр).
-        // Зөв дуудлагаар дахин үүсгэсний дараа (tools/gen_narration.py) энэ жагсаалтаас хасна.
-        for (const char* muted : { "heli_gunner", "heli_controls", "heli_hit", "heli_crash" })
-        {
-            if (std::strcmp(key, muted) == 0) return;
-        }
         auto found = narration.find(key);
         if (found == narration.end())
         {
