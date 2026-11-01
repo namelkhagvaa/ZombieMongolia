@@ -65,6 +65,9 @@ def main():
         'Spine1': ('Spine', hub + [0, -1.8 * unit, 0]),
         'Neck': ('Spine2', hub + [0, 1.6 * unit, 0]),
         'Head': ('Neck', hub + [0, 2.6 * unit, 0]),
+        # Тэмдэг: энэ загварын алга анхны байрлалдаа гадагш харсан (CharacterModel.cpp SetupHands эсрэг талыг авна;
+        # эс бөгөөс хуруу бариулыг ороохын оронд гадагш нугардаг)
+        'PalmsOut': ('Hips', hub + [0, -5.0 * unit, 0]),
     }
     for side, sx in (('Right', -1), ('Left', 1)):
         hips = hub + [0, -5.0 * unit, 0]

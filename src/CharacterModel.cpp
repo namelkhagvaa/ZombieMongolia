@@ -512,6 +512,8 @@ namespace
                     normal = Vector3Negate(normal);
                 }
             }
+            // Алга нь гадагш харсан анхны байрлалтай загвар (tools/fbx_hands.py "PalmsOut" ясаар тэмдэглэнэ): эсрэг тал
+            if (FindBone(c.model, "PalmsOut") >= 0) normal = Vector3Negate(normal);
             c.palmNormal[side] = Vector3Normalize(normal);
 
             for (int finger = 0; finger < 5; ++finger)
