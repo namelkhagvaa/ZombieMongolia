@@ -1848,7 +1848,8 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
             const Vector3 rightPalm = held == HeldItem::Rifle ? Vector3{ x - 0.015f, y - 0.15f, 0.28f } : Vector3{ -0.275f, 0.14f, 0.28f };
             DrawCharacterClipArms(viewBodyModel, rightPalm, leftPalm, viewBodyModel == kCharacterFpArms ? viewArmsTint : WHITE);
             // Iron: төмөр гар, сарвуу нь хүрэл бээлий
-            if (viewBodyModel == kCharacterIron) DrawCharacterClipArms(kCharacterFpArms, rightPalm, leftPalm, viewArmsTint, true);
+            // (demon: боолттой өөрийн гар, сарвуу нь саарал хөх FPS Hands)
+            if (viewBodyModel == kCharacterIron || viewBodyModel == kCharacterDemon) DrawCharacterClipArms(kCharacterFpArms, rightPalm, leftPalm, viewArmsTint, true);
         }
         else
         {

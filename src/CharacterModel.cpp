@@ -156,7 +156,7 @@ namespace
     bool WantsClipArms(int id)
     {
         return id == kCharacterFighter1 || id == kCharacterFighter2 || id == kCharacterSniper || id == kCharacterModel1 ||
-               id == kCharacterModel2 || id == kCharacterModel3 || id == kCharacterIron || id == kCharacterFpArms;
+               id == kCharacterModel2 || id == kCharacterModel3 || id == kCharacterIron || id == kCharacterDemon || id == kCharacterFpArms;
     }
 
     // Сарвууны жижигрүүлэлт зөвхөн 1-р этгээдийн гарыг зурах үед (DrawCharacterArms): 3-р этгээдийн дүр хэвээр
@@ -1481,7 +1481,7 @@ void LoadCharacterModels(Shader shader)
             {
                 // Iron-ы сарвуу шовх хэлтэрхий хэлбэртэй, атгаж чадахгүй: сарвуугүй (хүрэл бээлийн сарвуу, DrawCharacterClipArms)
                 c.clipArms.push_back(ExtractArms(c.model, c.model.meshes[index], c.joints[RightArm], c.joints[LeftArm], -1, 0, true,
-                                                 c.joints[RightHand], c.joints[LeftHand], id == kCharacterIron ? 1 : 0));
+                                                 c.joints[RightHand], c.joints[LeftHand], id == kCharacterIron || id == kCharacterDemon ? 1 : 0));
                 if (id == kCharacterFpArms)
                 {
                     c.clipHands.push_back(ExtractArms(c.model, c.model.meshes[index], c.joints[RightArm], c.joints[LeftArm], -1, 0, true,
