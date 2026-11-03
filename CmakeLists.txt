@@ -78,6 +78,7 @@ set(GAME_SOURCES
     src/Audio.cpp
     src/Bear.cpp
     src/BulletHoles.cpp
+    src/AnimClips.cpp
     src/Hitbox.cpp
     src/Rank.cpp
     src/Campaign.cpp
@@ -164,7 +165,9 @@ if(EMSCRIPTEN)
     set(WEB_ASSETS ${CMAKE_BINARY_DIR}/web_assets)
     file(REMOVE_RECURSE ${WEB_ASSETS})
     file(GLOB WEB_TOP ${CMAKE_SOURCE_DIR}/assets/*_mesh.glb ${CMAKE_SOURCE_DIR}/assets/*_color.png
-         ${CMAKE_SOURCE_DIR}/assets/home_back.png ${CMAKE_SOURCE_DIR}/assets/splash.png)
+         ${CMAKE_SOURCE_DIR}/assets/home_back.png ${CMAKE_SOURCE_DIR}/assets/splash.png
+         ${CMAKE_SOURCE_DIR}/assets/soldier_anims.bin)
+    list(FILTER WEB_TOP EXCLUDE REGEX "/man_[^/]*$") # (Mixamo-гийн эх дүр: тоглоомд ашиглагдахгүй)
     file(COPY ${WEB_TOP} DESTINATION ${WEB_ASSETS}/assets)
     foreach(sub icons huds terrain)
         file(GLOB files ${CMAKE_SOURCE_DIR}/assets/${sub}/*.png)

@@ -24,6 +24,11 @@ struct Soldier
     float fireCooldown = 0.0f;
     float walkCycle = 0.0f;
     float moveAmount = 0.0f; // 1 = алхаа, >1 = гүйлт
+    // Зурахад: хөдөлгөөн зөөлөн эхэлж зогсоно, явах зүг нь бодит шилжилтээс (хажуу тийш явахад хажуу тийш гишгэнэ)
+    mutable float poseMove = 0.0f;
+    mutable float poseDirection = 0.0f;
+    mutable double poseClock = 0.0;
+    mutable Vector3 posePosition = { 0.0f, 0.0f, 0.0f };
     float speed = 0.0f;      // одоогийн хурд, м/с: зорилтот хурд руу зөөлөн шилжинэ (EaseSpeed)
     float recoil = 0.0f;     // 1 = дөнгөж буудсан
     float aimHold = 0.0f;    // >0 үед буугаа онилсон хэвээр барина (буудсаны дараа, тулааны үед)
@@ -206,6 +211,7 @@ private:
     uint32_t focusId = 0;     // тушаалаар онилох зомби
     float focusTimer = 0.0f;
     int leaderSkin = 0, guestLeaderSkin = 0;
+    float GaitRate(const Soldier& soldier, float speed) const; // алхааны үеийн хурд (дүрийн загвараас: Mixamo-гийн алхам)
     Vector3 SlotPosition(int index, Vector3 playerPosition, float radius) const;
     // Элсүүлсэн цэргийн дараагийн харуулын байр: өөрийн хэсэг (сектор) дотор, удирдагчаас 6-12 м.
     void ChooseGuardPost(int index, Vector3 playerPosition, const World& world);

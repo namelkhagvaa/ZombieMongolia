@@ -70,6 +70,8 @@ foreach ($abi in $Abis) {
 # --- 2. Assets: дүрүүдийн загвар, текстур, фонт ---
 Copy-Item (Join-Path $root "assets\*_mesh.glb") (Join-Path $staging "assets")
 Copy-Item (Join-Path $root "assets\*_color.png") (Join-Path $staging "assets")
+Copy-Item (Join-Path $root "assets\soldier_anims.bin") (Join-Path $staging "assets")
+Remove-Item (Join-Path $staging "assets\man_*") -ErrorAction SilentlyContinue # (Mixamo-гийн эх дүр: тоглоомд ашиглагдахгүй)
 Copy-Item (Join-Path $root "android\ui_font.ttf") (Join-Path $staging "assets")
 Copy-Item (Join-Path $root "assets\home_back.png") (Join-Path $staging "assets")
 Copy-Item (Join-Path $root "assets\splash.png") (Join-Path $staging "assets")

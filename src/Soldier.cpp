@@ -424,7 +424,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
             {
                 const float eased = EaseSpeed(soldier, kCatchUpSpeed, dt);
                 MoveToward(soldier.mover, goal, eased, dt, world, kRadius, kHeight, 0.0f);
-                soldier.walkCycle += dt * HumanoidGaitRate(eased);
+                soldier.walkCycle += dt * GaitRate(soldier, eased);
                 soldier.moveAmount = eased / kWalkSpeed;
                 soldier.moving = true;
                 here.y = world.SurfaceHeightAt(here.x, here.z, here.y + 0.5f);
@@ -494,7 +494,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
                 const float speed = off > 6.0f ? kCatchUpSpeed : kWalkSpeed;
                 const float eased = EaseSpeed(soldier, speed, dt);
                 MoveToward(soldier.mover, soldier.holdPoint, eased, dt, world, kRadius, kHeight, 0.0f);
-                soldier.walkCycle += dt * HumanoidGaitRate(eased);
+                soldier.walkCycle += dt * GaitRate(soldier, eased);
                 soldier.moveAmount = eased / kWalkSpeed;
             }
             soldier.routeFrom = soldier.routeTo = -2;
@@ -510,7 +510,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
             if (ownRoom < 0) SteerAround(soldier, world, dt, i, target);
             const float eased = EaseSpeed(soldier, kCatchUpSpeed, dt);
             MoveToward(soldier.mover, target, eased, dt, world, kRadius, kHeight, 0.0f);
-            soldier.walkCycle += dt * HumanoidGaitRate(eased);
+            soldier.walkCycle += dt * GaitRate(soldier, eased);
             soldier.moveAmount = eased / kWalkSpeed;
             soldier.moving = true;
             soldier.routeFrom = soldier.routeTo = -2;
@@ -589,7 +589,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
             {
                 const float eased = EaseSpeed(soldier, speed, dt);
                 MoveToward(soldier.mover, point, eased, dt, world, kRadius, kHeight, 0.0f);
-                soldier.walkCycle += dt * HumanoidGaitRate(eased);
+                soldier.walkCycle += dt * GaitRate(soldier, eased);
                 soldier.moveAmount = eased / kWalkSpeed;
             }
 
@@ -790,7 +790,7 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
                 }
                 const float eased = EaseSpeed(soldier, speed, dt);
                 MoveToward(soldier.mover, target, eased, dt, world, kRadius, kHeight, 0.0f);
-                soldier.walkCycle += dt * HumanoidGaitRate(eased);
+                soldier.walkCycle += dt * GaitRate(soldier, eased);
                 soldier.moveAmount = eased / kWalkSpeed;
             }
             else if (guarding)
@@ -1113,6 +1113,13 @@ void SoldierSquad::AddGuestFighter(int member, Vector3 position, float facing, f
     soldiers.push_back(soldier);
 }
 
+float SoldierSquad::GaitRate(const Soldier& soldier, float speed) const
+{
+    const int model = soldier.member >= 0 ? TeamMemberLook(soldier.member, soldier.guestTeam ? guestLeaderSkin : leaderSkin).model
+                                          : kCharacterFighter1;
+    return CharacterGaitRate(model, speed, 0.0f);
+}
+
 int SoldierSquad::AliveCount() const
 {
     return (int)std::count_if(soldiers.begin(), soldiers.end(), [](const Soldier& s) { return s.alive; });
@@ -1135,11 +1142,25 @@ void SoldierSquad::Draw(Vector3 viewPosition, bool showColliders) const
         else if (viewDistance < 12.0f) soldier.lightModel = false;
         if (soldier.lightModel) look.lowDetail = 1;
         Profile::Token poseTiming = Profile::Begin(PROFILE_CHARACTER_NAME("char 1 pose"));
-        HumanoidPose pose = MakeSoldierPose(soldier.walkCycle, soldier.moving ? soldier.moveAmount : 0.0f, true,
-                                            (float)GetTime() + soldier.walkCycle, soldier.recoil, look.held);
+        if (soldier.poseClock != GetTime()) // (сүүдрийн зурлагад дахин тооцохгүй)
+        {
+            soldier.poseClock = GetTime();
+            const float dt = std::min(0.1f, GetFrameTime());
+            const float target = soldier.moving ? soldier.moveAmount : 0.0f;
+            soldier.poseMove += (target - soldier.poseMove) * (1.0f - std::exp(-12.0f * dt));
+            const float dx = soldier.mover.position.x - soldier.posePosition.x, dz = soldier.mover.position.z - soldier.posePosition.z;
+            soldier.posePosition = soldier.mover.position;
+            if (dt > 0.0f && dx * dx + dz * dz > 0.25f * dt * dt) // (0.5 м/с-ээс удаан бол зүг хэвээр)
+            {
+                const float wanted = std::remainder(std::atan2(dx, dz) - soldier.mover.facing, 2.0f * PI);
+                soldier.poseDirection += std::remainder(wanted - soldier.poseDirection, 2.0f * PI) * (1.0f - std::exp(-10.0f * dt));
+            }
+        }
+        HumanoidPose pose = MakeSoldierPose(soldier.walkCycle, soldier.poseMove, true, (float)GetTime() + soldier.walkCycle, soldier.recoil, look.held);
         Profile::End(poseTiming);
         pose.aim = soldier.aimPose;
-        pose.speed = soldier.moving ? soldier.moveAmount * kWalkSpeed : 0.0f;
+        pose.speed = soldier.poseMove * kWalkSpeed;
+        pose.moveDirection = soldier.poseDirection;
         if (soldier.swimming && soldier.riding < 0)
         {
             pose.prone = 1.0f; // сэлэх: хэвтээ, мөлхөх хөдөлгөөн

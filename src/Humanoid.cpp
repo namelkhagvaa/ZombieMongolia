@@ -1524,6 +1524,7 @@ namespace
     bool viewModelArms = false;
     Vector3 viewLeftPole = { 0.4f, -1.0f, 0.1f }; // зүүн тохойн чиглэл (харах орон зайд), DrawViewModel бүрд анхны утга
     int viewArmsId = kCharacterFpArms; // SetViewModelArms
+    int viewBodyModel = -1;            // идэвхтэй дүрийн загвар (Mixamo-гийн гартай эсэх)
     Color viewArmsTint = WHITE;
     ViewArmTarget viewTargets[2];
     Matrix viewBody = MatrixIdentity(); // загварын гарын биеийн орон зай -> ертөнц (AnchorViewBody)
@@ -1715,6 +1716,7 @@ void SetViewModelArms(int characterModel)
     viewArmsId = characterModel >= 0 && HasCharacterArms(characterModel) ? characterModel : kCharacterFpArms;
     // Iron (хуягт робот): бээлийтэй гарыг хуяг шиг хүрэл өнгөөр
     viewArmsTint = characterModel == kCharacterIron ? Color{ 196, 150, 96, 255 } : WHITE;
+    viewBodyModel = HasCharacterClipArms(characterModel) ? characterModel : kCharacterFpArms;
 }
 
 void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float walkPhase, float moveAmount, float reload,
@@ -1829,6 +1831,20 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
             const Vector3 lw = DrawFistAt({ x + 0.02f, y - 0.13f, 0.66f }, { 0.0f, 1.0f, 0.1f }, { 0.8f, -0.7f, -0.5f }, true);
             ViewForearm({ x - 0.18f, y - 0.5f, 0.12f }, rw);
             ViewForearm({ x + 0.32f, y - 0.5f, 0.42f }, lw);
+        }
+        else if (HasCharacterClipArms(viewBodyModel))
+        {
+            // Цэргийн өөрийн гар, буутай нэг бүхэл. Зүүн алга урд модны доор: цэнэглэхэд сумны хайрцаг руу (автомат, дурантай
+            // буу), үрлэн буунд буудсаны дараа, цэнэглэхэд гүйдэг гар дээрээ хойш
+            const float pump = std::clamp(recoil * 1.6f, 0.0f, 1.0f);
+            const Vector3 leftPalm = held == HeldItem::Shotgun ? Vector3{ x, y - 0.085f, 0.58f - 0.09f * pump - 0.15f * reloading }
+                                   : held == HeldItem::Sniper ? Vector3{ x, y - 0.085f - 0.1f * reloading, 0.66f - 0.22f * reloading }
+                                                              : Vector3{ x + 0.005f, y - 0.03f - 0.14f * reloading, 0.78f - 0.24f * reloading };
+            // Автомат: бариулын баруун гадаргуу (загвараас хэмжсэн)
+            const Vector3 rightPalm = held == HeldItem::Rifle ? Vector3{ x - 0.015f, y - 0.15f, 0.28f } : Vector3{ -0.275f, 0.14f, 0.28f };
+            DrawCharacterClipArms(viewBodyModel, rightPalm, leftPalm, viewBodyModel == kCharacterFpArms ? viewArmsTint : WHITE);
+            // Iron: төмөр гар, сарвуу нь хүрэл бээлий
+            if (viewBodyModel == kCharacterIron) DrawCharacterClipArms(kCharacterFpArms, rightPalm, leftPalm, viewArmsTint, true);
         }
         else
         {

@@ -19,7 +19,7 @@ $assets = Join-Path $root "assets"
 $stage = Join-Path $root "build_installer\assets"
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 $files = @(
-    @("", "*_mesh.glb"), @("", "*_color.png"), @("", "window_icon.png"), @("", "home_back.png"), @("", "splash.png"),
+    @("", "*_mesh.glb"), @("", "*_color.png"), @("", "window_icon.png"), @("", "home_back.png"), @("", "splash.png"), @("", "soldier_anims.bin"),
     @("icons", "*.png"), @("huds", "*.png"), @("terrain", "*.png"), @("surfaces", "*.jpg"),
     @("cars", "*.vmesh"), @("cars", "*_color.png"), @("buu", "*.vmesh"), @("buu", "*_color.png"),
     @("sounds", "*.wav"), @("sounds\narration", "*.wav"), @("trees", "*.vmesh"), @("trees", "*_color.png"), @("trees", "*_far.bin"),
@@ -31,6 +31,7 @@ foreach ($entry in $files) {
     $source = if ($entry[0]) { Join-Path $assets $entry[0] } else { $assets }
     Copy-Item (Join-Path $source $entry[1]) $target -ErrorAction SilentlyContinue
 }
+Remove-Item (Join-Path $stage "man_*") -ErrorAction SilentlyContinue # (Mixamo-гийн эх дүр: тоглоомд ашиглагдахгүй)
 python (Join-Path $root "tools\native_jpg.py") $stage
 if ($LASTEXITCODE -ne 0) { throw "JPG conversion failed" }
 

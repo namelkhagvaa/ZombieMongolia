@@ -74,3 +74,4 @@ Rectangle HudTeamTile(int index);
 // 2D дэлгэцийн мэдээлэл: FPS, амь, сум, давалгаа, удирдлага.
 // raylib-ийн үндсэн фонт кирилл дэмждэггүй тул бичвэр нь англиар.
 void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info, bool showDebug);
+float HudObjectiveCardRight(); // сүүлд зурсан зорилтын хүрээний баруун ирмэг (бусад хавтан түүнтэй давхцахгүй)

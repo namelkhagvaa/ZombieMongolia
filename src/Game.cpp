@@ -315,6 +315,7 @@ void Game::Run()
         {
             pendingProvince = mapScreen.Selected();
             characterChoice = progress.leaderSkin;
+            if (const char* skin = std::getenv("ZM_SKIN")) characterChoice = std::clamp(std::atoi(skin), 0, kLeaderSkinCount - 1);
             characterSelectOpen = true;
         }
     }
@@ -1313,6 +1314,10 @@ void Game::StartMission(int index, StageSave* stageOverride)
     progress.firstPerson = true; // даалгавар бүр 1-р этгээдээр (зөвхөн зэвсэг харагдана) эхэлнэ; V-ээр 3-р этгээд рүү шилжинэ
     for (bool& mark : holdMark) mark = false;
     arsenal = arsenals[0];
+    if (const char* skin = std::getenv("ZM_SKIN")) // туршилт: 1-р дайчны дүр
+    {
+        progress.leaderSkin = std::clamp(std::atoi(skin), 0, kLeaderSkinCount - 1);
+    }
     player.SetLook(TeamMemberLook(0, progress.leaderSkin));
     grenades.Clear();
     horde.Clear();
@@ -8581,7 +8586,8 @@ void Game::DrawCoopOverlay() const
                                                                           Account::GoldAvailable());
         const int labelWidth = Ui::Measure(label, 13), codeWidth = Ui::MeasureBold(code, 20), noteWidth = Ui::Measure(note, 13);
         const int chipWidth = labelWidth + codeWidth + noteWidth + 48;
-        const Rectangle chip = { (float)(width - chipWidth) / 2.0f, 54.0f, (float)chipWidth, 30.0f };
+        // (урт зорилтын хүрээнд давхцахгүй: шаардлагатай бол баруун тийш)
+        const Rectangle chip = { std::max((float)(width - chipWidth) / 2.0f, HudObjectiveCardRight() + 8.0f), 54.0f, (float)chipWidth, 30.0f };
         Ui::Fill(chip, Fade({ 12, 18, 28, 255 }, 0.78f));
         Ui::Text(label, (int)chip.x + 14, (int)chip.y + 9, 13, Ui::kTextDim);
         Ui::TextBold(code, (int)chip.x + 22 + labelWidth, (int)chip.y + 4, 20, Ui::kGood);
@@ -8603,7 +8609,8 @@ void Game::DrawCoopOverlay() const
         const char* code = codeText.c_str();
         const int labelWidth = Ui::Measure(label, 13), codeWidth = Ui::MeasureBold(code, 20);
         const int chipWidth = labelWidth + codeWidth + 36;
-        const Rectangle chip = { (float)(width - chipWidth) / 2.0f, 54.0f, (float)chipWidth, 30.0f };
+        // (урт зорилтын хүрээнд давхцахгүй: шаардлагатай бол баруун тийш)
+        const Rectangle chip = { std::max((float)(width - chipWidth) / 2.0f, HudObjectiveCardRight() + 8.0f), 54.0f, (float)chipWidth, 30.0f };
         Ui::Fill(chip, Fade({ 12, 18, 28, 255 }, 0.78f));
         Ui::Text(label, (int)chip.x + 14, (int)chip.y + 9, 13, Ui::kTextDim);
         Ui::TextBold(code, (int)chip.x + 22 + labelWidth, (int)chip.y + 4, 20, Ui::kInfo);

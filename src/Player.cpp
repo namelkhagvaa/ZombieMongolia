@@ -1,6 +1,7 @@
 #include "Player.h"
 
 #include "Audio.h"
+#include "CharacterModel.h"
 #include "Input.h"
 
 #include "Humanoid.h"
@@ -10,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 namespace
 {
@@ -613,8 +615,8 @@ void Player::Update(float dt, const GameConfig& config, const World& world, floa
 
     if (grounded)
     {
-        // Гүйхэд алхам уртсах тул давтамж хурдтай шууд пропорциональ өсөхгүй.
-        walkCycle += dt * HumanoidGaitRate(HorizontalSpeed());
+        // Гүйхэд алхам уртсах тул давтамж хурдтай шууд пропорциональ өсөхгүй (Mixamo-гийн дүрд клипийн алхамаар).
+        walkCycle += dt * CharacterGaitRate(look.model, HorizontalSpeed(), crouchPose);
     }
 }
 
@@ -786,7 +788,9 @@ void Player::Draw(const GameConfig& config, bool showCollider) const
     }
     if (downed) ApplyDownedPose(pose, (float)GetTime()); // унасан: AI дайчин, нөгөө тоглогчийн дэлгэцтэй ижил
     else if (swimming) ApplySwimPose(pose, (float)GetTime(), HorizontalSpeed());
-    DrawHumanoid(position, facing, 1.0f, pose, look);
+    // (туршилт, ZM_SPIN=1.57: дүрийг камерын өмнө эргүүлж хажуу талаас нь харна)
+    static const float testSpin = std::getenv("ZM_SPIN") ? (float)std::atof(std::getenv("ZM_SPIN")) : 0.0f;
+    DrawHumanoid(position, facing + testSpin, 1.0f, pose, look);
 
     if (showCollider)
     {

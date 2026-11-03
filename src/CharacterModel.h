@@ -3,6 +3,9 @@
 #include "Humanoid.h"
 #include "raylib.h"
 
+#include <string>
+#include <vector>
+
 // Гаднаас (Tripo3D) оруулсан ястай 3D загвараар зурагдах дүрүүд.
 //
 // Загварууд хөдөлгөөний файлгүй ирдэг тул ясыг тоглоомын өөрийн HumanoidPose (алхах, буудах, унах,
@@ -49,6 +52,13 @@ void LoadCharacterModels(Shader shader);
 void UploadBoneRows(Shader shader, const Matrix* bones, int count);
 void UnloadCharacterModels();
 bool HasCharacterModel(int id);
+// Алхааны үеийн хурд (радиан/с): Mixamo-гийн хөдөлгөөнтэй дүрд клипийн алхамын уртаар (хөл гулсахгүй),
+// бусдад HumanoidGaitRate.
+float CharacterGaitRate(int id, float speed, float crouch);
+// Хувцасны бараанууд (tools/cloth_import.py -> assets/items/<name>_mesh.glb, _color.png, _hide.bin): дүрийн ястай
+// хамт хөдөлж, дор нь далдлагдсан биеийн гурвалжнууд зурагдахгүй. Өмнөх хувцсыг солино (хоосон бол нүцгэн).
+// (Одоогоор дүрийн загвар бүрд нэг иж хувцас: тухайн загвартай бүх дүр ижил хувцастай.)
+void SetCharacterOutfit(int id, const std::vector<std::string>& items);
 // Туршилт: загваруудыг хөдөлгөөнгүй, анхны (A) зогсолтоор нь зурна (загвар өөрөө ямар байгааг харахад).
 void SetCharacterBindPose(bool enabled);
 
@@ -76,6 +86,10 @@ Vector3 CharacterEye(int id);
 Vector3 CharacterRightShoulder(int id);
 // bodyToWorld: биеийн орон зай (метр) -> ертөнц. targets[0] баруун, [1] зүүн гар; идэвхгүй гар доош унжина.
 void DrawCharacterArms(int id, const Matrix& bodyToWorld, const ViewArmTarget targets[2], Color tint);
+// Цэргийн өөрийн гар (ханцуйтай) урт бууг хоёр гараар атгасан байдлаар: баруун алга rightPalm, зүүн алга leftPalm дээр
+// (бууны орон зайд, метрээр). rlgl-ийн одоогийн хувиргалт бууны орон зайд (DrawGun) байх үед дуудна.
+bool HasCharacterClipArms(int id);
+void DrawCharacterClipArms(int id, Vector3 rightPalm, Vector3 leftPalm, Color tint, bool handsOnly = false);
 
 struct CharacterFrames
 {

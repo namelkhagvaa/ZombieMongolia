@@ -1,5 +1,6 @@
 #include "CharacterModel.h"
 
+#include "AnimClips.h"
 #include "MeshBuilder.h"
 #include "Platform.h"
 #include "Profile.h"
@@ -93,6 +94,47 @@ namespace
         // girthAxis: ясны анхны чиглэл (дараагийн үе рүү); тэг бол тэр ясанд хэрэглэхгүй.
         float girth = 1.0f;
         std::vector<Vector3> girthAxis;
+        // Mixamo-гийн хөдөлгөөн (цэргүүд хуваалцана): их бие, хөлийг клипээр, гарыг зэвсгийн кодоор (IK)
+        const AnimSet* anims = nullptr;
+        std::vector<int> animBone;       // клипийн яс -> загварын яс (-1 = байхгүй)
+        std::vector<int> animParent;     // клипийн ясны эцэг (клипийн дугаар, -1 = үндэс)
+        // Анхны байрлалын засвар: дүрийн яс эх дүрийнхээс өөр чиглэлтэй (A-pose, T-pose) байж болно. Яс бүрийн чиглэлийг
+        // эх дүрийнх рүү эргүүлсний дараа клипийн эргэлтийг хэрэглэнэ: R = D(эх) * restFix
+        std::vector<Quaternion> restFix;
+        float clipScale = 1.0f;          // эх дүрээс хэмжээний харьцаа (ташааны өндрөөр)
+        int clipHips = 0;
+        int clipSpine[4] = { -1, -1, -1, -1 }; // клипийн яс: Spine, Spine1, Spine2, Neck (бөхийлт, эргэлт, харц)
+        int clipHead = -1;
+        // Клипт байхгүй хуруунууд (дунд, ядам, чигчий) долоовор хурууны хөдөлгөөнийг хуулна
+        struct FingerCopy
+        {
+            int bone;        // загварын яс
+            int clip;        // клипийн яс (долоовор)
+            int parentClip;  // эцэг нь клипийн яс бол дугаар, эс бөгөөс -1
+            int parentCopy;  // эцэг нь хуулсан хуруу бол copy-н дугаар
+            Quaternion fix;
+        };
+        std::vector<FingerCopy> fingerCopy;
+        std::vector<Mesh> clipArms;      // 1-р этгээдэд: цэргийн өөрийн гар (ханцуйтай)
+        std::vector<Mesh> clipHands;     // fp_arms: зөвхөн сарвуу (Iron-ы төмөр гарт)
+        int idleClip[2] = { -1, -1 }, crouchIdleClip[2] = { -1, -1 }; // [0] бэлэн, [1] онилсон
+        int jumpClip = -1;
+        int gaitClip[4][8] = {};   // [алхах, гүйх, хурдан гүйх, суугаад алхах][чиглэл: f fl l bl b br r fr]
+        float gaitSpeed[4] = {};   // м/с (тоглоомын хэмжээгээр)
+        float gaitStride[4] = {};  // нэг мөчлөгийн (хоёр алхам) урт, м
+        // Хувцас (SetCharacterOutfit): бараа бүр биеийн ясны матрицыг хуваалцана
+        struct Wear
+        {
+            Model model = {};
+            std::string name;
+            Texture2D texture = {};
+            std::string texturePath;
+            bool ownsTexture = true; // (иж бүрдлийн бараанууд нэг зургийг хуваалцана)
+            Material material = {};
+            std::vector<Mesh> lod, lodFar;
+        };
+        std::vector<Wear> wear;
+        std::vector<std::vector<unsigned short>> bodyIndices; // биеийн mesh бүрийн бүх гурвалжин (нуухаас өмнө)
     };
 
     Character characters[kCharacterCount];
@@ -103,6 +145,14 @@ namespace
     {
         // (iron-ы өөрийн гар: асар том хуяг дэлгэцийг дүүргэж, мөрөвч хөвж харагдана: хүрэл өнгөтэй бээлийтэй гараар)
         return id == kCharacterFpArms || id == kCharacterModel2 || id == kCharacterModel3 || id == kCharacterDemon;
+    }
+
+    // 1-р этгээдэд өөрийн ханцуйтай гараар урт буу барих дүрүүд (DrawCharacterClipArms); demon-ы мөч өөдөстэй тул бээлийтэй
+    // гараар (fp_arms).
+    bool WantsClipArms(int id)
+    {
+        return id == kCharacterFighter1 || id == kCharacterFighter2 || id == kCharacterSniper || id == kCharacterModel1 ||
+               id == kCharacterModel2 || id == kCharacterModel3 || id == kCharacterIron || id == kCharacterFpArms;
     }
 
     // Сарвууны жижигрүүлэлт зөвхөн 1-р этгээдийн гарыг зурах үед (DrawCharacterArms): 3-р этгээдийн дүр хэвээр
@@ -252,8 +302,22 @@ namespace
         rotation = QuaternionNormalize(QuaternionMultiply(QuaternionFromAxisAngle(axis, angle), rotation));
     }
 
+    // Шууны тэнхлэгийн эргэлтийг (FacePalm) бугалгад хуваана: эс бөгөөс бүх эргэлт тохой дээр гарч мах нь мушгирна.
+    // amount: 1 бол тохойд ердөө нугалалт, мушгиралт бүгд мөрөнд. Бугалганы чиглэл, үений байрлал өөрчлөгдөхгүй.
+    void ShareTwist(Character& c, Joint upper, Joint lower, float amount)
+    {
+        const int bone = c.joints[upper];
+        Follow(c, c.joints[lower]);
+        const Vector3 rest = Vector3Normalize(Vector3Subtract(c.bind[(size_t)c.joints[lower]], c.bind[(size_t)bone]));
+        const Quaternion forearm = c.rotation[(size_t)c.joints[lower]];
+        const Vector3 direction = Rotate(c.rotation[(size_t)bone], rest);
+        const Quaternion hinged = QuaternionMultiply(QuaternionFromVector3ToVector3(Rotate(forearm, rest), direction), forearm);
+        c.rotation[(size_t)bone] = QuaternionNormalize(QuaternionSlerp(c.rotation[(size_t)bone], hinged, amount));
+    }
+
     // Хуруунуудыг алга руу нугална: үе бүрийг degrees өнцгөөр (эрхий хурууг хагасаар).
-    void CurlFingers(Character& c, int side, float degrees, float thumbDegrees = -1.0f)
+    // indexDegrees >= 0: долоовор хуруу тусдаа (гох дээр).
+    void CurlFingers(Character& c, int side, float degrees, float thumbDegrees = -1.0f, float indexDegrees = -1.0f)
     {
         const int hand = c.joints[side == 0 ? RightHand : LeftHand];
         Follow(c, hand);
@@ -262,7 +326,9 @@ namespace
         {
             const Vector3 axis = Rotate(handRotation, c.fingerAxis[side][finger]);
             // (эрхий хуруу 1.3 дахин: 0.45 байхад нүцгэн гартай дүрийн эрхий хуруу бариулыг ороолгүй шулуун цухуйдаг байв)
-            const float angle = finger != 4 ? degrees : thumbDegrees >= 0.0f ? thumbDegrees : 1.3f * degrees;
+            const float angle = finger == 0 && indexDegrees >= 0.0f ? indexDegrees
+                                : finger != 4                       ? degrees
+                                : thumbDegrees >= 0.0f              ? thumbDegrees : 1.3f * degrees;
             const Quaternion bend = QuaternionFromAxisAngle(axis, angle * DEG2RAD);
             for (int segment = 0; segment < 3; ++segment)
             {
@@ -590,6 +656,347 @@ namespace
         }
     }
 
+    // Клипийн нэрсийг дугаар болгож, алхааны хурд, урт тооцно.
+    void SetupClips(Character& c)
+    {
+        const AnimSet& set = *c.anims;
+        const int count = (int)set.bones.size();
+        c.animBone.assign((size_t)count, -1);
+        for (int i = 0; i < count; ++i) c.animBone[(size_t)i] = FindBone(c.model, set.bones[(size_t)i].c_str());
+        const auto clipOf = [&](int bone) {
+            for (int i = 0; i < count; ++i)
+            {
+                if (c.animBone[(size_t)i] == bone) return i;
+            }
+            return -1;
+        };
+        c.animParent.assign((size_t)count, -1);
+        c.restFix.assign((size_t)count, QuaternionIdentity());
+        for (int i = 0; i < count; ++i)
+        {
+            const int bone = c.animBone[(size_t)i];
+            if (bone < 0) continue;
+            const int parent = c.model.bones[bone].parent;
+            c.animParent[(size_t)i] = parent >= 0 ? clipOf(parent) : -1;
+            // Гол хүүхэд: цээж -> хүзүү, сарвуу -> долоовор, бусад нь эхний хүүхэд. Ташаа засваргүй.
+            const std::string& name = set.bones[(size_t)i];
+            if (name == "Hips") continue;
+            const char* wanted = name == "Spine2" ? "Neck" : name == "LeftHand" ? "LeftHandIndex1" : name == "RightHand" ? "RightHandIndex1" : nullptr;
+            int child = -1;
+            for (int k = 0; k < count && child < 0; ++k)
+            {
+                const int other = c.animBone[(size_t)k];
+                if (other < 0 || c.model.bones[other].parent != bone) continue;
+                if (!wanted || set.bones[(size_t)k] == wanted) child = k;
+            }
+            if (child < 0)
+            {
+                // Төгсгөлийн яс: эцгийн засвартай ижил
+                if (c.animParent[(size_t)i] >= 0) c.restFix[(size_t)i] = c.restFix[(size_t)c.animParent[(size_t)i]];
+                continue;
+            }
+            const Vector3 own = Vector3Subtract(c.bind[(size_t)c.animBone[(size_t)child]], c.bind[(size_t)bone]);
+            const Vector3 source = Vector3Subtract(set.rest[(size_t)child], set.rest[(size_t)i]);
+            if (Vector3Length(own) < 1e-5f || Vector3Length(source) < 1e-5f) continue;
+            c.restFix[(size_t)i] = QuaternionFromVector3ToVector3(Vector3Normalize(own), Vector3Normalize(source));
+        }
+        static const char* const spineNames[4] = { "Spine", "Spine1", "Spine2", "Neck" };
+        for (int k = 0; k < 4; ++k)
+        {
+            c.clipSpine[k] = -1;
+            for (int i = 0; i < count; ++i)
+            {
+                if (set.bones[(size_t)i] == spineNames[k]) c.clipSpine[k] = i;
+            }
+        }
+        c.clipHead = -1;
+        for (int i = 0; i < count; ++i)
+        {
+            if (set.bones[(size_t)i] == "Head") c.clipHead = i;
+        }
+        // Хэмжээ: ташаанаас шагай хүртэлх өндрийн харьцаа
+        const int hipsClip = clipOf(c.joints[Hips]), footClip = clipOf(c.joints[LeftFoot]);
+        c.clipHips = std::max(0, hipsClip);
+        if (hipsClip >= 0 && footClip >= 0)
+        {
+            const float own = c.bind[(size_t)c.joints[Hips]].y - c.bind[(size_t)c.joints[LeftFoot]].y;
+            const float source = set.rest[(size_t)hipsClip].y - set.rest[(size_t)footClip].y;
+            if (source > 1e-4f) c.clipScale = own / source;
+        }
+        // Клипт байхгүй хуруу: долоовор хурууг дагана
+        c.fingerCopy.clear();
+        for (const char* side : { "Left", "Right" })
+        {
+            for (const char* finger : { "Middle", "Ring", "Pinky" })
+            {
+                int previousCopy = -1;
+                for (int segment = 1; segment <= 4; ++segment)
+                {
+                    const std::string base = std::string(side) + "Hand";
+                    const int bone = FindBone(c.model, (base + finger + std::to_string(segment)).c_str());
+                    if (bone < 0 || clipOf(bone) >= 0) { previousCopy = -1; continue; }
+                    int index = -1;
+                    const std::string indexName = base + "Index" + std::to_string(segment);
+                    for (int i = 0; i < count; ++i)
+                    {
+                        if (set.bones[(size_t)i] == indexName) index = i;
+                    }
+                    if (index < 0) continue;
+                    Character::FingerCopy copy = { bone, index, clipOf(c.model.bones[bone].parent), previousCopy, QuaternionIdentity() };
+                    if (copy.parentClip < 0 && copy.parentCopy < 0) continue;
+                    const int next = FindBone(c.model, (base + finger + std::to_string(segment + 1)).c_str());
+                    int nextIndex = -1;
+                    const std::string nextName = base + "Index" + std::to_string(segment + 1);
+                    for (int i = 0; i < count; ++i)
+                    {
+                        if (set.bones[(size_t)i] == nextName) nextIndex = i;
+                    }
+                    if (next >= 0 && nextIndex >= 0)
+                    {
+                        const Vector3 own = Vector3Subtract(c.bind[(size_t)next], c.bind[(size_t)bone]);
+                        const Vector3 source = Vector3Subtract(set.rest[(size_t)nextIndex], set.rest[(size_t)index]);
+                        if (Vector3Length(own) > 1e-5f && Vector3Length(source) > 1e-5f)
+                        {
+                            copy.fix = QuaternionFromVector3ToVector3(Vector3Normalize(own), Vector3Normalize(source));
+                        }
+                    }
+                    else if (previousCopy >= 0)
+                    {
+                        copy.fix = c.fingerCopy[(size_t)previousCopy].fix;
+                    }
+                    c.fingerCopy.push_back(copy);
+                    previousCopy = (int)c.fingerCopy.size() - 1;
+                }
+            }
+        }
+        c.idleClip[0] = c.anims->Find("idle");
+        c.idleClip[1] = c.anims->Find("idle_aim");
+        c.crouchIdleClip[0] = c.anims->Find("crouch_idle");
+        c.crouchIdleClip[1] = c.anims->Find("crouch_aim");
+        c.jumpClip = c.anims->Find("jump_loop");
+        static const char* const gaits[4] = { "walk", "run", "sprint", "crouch" };
+        static const char* const directions[8] = { "f", "fl", "l", "bl", "b", "br", "r", "fr" };
+        bool complete = c.idleClip[0] >= 0 && c.idleClip[1] >= 0;
+        for (int g = 0; g < 4; ++g)
+        {
+            for (int d = 0; d < 8; ++d)
+            {
+                c.gaitClip[g][d] = c.anims->Find(TextFormat("%s_%s", gaits[g], directions[d]));
+                complete = complete && c.gaitClip[g][d] >= 0;
+            }
+            if (c.gaitClip[g][0] < 0) continue;
+            const AnimClip& clip = c.anims->clips[(size_t)c.gaitClip[g][0]];
+            c.gaitSpeed[g] = Vector3Length(clip.velocity) * c.clipScale * c.scale;
+            c.gaitStride[g] = c.gaitSpeed[g] * clip.Duration();
+        }
+        if (!complete)
+        {
+            TraceLog(LOG_WARNING, "ANIM: idle or locomotion clips missing, using the procedural pose");
+            c.anims = nullptr;
+            return;
+        }
+        TraceLog(LOG_INFO, "ANIM: walk %.2f m/s stride %.2f m, run %.2f / %.2f, sprint %.2f / %.2f, crouch %.2f / %.2f",
+                 c.gaitSpeed[0], c.gaitStride[0], c.gaitSpeed[1], c.gaitStride[1], c.gaitSpeed[2], c.gaitStride[2],
+                 c.gaitSpeed[3], c.gaitStride[3]);
+    }
+
+    // Хурдаар алхах / гүйх / хурдан гүйхийг жинлэнэ (нийлбэр 1).
+    void GaitWeights(const Character& c, float speed, float weights[3])
+    {
+        weights[0] = weights[1] = weights[2] = 0.0f;
+        if (speed <= c.gaitSpeed[0])
+        {
+            weights[0] = 1.0f;
+        }
+        else if (speed <= c.gaitSpeed[1])
+        {
+            const float t = (speed - c.gaitSpeed[0]) / std::max(0.01f, c.gaitSpeed[1] - c.gaitSpeed[0]);
+            weights[0] = 1.0f - t;
+            weights[1] = t;
+        }
+        else
+        {
+            const float t = std::min(1.0f, (speed - c.gaitSpeed[1]) / std::max(0.01f, c.gaitSpeed[2] - c.gaitSpeed[1]));
+            weights[1] = 1.0f - t;
+            weights[2] = t;
+        }
+    }
+
+    // Нэг алхааны (gait) 8 чиглэлээс явах зүгийн хоёр хөршийг жинлэн нэмнэ. cycle: алхааны үе 0..1.
+    void AddGait(const Character& c, AnimBlend& blend, int gait, float direction, float cycle, float weight)
+    {
+        if (weight <= 0.0f) return;
+        float sector = direction / (0.25f * PI); // + нь зүүн тийш (+X)
+        sector -= 8.0f * std::floor(sector / 8.0f);
+        const int a = (int)sector % 8, b = (a + 1) % 8;
+        const float t = sector - std::floor(sector);
+        for (int k = 0; k < 2; ++k)
+        {
+            const AnimClip& clip = c.anims->clips[(size_t)c.gaitClip[gait][k == 0 ? a : b]];
+            float at = cycle + clip.phase;
+            at -= std::floor(at);
+            blend.Add(clip, at * clip.Duration(), weight * (k == 0 ? 1.0f - t : t));
+        }
+    }
+
+    // Клипийн дээр нэмэх биеийн засвар (зэвсгээс хамаарна)
+    struct ClipBody
+    {
+        float yaw = 0.0f;       // цээжний эргэлт, градус (+ = биеийн зүүн тийш)
+        float lean = 0.0f;      // нэмэлт бөхийлт, градус (+ = урагш): онилгоо, ухралт, хатгах, шидэх
+        float gazePitch = 0.0f; // харцны босоо өнцөг, градус (+ = дээш)
+    };
+
+    // Хөлийн гинжийг (тавхай, хуруу) хадгалсан эргэлтээр дахин байрлуулна.
+    void RestoreLegChain(Character& c, int bone, const std::vector<Quaternion>& saved)
+    {
+        const int parent = c.model.bones[bone].parent;
+        c.position[(size_t)bone] = Vector3Add(c.position[(size_t)parent], Rotate(c.rotation[(size_t)parent],
+                                                                                 Vector3Subtract(c.bind[(size_t)bone], c.bind[(size_t)parent])));
+        c.rotation[(size_t)bone] = saved[(size_t)bone];
+        c.solved[(size_t)bone] = 1;
+        for (int child = 0; child < c.model.boneCount; ++child)
+        {
+            if (c.model.bones[child].parent == bone) RestoreLegChain(c, child, saved);
+        }
+    }
+
+    // Mixamo-гийн клипүүдээр бүх ясыг байрлуулна (их бие, хөл, толгой; гарыг дуудагч дараа нь зэвсгээр тавина).
+    // move: 0 зогссон .. 1 явж буй; crouch, aim: 0..1; airborne: агаарт (үсрэлт, уналт).
+    void PoseFromClips(Character& c, const HumanoidPose& pose, float move, float crouch, float aim, bool airborne, const ClipBody& body)
+    {
+        static AnimBlend blend;
+        static std::vector<Quaternion> local;
+        blend.Reset((int)c.anims->bones.size());
+        const auto clip = [&](int index) -> const AnimClip& { return c.anims->clips[(size_t)index]; };
+        if (airborne && c.jumpClip >= 0)
+        {
+            blend.Add(clip(c.jumpClip), pose.time, 1.0f);
+        }
+        else
+        {
+            float cycle = pose.walkPhase / (2.0f * PI);
+            cycle -= std::floor(cycle);
+            const float still = 1.0f - move;
+            for (int k = 0; k < 2; ++k)
+            {
+                const float w = (k == 0 ? 1.0f - aim : aim) * still;
+                blend.Add(clip(c.idleClip[k]), pose.time, w * (1.0f - crouch));
+                blend.Add(clip(c.crouchIdleClip[k] >= 0 ? c.crouchIdleClip[k] : c.idleClip[k]), pose.time, w * crouch);
+            }
+            float weights[3];
+            GaitWeights(c, pose.speed, weights);
+            for (int g = 0; g < 3; ++g) AddGait(c, blend, g, pose.moveDirection, cycle, move * (1.0f - crouch) * weights[g]);
+            AddGait(c, blend, 3, pose.moveDirection, cycle, move * crouch);
+        }
+        Vector3 hips;
+        if (!blend.Result(local, hips)) return;
+        // Ташаа: эх дүрийн анхны байрлалаас хэр шилжсэнийг энэ дүрийн хэмжээгээр
+        const Vector3 hipsBind = c.bind[(size_t)c.joints[Hips]];
+        hips = Vector3Add(hipsBind, Vector3Scale(Vector3Subtract(hips, c.anims->rest[(size_t)c.clipHips]), c.clipScale));
+        hips.y -= pose.bob / c.scale; // (үндсэн хувиргалтын дээш доош хөдөлгөөнийг нөхнө: хөл газарт)
+        // Явахад ташааг өргөнө: клипийн байлдааны алхаа намхан (анхны өндрийн 85%, өвдөг 90°). Тавхайг доор нь IK-аар буцаана.
+        const float lift = airborne ? 0.0f : 0.06f * move * (1.0f - crouch) / c.scale;
+        hips.y += lift;
+
+        // Яс бүрийн эргэлт ба байрлал. source: эх дүрийн D; дүрийн эргэлт = source * restFix
+        const auto place = [&](int bone, Quaternion rotation) {
+            const int parent = c.model.bones[bone].parent;
+            c.rotation[(size_t)bone] = rotation;
+            if (parent < 0 || !c.solved[(size_t)parent])
+            {
+                c.position[(size_t)bone] = parent < 0 || bone == c.joints[Hips] ? hips : c.bind[(size_t)bone];
+            }
+            else
+            {
+                c.position[(size_t)bone] = Vector3Add(c.position[(size_t)parent],
+                                                      Rotate(c.rotation[(size_t)parent],
+                                                             Vector3Subtract(c.bind[(size_t)bone], c.bind[(size_t)parent])));
+            }
+            c.solved[(size_t)bone] = 1;
+        };
+        // Клипийн яс эцгээсээ хойно ирнэ (tools/mixamo_import.py): D(яс) = D(эцэг) * L
+        static std::vector<Quaternion> source;
+        source.resize(local.size());
+        for (size_t i = 0; i < local.size(); ++i)
+        {
+            const int parentClip = c.animParent[i];
+            source[i] = parentClip >= 0 ? QuaternionNormalize(QuaternionMultiply(source[(size_t)parentClip], local[i])) : local[i];
+        }
+        // Их бие: клипийн цээж зогсохдоо 50° эргэсэн, явахад 45° хүртэл бөгтөр, клип хооронд эргэлт нь их зөрүүтэй (-46..+3°).
+        // Цээжийг нэг эргэлтэд (body.yaw), бөхийлтийг багасгаж (зэвсэг, онилгоо, ухралт нэмнэ) нуруунд тэгш хуваана.
+        const int* spine = c.clipSpine;
+        Quaternion spineStep = QuaternionIdentity();
+        if (spine[0] >= 0 && spine[1] >= 0 && spine[2] >= 0 && spine[3] >= 0)
+        {
+            const Quaternion chest = source[(size_t)spine[2]];
+            const Vector3 up = Vector3Subtract(c.anims->rest[(size_t)spine[3]], c.anims->rest[(size_t)spine[0]]);
+            const Vector3 now = Rotate(chest, up);
+            const float lean = std::atan2(now.z, now.y) - std::atan2(up.z, up.y); // + = урагш
+            const Vector3 forward = Rotate(chest, { 0.0f, 0.0f, 1.0f });
+            const float straighten = airborne ? 0.0f : move * Lerp(0.6f, 0.4f, crouch);
+            const float leanFix = -std::max(lean, 0.0f) * straighten + body.lean * DEG2RAD;
+            const float yawFix = std::remainder(body.yaw * DEG2RAD - std::atan2(forward.x, forward.z), 2.0f * PI);
+            const Quaternion total = QuaternionMultiply(QuaternionFromAxisAngle({ 0.0f, 1.0f, 0.0f }, yawFix),
+                                                        QuaternionFromAxisAngle({ 1.0f, 0.0f, 0.0f }, leanFix));
+            spineStep = QuaternionSlerp(QuaternionIdentity(), total, 1.0f / 3.0f);
+        }
+        // Толгой: клипт 10-23° доош харсан. Харц урагш, онилгооны зүгт (хүзүү, толгойд хуваана)
+        const Vector3 gaze = Rotate(QuaternionFromAxisAngle({ 1.0f, 0.0f, 0.0f }, -body.gazePitch * DEG2RAD), { 0.0f, 0.0f, 1.0f });
+        const Vector3 zAxis = { 0.0f, 0.0f, 1.0f };
+        for (size_t i = 0; i < local.size(); ++i)
+        {
+            const int parentClip = c.animParent[i];
+            source[i] = parentClip >= 0 ? QuaternionNormalize(QuaternionMultiply(source[(size_t)parentClip], local[i])) : local[i];
+            const int index = (int)i;
+            if (index == spine[0] || index == spine[1] || index == spine[2])
+            {
+                source[i] = QuaternionNormalize(QuaternionMultiply(spineStep, source[i]));
+            }
+            else if (index == spine[3] && c.clipHead >= 0)
+            {
+                const Vector3 now = Rotate(QuaternionMultiply(source[i], local[(size_t)c.clipHead]), zAxis);
+                const Quaternion half = QuaternionSlerp(QuaternionIdentity(), QuaternionFromVector3ToVector3(now, gaze), 0.5f);
+                source[i] = QuaternionNormalize(QuaternionMultiply(half, source[i]));
+            }
+            else if (index == c.clipHead)
+            {
+                const Quaternion most = QuaternionSlerp(QuaternionIdentity(), QuaternionFromVector3ToVector3(Rotate(source[i], zAxis), gaze), 0.9f);
+                source[i] = QuaternionNormalize(QuaternionMultiply(most, source[i]));
+            }
+            if (c.animBone[i] >= 0) place(c.animBone[i], QuaternionNormalize(QuaternionMultiply(source[i], c.restFix[i])));
+        }
+        static std::vector<Quaternion> copied;
+        copied.resize(c.fingerCopy.size());
+        for (size_t i = 0; i < c.fingerCopy.size(); ++i)
+        {
+            const Character::FingerCopy& f = c.fingerCopy[i];
+            const Quaternion parent = f.parentClip >= 0 ? source[(size_t)f.parentClip] : copied[(size_t)f.parentCopy];
+            copied[i] = QuaternionNormalize(QuaternionMultiply(parent, local[(size_t)f.clip]));
+            place(f.bone, QuaternionNormalize(QuaternionMultiply(copied[i], f.fix)));
+        }
+        // Хөл: тавхай клипийн байрлалдаа, газраас доош орохгүй (клипт гүйхэд 3.5 см орно); эргэлт нь клипийнх
+        if (!airborne && move > 0.01f)
+        {
+            static std::vector<Quaternion> saved;
+            saved = c.rotation;
+            for (int side = 0; side < 2; ++side)
+            {
+                const Joint upper = side == 0 ? RightUpLeg : LeftUpLeg, lower = side == 0 ? RightLeg : LeftLeg, foot = side == 0 ? RightFoot : LeftFoot;
+                const int footBone = c.joints[foot];
+                Vector3 ankle = c.position[(size_t)footBone];
+                ankle.y = std::max(ankle.y - lift, c.bind[(size_t)footBone].y);
+                const Vector3 middle = Vector3Scale(Vector3Add(c.position[(size_t)c.joints[upper]], ankle), 0.5f);
+                Vector3 pole = Vector3Subtract(c.position[(size_t)c.joints[lower]], middle);
+                if (Vector3Length(pole) < 0.005f) pole = Rotate(c.rotation[(size_t)c.joints[Hips]], { 0.0f, 0.0f, 1.0f });
+                Unsolve(c, upper);
+                Reach(c, upper, lower, foot, ankle, pole, 0.0f);
+                Follow(c, c.joints[lower]);
+                RestoreLegChain(c, footBone, saved);
+            }
+        }
+    }
+
     // Мөчний орон зай -> загварын орон зай: эх нь origin, тэнхлэгүүд нь rotation-оор эргэсэн, метрээр.
     Matrix Frame(Quaternion rotation, Vector3 origin)
     {
@@ -640,7 +1047,7 @@ namespace
     // Гурвалжны гурван орой бүгд гарын (мөрнөөс доош) ясанд голлон жинлэгдсэн бол үлдээж, шинэ mesh үүсгэнэ.
     // Ясны матрицыг үндсэн mesh-тэй хуваалцана (Skin нэг удаа бичнэ).
     // glove >= 0: тэр ясны (зүүн сарвуу) доорх гурвалжнуудыг part 0-оос хасаж, part 1-д зөвхөн тэднийг авна.
-    Mesh ExtractArms(const Model& model, const Mesh& source, int rightArm, int leftArm, int glove = -1, int part = 0)
+    Mesh ExtractArms(const Model& model, const Mesh& source, int rightArm, int leftArm, int glove = -1, int part = 0, bool armWeightsOnly = false, int rightHand = -1, int leftHand = -1, int handFilter = 0)
     {
         Mesh arms = {};
         if (!source.boneIds || !source.boneWeights || source.vertexCount <= 0) return arms;
@@ -661,13 +1068,18 @@ namespace
         for (int t = 0; t < source.triangleCount; ++t)
         {
             int corner[3];
-            bool keep = true, hand = glove >= 0;
+            bool keep = true, hand = glove >= 0, palm = true, touchesHand = false;
             for (int k = 0; k < 3; ++k)
             {
                 corner[k] = source.indices ? source.indices[t * 3 + k] : t * 3 + k;
                 keep = keep && armVertex(corner[k]);
                 hand = hand && gloveVertex(corner[k]);
+                const float handWeight = weightUnder(corner[k], rightHand) + weightUnder(corner[k], leftHand);
+                palm = palm && handWeight > 0.5f;
+                touchesHand = touchesHand || handWeight > 0.3f;
             }
+            // 1: сарвуугүй (сарвуунд мэдэгдэхүйц жинтэй хэсэг бугуйгаас салж хөвнө), 2: зөвхөн сарвуу
+            if ((handFilter == 1 && touchesHand) || (handFilter == 2 && !palm)) continue;
             if (!keep || (glove >= 0 && hand != (part == 1))) continue;
             for (int k = 0; k < 3; ++k)
             {
@@ -697,6 +1109,19 @@ namespace
             if (arms.normals) std::memcpy(arms.normals + i * 3, source.normals + v * 3, 3 * sizeof(float));
             std::memcpy(arms.boneIds + i * 4, source.boneIds + v * 4, 4);
             std::memcpy(arms.boneWeights + i * 4, source.boneWeights + v * 4, 4 * sizeof(float));
+            if (armWeightsOnly)
+            {
+                // Биеийн ясны жинг хасаж гарынхыг хэвийн болгоно: бие хөдөлгөөнгүй тул ханцуй, хантааз сунаж шовх болно
+                float total = 0.0f;
+                for (int k = 0; k < 4; ++k)
+                {
+                    const int bone = arms.boneIds[i * 4 + k];
+                    const bool arm = bone < model.boneCount && (UnderBone(model, bone, rightArm) || UnderBone(model, bone, leftArm));
+                    if (!arm) arms.boneWeights[i * 4 + k] = 0.0f;
+                    total += arms.boneWeights[i * 4 + k];
+                }
+                for (int k = 0; k < 4 && total > 0.0f; ++k) arms.boneWeights[i * 4 + k] /= total;
+            }
         }
         arms.indices = (unsigned short*)MemAlloc((unsigned int)indices.size() * sizeof(unsigned short));
         std::memcpy(arms.indices, indices.data(), indices.size() * sizeof(unsigned short));
@@ -799,7 +1224,7 @@ void LoadCharacterModels(Shader shader)
             }
         }
         c.scale = top > 0.01f ? TargetHeight(id) / top : 1.0f;
-        if (WantsArms(id) && c.joints[RightArm] >= 0 && c.joints[RightHand] >= 0)
+        if ((WantsArms(id) || WantsClipArms(id)) && c.joints[RightArm] >= 0 && c.joints[RightHand] >= 0)
         {
             // 1-р этгээдийн гар: загвар нь бүтэн хүн биш байж болно (зөвхөн гар, хөл): өндрөөр биш, мөрнөөс бугуй
             // хүртэлх уртаар (0.55 м) томруулна (бүтэн биетэй дүрүүд өндрөөрөө аль хэдийн бодит хэмжээтэй)
@@ -813,6 +1238,7 @@ void LoadCharacterModels(Shader shader)
             {
                 const float hand = Vector3Distance(c.bind[(size_t)c.joints[RightHand]], c.bind[(size_t)tip]);
                 c.handScale = std::clamp(0.35f * arm / std::max(hand, 0.001f), 0.4f, 1.0f);
+                if (id == kCharacterIron) c.handScale = 1.0f; // (хуягт бээлий: жижигрүүлбэл төмөр хэсгүүд салж хөвнө)
                 c.handBone.assign((size_t)c.model.boneCount, 0);
                 for (int bone = 0; bone < c.model.boneCount; ++bone)
                 {
@@ -895,6 +1321,45 @@ void LoadCharacterModels(Shader shader)
 
         TraceLog(LOG_INFO, "CHARACTER: %s loaded: %d triangles, %d bones, scale %.2f", kNames[id], triangles,
                  c.model.boneCount, c.scale);
+
+        // 1-р этгээдийн гар (урт буу): тоглогчийн удирдаж болох дүр бүрийн өөрийн гар, ханцуй
+        if (WantsClipArms(id))
+        {
+            for (int index = 0; index < c.model.meshCount; ++index)
+            {
+                // Iron-ы сарвуу шовх хэлтэрхий хэлбэртэй, атгаж чадахгүй: сарвуугүй (хүрэл бээлийн сарвуу, DrawCharacterClipArms)
+                c.clipArms.push_back(ExtractArms(c.model, c.model.meshes[index], c.joints[RightArm], c.joints[LeftArm], -1, 0, true,
+                                                 c.joints[RightHand], c.joints[LeftHand], id == kCharacterIron ? 1 : 0));
+                if (id == kCharacterFpArms)
+                {
+                    c.clipHands.push_back(ExtractArms(c.model, c.model.meshes[index], c.joints[RightArm], c.joints[LeftArm], -1, 0, true,
+                                                      c.joints[RightHand], c.joints[LeftHand], 2));
+                }
+            }
+        }
+        // Цэргүүд, сонгож болох дүрүүд Mixamo-гийн нэг хөдөлгөөнийг хуваалцана (файл байхгүй бол кодоор тооцсон хөдөлгөөн).
+        // Demon, Iron үгүй: биеийн хэлбэр нь хөдөлгөөнийг даахгүй.
+        if (id == kCharacterFighter1 || id == kCharacterFighter2 || id == kCharacterSniper || id == kCharacterModel1 ||
+            id == kCharacterModel2 || id == kCharacterModel3)
+        {
+            static AnimSet soldierClips;
+            static int soldierClipsState = 0; // 0 уншаагүй, 1 бэлэн, -1 алга
+            if (soldierClipsState == 0)
+            {
+                const std::string animPath = meshPath.substr(0, meshPath.size() - std::strlen(kNames[id]) - std::strlen("_mesh.glb")) + "soldier_anims.bin";
+#if defined(__ANDROID__)
+                const bool exists = true; // (APK-ийн assets-ийг FileExists хардаггүй)
+#else
+                const bool exists = FileExists(animPath.c_str());
+#endif
+                soldierClipsState = exists && LoadAnimSet(animPath.c_str(), soldierClips) ? 1 : -1;
+            }
+            if (soldierClipsState > 0)
+            {
+                c.anims = &soldierClips;
+                SetupClips(c);
+            }
+        }
     }
 }
 
@@ -908,7 +1373,7 @@ void UnloadCharacterModels()
             c.material.maps[MATERIAL_MAP_ALBEDO].texture = {};
             UnloadMaterial(c.material);
             UnloadTexture(c.texture);
-            for (std::vector<Mesh>* list : { &c.lod, &c.lodFar, &c.arms, &c.glove })
+            for (std::vector<Mesh>* list : { &c.lod, &c.lodFar, &c.arms, &c.glove, &c.clipArms, &c.clipHands })
             {
                 for (Mesh& mesh : *list)
                 {
@@ -916,6 +1381,7 @@ void UnloadCharacterModels()
                     if (mesh.vertexCount > 0) UnloadMesh(mesh);
                 }
             }
+            SetCharacterOutfit((int)(&c - characters), {});
             UnloadModel(c.model);
             c = Character{};
         }
@@ -938,6 +1404,158 @@ namespace
 }
 
 void SetCharacterShadowMaterial(const Material* material) { shadowMaterial = material; }
+
+namespace
+{
+    void UnloadWears(std::vector<Character::Wear>& list)
+    {
+        for (Character::Wear& w : list)
+        {
+            for (std::vector<Mesh>* lods : { &w.lod, &w.lodFar })
+            {
+                for (Mesh& mesh : *lods)
+                {
+                    mesh.boneMatrices = nullptr;
+                    if (mesh.vertexCount > 0) UnloadMesh(mesh);
+                }
+            }
+            for (int i = 0; i < w.model.meshCount; ++i) w.model.meshes[i].boneMatrices = nullptr; // (биеийнх эсвэл анхны)
+            UnloadModel(w.model);
+            w.material.shader = {}; // (Environment-ийнх)
+            w.material.maps[MATERIAL_MAP_ALBEDO].texture = {};
+            UnloadMaterial(w.material);
+            if (w.ownsTexture) UnloadTexture(w.texture);
+        }
+        list.clear();
+    }
+
+    // Барааг ачаалж list-д нэмнэ. bones: биеийн ясны матрицууд; hidden: дор нь далдлагдах биеийн гурвалжнуудыг тэмдэглэнэ.
+    bool LoadWear(Character& c, int id, const std::string& item, std::vector<Character::Wear>& list, Matrix* bones,
+                  bool lods, std::vector<char>* hidden)
+    {
+        std::string base;
+        const std::string application = GetApplicationDirectory();
+        for (const std::string& folder : { std::string("assets/items/"), application + "assets/items/", application + "../assets/items/" })
+        {
+            base = folder + item;
+            if (FileExists((base + "_mesh.glb").c_str())) break;
+        }
+#if defined(__ANDROID__)
+        base = "items/" + item;
+#endif
+        Character::Wear w;
+        w.name = item;
+        w.model = LoadModel((base + "_mesh.glb").c_str());
+        if (w.model.meshCount <= 0 || w.model.boneCount != c.model.boneCount)
+        {
+            TraceLog(LOG_WARNING, "OUTFIT: %s does not fit %s (%d bones, body %d)", item.c_str(), kNames[id], w.model.boneCount, c.model.boneCount);
+            UnloadModel(w.model);
+            return false;
+        }
+        // Өнгө: <бараа>_color.png, эсвэл иж бүрдлийнх (set1_helmet -> set1_color.png)
+        w.texturePath = ImageFile(base + "_color.png");
+        const size_t cut = base.rfind('_');
+        if (!FileExists(w.texturePath.c_str()) && cut != std::string::npos && cut > base.rfind('/') + 1)
+        {
+            w.texturePath = ImageFile(base.substr(0, cut) + "_color.png");
+        }
+        for (const Character::Wear& other : list)
+        {
+            if (other.texturePath != w.texturePath) continue;
+            w.texture = other.texture;
+            w.ownsTexture = false;
+            break;
+        }
+        if (w.ownsTexture)
+        {
+            w.texture = LoadTexture(w.texturePath.c_str());
+            SetTextureFilter(w.texture, TEXTURE_FILTER_BILINEAR);
+        }
+        w.material = LoadMaterialDefault();
+        w.material.shader = c.material.shader;
+        w.material.maps[MATERIAL_MAP_ALBEDO].texture = w.texture;
+        for (int i = 0; i < w.model.meshCount; ++i)
+        {
+            Mesh& mesh = w.model.meshes[i];
+            if (mesh.boneMatrices) MemFree(mesh.boneMatrices);
+            mesh.boneMatrices = bones;
+            if (!lods) continue;
+            const float height = TargetHeight(id) / std::max(0.001f, c.scale); // (биеийн өндөр, загварын нэгжээр)
+            w.lod.push_back(SimplifyMesh(mesh, height / 30.0f));
+            w.lodFar.push_back(SimplifyMesh(mesh, height / 12.0f, 1.0f / 12.0f));
+        }
+        // Далдлагдах биеийн гурвалжнууд
+        int size = 0;
+        unsigned char* data = hidden ? LoadFileData((base + "_hide.bin").c_str(), &size) : nullptr;
+        if (data)
+        {
+            uint32_t count = 0;
+            if (size >= 4) std::memcpy(&count, data, 4);
+            for (uint32_t k = 0; k < count && 4 + (int)(k + 1) * 4 <= size; ++k)
+            {
+                uint32_t triangle = 0;
+                std::memcpy(&triangle, data + 4 + k * 4, 4);
+                if (triangle < hidden->size()) (*hidden)[triangle] = 1;
+            }
+            UnloadFileData(data);
+        }
+        list.push_back(std::move(w));
+        return true;
+    }
+}
+
+void SetCharacterOutfit(int id, const std::vector<std::string>& items)
+{
+    if (id < 0 || id >= kCharacterCount || !characters[id].loaded) return;
+    Character& c = characters[id];
+    UnloadWears(c.wear);
+    if (c.bodyIndices.empty())
+    {
+        for (int i = 0; i < c.model.meshCount; ++i)
+        {
+            const Mesh& mesh = c.model.meshes[i];
+            c.bodyIndices.emplace_back(mesh.indices, mesh.indices ? mesh.indices + mesh.triangleCount * 3 : mesh.indices);
+        }
+    }
+
+    std::vector<char> hidden(c.bodyIndices.empty() ? 0 : c.bodyIndices[0].size() / 3, 0);
+    for (const std::string& item : items)
+    {
+        if (!LoadWear(c, id, item, c.wear, c.model.meshes[0].boneMatrices, true, &hidden)) continue; // биеийн арьслалтаар хөдөлнө
+        TraceLog(LOG_INFO, "OUTFIT: %s wears %s (%d triangles)", kNames[id], item.c_str(), c.wear.back().model.meshes[0].triangleCount);
+    }
+
+    // Биеийн индексийг дахин бичнэ: харагдах гурвалжнууд эхэнд, triangleCount-оор таслана
+    if (!c.bodyIndices.empty() && c.model.meshCount > 0 && c.model.meshes[0].indices)
+    {
+        Mesh& mesh = c.model.meshes[0];
+        const std::vector<unsigned short>& all = c.bodyIndices[0];
+        int kept = 0;
+        for (size_t t = 0; t < all.size() / 3; ++t)
+        {
+            if (hidden[t]) continue;
+            std::memcpy(mesh.indices + kept * 3, &all[t * 3], 3 * sizeof(unsigned short));
+            ++kept;
+        }
+        mesh.triangleCount = kept;
+        UpdateMeshBuffer(mesh, 6, mesh.indices, kept * 3 * (int)sizeof(unsigned short), 0);
+    }
+}
+
+float CharacterGaitRate(int id, float speed, float crouch)
+{
+    if (id < 0 || id >= kCharacterCount || !characters[id].loaded || !characters[id].anims)
+    {
+        return HumanoidGaitRate(speed);
+    }
+    if (speed <= 0.1f) return 0.0f;
+    const Character& c = characters[id];
+    float weights[3];
+    GaitWeights(c, speed, weights);
+    const float standing = weights[0] * c.gaitStride[0] + weights[1] * c.gaitStride[1] + weights[2] * c.gaitStride[2];
+    const float stride = Lerp(standing, c.gaitStride[3], std::clamp(crouch, 0.0f, 1.0f));
+    return 2.0f * PI * speed / std::max(0.2f, stride);
+}
 
 bool HasCharacterModel(int id)
 {
@@ -1123,6 +1741,98 @@ void DrawCharacterArms(int id, const Matrix& bodyToWorld, const ViewArmTarget ta
     std::fill(c.solved.begin(), c.solved.end(), 0); // (дараагийн 3-р этгээдийн зураглал жижигрүүлэлтгүй байрлалаас эхэлнэ)
 }
 
+bool HasCharacterClipArms(int id)
+{
+    return id >= 0 && id < kCharacterCount && characters[id].loaded && !characters[id].clipArms.empty();
+}
+
+void DrawCharacterClipArms(int id, Vector3 rightPalm, Vector3 leftPalm, Color tint, bool handsOnly)
+{
+    if (!HasCharacterClipArms(id)) return;
+    Character& c = characters[id];
+    const float s = c.scale;
+    armsPass = true; // (сарвуу гартаа тохирсон хэмжээтэй: Tripo-гийн дүрийн сарвуу хэт том, хуруу бууг ороож чадахгүй)
+    std::fill(c.solved.begin(), c.solved.end(), 0);
+    for (int bone = 0; bone < c.model.boneCount; ++bone) Follow(c, bone);
+    Unsolve(c, RightArm);
+    Unsolve(c, LeftArm);
+    // Бууны орон зайд (DrawGun: +X дүрийн зүүн, +Y дээш, +Z ам), метрээр. Гар дэлгэцийн доороос орж ирнэ: мөр дэлгэцэнд орохгүй.
+    struct Grip
+    {
+        Vector3 palm, fingers, facing, toElbow, toShoulder;
+        float curl, thumb;
+    };
+    const Grip grips[2] = {
+        // Баруун: алга бариулын баруун талд, хуруу урагш (нугарч бариулыг ороно)
+        { rightPalm, { 0.0f, -0.1f, 1.0f }, { 1.0f, 0.0f, 0.0f }, { -0.35f, -0.75f, -0.55f }, { -0.25f, -0.9f, -0.35f }, 75.0f, 60.0f },
+        // Зүүн: алга урд модны доор дээш харсан, хуруу баруун тийш бага зэрэг урагш (нугарч модыг ороно), бугуй зүүн доор
+        { leftPalm, { -0.85f, 0.0f, 0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.6f, -0.65f, -0.45f }, { 0.3f, -0.9f, -0.3f }, 62.0f, 40.0f },
+    };
+    for (int side = 0; side < 2; ++side)
+    {
+        const Grip& grip = grips[side];
+        const Joint upper = side == 0 ? RightArm : LeftArm, lower = side == 0 ? RightForeArm : LeftForeArm;
+        const Joint hand = side == 0 ? RightHand : LeftHand;
+        const int middle = c.fingers[side][1][0];
+        if (middle < 0) continue;
+        // Сарвууны чиглэл: (хуруу, алга) анхны байрлалаас хүссэн рүү
+        const Vector3 wristBind = c.bind[(size_t)c.joints[hand]], knuckle = c.bind[(size_t)middle];
+        const Vector3 f = Vector3Normalize(Vector3Subtract(knuckle, wristBind));
+        const Vector3 n = Vector3Normalize(Vector3Subtract(c.palmNormal[side], Vector3Scale(f, Vector3DotProduct(c.palmNormal[side], f))));
+        const Vector3 tf = Vector3Normalize(grip.fingers);
+        const Vector3 tn = Vector3Normalize(Vector3Subtract(grip.facing, Vector3Scale(tf, Vector3DotProduct(grip.facing, tf))));
+        const Vector3 b = Vector3CrossProduct(f, n), tb = Vector3CrossProduct(tf, tn);
+        Matrix from = MatrixIdentity(), to = MatrixIdentity();
+        from.m0 = f.x; from.m1 = f.y; from.m2 = f.z; from.m4 = n.x; from.m5 = n.y; from.m6 = n.z; from.m8 = b.x; from.m9 = b.y; from.m10 = b.z;
+        to.m0 = tf.x; to.m1 = tf.y; to.m2 = tf.z; to.m4 = tn.x; to.m5 = tn.y; to.m6 = tn.z; to.m8 = tb.x; to.m9 = tb.y; to.m10 = tb.z;
+        const Quaternion orient = QuaternionNormalize(QuaternionFromMatrix(MatrixMultiply(MatrixTranspose(from), to)));
+        // Алганы төв бариул дээр: бугуй түүнээс тооцогдоно
+        const Vector3 palmLocal = Vector3Add(Vector3Scale(Vector3Subtract(knuckle, wristBind), 0.5f * c.handScale), Vector3Scale(n, 0.014f / s));
+        const Vector3 wrist = Vector3Subtract(Vector3Scale(grip.palm, 1.0f / s), Rotate(orient, palmLocal));
+        const Vector3 toElbow = Vector3Normalize(grip.toElbow), toShoulder = Vector3Normalize(grip.toShoulder);
+        const Vector3 elbow = Vector3Add(wrist, Vector3Scale(toElbow, BoneLength(c, lower, hand)));
+        const auto place = [&](Joint joint, Joint child, Vector3 direction, Vector3 position) {
+            const int bone = c.joints[joint];
+            const Vector3 rest = Vector3Normalize(Vector3Subtract(c.bind[(size_t)c.joints[child]], c.bind[(size_t)bone]));
+            c.rotation[(size_t)bone] = QuaternionFromVector3ToVector3(rest, direction);
+            c.position[(size_t)bone] = position;
+            c.solved[(size_t)bone] = 1;
+        };
+        place(lower, hand, Vector3Negate(toElbow), elbow);
+        FacePalm(c, side, tn); // (шуу сарвуутай зэрэг эргэнэ: бугуй мушгирахгүй)
+        // Бугалга шуугаас хамгийн бага эргэлтээр: тохойд мушгирахгүй (эс бөгөөс чихэр шиг нарийсна); мушгиралт мөрөнд, дэлгэцийн гадна
+        {
+            const int bone = c.joints[upper];
+            const Quaternion forearm = c.rotation[(size_t)c.joints[lower]];
+            const Vector3 rest = Vector3Normalize(Vector3Subtract(c.bind[(size_t)c.joints[lower]], c.bind[(size_t)bone]));
+            const Quaternion bend = QuaternionFromVector3ToVector3(Rotate(forearm, rest), Vector3Negate(toShoulder));
+            c.rotation[(size_t)bone] = QuaternionNormalize(QuaternionMultiply(bend, forearm));
+            c.position[(size_t)bone] = Vector3Add(elbow, Vector3Scale(toShoulder, BoneLength(c, upper, lower)));
+            c.solved[(size_t)bone] = 1;
+        }
+        const int handBone = c.joints[hand];
+        c.rotation[(size_t)handBone] = orient;
+        c.position[(size_t)handBone] = wrist;
+        c.solved[(size_t)handBone] = 1;
+        CurlFingers(c, side, grip.curl, grip.thumb, side == 0 ? 30.0f : -1.0f); // (баруун долоовор гох дээр)
+    }
+    Skin(c);
+    c.material.maps[MATERIAL_MAP_ALBEDO].color = tint;
+    rlDisableBackfaceCulling();
+    rlPushMatrix();
+    rlScalef(s, s, s);
+    for (const Mesh& mesh : handsOnly ? c.clipHands : c.clipArms)
+    {
+        if (mesh.vertexCount <= 0) continue;
+        UploadBoneRows(c.material.shader, mesh.boneMatrices, mesh.boneCount);
+        DrawMesh(mesh, c.material, MatrixIdentity());
+    }
+    rlPopMatrix();
+    rlEnableBackfaceCulling();
+    armsPass = false;
+    std::fill(c.solved.begin(), c.solved.end(), 0);
+}
+
 namespace
 {
     float Smooth(float t)
@@ -1235,6 +1945,23 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
     const float idle = still * (1.0f - stance) * (onFoot ? 1.0f : 0.0f) * (1.0f - crouch) * upright;
     const float weight = std::sin(time * 0.55f);
 
+    // Mixamo-гийн хөдөлгөөнтэй дүр: явган (хэвтээгүй) эсвэл агаарт (үсрэлт) үед их бие, хөл, толгойг клипээр.
+    // Гарыг доорх зэвсгийн код (IK) дахин тавина: бууны байрлал, онилгоо, цэнэглэлт хэвээр.
+    const bool airborne = !direct && !pose.grounded && !pose.seated && pose.fall <= 0.0f && pose.spin == 0.0f &&
+                          !pose.swimming && !pose.dead && pose.grip <= 0.0f;
+    const bool clipBody = c.anims && !bindPoseOnly && ((onFoot && !lying) || airborne);
+    if (clipBody)
+    {
+        ClipBody body;
+        // Цээж: урт буу баруун мөрөө урагш (хуучин хөдөлгөөний -26°-тай ижил), гар буу бараг шулуун, хатгах, шидэх хөдөлгөөн биеэрээ
+        body.yaw = (held == HeldItem::Rifle ? -34.0f : twoHanded ? -26.0f : pistol ? -6.0f : knife ? -15.0f : grenade ? -8.0f : -4.0f) + 46.0f * thrust + 38.0f * wind - 34.0f * release;
+        body.lean = -0.5f * aimPitch - recoil * (twoHanded ? 3.0f : 1.5f) + 16.0f * thrust - 12.0f * wind + 24.0f * release;
+        body.gazePitch = pose.aimPitch * (0.35f + 0.65f * aim);
+        PoseFromClips(c, pose, move, crouch, aim, airborne, body);
+        Unsolve(c, RightArm);
+        Unsolve(c, LeftArm);
+    }
+
     // --- Ташаа ---
     // Ташаа урд гарсан хөлийн талаараа урагш эргэнэ (гүйхэд их бие эсрэгээр эргэж тэнцвэржүүлнэ).
     const float gaitYaw = stride * (5.0f + 4.0f * gait.run + 3.0f * run) * rightWave;
@@ -1280,7 +2007,7 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         const float standing = c.bind[(size_t)c.joints[RightUpLeg]].y - c.bind[(size_t)c.joints[RightFoot]].y;
         hipOffset.y -= standing - lowest;
     }
-    Place(c, Hips, hipRotation, hipOffset);
+    if (!clipBody) Place(c, Hips, hipRotation, hipOffset);
 
     // --- Нуруу, цээж, толгой ---
     float lean = pose.lean;
@@ -1314,7 +2041,11 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         chestYaw = -26.0f;
     }
 
-    if (!onFoot && std::fabs(pose.seatTwist) > 0.5f)
+    if (clipBody)
+    {
+        // (клипээр байрлуулсан)
+    }
+    else if (!onFoot && std::fabs(pose.seatTwist) > 0.5f)
     {
         // Унаан дээр бие эргэсэн (ташаа унааны зүгт, цээж бай руу): эргэлтийг доод нуруу, цээж хоёрт хувааж
         // (хүн бүсэлхийгээрээ нэг дор 90 градус эргэж чадахгүй), бөхийлтийг биеийн харах зүгийн тэнхлэгт тооцно.
@@ -1331,13 +2062,13 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
                                            AxisAngle(1.0f, 0.0f, 0.0f, -1.8f * pose.breath)));
     }
     const Quaternion chest = c.rotation[(size_t)c.joints[Spine1]];
-    Turn(c, Neck, QuaternionMultiply(AxisAngle(0.0f, 1.0f, 0.0f, headYaw - chestYaw * 0.85f),
+    if (!clipBody) Turn(c, Neck, QuaternionMultiply(AxisAngle(0.0f, 1.0f, 0.0f, headYaw - chestYaw * 0.85f),
                                      QuaternionMultiply(AxisAngle(1.0f, 0.0f, 0.0f, headPitch),
                                                         AxisAngle(0.0f, 0.0f, 1.0f, headRoll))));
 
     // --- Хөл ---
     const Vector3 down = { 0.0f, -1.0f, 0.0f };
-    for (int side = 0; side < 2; ++side)
+    for (int side = 0; side < 2 && !clipBody; ++side)
     {
         const Joint upper = side == 0 ? RightUpLeg : LeftUpLeg;
         const Joint lower = side == 0 ? RightLeg : LeftLeg;
@@ -1445,13 +2176,19 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         const Joint lower = side == 0 ? RightForeArm : LeftForeArm;
         const Joint hand = side == 0 ? RightHand : LeftHand;
         Reach(c, upper, lower, hand, Vector3Scale(point, 1.0f / s), pole, 0.08f / s);
-        if (facePalm) FacePalm(c, side, palm);
+        if (facePalm)
+        {
+            FacePalm(c, side, palm);
+            if (clipBody) ShareTwist(c, upper, lower, 0.5f); // (их бол мөр шовх сунана)
+        }
     };
     // Гарыг өнцгөөр нь тавих (чөлөөтэй савлах гар).
-    auto swing = [&](int side, float shoulderAngle, float yaw, float elbowAngle) {
+    // abduct: гарыг биеэс хажуу тийш холдуулах өнцөг (гуя өргөн дүрд сарвуу гуяны дотор орж "халаасандаа" мэт харагдана)
+    auto swing = [&](int side, float shoulderAngle, float yaw, float elbowAngle, float abduct = 0.0f) {
         const float inward = side == 0 ? 1.0f : -1.0f;
         const Quaternion shoulder = QuaternionMultiply(AxisAngle(0.0f, 1.0f, 0.0f, yaw * inward),
-                                                       AxisAngle(1.0f, 0.0f, 0.0f, -shoulderAngle));
+                                                       QuaternionMultiply(AxisAngle(0.0f, 0.0f, 1.0f, -inward * abduct),
+                                                                          AxisAngle(1.0f, 0.0f, 0.0f, -shoulderAngle)));
         const Quaternion elbow = QuaternionMultiply(shoulder, AxisAngle(1.0f, 0.0f, 0.0f, -elbowAngle));
         Aim(c, side == 0 ? RightArm : LeftArm, side == 0 ? RightForeArm : LeftForeArm, Rotate(chest, Rotate(shoulder, down)));
         Aim(c, side == 0 ? RightForeArm : LeftForeArm, side == 0 ? RightHand : LeftHand, Rotate(chest, Rotate(elbow, down)));
@@ -1461,6 +2198,7 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
     const float armSwing = stride * (24.0f + 10.0f * gait.run + 12.0f * run) * rightWave;
     const float armBend = 16.0f + stride * (8.0f + 60.0f * std::max(0.9f * gait.run, run));
     float curl[2] = { 14.0f, 14.0f };
+    float triggerCurl = -1.0f; // баруун долоовор гох дээр
 
     if (twoHanded)
     {
@@ -1473,7 +2211,7 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         const float low = (1.0f - aim) * (0.75f + 0.25f * run) * upright * (1.0f - 0.6f * reloading) * (launcher ? 0.3f : 1.0f);
         const float breathSway = 0.7f * pose.breath + (onFoot ? move * 1.2f * std::sin(phase * 2.0f) : 0.0f);
         const Quaternion gunRotation = QuaternionMultiply(
-            heading, QuaternionMultiply(AxisAngle(0.0f, 1.0f, 0.0f, (12.0f + 22.0f * run) * low),
+            heading, QuaternionMultiply(AxisAngle(0.0f, 1.0f, 0.0f, (clipBody ? 6.0f : 12.0f + 22.0f * run) * low),
                                         AxisAngle(1.0f, 0.0f, 0.0f, 22.0f * low + breathSway - 3.5f * recoil -
                                                                         16.0f * reloading * upright - aimPitch)));
         // Бөгсний үзүүр (бууны орон зайд) баруун мөрний урд доор байрлана.
@@ -1481,23 +2219,31 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         // (Пуужин харвагч: хоолойн доод тал мөрний орой дээр хэвтэнэ, хоолой нь мөрнөөс хойш цухуйна.)
         const Vector3 butt = launcher
                                  ? Vector3Add(rightShoulder, Rotate(chest, { 0.03f, 0.09f, 0.02f }))
+                                 : clipBody // (их бие клипээр: бөгсний үзүүр суганд, бугалга түүний гадна талаар)
+                                 ? Vector3Add(rightShoulder, Rotate(heading, { 0.03f, -0.11f - 0.03f * low, 0.05f }))
                                  : Vector3Add(rightShoulder, Rotate(chest, Mix({ 0.07f, -0.07f - 0.07f * low, 0.07f },
                                                                                { 0.06f, 0.05f, 0.06f }, prone)));
         const Vector3 buttLocal = launcher ? Vector3{ kGunX, kGunY - 0.05f, 0.2f - pose.gunKick }
-                                           : Vector3{ kGunX, kGunY, 0.04f - pose.gunKick };
-        const Vector3 gunOrigin = Vector3Subtract(butt, Rotate(gunRotation, buttLocal));
-        frames.gun = Frame(gunRotation, gunOrigin);
+                                           : Vector3{ kGunX, kGunY, (clipBody ? -0.05f : 0.04f) - pose.gunKick };
+        // Автомат: загвар 1.15 м (бодит АК 0.88 м), ийм урттай бол зүүн гар урд модонд хүрэхгүй: 3-р этгээдэд бодит хэмжээ рүү
+        const bool rifle = held == HeldItem::Rifle;
+        const float gunScale = rifle ? 0.85f : 1.0f;
+        const Vector3 gunOrigin = Vector3Subtract(butt, Rotate(gunRotation, Vector3Scale(buttLocal, gunScale)));
+        frames.gun = MatrixMultiply(MatrixScale(gunScale, gunScale, gunScale), Frame(gunRotation, gunOrigin));
 
-        const Vector3 gripLocal = launcher ? Vector3{ kGunX, kGunY - 0.17f, 0.5f - pose.gunKick }
+        // (автомат: загварын жинхэнэ бариул, урд модны доод тал, загвараас хэмжсэн)
+        const Vector3 gripLocal = rifle ? Vector3{ kGunX - 0.015f, kGunY - 0.15f, 0.28f - pose.gunKick }
+                                : launcher ? Vector3{ kGunX, kGunY - 0.17f, 0.5f - pose.gunKick }
                                            : Vector3{ kGunX, kGunY - 0.14f, 0.3f - pose.gunKick };
-        const Vector3 foreLocal = launcher ? Vector3{ kGunX, kGunY - 0.17f, 0.72f - pose.gunKick }
+        const Vector3 foreLocal = rifle ? Vector3{ kGunX + 0.005f, kGunY - 0.03f, 0.74f - pose.gunKick }
+                                : launcher ? Vector3{ kGunX, kGunY - 0.17f, 0.72f - pose.gunKick }
                                            : Vector3{ kGunX, kGunY - 0.075f, 0.66f - pose.gunKick };
-        const Vector3 grip = Vector3Add(gunOrigin, Rotate(gunRotation, gripLocal));
-        Vector3 fore = Vector3Add(gunOrigin, Rotate(gunRotation, foreLocal));
+        const Vector3 grip = Vector3Add(gunOrigin, Rotate(gunRotation, Vector3Scale(gripLocal, gunScale)));
+        Vector3 fore = Vector3Add(gunOrigin, Rotate(gunRotation, Vector3Scale(foreLocal, gunScale)));
         if (reload >= 0.0f)
         {
             // Цэнэглэх: зүүн гар сумны хайрцгийг авч бүс рүүгээ буулгаад, шинийг авчирч хийгээд буцаж урд модоо барина.
-            const Vector3 magazine = Vector3Add(gunOrigin, Rotate(gunRotation, { kGunX, kGunY - 0.3f, 0.54f }));
+            const Vector3 magazine = Vector3Add(gunOrigin, Rotate(gunRotation, Vector3Scale({ kGunX, kGunY - 0.3f, rifle ? 0.6f : 0.54f }, gunScale)));
             const Vector3 belt = Vector3Add(Vector3Scale(JointPosition(c, LeftUpLeg), s), Rotate(chest, { 0.1f, 0.08f, 0.14f }));
             if (reload < 0.2f) fore = Mix(fore, magazine, Smooth(reload / 0.2f));
             else if (reload < 0.45f) fore = Mix(magazine, belt, Smooth((reload - 0.2f) / 0.25f));
@@ -1505,11 +2251,18 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
             else fore = Mix(magazine, fore, Smooth((reload - 0.72f) / 0.2f));
         }
         // Хэвтсэн үед тохой газарт тулна: хажуу тийш, доош (биеийн орон зайд урагш) чиглэнэ.
-        reach(0, grip, Rotate(chest, Mix({ -0.7f, -1.0f, -0.3f }, { -0.9f, -0.4f, 0.8f }, prone)),
+        // (сугалсан буу: тохой гадагш, хойш, бугалга бөгсний гадна талаар)
+        reach(0, grip, Rotate(chest, clipBody ? Vector3{ -1.0f, -0.7f, -0.5f } : Mix({ -0.7f, -1.0f, -0.3f }, { -0.9f, -0.4f, 0.8f }, prone)),
               Rotate(gunRotation, { 1.0f, 0.0f, -0.2f }), true);
         reach(1, fore, Rotate(chest, Mix({ 0.35f, -1.0f, 0.0f }, { 0.8f, -0.4f, 0.8f }, prone)),
               Rotate(gunRotation, { -0.25f, 1.0f, 0.0f }), true);
         curl[0] = curl[1] = 52.0f;
+        if (rifle)
+        {
+            curl[0] = 66.0f; // бариулыг бүрэн атгана
+            curl[1] = 60.0f; // урд модыг ороож атгана
+            triggerCurl = 30.0f;
+        }
     }
     else if (pistol)
     {
@@ -1616,8 +2369,10 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         // --- Гар хоосон: унаа жолоодох зэрэг өгөгдсөн өнцгийг, эс бөгөөс алхааны чөлөөт савлалтыг ашиглана ---
         if (onFoot)
         {
-            swing(0, -armSwing, 4.0f, armBend);
-            swing(1, armSwing, 4.0f, armBend);
+            // (Mixamo-гийн дүр: биеийн хэлбэр нь бодит тул гарыг гуянаас холдуулна)
+            const float abduct = clipBody ? 11.0f : 0.0f;
+            swing(0, -armSwing, 4.0f, armBend, abduct);
+            swing(1, armSwing, 4.0f, armBend, abduct);
         }
         else
         {
@@ -1649,7 +2404,7 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         curl[1] = 78.0f; // атгана
     }
 
-    CurlFingers(c, 0, curl[0]);
+    CurlFingers(c, 0, curl[0], -1.0f, triggerCurl);
     CurlFingers(c, 1, curl[1]);
 
     if (bindPoseOnly)
@@ -1688,6 +2443,20 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         }
         PROFILE_CHARACTER("char 5 drawmesh");
         DrawMesh(mesh, material, MatrixIdentity());
+    }
+    for (Character::Wear& w : c.wear)
+    {
+        const int detail = shadowMaterial ? std::max(lowDetail, 1) : lowDetail;
+        w.material.maps[MATERIAL_MAP_ALBEDO].color = tint;
+        const Material& material = shadowMaterial ? *shadowMaterial : w.material;
+        for (int index = 0; index < w.model.meshCount; ++index)
+        {
+            const std::vector<Mesh>& level = detail >= 2 ? w.lodFar : w.lod;
+            const bool light = detail > 0 && index < (int)level.size() && level[(size_t)index].vertexCount > 0;
+            const Mesh& mesh = light ? level[(size_t)index] : w.model.meshes[index];
+            UploadBoneRows(material.shader, mesh.boneMatrices, mesh.boneCount);
+            DrawMesh(mesh, material, MatrixIdentity());
+        }
     }
     rlPopMatrix();
     rlEnableBackfaceCulling();

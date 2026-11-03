@@ -214,6 +214,13 @@ Rectangle HudTeamTile(int index)
     return index >= 0 && index < 3 ? teamTiles[index] : Rectangle{};
 }
 
+namespace
+{
+    float objectiveCardRight = 0.0f;
+}
+
+float HudObjectiveCardRight() { return objectiveCardRight; }
+
 void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info, bool showDebug)
 {
     const int width = ViewWidth();
@@ -279,7 +286,7 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         }
         const int barWidth = info.objectiveProgress >= 0.0f ? (info.touch ? 70 : 100) : 0;
         const int contentWidth = std::max({ Ui::MeasureBold(info.provinceName, titleSize) + 90 + iconSpace,
-                                            Ui::MeasureBold(objective, objSize) + badgeSpace,
+                                            Ui::MeasureDisplay(objective, objSize + 1, 0.02f) + badgeSpace, // (зурахтай ижил фонтоор: эс бөгөөс урт гарчиг хүрээнээс гарна)
                                             hint.empty() ? 0 : Ui::Measure(hint.c_str(), hintSize) + badgeSpace,
                                             info.objectiveDetail ? Ui::Measure(info.objectiveDetail, detailSize) + iconSpace + barWidth + 14 : 0,
                                             info.objectiveNext ? Ui::Measure(info.objectiveNext, 14) + badgeSpace : 0 });
@@ -295,6 +302,7 @@ void DrawHud(const GameConfig& config, const Player& player, const HudInfo& info
         const int cardHeight = info.objective ? rowY + (info.touch ? 2 : 6) : (info.touch ? 34 : 40);
         const Rectangle card = { (float)x, (float)y, (float)contentWidth + 36.0f, (float)cardHeight };
         cardBottom = y + cardHeight;
+        objectiveCardRight = card.x + card.width;
         Ui::PanelAccent(card, info.objectiveKind >= 0 ? MarkerColor((MarkerKind)info.objectiveKind) : Ui::kAccent);
         Ui::DrawIcon(Ui::Icon::Mission, { (float)x + 17.0f, (float)y + (info.touch ? 7.0f : 9.0f), 16.0f, 16.0f });
         Ui::TextBold(info.provinceName, x + 18 + iconSpace, y + (info.touch ? 8 : 10), titleSize, Ui::kTextDim);
