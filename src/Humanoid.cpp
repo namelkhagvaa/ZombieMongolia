@@ -1321,8 +1321,10 @@ namespace
     const Vector3 kLongGripLocal = { -0.24f, 0.14f, 0.3f }; // гар бариул (DrawGun-ийн орон зай: x, y - 0.16, 0.3)
     const float kLongBore = 0.16f;                          // бариулаас гол төмөр хүртэл
     const float kLongScale = 1.0f;                          // бодит хэмжээ
-    const Vector2 kLongBodyScreen = { 0.56f, -0.5f }, kLongMuzzleScreen = { 0.17f, -0.17f };
-    const float kLongBodyDepth = 0.55f;                    // их бие камераас урд (м)
+    // (их бие дэлгэцийн баруун доод захад, 62 см урд: бөгс дэлгэцээс гарна, доороос зөвхөн шуу харагдана)
+    const Vector2 kLongBodyScreen = { 0.72f, -0.64f }, kLongMuzzleScreen = { 0.17f, -0.17f };
+    const float kLongBodyDepth = 0.62f;                    // их бие камераас урд (м)
+    const float kLongBodyForward = 0.08f, kLongBodyLower = -0.04f; // мөр бууг дагаж урагш, доош (м)
     const float kLongCant = -6.0f;                          // бууг бага зэрэг баруун тийш хазайлгана (градус)
 
     struct LongGunPose
@@ -1788,7 +1790,7 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
             // 40 см доор: нүцгэн model2-ийн бугалга дэлгэцэнд орохгүй),
             // эс бөгөөс гар урд модонд хүрэхгүй (71 см / 53 см))
             const bool restPose = viewModelArms && (held == HeldItem::Rifle || held == HeldItem::Sniper);
-            AnchorViewBody({ Lerp(-0.2f, -0.12f, aim), Lerp(restPose ? -0.48f : -0.27f, restPose ? -0.32f : -0.25f, aim), Lerp(restPose ? 0.3f : -0.06f, restPose ? 0.02f : -0.12f, aim) },
+            AnchorViewBody({ Lerp(-0.2f, -0.12f, aim), Lerp((restPose ? -0.48f : -0.27f) + kLongBodyLower, restPose ? -0.32f : -0.25f, aim), Lerp((restPose ? 0.3f : -0.06f) + kLongBodyForward, restPose ? 0.02f : -0.12f, aim) },
                            Lerp(restPose ? -65.0f : -35.0f, restPose ? -45.0f : -10.0f, aim));
             // Бэлэн байрлал (LongGunHip) ба онилсон байрлал (гол төмөр хараан доор, 55%) хооронд: бариулын байрлал,
             // эргэлт, хэмжээг зөөлөн шилжүүлнэ. Гүйх, ухрах, цэнэглэх хөдөлгөөн бариулыг тойрно.
