@@ -2542,7 +2542,8 @@ void Game::FireGun(Ray aim, float cameraDistance)
             barrels.Damage(barrel, arsenal.Damage());
             if (coopGuest) net.SendBarrelHit(barrel, arsenal.Damage());
             const Vector3 at = Vector3Add(ray.position, Vector3Scale(ray.direction, barrelDistance));
-            tracers.Add(muzzle, at, YELLOW);
+            // (буутай камерт өөрийн сумны шугам харагдахгүй)
+            if (!camera.IsFirstPerson()) tracers.Add(muzzle, at, YELLOW);
             particles.Flash(at, Vector3Negate(ray.direction)); // оч
             continue;
         }
@@ -2576,7 +2577,7 @@ void Game::FireGun(Ray aim, float cameraDistance)
                     if (blocked < span - 0.25f)
                     {
                         const Vector3 wall = Vector3Add(from, Vector3Scale(line.direction, blocked));
-                        tracers.Add(muzzle, wall, YELLOW);
+                        if (!camera.IsFirstPerson()) tracers.Add(muzzle, wall, YELLOW);
                         if (pellet == 0) localShotEnd = wall;
                         particles.Dust(wall);
                         continue;
@@ -2595,7 +2596,7 @@ void Game::FireGun(Ray aim, float cameraDistance)
                 else if (human == kGuestTarget) DamageGuest(damage * PvpScale());
                 else squad.Damage(human, damage * PvpScale());
                 const Vector3 at = Vector3Add(ray.position, Vector3Scale(ray.direction, humanDistance));
-                tracers.Add(muzzle, at, humanHead ? RED : YELLOW);
+                if (!camera.IsFirstPerson()) tracers.Add(muzzle, at, humanHead ? RED : YELLOW);
                 if (pellet == 0) localShotEnd = at;
                 particles.Blood(at, Vector3Negate(ray.direction), humanHead ? 12 : 6);
                 if (pellet == 0) Audio::Play(Sfx::Hit, at, humanHead ? 0.6f : 0.4f);
@@ -2615,7 +2616,7 @@ void Game::FireGun(Ray aim, float cameraDistance)
             if (wheel >= 0 && wheelDistance <= bodyDistance + 0.02f)
             {
                 const Vector3 tire = Vector3Add(ray.position, Vector3Scale(ray.direction, wheelDistance));
-                tracers.Add(muzzle, tire, YELLOW);
+                if (!camera.IsFirstPerson()) tracers.Add(muzzle, tire, YELLOW);
                 if (pellet == 0) localShotEnd = tire;
                 if (garage.BurstTire(vehicle, wheel))
                 {
@@ -2633,7 +2634,7 @@ void Game::FireGun(Ray aim, float cameraDistance)
                 continue;
             }
             const Vector3 at = body ? bodyPoint : Vector3Add(ray.position, Vector3Scale(ray.direction, vehicleDistance));
-            tracers.Add(muzzle, at, YELLOW);
+            if (!camera.IsFirstPerson()) tracers.Add(muzzle, at, YELLOW);
             if (pellet == 0) localShotEnd = at;
             if (body) garage.AddHole(vehicle, bodyPoint, bodyNormal);
             if (options.screenshotPath) TraceLog(LOG_INFO, "HIT: vehicle %d body %s", vehicle, body ? "hole" : "(no surface)");
@@ -2643,7 +2644,7 @@ void Game::FireGun(Ray aim, float cameraDistance)
 
         const float distance = hit.index >= 0 ? hit.distance : wallDistance;
         const Vector3 end = Vector3Add(ray.position, Vector3Scale(ray.direction, distance));
-        tracers.Add(muzzle, end, hit.headshot ? RED : YELLOW);
+        if (!camera.IsFirstPerson()) tracers.Add(muzzle, end, hit.headshot ? RED : YELLOW);
         if (pellet == 0) localShotEnd = end; // хамтарсан тоглолт: нөгөө талд сумны мөр зурна
 
         if (hit.index >= 0)
