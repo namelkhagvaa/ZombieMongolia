@@ -68,6 +68,8 @@ enum class SceneryModelId
     Chinggis,   // Засгийн газрын ордны урд суугаа Чингис хаан (monuments/chinggis; урд тал +Z, хөшөөний суурьтай)
     Sukhbaatar, // Сүхбаатарын талбайн голын морьт хөшөө (monuments/sukhbaatar; шат, арслан, хадан суурьтай бүтнээрээ)
     Baatar,     // морьт баатрын хөшөө (monuments/baatar; урд тал +Z, өндөр 1): аймгийн төвүүд, Төрийн ордны хоёр тал
+    // Даалгаврын жижиг зүйлс (mission/; өндөр 1, ёроол y = 0)
+    MissionGenerator, MissionRadio, MissionMedicine, MissionAmmo, MissionDropPoint,
     // Хотын гудамжинд орхигдсон (унаж болохгүй) машин (broken_cars; урд тал +Z, урт нь 1: зурахдаа уртаар нь масштаблана)
     BrokenTruck, // Зөвлөлтийн ачааны машин (broken_cars/truck)
     BrokenPrius, // Toyota Prius (broken_cars/prius)

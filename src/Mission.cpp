@@ -13,6 +13,8 @@
 #include "Procedural.h"
 #include "UiFont.h"
 #include "UiStyle.h"
+#include "VehicleModel.h"
+#include "rlgl.h"
 #include "raymath.h"
 
 #include <algorithm>
@@ -108,8 +110,32 @@ namespace
 
     // ------------------------------------------------------------------ Объектуудын зураглал
 
+    // Даалгаврын зүйлийн загвар (assets/mission): p дээр height өндөртэй, yaw эргэлттэй. Загваргүй бол false.
+    bool DrawPropModel3(SceneryModelId id, Vector3 p, float height, float yaw = 0.0f)
+    {
+        if (!HasSceneryModel(id)) return false;
+        rlPushMatrix();
+        rlTranslatef(p.x, p.y, p.z);
+        rlRotatef(yaw, 0.0f, 1.0f, 0.0f);
+        rlScalef(height, height, height);
+        DrawSceneryModel(id);
+        rlPopMatrix();
+        return true;
+    }
+
+    // Асаалттай эсэхийн гэрэл (загвар дээр): улаан / ногоон
+    void StatusLight(Vector3 at, bool running)
+    {
+        DrawCubeV(at, { 0.07f, 0.07f, 0.07f }, running ? Color{ 80, 240, 90, 255 } : Color{ 230, 60, 50, 255 });
+    }
+
     void DrawGenerator(Vector3 p, bool running)
     {
+        if (DrawPropModel3(SceneryModelId::MissionGenerator, p, 0.8f))
+        {
+            StatusLight({ p.x, p.y + 0.86f, p.z }, running);
+            return;
+        }
         const Color body = { 70, 96, 62, 255 };
         DrawCubeV({ p.x, p.y + 0.12f, p.z }, { 1.7f, 0.12f, 1.0f }, { 50, 50, 54, 255 });       // суурь
         DrawCubeV({ p.x - 0.25f, p.y + 0.62f, p.z }, { 1.0f, 0.86f, 0.8f }, body);               // хөдөлгүүрийн хайрцаг
@@ -132,6 +158,11 @@ namespace
                 DrawCubeV({ p.x + dx, p.y + 0.38f, p.z + dz }, { 0.07f, 0.76f, 0.07f }, wood);
             }
         }
+        if (DrawPropModel3(SceneryModelId::MissionRadio, { p.x - 0.1f, p.y + 0.81f, p.z }, 0.6f))
+        {
+            StatusLight({ p.x + 0.35f, p.y + 0.86f, p.z + 0.2f }, running);
+            return;
+        }
         DrawCubeV({ p.x - 0.15f, p.y + 1.02f, p.z }, { 0.7f, 0.42f, 0.4f }, { 66, 78, 56, 255 });      // радио
         DrawCubeV({ p.x - 0.15f, p.y + 1.02f, p.z + 0.21f }, { 0.5f, 0.2f, 0.02f }, { 28, 30, 32, 255 });
         DrawCubeV({ p.x + 0.12f, p.y + 2.3f, p.z - 0.15f }, { 0.03f, 2.2f, 0.03f }, { 30, 30, 30, 255 }); // антен
@@ -149,11 +180,13 @@ namespace
             DrawCubeV({ p.x + 0.12f, p.y + 0.55f, p.z }, { 0.07f, 0.1f, 0.07f }, { 30, 30, 30, 255 });
             break;
         case ItemKind::Medicine: // улаан загалмайтай цагаан хайрцаг
+            if (DrawPropModel3(SceneryModelId::MissionMedicine, p, 0.3f)) break;
             DrawCubeV({ p.x, p.y + 0.18f, p.z }, { 0.5f, 0.34f, 0.36f }, { 232, 230, 224, 255 });
             DrawCubeV({ p.x, p.y + 0.36f, p.z }, { 0.3f, 0.02f, 0.09f }, { 200, 40, 40, 255 });
             DrawCubeV({ p.x, p.y + 0.36f, p.z }, { 0.09f, 0.02f, 0.3f }, { 200, 40, 40, 255 });
             break;
         case ItemKind::Ammo: // ногоон сумны хайрцаг
+            if (DrawPropModel3(SceneryModelId::MissionAmmo, p, 0.26f)) break;
             DrawCubeV({ p.x, p.y + 0.16f, p.z }, { 0.56f, 0.3f, 0.3f }, { 78, 92, 56, 255 });
             DrawCubeV({ p.x, p.y + 0.33f, p.z }, { 0.58f, 0.04f, 0.32f }, { 56, 66, 40, 255 });
             DrawCubeV({ p.x, p.y + 0.4f, p.z }, { 0.2f, 0.06f, 0.04f }, { 40, 40, 40, 255 });
@@ -167,6 +200,11 @@ namespace
 
     void DrawDropPoint(Vector3 p, bool delivered)
     {
+        if (DrawPropModel3(SceneryModelId::MissionDropPoint, p, 2.1f))
+        {
+            if (delivered) DrawCubeV({ p.x - 0.3f, p.y + 0.5f, p.z }, { 0.7f, 0.54f, 0.6f }, { 150, 120, 84, 255 }); // хүргэсэн ачаа
+            return;
+        }
         // Тавцан ба далбаа
         DrawCubeV({ p.x, p.y + 0.08f, p.z }, { 1.8f, 0.14f, 1.4f }, { 132, 106, 78, 255 });
         DrawCubeV({ p.x + 0.8f, p.y + 1.3f, p.z + 0.6f }, { 0.06f, 2.6f, 0.06f }, { 200, 196, 186, 255 });
