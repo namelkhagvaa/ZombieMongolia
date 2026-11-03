@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <map>
 #include <array>
+#include <cstdio>
 #include <cstdlib>
 #include <cmath>
 #include <cstdint>
@@ -1344,11 +1345,12 @@ void LoadCharacterModels(Shader shader)
                 }
                 TraceLog(LOG_INFO, "CHARACTER: %s hand %.0f%% of arm length: scaled by %.2f", kNames[id], 100.0f * hand / arm, c.handScale);
             }
-            if (id == kCharacterFpArms)
             {
-                // "Realistic FPS Hands"-ийн гар туранхай (шуу ~6 см): 1-р этгээдэд бүдүүн, булчинлаг харагдуулна
-                c.girth = 1.8f;
-                c.handScale = 1.15f; // (CS-ийн бээлийтэй гар шиг бага зэрэг том сарвуу)
+                // Буутай камерын гар бүдүүн, булчинлаг: "Realistic FPS Hands"-ийн гар туранхай (шуу ~6 см) тул илүү,
+                // бусад дүрийн өөрийн гар (ханцуйтай) бага зэрэг
+
+                c.girth = id == kCharacterFpArms ? 2.1f : 1.3f;
+                if (id == kCharacterFpArms) c.handScale = 1.15f; // (CS-ийн бээлийтэй гар шиг бага зэрэг том сарвуу)
                 c.girthAxis.assign((size_t)c.model.boneCount, Vector3{ 0.0f, 0.0f, 0.0f });
                 for (int bone = 0; bone < c.model.boneCount; ++bone)
                 {
