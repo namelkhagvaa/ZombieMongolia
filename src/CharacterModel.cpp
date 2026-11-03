@@ -9,6 +9,8 @@
 #include "rlgl.h"
 
 #include <algorithm>
+#include <map>
+#include <array>
 #include <cstdlib>
 #include <cmath>
 #include <cstdint>
@@ -514,6 +516,8 @@ namespace
                 };
                 const int hips = FindBone(model, "Hips");
                 int hidden = 0;
+                std::vector<std::array<int, 3>> bridged; // нуусан гурвалжнууд (анхны оройнууд)
+                std::vector<int> free;                    // нуусан гурвалжны байр
                 for (int t = 0; t < mesh.triangleCount; ++t)
                 {
                     unsigned short* tri = &mesh.indices[t * 3];
@@ -540,15 +544,96 @@ namespace
                     };
                     if (apart(g0, g1) || apart(g1, g2) || apart(g0, g2))
                     {
+                        bridged.push_back({ tri[0], tri[1], tri[2] });
                         tri[1] = tri[2] = tri[0];
+                        free.push_back(t);
                         ++hidden;
+                    }
+                }
+                // Нуусан гурвалжны оронд үлдсэн нүхийг (гар нь гуятай нийлсэн газар: гуяны гадаргуу дээр) бөглөнө:
+                // нуусан гурвалжнуудын хөл / бэлхүүсний талын оройнуудаар хүрээлэгдсэн ирмэгийн гогцоо бүрийг
+                // сэнс хэлбэрээр гурвалжилна (шинэ орой нэмэхгүй, нуусан гурвалжны байрыг ашиглана)
+                int filled = 0;
+                if (!bridged.empty())
+                {
+                    // байрлалаар нэгтгэсэн оройн дугаар (uv-ийн заагаар хуваагдсан оройнууд нэг цэг)
+                    std::unordered_map<long long, int> weldKey;
+                    std::vector<int> weldOf((size_t)mesh.vertexCount);
+                    for (int v = 0; v < mesh.vertexCount; ++v)
+                    {
+                        const long long qx = std::llround(mesh.vertices[v * 3] * 4000.0f), qy = std::llround(mesh.vertices[v * 3 + 1] * 4000.0f),
+                                        qz = std::llround(mesh.vertices[v * 3 + 2] * 4000.0f);
+                        const long long key = (qx * 73856093LL) ^ (qy * 19349663LL) ^ (qz * 83492791LL);
+                        weldOf[(size_t)v] = weldKey.emplace(key, v).first->second;
+                    }
+                    auto legSide = [&](int v) {
+                        const int g = dominant(v);
+                        if (g == 3) return true;
+                        if (g != 0 || hips < 0) return false;
+                        int best = 0;
+                        for (int k = 1; k < 4; ++k) if (mesh.boneWeights[v * 4 + k] > mesh.boneWeights[v * 4 + best]) best = k;
+                        return mesh.boneIds[v * 4 + best] == hips;
+                    };
+                    std::vector<char> touched((size_t)mesh.vertexCount, 0);
+                    for (const auto& b : bridged)
+                    {
+                        for (int k = 0; k < 3; ++k) if (legSide(b[k])) touched[(size_t)weldOf[(size_t)b[k]]] = 1;
+                    }
+                    // Ирмэг (нэгтгэсэн оройгоор) хэдэн гурвалжинд орсон: 1 бол хил
+                    std::map<std::pair<int, int>, int> uses;
+                    std::map<std::pair<int, int>, std::pair<int, int>> directed; // хилийн ирмэг: (a, b) анхны оройгоор, гурвалжны чиглэлээр
+                    for (int t = 0; t < mesh.triangleCount; ++t)
+                    {
+                        const unsigned short* tri = &mesh.indices[t * 3];
+                        if (tri[0] == tri[1]) continue;
+                        for (int k = 0; k < 3; ++k)
+                        {
+                            const int a = tri[k], b = tri[(k + 1) % 3];
+                            const int wa = weldOf[(size_t)a], wb = weldOf[(size_t)b];
+                            const auto key = std::minmax(wa, wb);
+                            ++uses[key];
+                            directed[key] = { a, b };
+                        }
+                    }
+                    // Хүрсэн оройнуудын хилийн ирмэгүүд: дараагийн орой руу (гурвалжны эсрэг чиглэлээр: бөглөх гурвалжин зөв тал руу харна)
+                    std::unordered_map<int, int> next, original;
+                    for (const auto& [key, count] : uses)
+                    {
+                        if (count != 1 || !touched[(size_t)key.first] || !touched[(size_t)key.second]) continue;
+                        const auto [a, b] = directed[key];
+                        next[weldOf[(size_t)b]] = weldOf[(size_t)a];
+                        original[weldOf[(size_t)a]] = a;
+                        original[weldOf[(size_t)b]] = b;
+                    }
+                    std::unordered_map<int, char> done;
+                    size_t slot = 0;
+                    for (const auto& [start, unused] : next)
+                    {
+                        if (done[start]) continue;
+                        std::vector<int> loop;
+                        int v = start;
+                        while (!done[v] && next.count(v) && loop.size() < 400)
+                        {
+                            done[v] = 1;
+                            loop.push_back(original[v]);
+                            v = next[v];
+                        }
+                        if (v != start || loop.size() < 3) continue; // хаалттай гогцоо л
+                        for (size_t k = 1; k + 1 < loop.size() && slot < free.size(); ++k)
+                        {
+                            unsigned short* tri = &mesh.indices[free[slot++] * 3];
+                            tri[0] = (unsigned short)loop[0];
+                            tri[1] = (unsigned short)loop[k];
+                            tri[2] = (unsigned short)loop[k + 1];
+                            ++filled;
+                        }
                     }
                 }
                 if (hidden > 0)
                 {
                     rlUpdateVertexBufferElements(mesh.vboId[RL_DEFAULT_SHADER_ATTRIB_LOCATION_INDICES], mesh.indices,
                                                  mesh.triangleCount * 3 * (int)sizeof(unsigned short), 0);
-                    TraceLog(LOG_INFO, "CHARACTER: %s: hid %d triangles bridging an arm and a leg", name, hidden);
+                    TraceLog(LOG_INFO, "CHARACTER: %s: hid %d triangles bridging an arm and a leg, filled the holes with %d", name, hidden, filled);
                 }
             }
 
