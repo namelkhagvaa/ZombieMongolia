@@ -1718,7 +1718,8 @@ void SetViewModelArms(int characterModel)
     // Дүр өөрийн гартай бол (нүцгэн биетэй, хуягтай дүр) түүгээр, үгүй бол тактикийн бээлийтэй гараар (fp_arms)
     viewArmsId = characterModel >= 0 && HasCharacterArms(characterModel) ? characterModel : kCharacterFpArms;
     // Iron (хуягт робот): бээлийтэй гарыг хуяг шиг хүрэл өнгөөр
-    viewArmsTint = characterModel == kCharacterIron ? Color{ 196, 150, 96, 255 } : WHITE;
+    // Demon: бараан саарал хөх арьс, хар бээлий (дүрийнх шиг)
+    viewArmsTint = characterModel == kCharacterIron ? Color{ 196, 150, 96, 255 } : characterModel == kCharacterDemon ? Color{ 92, 116, 160, 255 } : WHITE;
     viewBodyModel = HasCharacterClipArms(characterModel) ? characterModel : kCharacterFpArms;
 }
 

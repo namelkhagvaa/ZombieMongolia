@@ -1878,7 +1878,9 @@ void DrawCharacterArms(int id, const Matrix& bodyToWorld, const ViewArmTarget ta
     // (арьсны текстургүй: цагаан текстур дээр шаргал хүрэн өнгө, гэрлээр сүүдэрлэнэ)
     const unsigned int skinTexture = c.material.maps[MATERIAL_MAP_ALBEDO].texture.id;
     c.material.maps[MATERIAL_MAP_ALBEDO].texture.id = rlGetTextureIdDefault();
-    c.material.maps[MATERIAL_MAP_ALBEDO].color = { 132, 112, 80, 255 }; // (CS-ийн тактикийн бээлий шиг шаргал хүрэн; арьснаас ялгарахаар бараан)
+    // (CS-ийн тактикийн бээлий шиг шаргал хүрэн; арьснаас ялгарахаар бараан). Дүрийн өнгөөр (demon: хар, iron: хүрэл)
+    c.material.maps[MATERIAL_MAP_ALBEDO].color = { (unsigned char)(132 * tint.r / 255), (unsigned char)(112 * tint.g / 255),
+                                                   (unsigned char)(80 * tint.b / 255), 255 };
     for (const Mesh& mesh : c.glove)
     {
         if (mesh.vertexCount <= 0) continue;
