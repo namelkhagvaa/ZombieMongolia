@@ -1321,10 +1321,11 @@ namespace
     const Vector3 kLongGripLocal = { -0.24f, 0.14f, 0.3f }; // гар бариул (DrawGun-ийн орон зай: x, y - 0.16, 0.3)
     const float kLongBore = 0.16f;                          // бариулаас гол төмөр хүртэл
     const float kLongScale = 1.0f;                          // бодит хэмжээ
-    // (их бие дэлгэцийн баруун доор, 48 см урд: бөгс зүүн тийш, дэлгэцийн доод захаас гарна; доороос шуу харагдана)
-    const Vector2 kLongBodyScreen = { 0.6f, -0.62f }, kLongMuzzleScreen = { 0.17f, -0.17f };
-    const float kLongBodyDepth = 0.48f;                    // их бие камераас урд (м)
-    const float kLongBodyForward = -0.03f, kLongBodyLower = -0.04f; // мөр бууг дагаж урагш, доош (м)
+    // (хэрэглэгчийн тайрсан зургийг 1.6 дахин томруулсан шиг: буу, гар ойр, том; их бие дэлгэцийн баруун доод булангаас
+    // гадна, 30 см урд; бөгс харагдахгүй, доороос шуу)
+    const Vector2 kLongBodyScreen = { 0.96f, -0.99f }, kLongMuzzleScreen = { 0.27f, -0.27f };
+    const float kLongBodyDepth = 0.30f;                    // их бие камераас урд (м)
+    const float kLongBodyForward = -0.15f, kLongBodyLower = -0.04f; // мөр бууг дагаж урагш, доош (м)
     const float kLongCant = -6.0f;                          // бууг бага зэрэг баруун тийш хазайлгана (градус)
 
     struct LongGunPose
