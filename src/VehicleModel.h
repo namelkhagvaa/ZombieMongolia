@@ -24,6 +24,8 @@ enum class VehicleModelId
 void LoadVehicleModels(Shader shader);
 void UnloadVehicleModels();
 bool HasVehicleModel(VehicleModelId id);
+// Загварын хэвтээ хагас хэмжээ (x = хагас өргөн, y = хагас урт, метр; урд тал +Z). Загваргүй бол false.
+bool VehicleModelHalfSize(VehicleModelId id, Vector2& half);
 
 // Одоогийн rlgl хувиргалтаар (унааны төв, газрын түвшинд) зурна. distance нь явсан зай (дугуйн эргэлт),
 // steer -1..1. depth != nullptr бол сүүдрийн зурагт тэр материалаар зурна. tint нь эвдрэлийн бараан өнгө.

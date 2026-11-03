@@ -135,7 +135,9 @@ void ThirdPersonCamera::Update(float dt, const GameConfig& config, const World& 
         // 1-р этгээд: нүдний түвшнээс харна; онилоход (баруун товч) бага зэрэг томруулна.
         const Vector3 forward = Vector3Negate(back);
         const Vector3 eye = { playerFeet.x, eyeLift + 1.66f, playerFeet.z };
-        camera.position = Vector3Add(eye, Vector3Scale(forward, 0.08f));
+        // (нүднээс 12 см ард: ойрын хавтгай 0.25 м, дэлгэцийн булангууд 0.39 м хүртэл сунадаг тул хана, машины
+        // хажууд (0.4 м) зогсоход дотор тал нь харагддаг байв)
+        camera.position = Vector3Add(eye, Vector3Scale(forward, -0.12f));
         camera.target = Vector3Add(camera.position, Vector3Scale(forward, 10.0f));
         camera.fovy = Lerp(config.cameraFovY + 8.0f, config.aimFovY + 6.0f, aimBlend);
     }

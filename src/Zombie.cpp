@@ -958,6 +958,13 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
             pos.z += dz / distance * (minDistance - distance);
         }
     }
+    // Түлхэлтийн дараа хана, байшин, машинаас дахин гаргана: бөөгнөрсөн зомбинууд бие биеэ (эсвэл хүн
+    // тэднийг) хана, машин руу шахаж нэвтрүүлдэг байв
+    for (Zombie& zombie : zombies)
+    {
+        if (!zombie.IsAlive() || zombie.IsBear() || zombie.climbTimer > 0.0f) continue;
+        world.ResolveHorizontal(zombie.mover.position, zombie.Radius(), zombie.Height(), kClimbHeight);
+    }
 }
 
 void ZombieHorde::UpdateBear(Zombie& bear, float dt, World& world, Player& player, SoldierSquad& squad)

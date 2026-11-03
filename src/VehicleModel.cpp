@@ -351,6 +351,26 @@ bool HasVehicleModel(VehicleModelId id)
     return models[(int)id].loaded;
 }
 
+bool VehicleModelHalfSize(VehicleModelId id, Vector2& half)
+{
+    const Model3& model = models[(int)id];
+    if (!model.loaded) return false;
+    float x0 = 1e9f, x1 = -1e9f, z0 = 1e9f, z1 = -1e9f;
+    for (const Part& part : model.parts)
+    {
+        const Mesh& mesh = part.mesh;
+        for (int v = 0; v < mesh.vertexCount; ++v)
+        {
+            const float x = mesh.vertices[v * 3] + part.pivot.x, z = mesh.vertices[v * 3 + 2] + part.pivot.z;
+            x0 = std::min(x0, x); x1 = std::max(x1, x);
+            z0 = std::min(z0, z); z1 = std::max(z1, z);
+        }
+    }
+    if (x1 <= x0 || z1 <= z0) return false;
+    half = { 0.5f * (x1 - x0), 0.5f * (z1 - z0) };
+    return true;
+}
+
 float VehicleModelWheelRadius(VehicleModelId id)
 {
     return models[(int)id].wheelRadius;

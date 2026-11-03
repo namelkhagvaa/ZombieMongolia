@@ -125,6 +125,8 @@ struct WheelSpot
 int VehicleWheels(VehicleType type, WheelSpot* out, int max);
 
 inline bool IsHelicopter(VehicleType type) { return type == VehicleType::Helicopter; }
+// Унааны хэвтээ хагас хэмжээ (x = хагас өргөн, y = хагас урт, метр): загвараас, эс бөгөөс радиусаас
+Vector2 VehicleHalfSize(VehicleType type);
 
 // Талбар дээрх бүх тээврийн хэрэгсэл ба тоглогчийн унаж буй нэг.
 class Garage

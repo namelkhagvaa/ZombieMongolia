@@ -5022,10 +5022,13 @@ void Game::UpdateVehicleBlockers()
     {
         const Vehicle& v = garage.At(i);
         if (std::fabs(v.speed) > 3.0f || (garage.IsDriving() && i == garage.Driven())) continue;
-        const float radius = SpecFor(v.type).radius;
-        const Vector2 along = { std::sin(v.heading) * radius * 0.45f, std::cos(v.heading) * radius * 0.45f };
+        // Капсул загварын бодит хэмжээгээр: өргөн = хагас өргөн, урд хойд үзүүр бампер хүртэл (өмнө нь радиусаар
+        // тооцож урд, хойд үзүүр 0.7 м богино байж хүн, зомби, камер машины капот руу нэвтэрдэг байв)
+        const Vector2 half = VehicleHalfSize(v.type);
+        const float reach = std::max(0.0f, half.y - half.x);
+        const Vector2 along = { std::sin(v.heading) * reach, std::cos(v.heading) * reach };
         const Vector2 center = { v.position.x, v.position.z };
-        blockers.push_back({ Vector2Subtract(center, along), Vector2Add(center, along), radius * 0.5f, v.position.y - 0.3f,
+        blockers.push_back({ Vector2Subtract(center, along), Vector2Add(center, along), half.x, v.position.y - 0.3f,
                              v.position.y + 1.7f });
     }
     world.SetVehicleBlockers(std::move(blockers));

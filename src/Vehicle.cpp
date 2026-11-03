@@ -940,6 +940,27 @@ namespace
         return HasVehicleModel(id);
     }
 
+
+}
+
+Vector2 VehicleHalfSize(VehicleType type)
+{
+    static Vector2 cache[16] = {};
+    const int k = std::clamp((int)type, 0, 15);
+    if (cache[k].x > 0.0f) return cache[k];
+    VehicleModelId id;
+    Vector2 half;
+    if (ModelFor(type, id) && VehicleModelHalfSize(id, half)) cache[k] = half;
+    else
+    {
+        const float r = SpecFor(type).radius;
+        return { r * 0.5f, r };
+    }
+    return cache[k];
+}
+
+namespace
+{
     float TireHalfWidth(VehicleType type)
     {
         switch (type)
