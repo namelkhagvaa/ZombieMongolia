@@ -1323,9 +1323,9 @@ namespace
     const float kLongScale = 1.0f;                          // бодит хэмжээ
     // (хэрэглэгчийн тайрсан зургийг 1.6 дахин томруулсан шиг: буу, гар ойр, том; их бие дэлгэцийн баруун доод булангаас
     // гадна, 30 см урд; бөгс харагдахгүй, доороос шуу)
-    const Vector2 kLongBodyScreen = { 0.96f, -0.78f }, kLongMuzzleScreen = { 0.27f, -0.15f }; // (дээш өргөсөн: доош унжиж алдах гэж буй мэт харагдахгүй)
+    const Vector2 kLongBodyScreen = { 0.96f, -0.99f }, kLongMuzzleScreen = { 0.27f, -0.27f };
     const float kLongBodyDepth = 0.30f;                    // их бие камераас урд (м)
-    const float kLongBodyForward = -0.15f, kLongBodyLower = 0.08f; // мөр бууг дагаж урагш, доош (м)
+    const float kLongBodyForward = -0.15f, kLongBodyLower = -0.04f; // мөр бууг дагаж урагш, доош (м)
     const float kLongCant = -6.0f;                          // бууг бага зэрэг баруун тийш хазайлгана (градус)
 
     struct LongGunPose
