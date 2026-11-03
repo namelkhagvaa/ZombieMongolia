@@ -995,7 +995,9 @@ void SoldierSquad::Damage(int index, float amount)
     if (soldier.health <= 0.0f)
     {
         soldier.health = 0.0f;
-        if (soldier.member >= 0 && soldier.riding < 0)
+        // (аврагдахыг хүлээж буй хүн ч унана: тоглогч очиж босгоно; эс бөгөөс тоглогч хүрэхээс өмнө зомбид
+        // алагдаж "аврах" боломжгүй болдог байв)
+        if ((soldier.member >= 0 || soldier.waitingRescue) && soldier.riding < 0)
         {
             // Багийн гишүүн: үхэхийн оронд унана (нөхөд нь босгож болно)
             soldier.downed = true;

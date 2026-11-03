@@ -403,6 +403,8 @@ private:
     // Унасан байдал: тоглогч бие биеэ босгох (хамтарсан тоглолт), AI нөхдийн босголт, HUD
     void UpdateDowned(float dt);
     float humanRevive = 0.0f; // энэ тоглогч нөгөө тоглогчийг босгож буй хугацаа
+    float soldierRevive = 0.0f;  // тоглогч унасан цэргийг босгож буй хугацаа
+    int soldierReviveTarget = -1; // (-1: ойр унасан цэрэг алга)
     WorldEvents events;
     float eventTimer = 70.0f;
     int nextEventId = 1;

@@ -1755,6 +1755,42 @@ void Game::UpdateDowned(float dt)
             guestForcedDown = false;
         }
     }
+    // Тоглогч унасан цэрэг (багийн гишүүн, аврах хүн) рүү очиж дэргэд нь 3 секунд зогсвол босгоно
+    soldierReviveTarget = -1;
+    if (!coopGuest && player.IsAlive() && !player.IsDowned() && !garage.IsDriving())
+    {
+        float nearest = 2.4f;
+        for (int i = 0; i < squad.Total(); ++i)
+        {
+            const Soldier& s = squad.All()[(size_t)i];
+            if (!s.alive || !s.downed || s.guestTeam) continue;
+            const float d = HorizontalDistance(player.Position(), s.mover.position);
+            if (d < nearest)
+            {
+                nearest = d;
+                soldierReviveTarget = i;
+            }
+        }
+    }
+    if (soldierReviveTarget >= 0)
+    {
+        soldierRevive += dt;
+        if (soldierRevive >= 3.0f)
+        {
+            Soldier& s = squad.All()[(size_t)soldierReviveTarget];
+            s.downed = false;
+            s.health = s.maxHealth * 0.3f;
+            s.reviveProgress = 0.0f;
+            soldierRevive = 0.0f;
+            soldierReviveTarget = -1;
+            ++myStats.revives;
+            SetNotice("ЦЭРГИЙГ БОСГОЛОО!", 2.0f);
+        }
+    }
+    else
+    {
+        soldierRevive = 0.0f;
+    }
     // Хүн хүнээ: нөгөө тоглогч унасан бол дэргэд нь 3 секунд зогсвол босгоно
     const RemoteFigure& other = coopGuest ? hostFigure : guestFigure;
     const bool otherDown = net.Connected() && (coopGuest || remoteActive) && other.alive && (other.flags & Net::kDowned);
@@ -1837,6 +1873,7 @@ void Game::UpdateWorldEvents(float dt)
             continue;
         }
         Soldier& survivor = squad.All()[(size_t)index];
+        if (survivor.downed) { ++i; continue; } // (унасан: эхлээд дэргэд нь очиж босгоно)
         const bool reached = HorizontalDistance(player.Position(), survivor.mover.position) < 9.0f ||
                              (remoteActive && guestFigure.alive && HorizontalDistance(guestFigure.position, survivor.mover.position) < 9.0f);
         if (reached)
@@ -5589,6 +5626,12 @@ void Game::DrawMission() const
     }
     info.prompt = mission.Prompt();
     info.notice = mission.Notice();
+    static char revivePrompt[96];
+    if (soldierReviveTarget >= 0)
+    {
+        std::snprintf(revivePrompt, sizeof(revivePrompt), "Босгож байна... %d%%  (дэргэд нь зогс)", (int)(100.0f * soldierRevive / 3.0f));
+        info.prompt = revivePrompt;
+    }
     static char recruitPrompt[96];
     if (inShop && !shopOpen && state == GameState::Playing)
     {
