@@ -443,6 +443,41 @@ namespace
                 float* weights = &mesh.boneWeights[v * 4];
                 unsigned char* ids = &mesh.boneIds[v * 4];
                 bool changed = false;
+                // Тохойноос доош, гараас илүү их биед (бүс, хормой) ойр оройг гараас салгана: анхны зогсолтод гар нь
+                // хувцастай нийлсэн загварт (model-1) гараа өргөхөд гараас бүс рүү хавтан сунадаг байв
+                {
+                {
+                    float armNear = 1e9f, torsoNear = 1e9f, elbowLimit = -1e9f;
+                    int torsoBone = -1;
+                    for (int bone = 0; bone < model.boneCount; ++bone)
+                    {
+                        const int g = limb[(size_t)bone];
+                        if (g == 1 || g == 2) armNear = std::min(armNear, reach[(size_t)bone]);
+                        else if (g == 0 && deforming[(size_t)bone] && reach[(size_t)bone] < torsoNear)
+                        {
+                            torsoNear = reach[(size_t)bone];
+                            torsoBone = bone;
+                        }
+                    }
+                    for (const char* e : { "RightForeArm", "LeftForeArm" })
+                    {
+                        const int b = FindBone(model, e);
+                        if (b >= 0) elbowLimit = std::max(elbowLimit, model.bindPose[b].translation.y);
+                    }
+                    float armShare = 0.0f;
+                    for (int k = 0; k < 4; ++k)
+                    {
+                        if (ids[k] < model.boneCount && (limb[ids[k]] == 1 || limb[ids[k]] == 2)) armShare += weights[k];
+                    }
+                    if (armShare > 0.0f && torsoBone >= 0 && point.y < elbowLimit && torsoNear < armNear)
+                    {
+                        ids[0] = (unsigned char)torsoBone;
+                        weights[0] = 1.0f;
+                        for (int k = 1; k < 4; ++k) ids[k] = 0, weights[k] = 0.0f;
+                        ++fixed;
+                        continue;
+                    }
+                }
                 // Нэг орой хоёр өөр мөчид (гар ба хөл, хоёр гар, хоёр хөл) холбогдсон бол илүү жинтэйг нь үлдээнэ
                 float limbWeight[5] = {};
                 for (int k = 0; k < 4; ++k)
@@ -516,6 +551,12 @@ namespace
                     return group == 4 ? 3 : group; // хоёр хөл нэг бүлэг (бэлхүүс)
                 };
                 const int hips = FindBone(model, "Hips");
+                float elbowY[2] = { -1e9f, -1e9f }; // тохойн өндөр (анхны зогсолтод): баруун, зүүн
+                for (int side = 0; side < 2; ++side)
+                {
+                    const int elbow = FindBone(model, side == 0 ? "RightForeArm" : "LeftForeArm");
+                    if (elbow >= 0) elbowY[side] = model.bindPose[elbow].translation.y;
+                }
                 int hidden = 0;
                 std::vector<std::array<int, 3>> bridged; // нуусан гурвалжнууд (анхны оройнууд)
                 std::vector<int> free;                    // нуусан гурвалжны байр
@@ -543,7 +584,19 @@ namespace
                         if (a == 6 || b == 6) return (a == 6 ? b : a) == 1 || (a == 6 ? b : a) == 2; // гар ба бэлхүүс
                         return a != 0 && b != 0 && a != b;
                     };
-                    if (apart(g0, g1) || apart(g1, g2) || apart(g0, g2))
+                    // Гар ба их биеийн доод хэсэг (тохойноос доош: бүс, хормой): анхны зогсолтод гар нь хувцастай нийлсэн
+                    // загварт (model-1) гараа өргөхөд гараас бүс хүртэл хавтан сунадаг. Мөр, суганы холбоос (тохойноос
+                    // дээш) хэвээр.
+                    auto lowTorso = [&](int a, int va, int b, int vb) {
+                        if (a != 1 && a != 2) return false;
+                        if (b != 0 && b != 6) return false;
+                        const float elbow = elbowY[a == 1 ? 0 : 1];
+                        return elbow > -1e8f && mesh.vertices[vb * 3 + 1] < elbow;
+                    };
+                    const int v0 = tri[0], v1 = tri[1], v2 = tri[2];
+                    const bool waist = lowTorso(g0, v0, g1, v1) || lowTorso(g1, v1, g0, v0) || lowTorso(g1, v1, g2, v2) ||
+                                       lowTorso(g2, v2, g1, v1) || lowTorso(g0, v0, g2, v2) || lowTorso(g2, v2, g0, v0);
+                    if (apart(g0, g1) || apart(g1, g2) || apart(g0, g2) || waist)
                     {
                         bridged.push_back({ tri[0], tri[1], tri[2] });
                         tri[1] = tri[2] = tri[0];
@@ -570,6 +623,8 @@ namespace
                     auto legSide = [&](int v) {
                         const int g = dominant(v);
                         if (g == 3) return true;
+                        // (бүс, хормой: тохойноос доош их бие)
+                        if (g == 0 && mesh.vertices[v * 3 + 1] < std::max(elbowY[0], elbowY[1])) return true;
                         if (g != 0 || hips < 0) return false;
                         int best = 0;
                         for (int k = 1; k < 4; ++k) if (mesh.boneWeights[v * 4 + k] > mesh.boneWeights[v * 4 + best]) best = k;
