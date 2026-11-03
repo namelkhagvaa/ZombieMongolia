@@ -2212,7 +2212,7 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         const float breathSway = 0.7f * pose.breath + (onFoot ? move * 1.2f * std::sin(phase * 2.0f) : 0.0f);
         const Quaternion gunRotation = QuaternionMultiply(
             heading, QuaternionMultiply(AxisAngle(0.0f, 1.0f, 0.0f, (clipBody ? 6.0f : 12.0f + 22.0f * run) * low),
-                                        AxisAngle(1.0f, 0.0f, 0.0f, 22.0f * low + breathSway - 3.5f * recoil -
+                                        AxisAngle(1.0f, 0.0f, 0.0f, 10.0f * low + breathSway - 3.5f * recoil -
                                                                         16.0f * reloading * upright - aimPitch)));
         // Бөгсний үзүүр (бууны орон зайд) баруун мөрний урд доор байрлана.
         // (Хэвтсэн үед бөгс мөрний урд, биеийн тэнхлэгийн дагуу.)
@@ -2220,7 +2220,7 @@ CharacterFrames DrawCharacterModel(int id, const HumanoidPose& pose, HeldItem he
         const Vector3 butt = launcher
                                  ? Vector3Add(rightShoulder, Rotate(chest, { 0.03f, 0.09f, 0.02f }))
                                  : clipBody // (их бие клипээр: бөгсний үзүүр суганд, бугалга түүний гадна талаар)
-                                 ? Vector3Add(rightShoulder, Rotate(heading, { 0.03f, -0.11f - 0.03f * low, 0.05f }))
+                                 ? Vector3Add(rightShoulder, Rotate(heading, { 0.03f, -0.08f - 0.02f * low, 0.05f }))
                                  : Vector3Add(rightShoulder, Rotate(chest, Mix({ 0.07f, -0.07f - 0.07f * low, 0.07f },
                                                                                { 0.06f, 0.05f, 0.06f }, prone)));
         const Vector3 buttLocal = launcher ? Vector3{ kGunX, kGunY - 0.05f, 0.2f - pose.gunKick }
