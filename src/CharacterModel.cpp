@@ -147,7 +147,8 @@ namespace
     bool WantsArms(int id)
     {
         // (iron-ы өөрийн гар: асар том хуяг дэлгэцийг дүүргэж, мөрөвч хөвж харагдана: хүрэл өнгөтэй бээлийтэй гараар)
-        return id == kCharacterFpArms || id == kCharacterModel2 || id == kCharacterModel3 || id == kCharacterDemon;
+        // (demon-ы өөрийн гар: том хар бээлий, боолттой шуу хэлбэргүй бөөн харагддаг: урт буунд шиг fp_arms гараар)
+        return id == kCharacterFpArms || id == kCharacterModel2 || id == kCharacterModel3;
     }
 
     // 1-р этгээдэд өөрийн ханцуйтай гараар урт буу барих дүрүүд (DrawCharacterClipArms); demon-ы мөч өөдөстэй тул бээлийтэй
