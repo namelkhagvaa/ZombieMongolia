@@ -907,7 +907,7 @@ void Game::OpenCharacterSelect(int province, bool approved)
     pendingProvince = province;
     pendingApproved = approved;
     mapScreen.Select(province);
-    characterChoice = std::clamp(progress.leaderSkin, 0, kLeaderSkinCount - 1);
+    characterChoice = LeaderSkinOffered(progress.leaderSkin) ? progress.leaderSkin : 0;
     characterSelectOpen = true;
 }
 
@@ -915,9 +915,12 @@ Rectangle Game::CharacterCardRect(int skin) const
 {
     // Бүх дүр нэг мөрөнд багтана (өндөр нь тогтмол: 3D дүр картандаа таарна)
     const float gap = 24.0f, height = 400.0f;
-    const float width = std::min(300.0f, ((float)ViewWidth() - 64.0f - gap * (float)(kLeaderSkinCount - 1)) / (float)kLeaderSkinCount);
-    const float left = ((float)ViewWidth() - (width * (float)kLeaderSkinCount + gap * (float)(kLeaderSkinCount - 1))) * 0.5f;
-    return { left + (float)skin * (width + gap), 120.0f, width, height };
+    const int count = kLeaderSkinChoiceCount;
+    int slot = 0;
+    while (slot < count && kLeaderSkinChoices[slot] != skin) ++slot;
+    const float width = std::min(300.0f, ((float)ViewWidth() - 64.0f - gap * (float)(count - 1)) / (float)count);
+    const float left = ((float)ViewWidth() - (width * (float)count + gap * (float)(count - 1))) * 0.5f;
+    return { left + (float)slot * (width + gap), 120.0f, width, height };
 }
 
 Rectangle Game::CharacterStartRect() const
@@ -932,17 +935,21 @@ Rectangle Game::CharacterBackRect() const
 
 void Game::UpdateCharacterSelect()
 {
-    if (InKeyPressed(KEY_LEFT) || InKeyPressed(KEY_A)) characterChoice = (characterChoice + kLeaderSkinCount - 1) % kLeaderSkinCount;
-    if (InKeyPressed(KEY_RIGHT) || InKeyPressed(KEY_D)) characterChoice = (characterChoice + 1) % kLeaderSkinCount;
-    for (int skin = 0; skin < kLeaderSkinCount && skin < 9; ++skin)
+    int slot = 0;
+    while (slot < kLeaderSkinChoiceCount && kLeaderSkinChoices[slot] != characterChoice) ++slot;
+    if (slot >= kLeaderSkinChoiceCount) slot = 0;
+    if (InKeyPressed(KEY_LEFT) || InKeyPressed(KEY_A)) slot = (slot + kLeaderSkinChoiceCount - 1) % kLeaderSkinChoiceCount;
+    if (InKeyPressed(KEY_RIGHT) || InKeyPressed(KEY_D)) slot = (slot + 1) % kLeaderSkinChoiceCount;
+    for (int k = 0; k < kLeaderSkinChoiceCount && k < 9; ++k)
     {
-        if (InKeyPressed(KEY_ONE + skin)) characterChoice = skin; // 1, 2, 3 товч
+        if (InKeyPressed(KEY_ONE + k)) slot = k; // 1, 2, 3 товч
     }
+    characterChoice = kLeaderSkinChoices[slot];
     bool start = InKeyPressed(KEY_ENTER) || InKeyPressed(KEY_KP_ENTER) || InKeyPressed(KEY_SPACE);
     if (InMousePressed(MOUSE_BUTTON_LEFT))
     {
         const Vector2 pointer = InPointer();
-        for (int skin = 0; skin < kLeaderSkinCount; ++skin)
+        for (const int skin : kLeaderSkinChoices)
         {
             if (CheckCollisionPointRec(pointer, CharacterCardRect(skin))) characterChoice = skin;
         }
@@ -995,7 +1002,7 @@ void Game::DrawCharacterSelect() const
     const char* subtitle = "1-р дайчин энэ дүрээр тоглоно";
     Ui::Text(subtitle, (width - Ui::Measure(subtitle, 15)) / 2, 94, 15, Ui::kTextDim);
 
-    for (int skin = 0; skin < kLeaderSkinCount; ++skin)
+    for (const int skin : kLeaderSkinChoices)
     {
         const Rectangle card = CharacterCardRect(skin);
         const bool selected = skin == characterChoice;
@@ -1021,7 +1028,7 @@ void Game::DrawCharacterSelect() const
     BeginMode3D(camera);
     rlEnableDepthTest();
     environment.Begin(camera);
-    for (int skin = 0; skin < kLeaderSkinCount; ++skin)
+    for (const int skin : kLeaderSkinChoices)
     {
         // Картын төвийн дэлгэцийн x-ийг ертөнцийн x болгоно (камерын фокусын хавтгай дээр)
         const Rectangle card = CharacterCardRect(skin);
@@ -1036,7 +1043,7 @@ void Game::DrawCharacterSelect() const
     environment.End();
     EndMode3D();
 
-    for (int skin = 0; skin < kLeaderSkinCount; ++skin)
+    for (const int skin : kLeaderSkinChoices)
     {
         const Rectangle card = CharacterCardRect(skin);
         const char* name = LeaderSkinName(skin);

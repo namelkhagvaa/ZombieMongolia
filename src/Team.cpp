@@ -38,7 +38,8 @@ HumanoidLook TeamMemberLook(int member, int leaderSkin)
     switch (member)
     {
     case 0: // хөх дээл, улаан оройтой малгай (assets\fighter1 загвар байвал түүгээр зурагдана)
-        look.model = leaderSkin == 1 ? kCharacterModel1 : leaderSkin == 2 ? kCharacterModel3 : leaderSkin == 3 ? kCharacterDemon
+        // (1 = Model-1 хасагдсан: хуучин хадгалалт, нөгөө тоглогчийн хуучин хувилбарт цэргээр)
+        look.model = leaderSkin == 2 ? kCharacterModel3 : leaderSkin == 3 ? kCharacterDemon
                    : leaderSkin == 4 ? kCharacterIron : leaderSkin == 5 ? kCharacterModel2 : kCharacterFighter1;
         look.body = { 40, 70, 150, 255 };
         look.trim = { 230, 150, 30, 255 };

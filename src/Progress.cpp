@@ -180,7 +180,7 @@ bool LoadProgress(Progress& progress, int provinceCount)
         else if (key == "sound") progress.sound = value != 0;
         else if (key == "soundLevel") progress.soundLevel = std::clamp(value, 0, 2);
         else if (key == "netTag") progress.netTag = value;
-        else if (key == "leaderSkin") progress.leaderSkin = value >= 0 && value < kLeaderSkinCount ? value : 0; // (устгагдсан дүр: цэрэг)
+        else if (key == "leaderSkin") progress.leaderSkin = value >= 0 && value < kLeaderSkinCount && LeaderSkinOffered(value) ? value : 0; // (устгагдсан дүр: цэрэг)
         else if (key == "tutorial") { progress.tutorial = std::clamp(value, 0, kTutorialDone); tutorialSaved = true; }
         else if (key == "format") format = value;
     }

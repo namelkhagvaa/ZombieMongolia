@@ -26,4 +26,12 @@ HumanoidLook TeamMemberLook(int member, int leaderSkin = 0);
 
 // 1-р дайчны сонгож болох дүрүүд (тоглоом эхлэхэд дүр сонгох цонх)
 constexpr int kLeaderSkinCount = 6;
+// Сонгох цонхонд гарах дүрүүд (дугаар нь хадгалалт, сервер, сүлжээнд хэвээр: 1 = Model-1 хасагдсан)
+constexpr int kLeaderSkinChoices[] = { 0, 2, 3, 4, 5 };
+constexpr int kLeaderSkinChoiceCount = (int)(sizeof(kLeaderSkinChoices) / sizeof(kLeaderSkinChoices[0]));
+inline bool LeaderSkinOffered(int skin)
+{
+    for (int s : kLeaderSkinChoices) if (s == skin) return true;
+    return false;
+}
 const char* LeaderSkinName(int skin);
