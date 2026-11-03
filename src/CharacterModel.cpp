@@ -557,6 +557,88 @@ namespace
                     const int elbow = FindBone(model, side == 0 ? "RightForeArm" : "LeftForeArm");
                     if (elbow >= 0) elbowY[side] = model.bindPose[elbow].translation.y;
                 }
+                // Тусдаа хог (iron, demon): анхны зогсолтод гуянд наалдсан нударга, гарын хэсэг хөлд жинтэй үлдэж, гар
+                // хөдлөхөд ташаанд хэлтэрхий болж хоцордог. Гар-хөлийн гүүр гурвалжнуудыг тасалбал тэр хэсэг жижиг арал
+                // болно: гүүрээрээ гартай холбогдсон бол гарын (хамгийн ойрын гарын ясанд) хатуу холбоно.
+                {
+                    auto vgroup = [&](int v) {
+                        int best = 0;
+                        for (int k = 1; k < 4; ++k) if (mesh.boneWeights[v * 4 + k] > mesh.boneWeights[v * 4 + best]) best = k;
+                        const int bone = mesh.boneIds[v * 4 + best];
+                        if (bone >= model.boneCount) return 0;
+                        const int g = limb[(size_t)bone];
+                        if (g == 4) return 3;
+                        if (g == 0 && bone == hips) return 6;
+                        return g;
+                    };
+                    const bool armSide[7] = { false, true, true, false, false, false, false };
+                    const bool legSide[7] = { false, false, false, true, false, false, true };
+                    std::unordered_map<long long, int> weldKey;
+                    std::vector<int> weld((size_t)mesh.vertexCount);
+                    for (int v = 0; v < mesh.vertexCount; ++v)
+                    {
+                        const long long qx = std::llround(mesh.vertices[v * 3] * 4000.0f), qy = std::llround(mesh.vertices[v * 3 + 1] * 4000.0f),
+                                        qz = std::llround(mesh.vertices[v * 3 + 2] * 4000.0f);
+                        weld[(size_t)v] = weldKey.emplace((qx * 73856093LL) ^ (qy * 19349663LL) ^ (qz * 83492791LL), v).first->second;
+                    }
+                    std::vector<int> root((size_t)mesh.vertexCount);
+                    for (int v = 0; v < mesh.vertexCount; ++v) root[(size_t)v] = v;
+                    auto findRoot = [&](int v) {
+                        while (root[(size_t)v] != v) v = root[(size_t)v] = root[(size_t)root[(size_t)v]];
+                        return v;
+                    };
+                    std::vector<char> bridge((size_t)mesh.triangleCount, 0);
+                    for (int t = 0; t < mesh.triangleCount; ++t)
+                    {
+                        const unsigned short* tri = &mesh.indices[t * 3];
+                        const int g[3] = { vgroup(tri[0]), vgroup(tri[1]), vgroup(tri[2]) };
+                        bool arm = false, leg = false;
+                        for (int k = 0; k < 3; ++k) { arm = arm || armSide[g[k]]; leg = leg || legSide[g[k]]; }
+                        if (arm && leg) { bridge[(size_t)t] = 1; continue; }
+                        for (int k = 0; k < 3; ++k)
+                        {
+                            const int a = findRoot(weld[tri[k]]), b = findRoot(weld[tri[(k + 1) % 3]]);
+                            if (a != b) root[(size_t)a] = b;
+                        }
+                    }
+                    std::unordered_map<int, int> size, armLinks;
+                    for (int v = 0; v < mesh.vertexCount; ++v) ++size[findRoot(weld[(size_t)v])];
+                    for (int t = 0; t < mesh.triangleCount; ++t)
+                    {
+                        if (!bridge[(size_t)t]) continue;
+                        const unsigned short* tri = &mesh.indices[t * 3];
+                        for (int k = 0; k < 3; ++k)
+                        {
+                            if (legSide[vgroup(tri[k])]) ++armLinks[findRoot(weld[tri[k]])];
+                        }
+                    }
+                    int moved = 0;
+                    for (const auto& [island, links] : armLinks)
+                    {
+                        // (жинхэнэ гуя, бэлхүүс: том; бамбай мэт тусдаа том зүйл: гүүр нь цөөн)
+                        if (size[island] * 25 > mesh.vertexCount || links * 10 < size[island]) continue;
+                        for (int v = 0; v < mesh.vertexCount; ++v)
+                        {
+                            if (findRoot(weld[(size_t)v]) != island) continue;
+                            const Vector3 p = { mesh.vertices[v * 3], mesh.vertices[v * 3 + 1], mesh.vertices[v * 3 + 2] };
+                            float best = 1e9f;
+                            int bone = -1;
+                            for (const Segment& s : segments)
+                            {
+                                const int g = limb[(size_t)s.bone];
+                                if (g != 1 && g != 2) continue;
+                                const float d = segmentDistance(s, p);
+                                if (d < best) { best = d; bone = s.bone; }
+                            }
+                            if (bone < 0) continue;
+                            mesh.boneIds[v * 4] = (unsigned char)bone;
+                            mesh.boneWeights[v * 4] = 1.0f;
+                            for (int k = 1; k < 4; ++k) mesh.boneIds[v * 4 + k] = 0, mesh.boneWeights[v * 4 + k] = 0.0f;
+                            ++moved;
+                        }
+                    }
+                    if (moved > 0) TraceLog(LOG_INFO, "CHARACTER: %s: %d stray vertices left at the legs moved back to the arms", name, moved);
+                }
                 int hidden = 0;
                 std::vector<std::array<int, 3>> bridged; // нуусан гурвалжнууд (анхны оройнууд)
                 std::vector<int> free;                    // нуусан гурвалжны байр
