@@ -27,7 +27,7 @@ namespace Net
     constexpr int kMaxGuests = 5; // нэг өрөөнд хост + 5 зочин = 6 тоглогч
     // Сүлжээний мессежийн хувилбар: мессежийн бүтэц өөрчлөгдөх бүрд нэмэгдүүлнэ. Хост ба зочин ижил хувилбартай
     // байж л нэгдэнэ (эс бөгөөс өгөгдөл буруу уншигдаж, жишээ нь цэргүүд "үхсэн" мэт харагдана).
-    constexpr uint16_t kProtocolVersion = 21; // 21: зочид бие биеэ харна (snapshot-ын бусад тоглогч, Roster); 20: нэг өрөөнд 6 тоглогч (relay-ийн зочны дугаар); 19: тэмдэг (Ping); 18: Aqua (унааны төрөл 10); 17: Crown (унааны төрөл 9); 16: баавгай (ZombieState.type 3); 15: хуягт машин; 14: нисдэг тэрэг (зорчигч, хаалганы буудагч), чат, унааны дугаар 254 хүртэл;
+    constexpr uint16_t kProtocolVersion = 22; // 22: өрөөний горим, баг; 21: зочид бие биеэ харна (snapshot-ын бусад тоглогч, Roster); 20: нэг өрөөнд 6 тоглогч (relay-ийн зочны дугаар); 19: тэмдэг (Ping); 18: Aqua (унааны төрөл 10); 17: Crown (унааны төрөл 9); 16: баавгай (ZombieState.type 3); 15: хуягт машин; 14: нисдэг тэрэг (зорчигч, хаалганы буудагч), чат, унааны дугаар 254 хүртэл;
                                              // 13: цэргийн тогтвортой дугаар, зочныг хүлээх хугацаа дуусав (GuestKick);
                                              // 12: шахсан snapshot, хайрцгийг хост олгоно, дахин холбогдох; 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris; 6: 1-р дайчны дүр;
                                              // 7: тулаан (тоглогч хооронд); 8: зочин хосттой адил (гишүүн солих г.м.);
@@ -75,9 +75,12 @@ namespace Net
         BattleZone,      // хост -> зочин: тулааны хумигдах бүс (төв, анхны радиус, өнгөрсөн хугацаа)
         Ability,         // аль аль нь: дүрийн тусгай чадвар (төрөл, байрлал, унааны дугаар)
         Stats,           // аль аль нь: энэ тоглолтын өөрийн үзүүлэлт (устгасан, толгой, босгосон, унасан, оновчлол)
-        Roster           // хост -> зочин: өрөөний тоглогчдын нэр, энэ зочны дугаар
+        Roster,          // хост -> зочин: өрөөний горим, тоглогчдын баг, нэр, энэ зочны дугаар
+        MatchStart,      // хост -> зочин: найзуудын тулаан эхэллээ (зочны гарах байрлал)
+        MatchOver        // хост -> зочин: найзуудын тулаан дууслаа (ялсан баг, 255 = тэнцээ)
     };
     constexpr uint32_t kHostPlayer = 0xFFFF; // GuestHitHuman: хостын удирдаж буй тоглогч (бусад нь Soldier::id)
+    constexpr uint32_t kGuestPlayerBase = 0x10000; // GuestHitHuman: зочин (+ дугаар)
 
     // Хоёр талын дүрийн байдал (буудлага, хөдөлгөөн)
     struct AvatarState
@@ -138,6 +141,7 @@ namespace Net
         uint8_t guest = 0;   // энэ зочны (хүлээн авагчийн) багийн гишүүн
         uint8_t foreign = 0; // өөр зочны багийн гишүүн (хамт тоглогчид)
         uint8_t skin = 0;    // эзний 1-р дайчны дүр
+        uint8_t team = 0;    // эзний баг
         float health = 100.0f;
     };
 
@@ -195,6 +199,7 @@ namespace Net
         // Тоглогч: 0 = хост, N = N-1 дугаартай зочин. Revive: хэнийг босгох вэ; Ping, Ability, Chat, Stats: хэний
         int player = 0;
         std::vector<std::string> names; // Roster: зочин бүрийн нэр (id нь энэ зочны дугаар)
+        uint8_t teams[kMaxGuests + 1] = {}; // Roster: тоглогч бүрийн баг
         std::string text;      // JoinRequest: зочны нэр; JoinReply: хостын нэр; Leave (хөтөч): холбогдож чадаагүй шалтгаан
         bool accepted = false; // JoinReply
         int province = 0;      // JoinReply
@@ -304,7 +309,9 @@ namespace Net
         void SendCrateGrant(int id);
         void SendGuestKick();
         void SendChat(const std::string& text, int player = 0);
-        void SendRoster(const std::vector<std::string>& names, int yourSlot);
+        void SendRoster(const std::vector<std::string>& names, int yourSlot, int mode, const uint8_t* teams);
+        void SendMatchStart(Vector3 spawn);
+        void SendMatchOver(int winner);
         void SendMissionLost();
         void SendPing(int kind, Vector3 position, int player = 0);
         void SendBattleZone(Vector2 center, float startRadius, float elapsed);

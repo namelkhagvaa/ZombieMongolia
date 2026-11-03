@@ -1342,6 +1342,7 @@ namespace Net
                 so.guest = r.U8();
                 so.foreign = r.U8();
                 so.skin = r.U8();
+                so.team = r.U8();
                 so.health = r.F();
                 s.soldiers.push_back(so);
             }
@@ -1439,7 +1440,7 @@ namespace Net
             e.amount = (float)r.I32();
             break;
         case Msg::GuestHitHuman:
-            e.id = r.U16();
+            e.id = r.U32();
             e.amount = r.F();
             break;
         case Msg::GuestTakeover:
@@ -1490,7 +1491,15 @@ namespace Net
             break;
         case Msg::Roster:
             e.id = r.U8();
+            e.province = r.U8(); // горим
+            for (int i = 0; i <= kMaxGuests && r.ok; ++i) e.teams[i] = r.U8();
             for (int i = 0; i < kMaxGuests && r.ok; ++i) e.names.push_back(r.Str());
+            break;
+        case Msg::MatchStart:
+            e.position = r.V3();
+            break;
+        case Msg::MatchOver:
+            e.id = r.U8();
             break;
         case Msg::MissionLost:
             break;
@@ -1593,7 +1602,7 @@ namespace Net
             w.V3(so.position); w.F(so.facing); w.F(so.speed); w.U8((uint8_t)so.member); w.U8(so.alive);
             w.U8(so.aiming); w.U8(so.shots); w.V3(so.shotEnd);
             w.U8(so.vehicle < 0 || so.vehicle > 254 ? 255 : (uint8_t)so.vehicle); w.U8(so.seatStyle); w.V3(so.seat);
-            w.U8(so.guest); w.U8(so.foreign); w.U8(so.skin); w.F(so.health);
+            w.U8(so.guest); w.U8(so.foreign); w.U8(so.skin); w.U8(so.team); w.F(so.health);
         }
         w.U8((uint8_t)s.others.size());
         for (const OtherPlayerState& other : s.others)
@@ -1706,11 +1715,29 @@ namespace Net
         Send(w.data, true);
     }
 
-    void Session::SendRoster(const std::vector<std::string>& names, int yourSlot)
+    void Session::SendMatchStart(Vector3 spawn)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::MatchStart);
+        w.V3(spawn);
+        Send(w.data, true);
+    }
+
+    void Session::SendMatchOver(int winner)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::MatchOver);
+        w.U8((uint8_t)winner);
+        Send(w.data, true);
+    }
+
+    void Session::SendRoster(const std::vector<std::string>& names, int yourSlot, int mode, const uint8_t* teams)
     {
         Writer w;
         w.U8((uint8_t)Msg::Roster);
         w.U8((uint8_t)yourSlot);
+        w.U8((uint8_t)mode);
+        for (int i = 0; i <= kMaxGuests; ++i) w.U8(teams[i]);
         for (int i = 0; i < kMaxGuests; ++i) w.Str(i < (int)names.size() ? names[(size_t)i] : std::string());
         Send(w.data, true);
     }
@@ -1744,7 +1771,7 @@ namespace Net
     {
         Writer w;
         w.U8((uint8_t)Msg::GuestHitHuman);
-        w.U16((uint16_t)target);
+        w.U32(target);
         w.F(damage);
         Send(w.data, true);
     }

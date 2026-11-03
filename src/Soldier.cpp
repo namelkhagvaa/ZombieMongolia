@@ -301,6 +301,19 @@ void SoldierSquad::RemoveGuestTeam(int owner)
     }
 }
 
+void SoldierSquad::ReviveFighters()
+{
+    for (Soldier& soldier : soldiers)
+    {
+        if (soldier.member < 0) continue;
+        soldier.alive = true;
+        soldier.downed = false;
+        soldier.health = soldier.maxHealth;
+        soldier.deathTimer = 0.0f;
+        soldier.reviveProgress = 0.0f;
+    }
+}
+
 void SoldierSquad::ReownGuestTeam(int from, int to)
 {
     for (Soldier& soldier : soldiers)
@@ -876,8 +889,9 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
         if (battle && teammate)
         {
             float best = fireRange;
-            for (const HumanTarget& candidate : soldier.guestTeam ? hostTargets : guestTargets)
+            for (const HumanTarget& candidate : humanTargets)
             {
+                if (candidate.team == battleTeams[soldier.guestOwner + 1]) continue;
                 const float distance = Vector3Distance(pos, candidate.chest);
                 if (distance < best)
                 {

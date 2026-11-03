@@ -113,7 +113,7 @@ struct Soldier
 };
 
 // Тулаан (нээлттэй өрөө): AI дайчин буудаж болох хүн (байрлал = цээж). id: squad-ийн индекс, эсвэл kHostTarget /
-// kGuestTarget (хостын тоглогч, зочны дүр).
+// kGuestTarget - дугаар (хостын тоглогч, зочны дүр).
 struct HumanTarget
 {
     Vector3 chest;
@@ -123,6 +123,7 @@ struct HumanTarget
     float facing = 0.0f;
     BodyPosture posture = BodyPosture::Stand;
     float speed = 0.0f; // явж буй хурд, м/с (хөдөлж буй байг онох хэцүү)
+    int team = 0;       // аль баг: өөр багийн AI дайчид л буудна
 };
 struct HumanHit
 {
@@ -193,12 +194,15 @@ public:
     }
     // Тулаан: багийн гишүүд (элсүүлсэн цэрэг биш) эсрэг багийн хүмүүс рүү ч буудна. hostSide: хостын багийн бай
     // (зочны дайчид буудна), guestSide: зочны багийн бай (хостын дайчид буудна). Оносон хохирлыг TakeHumanHits.
-    void SetBattle(bool active, std::vector<HumanTarget> hostSide, std::vector<HumanTarget> guestSide)
+    // teams: тоглогч бүрийн баг (0 хост, N: N-1 дугаартай зочин), Soldier::guestOwner-оор
+    void SetBattle(bool active, std::vector<HumanTarget> targets, const uint8_t* teams)
     {
         battle = active;
-        hostTargets = std::move(hostSide);
-        guestTargets = std::move(guestSide);
+        humanTargets = std::move(targets);
+        if (teams) std::copy(teams, teams + kSquadGuests + 1, battleTeams);
     }
+    // Тулаан дууслаа: унасан, үхсэн үндсэн дайчид бүтэн амьтай босно
+    void ReviveFighters();
     std::vector<HumanHit> TakeHumanHits() { return std::exchange(humanHits, {}); }
     // Тулаанд: тасарсан зочны дүрийг зочны багийн AI дайчин болгоно (frozen секунд хөдлөхгүй).
     void AddGuestFighter(int owner, int member, Vector3 position, float facing, float health, float frozen);
@@ -236,7 +240,8 @@ private:
     // Шинэ тогтвортой дугаар: 1..0xFFFE (0 = дугааргүй, 0xFFFF = Net::kHostPlayer)
     uint16_t NewId() { const uint16_t id = nextId; nextId = nextId >= 0xFFFE ? 1 : (uint16_t)(nextId + 1); return id; }
     bool battle = false;
-    std::vector<HumanTarget> hostTargets, guestTargets;
+    std::vector<HumanTarget> humanTargets;
+    uint8_t battleTeams[kSquadGuests + 1] = {};
     std::vector<HumanHit> humanHits;
     bool guestLeaderActive[kSquadGuests] = {};
     Vector3 guestLeader[kSquadGuests] = {};

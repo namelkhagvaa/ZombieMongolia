@@ -98,6 +98,8 @@ struct LaunchOptions
     int viewHeight = 0;       // >0 бол тоглоомыг ийм өндөртэй дотоод зурагт зураад сунгана (--view-height N)
     int stance = 0;           // 1 = суусан, 2 = хэвтсэн байдлаар эхэлнэ (--stance N)
     int hold = 0;             // 1..5 бол тэр товчны зэвсгийг буудалгүйгээр барина (--hold N)
+    int skirmishTest = 0;     // --skirmish <1 баг, 2 хүн бүр> <зочдын тоо>: зочид ирмэгц найзуудын тулаан эхэлнэ
+    int skirmishGuests = 0;
     bool coopTest = false;    // туршилтын горимд ч сүлжээг ажиллуулна (--coop)
     bool battleTest = false;  // --coop-той: данс, сервергүйгээр тулаан (хоёр баг бие бие рүүгээ буудна) (--battle)
     bool scope = false;       // тасралтгүй онилно: мэргэн буудагчийн дуран харааг шалгахад (--scope)
@@ -312,7 +314,6 @@ private:
     int guestBoughtLost = 0;        // хост: энэ зочны Gold-оор авсан цэргээс үхсэн (серверт нийтээр мэдэгдэнэ)
     bool guestDefeated = false;     // хост: зочин тулаанд ялагдлаа (гарч байна): дахин нэгдэх хүсэлтийг шинэ зочин гэж авна     // хост: тасарсан зочин багаа хэвээр (тулаанд) буцаж нэгдлээ: анхны байдлаар биед нь оруулна
     float netStopTimer = -1.0f;     // хост: тулаанд ялагдсны дараа relay-ээс гарах хүртэл (BattleOver хүрэх хугацаа)
-    float guestHumanTokens = 24.0f; // хост: зочны хүнд оносон мэдэгдэл (үрлэн бууны 8 үрэл ч багтана)
     float idleTimer = 0.0f;         // тулаанд оролтгүй өнгөрсөн хугацаа: 60 секундээс AI удирдана
     bool autopilot = false, autoFire = false;
     float stageUploadTimer = 0.0f;  // хост: өрөөний ахицыг серверт илгээх
@@ -322,9 +323,6 @@ private:
     float guestSwitchTimer = 0.0f;  // зочин: шилжих хүсэлт илгээсний дараа давхар илгээхгүй
     float stageSyncTimer = 0.0f;    // хост: өрөөний ахицыг зочинд илгээх
     // ---- Хамтарсан тоглолтын хамгаалалт (хост зочны мэдэгдэлд шууд итгэхгүй) ----
-    float guestShadow = -1.0f;        // хост, тулаан: зочны амийг хост өөрөө давхар тооцно (-1 = дараагийн мэдээгээр)
-    bool guestForcedDown = false;     // хост: хостын тооцоогоор зочин унасан (амьд гэж мэдэгдсэн ч) — тулаанд тооцогдохгүй
-    int guestSuspicion = 0;           // хост: зочин хостын тооцооноос илүү амьтай гэж дараалан мэдэгдсэн удаа
     struct PendingGuestSetup
     {
         bool pending = false;
@@ -351,7 +349,7 @@ private:
     // Хост: тасраад буцаж нэгдсэн зочин шинэ бие авахгүй: өөрийн AI дайчныхаа (тасрахад үлдсэн) биед орно
     void ResumeGuestBody();
     // Зогсож буй (унаагүй, үхээгүй) үндсэн дайчид. Унасан дайчныг босгох хүн үлдээгүй бол баг унасан гэж тооцно.
-    int TeamAlive(bool hostTeam) const;
+    int TeamStanding(int team) const;   // хост: тухайн багийн зогсож буй үндсэн дайчид
     // Сум тулаанд оролцогч хүнд тусав уу: хост буудвал kGuestTarget эсвэл squad-ийн индекс (зочны баг),
     // зочин буудвал Net::kHostPlayer эсвэл hostSoldiers-ийн индекс; тусаагүй бол -1.
     // Тулаан: туяа эсрэг багийн хүнд (биеийн байрлалтай тааруулсан онох хүрээ: Hitbox.h) тусвал түүний дугаар, үгүй бол -1
@@ -657,6 +655,10 @@ private:
         float hitTokens = 16.0f;     // оносон мэдэгдэл (буудах хурдаар хязгаарлагдана)
         float blastTokens = 3.0f;    // дэлбэрэлт
         float recruitCooldown = 0.0f, healCooldown = 0.0f;
+        float humanTokens = 24.0f;   // хүнд оносон мэдэгдэл (үрлэн бууны 8 үрэл ч багтана)
+        float shadow = -1.0f;        // тулаан: зочны амийг хост өөрөө давхар тооцно (-1 = дараагийн мэдээгээр)
+        bool forcedDown = false;     // хостын тооцоогоор унасан (амьд гэж мэдэгдсэн ч): тулаанд тооцогдохгүй
+        int suspicion = 0;           // хостын тооцооноос илүү амьтай гэж дараалан мэдэгдсэн удаа
         PendingGuestSetup setup;     // серверээс зочны мэдээлэл ирэх хүртэл хүлээнэ
         bool teamSpawned = false;    // энэ тулаанд AI дайчдыг нэг л удаа үүсгэнэ
         std::string teamOwner;       // AI баг хэний (өөр зочин орж ирвэл хуучин багийг устгана)
@@ -685,6 +687,33 @@ private:
     void PumpJoinQueue();           // хүлээж буй дараагийн хүсэлтийг хариулах цонхонд
     void SendRoster();
     std::string PlayerNameOf(int who) const; // ForEachOtherPlayer-ийн who
+    // ---- Өрөөний горим: хамтран тоглох эсвэл найзуудын тулаан (сервер, Gold-гүй). Тулаан дуусмагц бүгд амилж, хамтын
+    // тоглолт хэвээр үргэлжилнэ. Gold-той нээлттэй өрөөний тулаан (1 эсрэг 1): skirmish биш.
+    enum class RoomMode : uint8_t { Coop, Teams, Free };
+    RoomMode roomMode = RoomMode::Coop;
+    bool skirmish = false;                     // найзуудын тулаан явагдаж байна (battleActive-тай хамт)
+    uint8_t playerTeam[Net::kMaxGuests + 1] = {}; // who бүрийн баг
+    int ownSlot = 0;                           // зочин: өөрийн дугаар (Roster)
+    bool roomPanelOpen = false;
+    bool skirmishTestDone = false;
+    float skirmishTestTimer = 0.0f;
+    int TeamOf(int who) const { return playerTeam[who]; }
+    int OwnTeam() const { return coopGuest ? playerTeam[ownSlot + 1] : playerTeam[0]; }
+    bool IsEnemy(int who) const { return battleActive && TeamOf(who) != OwnTeam(); }
+    int SoldierTeam(const Soldier& soldier) const { return playerTeam[soldier.guestOwner + 1]; }
+    void SetDuelTeams();            // Gold-той тулаан: хост 0, зочин 1
+    void SetRoomMode(RoomMode mode);
+    void AddToRoomTeams(int who);   // шинэ зочинд баг
+    bool SkirmishReady() const;     // хоёр ба түүнээс олон багт хүн байна
+    void StartSkirmish();
+    void EndSkirmish(int winner);   // 255 = тэнцээ
+    void ShowSkirmishResult(int winner);
+    void UpdateSkirmishResult(float dt);
+    bool RoomPanelAllowed() const;
+    Rectangle RoomChipRect() const;
+    void UpdateRoomPanel();
+    void DrawRoomPanel() const;
+    void DrawAllyTags() const;
     struct OtherPlayer
     {
         bool present = false;

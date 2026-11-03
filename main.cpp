@@ -166,12 +166,18 @@ int main(int argc, char** argv)
         {
             options.hold = std::atoi(argv[++i]);
         }
+        else if (std::strcmp(argv[i], "--skirmish") == 0 && i + 2 < argc)
+        {
+            options.skirmishTest = std::atoi(argv[++i]);   // 1 баг багаараа, 2 хүн бүр өөрөө
+            options.skirmishGuests = std::atoi(argv[++i]); // энэ олон зочин ирмэгц эхэлнэ
+        }
         else if (std::strcmp(argv[i], "--battle") == 0)
         {
             options.battleTest = true;
         }
         else if (std::strcmp(argv[i], "--coop") == 0)
         {
+            setvbuf(stdout, nullptr, _IONBF, 0); // (туршилт: процессыг зогсооход лог алдагдахгүй)
             options.coopTest = true;
         }
         else if (std::strcmp(argv[i], "--seat") == 0 && i + 1 < argc)
