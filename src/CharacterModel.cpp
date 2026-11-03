@@ -446,7 +446,6 @@ namespace
                 // Тохойноос доош, гараас илүү их биед (бүс, хормой) ойр оройг гараас салгана: анхны зогсолтод гар нь
                 // хувцастай нийлсэн загварт (model-1) гараа өргөхөд гараас бүс рүү хавтан сунадаг байв
                 {
-                {
                     float armNear = 1e9f, torsoNear = 1e9f, elbowLimit = -1e9f;
                     int torsoBone = -1;
                     for (int bone = 0; bone < model.boneCount; ++bone)
