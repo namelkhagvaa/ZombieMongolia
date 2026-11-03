@@ -648,14 +648,15 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
                 targetDistance = distance;
             }
         }
-        const int kRemote = -3; // хамтарсан тоглолтын зочин
-        if (remoteActive && !sheltered(remotePosition))
+        const int kRemote = -10; // хамтарсан тоглолтын зочид: kRemote - дугаар
+        for (int slot = 0; slot < kRemoteSlots; ++slot)
         {
-            const float distance = HorizontalDistance(pos, remotePosition);
+            if (!remoteActive[slot] || sheltered(remotePosition[slot])) continue;
+            const float distance = HorizontalDistance(pos, remotePosition[slot]);
             if (distance < targetDistance)
             {
-                target = kRemote;
-                targetPosition = remotePosition;
+                target = kRemote - slot;
+                targetPosition = remotePosition[slot];
                 targetDistance = distance;
             }
         }
@@ -890,9 +891,9 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
             {
                 player.TakeDamageFrom(zombie.damage, pos);
             }
-            else if (target == kRemote)
+            else if (target <= kRemote)
             {
-                remoteDamage += zombie.damage;
+                remoteDamage[kRemote - target] += zombie.damage;
             }
             else
             {
@@ -980,7 +981,7 @@ void ZombieHorde::UpdateBear(Zombie& bear, float dt, World& world, Player& playe
     bear.rear += ((bear.screamTimer > 0.0f && !bear.alerted ? 1.0f : 0.0f) - bear.rear) * std::min(1.0f, 3.0f * dt);
 
     // Хамгийн ойрын амьд биет: тоглогч, цэрэг, зочин, зомби (дэлгүүрт нуугдсан хүнийг үл тооно)
-    const int kPlayer = -1, kNone = -2, kRemote = -3, kZombie = -4;
+    const int kPlayer = -1, kNone = -2, kZombie = -4, kRemote = -10; // зочид: kRemote - дугаар
     int target = kNone, prey = -1;
     float best = 1e9f;
     Vector3 targetPosition = pos;
@@ -1004,7 +1005,10 @@ void ZombieHorde::UpdateBear(Zombie& bear, float dt, World& world, Player& playe
     {
         if (soldiers[(size_t)i].alive && !sheltered(soldiers[(size_t)i].mover.position)) consider(i, soldiers[(size_t)i].mover.position, -1);
     }
-    if (remoteActive && !sheltered(remotePosition)) consider(kRemote, remotePosition, -1);
+    for (int slot = 0; slot < kRemoteSlots; ++slot)
+    {
+        if (remoteActive[slot] && !sheltered(remotePosition[slot])) consider(kRemote - slot, remotePosition[slot], -1);
+    }
     for (int i = 0; i < (int)zombies.size(); ++i)
     {
         const Zombie& other = zombies[(size_t)i];
@@ -1013,7 +1017,7 @@ void ZombieHorde::UpdateBear(Zombie& bear, float dt, World& world, Player& playe
 
     // Хүн ойртож ирвэл (бодит баавгай шиг) эхлээд зогсож, хойд хөл дээрээ босоод түүн рүү харж, үнэрлэж архирна:
     // анхааруулга. Тэр үед холдвол тайван үлдэнэ; хэт ойртвол (эсвэл буудвал) дайрна.
-    const bool person = target == kPlayer || target == kRemote || target >= 0;
+    const bool person = target == kPlayer || target <= kRemote || target >= 0;
     if (!bear.alerted && person && best < 20.0f * bear.scale && bear.warnCooldown <= 0.0f)
     {
         bear.screamTimer = 2.6f;
@@ -1060,7 +1064,7 @@ void ZombieHorde::UpdateBear(Zombie& bear, float dt, World& world, Player& playe
             bear.attackAnim = kAttackAnimTime;
             Audio::Play(Sfx::BossRoar, Vector3Add(pos, { 0.0f, 1.2f, 0.0f }), 0.8f, 0.6f);
             if (target == kPlayer) player.TakeDamageFrom(bear.damage, pos);
-            else if (target == kRemote) remoteDamage += bear.damage;
+            else if (target <= kRemote) remoteDamage[kRemote - target] += bear.damage;
             else if (target == kZombie)
             {
                 noCredit = true;
@@ -1206,9 +1210,14 @@ void ZombieHorde::Damage(int index, float amount)
         {
             // баавгай алсан: зоос хэнд ч очихгүй
         }
-        else if (creditRemote)
+        else if (creditRemote >= 0)
         {
-            if (remoteRewards.size() < 64) remoteRewards.push_back(reward); // зочны унаа мөргөсөн
+            // зочны унаа мөргөсөн
+            if (remoteRewards.size() < 64)
+            {
+                remoteRewards.push_back(reward);
+                remoteRewards.back().owner = creditRemote;
+            }
         }
         else
         {

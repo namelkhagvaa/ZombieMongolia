@@ -755,8 +755,8 @@ std::string Mission::HowTo(int index) const
         return state.reserve > 0 ? TextFormat("Бүсийн зомбийг устга: үлдсэн %d (шинээр гарсаар байна)", ZoneRemaining(index))
                                  : TextFormat("Сүүлчийн %d зомбийг устга (дэлгэц дээр улаан тэмдэгтэй)", ZoneRemaining(index));
     case ObjectiveType::DefendLocation:
-        return partnerPresent
-                   ? TextFormat("Бүс дотроо тэс: %d сек үлдлээ (хоёулаа бүсэд байвал 1.5x хурдан)", std::max(0, state.target - state.progress))
+        return !partners.empty()
+                   ? TextFormat("Бүс дотроо тэс: %d сек үлдлээ (олуулаа бүсэд байвал 1.5x хурдан)", std::max(0, state.target - state.progress))
                    : TextFormat("Бүс дотроо байж тэс: %d секунд үлдлээ", std::max(0, state.target - state.progress));
     case ObjectiveType::DefeatBoss: return "Аварга зомбийг ал (бусад зомби хамаагүй)";
     }
@@ -1078,8 +1078,14 @@ void Mission::UpdateZone(int index, float dt, const World& world, const Player& 
     const int zone = index + 1;
     // Хамтарсан тоглолт: аль нэг тоглогч бүсэд байхад л хангалттай
     const float hostDistance = HorizontalDistance(player.Position(), state.location);
-    const float partnerDistance = partnerPresent ? HorizontalDistance(partnerPosition, state.location) : 1e9f;
-    const float playerDistance = std::min(hostDistance, partnerDistance);
+    int playersInside = hostDistance < state.radius ? 1 : 0;
+    float playerDistance = hostDistance;
+    for (const Vector3& partner : partners)
+    {
+        const float distance = HorizontalDistance(partner, state.location);
+        playerDistance = std::min(playerDistance, distance);
+        if (distance < state.radius) ++playersInside;
+    }
     state.spawnTimer -= dt;
 
     if (def.type == ObjectiveType::ClearZone)
@@ -1118,8 +1124,8 @@ void Mission::UpdateZone(int index, float dt, const World& world, const Player& 
         // Хугацаа зөвхөн тоглогч бүс дотор байхад урагшилна; энэ үед зомби тасралтгүй довтолно.
         if (playerDistance < state.radius)
         {
-            // Хоёулаа бүсэд: хугацаа 1.5 дахин хурдан, довтолгоо ч хүчтэй
-            const bool both = hostDistance < state.radius && partnerDistance < state.radius;
+            // Хоёр ба түүнээс олон тоглогч бүсэд: хугацаа 1.5 дахин хурдан, довтолгоо ч хүчтэй
+            const bool both = playersInside >= 2;
             state.timer += dt * (both ? 1.5f : 1.0f);
             const int cap = (22 + province / 2) * (both ? 4 : 3) / 3;
             if (state.spawnTimer <= 0.0f && horde.AliveInZone(zone) < cap)
@@ -1169,7 +1175,7 @@ void Mission::UpdateGuards(float dt, const World& world, const Player& player, Z
     // Багаас хол хоцорсон хамгаалагчид нөөцөд буцна: баг дахин ирэхэд тэнд гарч ирнэ.
     // Бүх даалгавар биелсний дараа үлдсэн бүх зомбид хамаарна, эс бөгөөс алсад үлдсэн нь үеийг дуусгахад саад болно.
     std::vector<Vector3> anchors = { player.Position() };
-    if (partnerPresent) anchors.push_back(partnerPosition);
+    anchors.insert(anchors.end(), partners.begin(), partners.end());
     for (const Soldier& soldier : squad.All())
     {
         if (soldier.alive) anchors.push_back(soldier.mover.position);
@@ -1322,11 +1328,14 @@ void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde,
         switch (def.type)
         {
         case ObjectiveType::ReachLocation:
-            if (HorizontalDistance(position, state.location) < state.radius ||
-                (partnerPresent && HorizontalDistance(partnerPosition, state.location) < state.radius))
+        {
+            bool arrived = HorizontalDistance(position, state.location) < state.radius;
+            for (const Vector3& partner : partners)
             {
-                Complete(i);
+                arrived = arrived || HorizontalDistance(partner, state.location) < state.radius;
             }
+            if (arrived) Complete(i);
+        }
             break;
 
         case ObjectiveType::InteractObject:

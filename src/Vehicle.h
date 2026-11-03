@@ -92,6 +92,7 @@ struct Vehicle
     float driftTimer = 0.0f;        // шарвалт дууссанаас хойш хий дарж үргэлжлүүлэх хугацаа
     // Хамтарсан тоглолт: нөгөө тоглогч (эсвэл хостын баг) жолоодож буй хэрэгслийг сүлжээгээр хөдөлгөнө.
     bool remote = false;    // байрлалыг сүлжээнээс авна (өөрөө тооцохгүй)
+    int remoteOwner = -1;   // хост: жолоодож буй зочны дугаар
     bool occupied = false;  // нөгөө тал сууж яваа: энэ талын тоглогч, баг сууж болохгүй
     Vector3 netPosition = { 0.0f, 0.0f, 0.0f };
     float netHeading = 0.0f, netSpeed = 0.0f, netSteer = 0.0f;
@@ -148,6 +149,7 @@ public:
     // байрлуулахдаа зөрсөн: нурсан хашаа, зогссон машин) хостынхоор сольж, дутуу бол нэмнэ.
     void MatchRemote(int index, VehicleType type, Vector3 position, float heading);
     void ClearRemote(int index);
+    void SetRemoteOwner(int index, int owner) { if (index >= 0 && index < Count()) vehicles[(size_t)index].remoteOwner = owner; }
     // Хамтарсан тоглолт: унааг жолоодож буй тал тооцсон эрүүл мэнд (0 бол эвдэрнэ / морь үхнэ).
     // Өөрийн жолоодож буй унаанд үйлчлэхгүй.
     void SyncHealth(int index, float health);

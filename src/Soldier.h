@@ -13,12 +13,15 @@
 
 class ZombieHorde;
 
+constexpr int kSquadGuests = 5; // нэг өрөөний зочдын дээд тоо (Net::kMaxGuests)
+
 struct Soldier
 {
     Mover mover;
     uint16_t id = 0;         // тогтвортой дугаар (жагсаалтын индекс өөрчлөгдсөн ч): тулаанд зочин оносон цэргийг илгээнэ
     int member = -1;         // багийн гишүүний дугаар (0..2); -1 = элсүүлсэн жирийн цэрэг
     bool guestTeam = false;  // хамтарсан тоглолт: зочны багийн гишүүн (зочныг дагана, хостын F1-F3-т орохгүй)
+    int8_t guestOwner = -1;  // аль зочных (0..kSquadGuests-1); -1 = хостын баг
     float health = 0.0f;
     float maxHealth = 80.0f;
     float fireCooldown = 0.0f;
@@ -148,22 +151,31 @@ public:
     // Тогтвортой дугаараар (Soldier::id) индекс; -1 = байхгүй
     int FindById(uint16_t id) const;
     // Хамтарсан тоглолт: зочны удирдаагүй хоёр дайчин (зочныг дагаж байлдана)
-    void AddGuestTeam(int controlledMember, Vector3 around, const World& world, float health = 100.0f);
-    void RemoveGuestTeam();
-    bool HasGuestTeam() const;    // зочны аль ч цэрэг (Gold-оор авсан, элсүүлсэн цэрэг ч орно)
-    bool HasGuestMembers() const; // зочны үндсэн хоёр дайчин (member >= 0)
+    // owner: зочны дугаар; -1 = бүх зочид
+    void AddGuestTeam(int owner, int controlledMember, Vector3 around, const World& world, float health = 100.0f);
+    void RemoveGuestTeam(int owner = -1);
+    void ReownGuestTeam(int from, int to); // дахин холбогдсон зочин өөр дугаар авлаа
+    bool HasGuestTeam(int owner = -1) const;    // зочны аль ч цэрэг (Gold-оор авсан, элсүүлсэн цэрэг ч орно)
+    bool HasGuestMembers(int owner = -1) const; // зочны үндсэн хоёр дайчин (member >= 0)
     // Зочны багийнхны дагах байрлал (зочин холбогдсон үед)
-    void SetGuestLeader(bool active, Vector3 position) { guestLeaderActive = active; guestLeader = position; }
+    void SetGuestLeader(int owner, bool active, Vector3 position)
+    {
+        guestLeaderActive[owner] = active;
+        guestLeader[owner] = position;
+    }
     // Унасан тоглогчид (хост, зочин): AI нөхөд нь гүйж очиж босгоно. Босгосон бол дараагийн Take*-д true.
-    void SetLeadersDowned(bool host, bool guest)
+    void SetLeadersDowned(bool host, int guestMask)
     {
         hostDowned = host;
-        guestDowned = guest;
         if (!host) hostRevive = 0.0f;
-        if (!guest) guestRevive = 0.0f;
+        for (int i = 0; i < kSquadGuests; ++i)
+        {
+            guestDowned[i] = (guestMask >> i) & 1;
+            if (!guestDowned[i]) guestRevive[i] = 0.0f;
+        }
     }
     bool TakeHostRevived() { const bool v = hostRevived; hostRevived = false; return v; }
-    bool TakeGuestRevived() { const bool v = guestRevived; guestRevived = false; return v; }
+    bool TakeGuestRevived(int owner) { const bool v = guestRevived[owner]; guestRevived[owner] = false; return v; }
     float HostReviveProgress() const { return hostRevive; }
     // world нь тогтмол биш: цэргүүд замдаа таарсан хаалгыг онгойлгоно.
     void Update(float dt, World& world, Vector3 playerPosition, ZombieHorde& horde, Tracers& tracers,
@@ -189,15 +201,12 @@ public:
     }
     std::vector<HumanHit> TakeHumanHits() { return std::exchange(humanHits, {}); }
     // Тулаанд: тасарсан зочны дүрийг зочны багийн AI дайчин болгоно (frozen секунд хөдлөхгүй).
-    void AddGuestFighter(int member, Vector3 position, float facing, float health, float frozen);
+    void AddGuestFighter(int owner, int member, Vector3 position, float facing, float health, float frozen);
     // viewPosition: камерын байрлал (холын цэргийг хялбар хувилбараар зурна).
     void Draw(Vector3 viewPosition, bool showColliders) const;
     // 1-р дайчны дүр: өөрийн баг ба (хамтарсан тоглолтод) зочны баг
-    void SetLeaderSkins(int own, int guest)
-    {
-        leaderSkin = own;
-        guestLeaderSkin = guest;
-    }
+    void SetLeaderSkin(int own) { leaderSkin = own; }
+    void SetGuestLeaderSkin(int owner, int skin) { guestLeaderSkin[owner] = skin; }
 
     std::vector<Soldier>& All() { return soldiers; }
     const std::vector<Soldier>& All() const { return soldiers; }
@@ -205,12 +214,18 @@ public:
     int AliveCount() const;
 
 private:
-    bool hostDowned = false, guestDowned = false, hostRevived = false, guestRevived = false;
-    float hostRevive = 0.0f, guestRevive = 0.0f;
+    bool hostDowned = false, hostRevived = false;
+    float hostRevive = 0.0f;
+    bool guestDowned[kSquadGuests] = {}, guestRevived[kSquadGuests] = {};
+    float guestRevive[kSquadGuests] = {};
+    int OwnerSkin(const Soldier& soldier) const
+    {
+        return soldier.guestOwner >= 0 ? guestLeaderSkin[soldier.guestOwner] : leaderSkin;
+    }
     void UpdateRevives(float dt, Vector3 hostPosition);
     uint32_t focusId = 0;     // тушаалаар онилох зомби
     float focusTimer = 0.0f;
-    int leaderSkin = 0, guestLeaderSkin = 0;
+    int leaderSkin = 0, guestLeaderSkin[kSquadGuests] = {};
     float GaitRate(const Soldier& soldier, float speed) const; // алхааны үеийн хурд (дүрийн загвараас: Mixamo-гийн алхам)
     Vector3 SlotPosition(int index, Vector3 playerPosition, float radius) const;
     // Элсүүлсэн цэргийн дараагийн харуулын байр: өөрийн хэсэг (сектор) дотор, удирдагчаас 6-12 м.
@@ -223,6 +238,6 @@ private:
     bool battle = false;
     std::vector<HumanTarget> hostTargets, guestTargets;
     std::vector<HumanHit> humanHits;
-    bool guestLeaderActive = false;
-    Vector3 guestLeader = { 0.0f, 0.0f, 0.0f };
+    bool guestLeaderActive[kSquadGuests] = {};
+    Vector3 guestLeader[kSquadGuests] = {};
 };

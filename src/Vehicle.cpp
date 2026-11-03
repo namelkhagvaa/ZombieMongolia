@@ -1687,6 +1687,7 @@ void Garage::ClearRemote(int index)
 {
     if (index < 0 || index >= Count()) return;
     vehicles[(size_t)index].remote = false;
+    vehicles[(size_t)index].remoteOwner = -1;
     vehicles[(size_t)index].occupied = false;
     // (сүлжээнээс ирсэн сүүлийн хурдаар цааш гулсахгүй: нөгөө тоглогч буусан нисдэг тэрэг хажуугийн байшинд "мөргөж"
     // сүйрдэг байсан)
@@ -1899,9 +1900,9 @@ void Garage::Update(float dt, const World& world, ZombieHorde& horde, float thro
                 const float impact = speed * remoteSpec.ramDamage;
                 const float sign = vehicle.speed >= 0.0f ? 1.0f : -1.0f;
                 const Vector3 push = { std::sin(vehicle.heading) * speed * sign, 0.0f, std::cos(vehicle.heading) * speed * sign };
-                horde.SetCreditRemote(true); // хост: зочны унаа мөргөсөн зомбины зоос зочинд
+                horde.SetCreditRemote(vehicle.remoteOwner); // хост: зочны унаа мөргөсөн зомбины зоос зочинд
                 horde.Ram(vehicle.position, remoteSpec.radius + 0.5f, impact * dt * 6.0f, speed >= RamLaunchSpeed(vehicle.type), push);
-                horde.SetCreditRemote(false);
+                horde.SetCreditRemote(-1);
             }
             continue;
         }

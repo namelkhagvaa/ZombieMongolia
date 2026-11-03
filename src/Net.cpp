@@ -242,7 +242,7 @@ namespace Net
             if (reliable) { ws.send(HEAPU8.slice(data, data + size)); return; }
             // Тасралтгүй мессежүүдийг (snapshot, байдал) сүлжээ удаан үед хаяна: хоцрогдол хуримтлагдахгүй. 0xFF: relay
             // ч хүлээн авагчийн сүлжээ удаан бол хаяж болно (хасаад дамжуулна).
-            if (ws.bufferedAmount > 24576) return;
+            if (ws.bufferedAmount > 65536) return;
             var out = new Uint8Array(size + 1);
             out[0] = 255;
             out.set(HEAPU8.subarray(data, data + size), 1);
@@ -324,7 +324,7 @@ namespace Net
             void Send(const uint8_t* data, size_t size, bool reliable)
             {
                 if (socket == ENET_SOCKET_NULL) return;
-                if (!reliable && out.size() > 24576) return; // сүлжээ удаан: тасралтгүй мессежийг хаяна (хоцролт хуримтлагдахгүй)
+                if (!reliable && out.size() > 65536) return; // сүлжээ удаан: тасралтгүй мессежийг хаяна (хоцролт хуримтлагдахгүй)
                 Frame(reliable ? 2 : 5, data, size);          // 5: relay ч дүүрсэн үед хаяж болно
             }
 
@@ -677,7 +677,7 @@ namespace Net
         hasLatest = false;
         roomCode = 0;
         role = Role::None;
-        target = -1;
+        target = excluded = -1;
         joinTicket.clear();
     }
 
@@ -1261,8 +1261,8 @@ namespace Net
 
     void Session::Send(const std::vector<uint8_t>& data, bool reliable)
     {
-        const int only = target;
-        target = -1; // (To() нь зөвхөн дараагийн нэг илгээлтэд)
+        const int only = target, skip = excluded;
+        target = excluded = -1; // (To(), Except() нь зөвхөн дараагийн нэг илгээлтэд)
         if (role != Role::Host)
         {
             SendTo(0, data, reliable);
@@ -1271,7 +1271,7 @@ namespace Net
         // Хост: нэг зочин (To) эсвэл нэгдсэн бүх зочид руу
         for (int slot = 0; slot < kMaxGuests; ++slot)
         {
-            if (only >= 0 ? slot == only : remotes[slot].connected) SendTo(slot, data, reliable);
+            if (only >= 0 ? slot == only : remotes[slot].connected && slot != skip) SendTo(slot, data, reliable);
         }
     }
 
@@ -1340,8 +1340,18 @@ namespace Net
                 so.seatStyle = r.U8();
                 so.seat = r.V3();
                 so.guest = r.U8();
+                so.foreign = r.U8();
+                so.skin = r.U8();
                 so.health = r.F();
                 s.soldiers.push_back(so);
+            }
+            const int others = r.U8();
+            for (int i = 0; i < others && r.ok; ++i)
+            {
+                OtherPlayerState other;
+                other.slot = r.U8();
+                other.avatar = ReadAvatar(r);
+                s.others.push_back(other);
             }
             const int zombies = r.U16();
             for (int i = 0; i < zombies && r.ok; ++i)
@@ -1475,11 +1485,17 @@ namespace Net
         case Msg::GuestKick:
             break;
         case Msg::Chat:
+            e.player = r.U8();
             e.text = r.Str();
+            break;
+        case Msg::Roster:
+            e.id = r.U8();
+            for (int i = 0; i < kMaxGuests && r.ok; ++i) e.names.push_back(r.Str());
             break;
         case Msg::MissionLost:
             break;
         case Msg::Ping:
+            e.player = r.U8();
             e.id = r.U8();
             e.position = r.V3();
             break;
@@ -1488,11 +1504,13 @@ namespace Net
             e.amount = r.F();
             break;
         case Msg::Ability:
+            e.player = r.U8();
             e.province = r.U8();
             e.position = r.V3();
             e.id = r.U16();
             break;
         case Msg::Stats:
+            e.player = r.U8();
             e.id = r.U16();                     // устгасан
             e.id |= (uint32_t)r.U16() << 16;    // толгойд
             e.province = r.U8();                // босгосон
@@ -1500,6 +1518,7 @@ namespace Net
             e.province |= (int)r.U8() << 16;    // оновчлол %
             break;
         case Msg::Revive:
+            e.player = r.U8();
             break;
         case Msg::BattleOver:
             e.id = r.U8();
@@ -1574,7 +1593,13 @@ namespace Net
             w.V3(so.position); w.F(so.facing); w.F(so.speed); w.U8((uint8_t)so.member); w.U8(so.alive);
             w.U8(so.aiming); w.U8(so.shots); w.V3(so.shotEnd);
             w.U8(so.vehicle < 0 || so.vehicle > 254 ? 255 : (uint8_t)so.vehicle); w.U8(so.seatStyle); w.V3(so.seat);
-            w.U8(so.guest); w.F(so.health);
+            w.U8(so.guest); w.U8(so.foreign); w.U8(so.skin); w.F(so.health);
+        }
+        w.U8((uint8_t)s.others.size());
+        for (const OtherPlayerState& other : s.others)
+        {
+            w.U8(other.slot);
+            WriteAvatar(w, other.avatar);
         }
         w.U16((uint16_t)s.zombies.size());
         for (const ZombieState& z : s.zombies)
@@ -1629,10 +1654,11 @@ namespace Net
         Send(w.data, true);
     }
 
-    void Session::SendPing(int kind, Vector3 position)
+    void Session::SendPing(int kind, Vector3 position, int player)
     {
         Writer w;
         w.U8((uint8_t)Msg::Ping);
+        w.U8((uint8_t)player);
         w.U8((uint8_t)kind);
         w.V3(position);
         Send(w.data, true);
@@ -1647,20 +1673,22 @@ namespace Net
         Send(w.data, true);
     }
 
-    void Session::SendAbility(int kind, Vector3 position, int vehicle)
+    void Session::SendAbility(int kind, Vector3 position, int vehicle, int player)
     {
         Writer w;
         w.U8((uint8_t)Msg::Ability);
+        w.U8((uint8_t)player);
         w.U8((uint8_t)kind);
         w.V3(position);
         w.U16((uint16_t)(vehicle < 0 ? 0xFFFF : vehicle));
         Send(w.data, true);
     }
 
-    void Session::SendStats(int kills, int headshots, int revives, int downs, int accuracy)
+    void Session::SendStats(int kills, int headshots, int revives, int downs, int accuracy, int player)
     {
         Writer w;
         w.U8((uint8_t)Msg::Stats);
+        w.U8((uint8_t)player);
         w.U16((uint16_t)std::clamp(kills, 0, 65535));
         w.U16((uint16_t)std::clamp(headshots, 0, 65535));
         w.U8((uint8_t)std::clamp(revives, 0, 255));
@@ -1669,11 +1697,21 @@ namespace Net
         Send(w.data, true);
     }
 
-    void Session::SendChat(const std::string& text)
+    void Session::SendChat(const std::string& text, int player)
     {
         Writer w;
         w.U8((uint8_t)Msg::Chat);
+        w.U8((uint8_t)player);
         w.Str(text.substr(0, 200));
+        Send(w.data, true);
+    }
+
+    void Session::SendRoster(const std::vector<std::string>& names, int yourSlot)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::Roster);
+        w.U8((uint8_t)yourSlot);
+        for (int i = 0; i < kMaxGuests; ++i) w.Str(i < (int)names.size() ? names[(size_t)i] : std::string());
         Send(w.data, true);
     }
 
@@ -1758,10 +1796,11 @@ namespace Net
         Send(w.data, true);
     }
 
-    void Session::SendRevive()
+    void Session::SendRevive(int player)
     {
         Writer w;
         w.U8((uint8_t)Msg::Revive);
+        w.U8((uint8_t)player);
         Send(w.data, true);
     }
 

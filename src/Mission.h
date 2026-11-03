@@ -56,12 +56,8 @@ public:
     void BindSave(StageSave& stageSave) { save = &stageSave; }
 
     // interactPressed: E товч дарагдсан эсэх. onFoot: тоглогч явган (унаанаас харилцаж болохгүй).
-    // Хамтарсан тоглолт: нөгөө тоглогчийн байрлал (бүс, хүрэх газар, хамгаалагчдын тооцоонд)
-    void SetPartner(bool present, Vector3 position)
-    {
-        partnerPresent = present;
-        partnerPosition = position;
-    }
+    // Хамтарсан тоглолт: бусад тоглогчдын байрлал (бүс, хүрэх газар, хамгаалагчдын тооцоонд)
+    void SetPartners(const std::vector<Vector3>& positions) { partners = positions; }
     void Update(float dt, World& world, Player& player, ZombieHorde& horde, SoldierSquad& squad, bool interactPressed,
                 bool onFoot);
 
@@ -145,8 +141,7 @@ public:
     bool AutoPlay(float dt, const World& world, Player& player, ZombieHorde& horde);
 
 private:
-    bool partnerPresent = false;
-    Vector3 partnerPosition = { 0.0f, 0.0f, 0.0f };
+    std::vector<Vector3> partners;
     void Activate(int index);
     void Complete(int index);
     void PushBanner(int objective, bool completed);

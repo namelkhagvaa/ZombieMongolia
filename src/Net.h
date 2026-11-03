@@ -27,7 +27,7 @@ namespace Net
     constexpr int kMaxGuests = 5; // нэг өрөөнд хост + 5 зочин = 6 тоглогч
     // Сүлжээний мессежийн хувилбар: мессежийн бүтэц өөрчлөгдөх бүрд нэмэгдүүлнэ. Хост ба зочин ижил хувилбартай
     // байж л нэгдэнэ (эс бөгөөс өгөгдөл буруу уншигдаж, жишээ нь цэргүүд "үхсэн" мэт харагдана).
-    constexpr uint16_t kProtocolVersion = 20; // 20: нэг өрөөнд 6 тоглогч (relay-ийн зочны дугаар); 19: тэмдэг (Ping); 18: Aqua (унааны төрөл 10); 17: Crown (унааны төрөл 9); 16: баавгай (ZombieState.type 3); 15: хуягт машин; 14: нисдэг тэрэг (зорчигч, хаалганы буудагч), чат, унааны дугаар 254 хүртэл;
+    constexpr uint16_t kProtocolVersion = 21; // 21: зочид бие биеэ харна (snapshot-ын бусад тоглогч, Roster); 20: нэг өрөөнд 6 тоглогч (relay-ийн зочны дугаар); 19: тэмдэг (Ping); 18: Aqua (унааны төрөл 10); 17: Crown (унааны төрөл 9); 16: баавгай (ZombieState.type 3); 15: хуягт машин; 14: нисдэг тэрэг (зорчигч, хаалганы буудагч), чат, унааны дугаар 254 хүртэл;
                                              // 13: цэргийн тогтвортой дугаар, зочныг хүлээх хугацаа дуусав (GuestKick);
                                              // 12: шахсан snapshot, хайрцгийг хост олгоно, дахин холбогдох; 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris; 6: 1-р дайчны дүр;
                                              // 7: тулаан (тоглогч хооронд); 8: зочин хосттой адил (гишүүн солих г.м.);
@@ -74,7 +74,8 @@ namespace Net
         Ping,            // аль аль нь: хамтрагчдаа цэг тэмдэглэв (төрөл, байрлал)
         BattleZone,      // хост -> зочин: тулааны хумигдах бүс (төв, анхны радиус, өнгөрсөн хугацаа)
         Ability,         // аль аль нь: дүрийн тусгай чадвар (төрөл, байрлал, унааны дугаар)
-        Stats            // аль аль нь: энэ тоглолтын өөрийн үзүүлэлт (устгасан, толгой, босгосон, унасан, оновчлол)
+        Stats,           // аль аль нь: энэ тоглолтын өөрийн үзүүлэлт (устгасан, толгой, босгосон, унасан, оновчлол)
+        Roster           // хост -> зочин: өрөөний тоглогчдын нэр, энэ зочны дугаар
     };
     constexpr uint32_t kHostPlayer = 0xFFFF; // GuestHitHuman: хостын удирдаж буй тоглогч (бусад нь Soldier::id)
 
@@ -134,8 +135,17 @@ namespace Net
         int16_t vehicle = -1;  // сууж яваа унаа (-1 = явган)
         uint8_t seatStyle = 0; // 1 мотоцикл, 2 эмээл, 3 бүхээг (харагдахгүй), 4 тэвш
         Vector3 seat = { 0.0f, 0.0f, 0.0f }; // ташааны ертөнцийн байрлал
-        uint8_t guest = 0;   // зочны багийн гишүүн
+        uint8_t guest = 0;   // энэ зочны (хүлээн авагчийн) багийн гишүүн
+        uint8_t foreign = 0; // өөр зочны багийн гишүүн (хамт тоглогчид)
+        uint8_t skin = 0;    // эзний 1-р дайчны дүр
         float health = 100.0f;
+    };
+
+    // Хүлээн авагчаас бусад зочин (snapshot-оор: зочид бие биеэ харна)
+    struct OtherPlayerState
+    {
+        uint8_t slot = 0;
+        AvatarState avatar;
     };
 
     // Хостын бүх унааны төлөв (зочин өөрийн жолоодож буйгаас бусдыг нь эдгээрээр хөдөлгөнө)
@@ -153,6 +163,7 @@ namespace Net
     {
         Vector3 origin = { 0.0f, 0.0f, 0.0f }; // зомбины байрлалыг үүнээс (зочны байрлал) см-ээр шахаж илгээнэ
         AvatarState host;
+        std::vector<OtherPlayerState> others;
         std::vector<SoldierState> soldiers;
         std::vector<ZombieState> zombies;
         std::vector<VehicleState> vehicles;
@@ -181,6 +192,9 @@ namespace Net
     {
         Msg type;
         int slot = 0;          // хост: аль зочноос (0..kMaxGuests-1); зочин: 0 (хост)
+        // Тоглогч: 0 = хост, N = N-1 дугаартай зочин. Revive: хэнийг босгох вэ; Ping, Ability, Chat, Stats: хэний
+        int player = 0;
+        std::vector<std::string> names; // Roster: зочин бүрийн нэр (id нь энэ зочны дугаар)
         std::string text;      // JoinRequest: зочны нэр; JoinReply: хостын нэр; Leave (хөтөч): холбогдож чадаагүй шалтгаан
         bool accepted = false; // JoinReply
         int province = 0;      // JoinReply
@@ -226,6 +240,8 @@ namespace Net
         int ReconnectSecondsLeft() const;
         // Хост: дараагийн нэг Send*-ийг зөвхөн энэ зочин руу (эс бөгөөс нэгдсэн бүх зочид руу)
         void To(int slot) { target = slot; }
+        // Хост: дараагийн нэг Send*-ийг энэ зочноос бусад руу (түүний мессежийг бусдад дамжуулна)
+        void Except(int slot) { excluded = slot; }
         // Хостын өрөөний код (0 = хараахан аваагүй эсвэл сервер хүрэхгүй).
         int RoomCode() const { return roomCode; }
         const std::string& LocalName() const { return name; }
@@ -284,15 +300,16 @@ namespace Net
         void SendSoldierLost(int count);
         void SendWorldEvent(int kind, int id, Vector3 position, float altitude);
         void SendCrateTaken(int id);
-        void SendRevive();
+        void SendRevive(int player);
         void SendCrateGrant(int id);
         void SendGuestKick();
-        void SendChat(const std::string& text);
+        void SendChat(const std::string& text, int player = 0);
+        void SendRoster(const std::vector<std::string>& names, int yourSlot);
         void SendMissionLost();
-        void SendPing(int kind, Vector3 position);
+        void SendPing(int kind, Vector3 position, int player = 0);
         void SendBattleZone(Vector2 center, float startRadius, float elapsed);
-        void SendAbility(int kind, Vector3 position, int vehicle);
-        void SendStats(int kills, int headshots, int revives, int downs, int accuracy);
+        void SendAbility(int kind, Vector3 position, int vehicle, int player = 0);
+        void SendStats(int kills, int headshots, int revives, int downs, int accuracy, int player = 0);
 
         // Хүлээн авсан сүүлийн snapshot (зочин)
         bool TakeSnapshot(Snapshot& out);
@@ -330,7 +347,8 @@ namespace Net
         int FreeRemote() const;
 
         Remote remotes[kMaxGuests];
-        int target = -1; // To()
+        int target = -1;   // To()
+        int excluded = -1; // Except()
 
         bool lan = false;    // ENet ажиллаж байна
         bool relay = false;  // relay серверийн хаяг тохируулсан

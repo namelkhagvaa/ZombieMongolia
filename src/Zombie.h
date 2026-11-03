@@ -167,8 +167,11 @@ public:
 
     // --- Хамтарсан тоглолт ---
     // Хост: хоёр дахь тоглогч (зочин) — зомбинууд түүнийг ч бай болгоно; цохисон хохирлыг цуглуулна.
-    void SetRemoteTarget(bool active, Vector3 position) { remoteActive = active; remotePosition = position; }
-    float TakeRemoteDamage() { const float d = remoteDamage; remoteDamage = 0.0f; return d; }
+    // Хамтарсан тоглолтын зочид (хост дээр зомбины бай болно); slot: зочны дугаар
+    static constexpr int kRemoteSlots = 5;
+    void SetRemoteTarget(int slot, bool active, Vector3 position) { remoteActive[slot] = active; remotePosition[slot] = position; }
+    void ClearRemoteTargets() { for (bool& active : remoteActive) active = false; }
+    float TakeRemoteDamage(int slot) { const float d = remoteDamage[slot]; remoteDamage[slot] = 0.0f; return d; }
     // Хост: зочны сум. Үхвэл true, coins-д шагнал, position-д байрлал.
     bool DamageById(uint32_t id, float amount, int& coins, Vector3& position);
     // Хост: зочинд илгээх ойрын зомбинууд
@@ -197,15 +200,16 @@ public:
     {
         Vector3 position;
         int coins;
+        int owner = -1; // TakeRemoteRewards: аль зочных
     };
     void TakeKillRewards(std::vector<KillReward>& out)
     {
         out.insert(out.end(), killRewards.begin(), killRewards.end());
         killRewards.clear();
     }
-    // Хамтарсан тоглолт (хост): true үед устгасан зомбины зоос зочинд очно (зочны унаа мөргөхөд).
+    // Хамтарсан тоглолт (хост): slot >= 0 үед устгасан зомбины зоос тэр зочинд очно (зочны унаа мөргөхөд).
     // Үеийн тоололд (нөөц) тоологдсоор.
-    void SetCreditRemote(bool enabled) { creditRemote = enabled; }
+    void SetCreditRemote(int slot) { creditRemote = slot; }
     // Үхсэн бөөн зомбины дэлбэрэлтүүд (Game: гал, хохирол; зочинд зөвхөн харагдана)
     std::vector<Vector3> TakeExploderBlasts()
     {
@@ -251,14 +255,14 @@ private:
     float healthScale = 1.0f;
     uint32_t nextId = 0;
     bool puppet = false;
-    bool remoteActive = false;
-    Vector3 remotePosition = { 0.0f, 0.0f, 0.0f };
-    float remoteDamage = 0.0f;
+    bool remoteActive[kRemoteSlots] = {};
+    Vector3 remotePosition[kRemoteSlots] = {};
+    float remoteDamage[kRemoteSlots] = {};
     std::vector<KillReward> killRewards;
     std::vector<Vector3> exploderBlasts;
     // Зочин: хостын цагаар харуулж буй мөч (0.1 с хоцроосон), сүүлд ирсэн snapshot-ын цаг
     float netClock = -1.0f, netLatest = -1.0f;
-    bool creditRemote = false;
+    int creditRemote = -1;
     std::vector<KillReward> remoteRewards; // зочинд илгээх зоос
     float navClock = 0.0f; // орох гарцыг дахин сонгох хугацааг тоолно
     int pendingSmallKills = 0; // алхагч + гүйгч
