@@ -451,9 +451,19 @@ namespace
                 const float legs = limbWeight[3] + limbWeight[4];
                 const int arm = limbWeight[1] >= limbWeight[2] ? 1 : 2;
                 const bool bothArms = limbWeight[1] > 0.0f && limbWeight[2] > 0.0f;
+                // Аль бүлгийг үлдээх: жингээр биш, ясны хэсэгт аль нь ойр байгаагаар (iron: гар нь ташааны хажууд унжсан
+                // анхны зогсолтод нударганы оройнууд хөлд илүү жинтэй байж, гар хөдлөхөд нударга ташаанд үлдэж, нүх гардаг байв)
+                float groupDistance[5] = { 1e9f, 1e9f, 1e9f, 1e9f, 1e9f };
+                for (int bone = 0; bone < model.boneCount; ++bone)
+                {
+                    // (жингүй хурууны ясыг ч тооцно: нударга хурууны ясны дэргэд, бугуйнаас хол)
+                    groupDistance[limb[(size_t)bone]] = std::min(groupDistance[limb[(size_t)bone]], reach[(size_t)bone]);
+                }
+                const float legDistance = std::min(groupDistance[3], groupDistance[4]);
+                const int nearArm = groupDistance[1] <= groupDistance[2] ? 1 : 2;
                 int keep = 0; // 0: хөндөхгүй, 1/2: тэр гар, 5: хөлнүүд
-                if (limbWeight[arm] > 0.0f && legs > 0.0f) keep = limbWeight[arm] > legs ? arm : 5;
-                else if (bothArms) keep = arm;
+                if (limbWeight[arm] > 0.0f && legs > 0.0f) keep = groupDistance[arm] < legDistance ? arm : 5;
+                else if (bothArms) keep = nearArm;
                 auto dropped = [&](int bone) {
                     const int g = limb[(size_t)bone];
                     if (keep == 0 || g == 0) return false;
