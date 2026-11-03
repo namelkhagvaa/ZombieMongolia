@@ -2505,6 +2505,13 @@ namespace
     void HorseRider(Scene& s, float x, float y, float z, float yaw, float scale)
     {
         PlaceFigure(s, x, y, z, yaw, scale);
+        // Загвар (assets/monuments/baatar: морьт баатар) байвал түүгээр (~3 м * scale өндөр); эс бөгөөс кодоор угсарна.
+        // (Сүхбаатарын талбайн хөшөө өөрийн загвартай: энд хамаарахгүй)
+        if (s.Monument(SceneryModelId::Baatar, { 0.0f, 0.0f, 0.0f }, 3.0f * scale, yaw))
+        {
+            s.solid.ResetTransform();
+            return;
+        }
         for (float lx : { -0.28f, 0.28f })
         {
             for (float lz : { -0.85f, 0.85f })

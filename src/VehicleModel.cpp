@@ -219,7 +219,7 @@ namespace
     const char* kSceneryNames[(int)SceneryModelId::Count][2] = {
         { "trees", "larch" }, { "trees", "birch" }, { "trees", "elm" }, { "trees", "saxaul" },
         { "pooshig", "barrel_old" }, { "pooshig", "barrel_fuel" },
-        { "monuments", "chinggis" }, { "monuments", "sukhbaatar" },
+        { "monuments", "chinggis" }, { "monuments", "sukhbaatar" }, { "monuments", "baatar" },
         { "broken_cars", "truck" }, { "broken_cars", "prius" },
     };
 
@@ -468,7 +468,8 @@ void LoadSceneryModels(Shader shader)
 #if !defined(__ANDROID__)
         if (!FileExists(mesh.c_str())) continue;
 #endif
-        const bool monument = i == (int)SceneryModelId::Chinggis || i == (int)SceneryModelId::Sukhbaatar; // (өндөр нь 5-10 м: нүд нь ~15-25 см)
+        const bool monument = i == (int)SceneryModelId::Chinggis || i == (int)SceneryModelId::Sukhbaatar ||
+                              i == (int)SceneryModelId::Baatar; // (өндөр нь 5-10 м: нүд нь ~15-25 см)
         const bool car = i >= (int)SceneryModelId::BrokenTruck; // (урт 1: нүд нь ~9 см)
         if (LoadOne(scenery[i], mesh, texture, shader))
         {
