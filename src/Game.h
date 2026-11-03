@@ -654,6 +654,8 @@ private:
     float guestRespawnTimer = 0.0f;
     std::vector<ZombieHorde::KillReward> remoteRewardBuffer; // хост: зочны унаа устгасан зомбины зоос
     bool joinRequestPending = false; // хост: хариу өгөөгүй хүсэлт
+    int pendingSlot = -1;            // хост: хариу өгөөгүй хүсэлтийн зочны дугаар (Net::Event::slot)
+    int guestSlot = -1;              // хост: нэгдсэн зочны дугаар (олон зочин: дараагийн шатанд)
     std::string joinRequester;
     bool joinCoop = false;          // хост: нэгдэх хүсэлт найзын кодоор (хамт тоглолт, тулаангүй)
     std::string hostName;           // зочин: нэгдсэн тоглолтын хостын (бүртгэлтэй) нэр

@@ -24,9 +24,10 @@ namespace Net
 
     constexpr uint16_t kGamePort = 47810;
     constexpr uint16_t kDiscoveryPort = 47811;
+    constexpr int kMaxGuests = 5; // нэг өрөөнд хост + 5 зочин = 6 тоглогч
     // Сүлжээний мессежийн хувилбар: мессежийн бүтэц өөрчлөгдөх бүрд нэмэгдүүлнэ. Хост ба зочин ижил хувилбартай
     // байж л нэгдэнэ (эс бөгөөс өгөгдөл буруу уншигдаж, жишээ нь цэргүүд "үхсэн" мэт харагдана).
-    constexpr uint16_t kProtocolVersion = 19; // 19: тэмдэг (Ping); 18: Aqua (унааны төрөл 10); 17: Crown (унааны төрөл 9); 16: баавгай (ZombieState.type 3); 15: хуягт машин; 14: нисдэг тэрэг (зорчигч, хаалганы буудагч), чат, унааны дугаар 254 хүртэл;
+    constexpr uint16_t kProtocolVersion = 20; // 20: нэг өрөөнд 6 тоглогч (relay-ийн зочны дугаар); 19: тэмдэг (Ping); 18: Aqua (унааны төрөл 10); 17: Crown (унааны төрөл 9); 16: баавгай (ZombieState.type 3); 15: хуягт машин; 14: нисдэг тэрэг (зорчигч, хаалганы буудагч), чат, унааны дугаар 254 хүртэл;
                                              // 13: цэргийн тогтвортой дугаар, зочныг хүлээх хугацаа дуусав (GuestKick);
                                              // 12: шахсан snapshot, хайрцгийг хост олгоно, дахин холбогдох; 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris; 6: 1-р дайчны дүр;
                                              // 7: тулаан (тоглогч хооронд); 8: зочин хосттой адил (гишүүн солих г.м.);
@@ -179,6 +180,7 @@ namespace Net
     struct Event
     {
         Msg type;
+        int slot = 0;          // хост: аль зочноос (0..kMaxGuests-1); зочин: 0 (хост)
         std::string text;      // JoinRequest: зочны нэр; JoinReply: хостын нэр; Leave (хөтөч): холбогдож чадаагүй шалтгаан
         bool accepted = false; // JoinReply
         int province = 0;      // JoinReply
@@ -214,14 +216,16 @@ namespace Net
         // Компьютер, Android: relay серверийн хаяг (хоосон бол интернэтээр тоглохгүй). Хөтөч дээр үйлчлэхгүй.
         void SetRelayServer(const std::string& hostName, uint16_t port);
         Role GetRole() const { return role; }
-        // Relay: нөгөө тал түр тасарсан (дахин холбогдохыг хүлээж буй) үед ч холбогдсон гэж тооцно
-        bool Connected() const
-        {
-            return connected && ((link == Link::Lan && peer) || (link == Link::Relay && (partner || lostAt > 0.0)));
-        }
-        // Нөгөө тал тасарсан эсвэл чимээгүй болсон: дахин холбогдохыг хүлээж байна (kResumeGrace секунд хүртэл)
-        bool Reconnecting() const { return lostAt > 0.0; }
+        // Хост: аль нэг зочин нэгдсэн; зочин: хосттой холбогдсон. Relay: түр тасарсан (дахин холбогдохыг хүлээж буй)
+        // үед ч холбогдсон гэж тооцно.
+        bool Connected() const;
+        bool SlotConnected(int slot) const; // хост: тухайн зочин
+        int ConnectedCount() const;         // хост: нэгдсэн зочдын тоо
+        // Аль нэг тал тасарсан эсвэл чимээгүй болсон: дахин холбогдохыг хүлээж байна (kResumeGrace секунд хүртэл)
+        bool Reconnecting() const;
         int ReconnectSecondsLeft() const;
+        // Хост: дараагийн нэг Send*-ийг зөвхөн энэ зочин руу (эс бөгөөс нэгдсэн бүх зочид руу)
+        void To(int slot) { target = slot; }
         // Хостын өрөөний код (0 = хараахан аваагүй эсвэл сервер хүрэхгүй).
         int RoomCode() const { return roomCode; }
         const std::string& LocalName() const { return name; }
@@ -230,8 +234,8 @@ namespace Net
         // Хост: даалгаврын үед сонсож эхэлнэ (хайлтад хариулна, хүсэлт хүлээнэ). Frame бүрд дуудаж болно:
         // сервер хүрэхгүй бол хэсэг хугацааны дараа дахин оролдоно.
         void StartHosting(int province);
-        // Хост: хүсэлтэд хариулна.
-        void AnswerJoin(bool accept, int province);
+        // Хост: зочны (Event::slot) хүсэлтэд хариулна.
+        void AnswerJoin(int slot, bool accept, int province);
         // Зочин: олдсон хост руу нэгдэх хүсэлт илгээнэ.
         void RequestJoin(const FoundGame& game);
         // Нээлттэй өрөө (Gold-той тоглолт): backend-ийн тасалбар. Хост: SetTicket-ийн дараа StartHosting нь зөвхөн
@@ -294,34 +298,51 @@ namespace Net
         bool TakeSnapshot(Snapshot& out);
 
     private:
+        // Нөгөө тал аль замаар холбогдсон
+        enum class Link { None, Lan, Relay };
+        // Нэг холболт: хостод зочин бүр, зочинд хост (remotes[0])
+        struct Remote
+        {
+            Link link = Link::None;
+            void* peer = nullptr;   // ENetPeer* (дотоод сүлжээ)
+            int relaySlot = -1;     // relay-ийн зочны дугаар (хост)
+            bool partner = false;   // relay: нөгөө тал өрөөнд байгаа
+            bool pending = false;   // хост: нэгдэх хүсэлт ирсэн, хариу өгөөгүй
+            bool connected = false; // нэгдсэн, тоглож байна
+            double lostAt = 0.0;    // тасарсан / чимээгүй болсон цаг (0 = холбоотой)
+            double lastHeard = 0.0; // сүүлд мессеж ирсэн цаг
+        };
+
         void Send(const std::vector<uint8_t>& data, bool reliable);
+        void SendTo(int slot, const std::vector<uint8_t>& data, bool reliable);
+        void SendJoinRequest();
         void HandleDiscovery();
-        void HandlePacket(const uint8_t* data, size_t size, std::vector<Event>& events);
+        void HandlePacket(int slot, const uint8_t* data, size_t size, std::vector<Event>& events);
         void PollRelay(std::vector<Event>& events);
         // Тасалбартай өрөөнд (хост, зочин) холболт тасарвал дахин холбогдоно; хугацаа дуусвал Leave
-        bool CanResume() const;
+        bool CanResume(int slot) const;
         void UpdateResume(std::vector<Event>& events);
-        void GiveUp(std::vector<Event>& events);
+        void GiveUp(int slot, std::vector<Event>& events);
+        bool RemoteLive(const Remote& r) const;
+        void ResetRemote(Remote& r);
+        int FindRemote(void* enetPeer) const;
+        int FindRelaySlot(int relaySlot) const;
+        int FreeRemote() const;
 
-        // Нэгдсэн зочин аль замаар холбогдсон (хост нэг л зочин хүлээн авна)
-        enum class Link { None, Lan, Relay };
+        Remote remotes[kMaxGuests];
+        int target = -1; // To()
 
         bool lan = false;    // ENet ажиллаж байна
         bool relay = false;  // relay серверийн хаяг тохируулсан
-        Link link = Link::None;
         bool relayOpen = false;    // relay сервертэй холболт нээлттэй (эсвэл нээгдэж байна)
         std::string ticket;        // нээлттэй өрөөний тасалбар (хост)
         std::string joinTicket;    // зочны тасалбар (дахин холбогдоход)
-        double lostAt = 0.0;       // нөгөө тал тасарсан / чимээгүй болсон цаг (0 = холбоотой)
-        double lastHeard = 0.0;    // нөгөө талаас сүүлд мессеж ирсэн цаг
         double reconnectAt = 0.0;  // relay руу дахин холбогдох оролдлого
         double lanRetryAt = 0.0;   // ENet-ийн порт эзлэгдсэн бол дахин оролдох цаг
         Role role = Role::None;
         std::string name;
         int hostedProvince = 0;
         void* host = nullptr;      // ENetHost*
-        void* peer = nullptr;      // ENetPeer*
-        bool connected = false;
         bool joinCoop = false;
         bool joinPending = false;  // зочин: хүсэлт илгээсэн, хариу хүлээж байна
         intptr_t discoverySocket = -1;
@@ -332,8 +353,7 @@ namespace Net
         bool hasLatest = false;
         int snapshotsReceived = 0;   // оношлогоо: сүүлийн тайлангаас хойш ирсэн snapshot
         double snapshotReportAt = 0.0;
-        // Relay: нөгөө тал өрөөнд байгаа эсэх, өрөөний код, сервер хүрэхгүй үед дахин холбогдох цаг
-        bool partner = false;
+        // Relay: өрөөний код, сервер хүрэхгүй үед дахин холбогдох цаг
         int roomCode = 0;
         double retryAt = 0.0;
     };

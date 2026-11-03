@@ -6861,14 +6861,32 @@ void Game::UpdateNetwork(float dt)
     }
     for (const Net::Event& event : netEvents)
     {
+        // Хост: одоохондоо нэг зочинтой тоглоно (guestSlot). Бусад зочны мессежийг хаяна; хүсэлтэд татгалзана.
+        if (net.GetRole() == Net::Role::Host && event.type != Net::Msg::JoinRequest && event.slot != guestSlot)
+        {
+            if (event.type == Net::Msg::Leave && event.slot == pendingSlot)
+            {
+                joinRequestPending = false;
+                pendingSlot = -1;
+            }
+            continue;
+        }
+        if (net.GetRole() == Net::Role::Host && event.type == Net::Msg::JoinRequest &&
+            ((joinRequestPending && event.slot != pendingSlot) ||
+             (guestSlot >= 0 && event.slot != guestSlot && net.SlotConnected(guestSlot) && !guestDefeated)))
+        {
+            net.AnswerJoin(event.slot, false, provinceIndex); // (өөр зочин хүлээгдэж эсвэл тоглож байна)
+            continue;
+        }
         switch (event.type)
         {
         // ---- Хост ----
         case Net::Msg::JoinRequest:
+            pendingSlot = event.slot;
             if (event.version != Net::kProtocolVersion)
             {
                 // Өөр хувилбартай тоглогч: өгөгдөл таарахгүй тул нэгдүүлэхгүй
-                net.AnswerJoin(false, provinceIndex);
+                net.AnswerJoin(event.slot, false, provinceIndex);
                 SetNotice(event.text + ": тоглоомын хувилбар өөр — хоёулаа шинэчилнэ үү", 3.5f);
             }
             else if (state == GameState::Playing && !coopGuest && !battleActive && event.coop &&
@@ -6907,7 +6925,7 @@ void Game::UpdateNetwork(float dt)
             }
             else
             {
-                net.AnswerJoin(false, provinceIndex);
+                net.AnswerJoin(event.slot, false, provinceIndex);
             }
             break;
         case Net::Msg::GuestState:
@@ -8156,7 +8174,8 @@ void Game::LoseBattleAsHost()
 
 void Game::AcceptGuest()
 {
-    net.AnswerJoin(true, provinceIndex);
+    net.AnswerJoin(pendingSlot, true, provinceIndex);
+    guestSlot = pendingSlot;
     joinRequestPending = false;
     // (Серверт "зочин холбогдлоо" гэж зочин ертөнцөд ирсний дараа (анхны GuestState) мэдэгдэнэ: ачаалж чадаагүй, хэт
     // удаан ачаалсан зочны төлбөр буцна, тулаан тоологдохгүй.)
@@ -8212,7 +8231,7 @@ void Game::UpdateCoopMission(float dt)
             if (InKeyPressed(KEY_Y) || autoAccept) AcceptGuest();
             else if (InKeyPressed(KEY_N))
             {
-                net.AnswerJoin(false, provinceIndex);
+                net.AnswerJoin(pendingSlot, false, provinceIndex);
                 joinRequestPending = false;
             }
         }

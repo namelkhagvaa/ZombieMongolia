@@ -219,8 +219,8 @@ namespace Net
                     var m = {};
                     try { m = JSON.parse(e.data); } catch (err) {}
                     if (m.type === 'room') queue.push({ k: 2, v: m.code | 0 });
-                    else if (m.type === 'paired') queue.push({ k: 3 });
-                    else if (m.type === 'left') queue.push({ k: 4 });
+                    else if (m.type === 'paired') queue.push({ k: 3, v: m.slot | 0 });
+                    else if (m.type === 'left') queue.push({ k: 4, v: m.slot | 0 });
                     else if (m.type === 'error') queue.push({ k: 5, v: m.reason === 'notfound' ? 1 : m.reason === 'full' ? 2 : 0 });
                 } else {
                     queue.push({ k: 7, d: new Uint8Array(e.data) });
@@ -437,6 +437,13 @@ namespace Net
                 queue.push_back({ kRelayClosed, 0, {} });
             }
 
+            // Удирдлагын мессежийн "slot" (хостод: аль зочин), байхгүй бол 0
+            static int SlotOf(const std::string& text)
+            {
+                const size_t at = text.find("\"slot\":");
+                return at == std::string::npos ? 0 : std::atoi(text.c_str() + at + 7);
+            }
+
             // Бүрэн ирсэн мессежүүдийг дараалалд нэмнэ. Буруу өгөгдөл ирвэл холболтыг хааж false буцаана.
             bool Parse()
             {
@@ -467,8 +474,8 @@ namespace Net
                             const size_t codeAt = text.find("\"code\":");
                             queue.push_back({ kRelayRoom, codeAt == std::string::npos ? 0 : std::atoi(text.c_str() + codeAt + 7), {} });
                         }
-                        else if (text.find("\"type\":\"paired\"") != std::string::npos) queue.push_back({ kRelayPaired, 0, {} });
-                        else if (text.find("\"type\":\"left\"") != std::string::npos) queue.push_back({ kRelayLeft, 0, {} });
+                        else if (text.find("\"type\":\"paired\"") != std::string::npos) queue.push_back({ kRelayPaired, SlotOf(text), {} });
+                        else if (text.find("\"type\":\"left\"") != std::string::npos) queue.push_back({ kRelayLeft, SlotOf(text), {} });
                         else if (text.find("\"type\":\"error\"") != std::string::npos)
                         {
                             const int reason = text.find("notfound") != std::string::npos ? 1 : text.find("full") != std::string::npos ? 2 : 0;
@@ -502,6 +509,8 @@ namespace Net
     }
 
     // ================================================================ Session: дотоод сүлжээ (ENet) + relay
+    // Хост: remotes[0..kMaxGuests-1] нь зочид (дотоод сүлжээ эсвэл relay; relay-ийн дугаар нь relaySlot).
+    // Зочин: remotes[0] нь хост.
     Session::Session()
     {
 #if !defined(__EMSCRIPTEN__)
@@ -519,6 +528,45 @@ namespace Net
 #if !defined(__EMSCRIPTEN__)
         if (lan) enet_deinitialize();
 #endif
+    }
+
+    bool Session::RemoteLive(const Remote& r) const
+    {
+        return r.connected && ((r.link == Link::Lan && r.peer) || (r.link == Link::Relay && (r.partner || r.lostAt > 0.0)));
+    }
+
+    bool Session::Connected() const
+    {
+        for (const Remote& r : remotes) if (RemoteLive(r)) return true;
+        return false;
+    }
+
+    bool Session::SlotConnected(int slot) const
+    {
+        return slot >= 0 && slot < kMaxGuests && RemoteLive(remotes[slot]);
+    }
+
+    int Session::ConnectedCount() const
+    {
+        int count = 0;
+        for (const Remote& r : remotes) count += RemoteLive(r) ? 1 : 0;
+        return count;
+    }
+
+    bool Session::Reconnecting() const
+    {
+        for (const Remote& r : remotes) if (r.lostAt > 0.0) return true;
+        return false;
+    }
+
+    int Session::ReconnectSecondsLeft() const
+    {
+        int left = 0;
+        for (const Remote& r : remotes)
+        {
+            if (r.lostAt > 0.0) left = std::max(left, std::max(0, (int)std::ceil(kResumeGrace - (GetTime() - r.lostAt))));
+        }
+        return left;
     }
 
     void Session::SetRelayServer(const std::string& hostName, uint16_t port)
@@ -552,7 +600,7 @@ namespace Net
             ENetAddress address;
             address.host = ENET_HOST_ANY;
             address.port = kGamePort;
-            host = enet_host_create(&address, 2, 2, 0, 0);
+            host = enet_host_create(&address, kMaxGuests + 1, 2, 0, 0);
             if (!host)
             {
                 TraceLog(LOG_WARNING, "NET: could not open port %d (another game on this device?)", (int)kGamePort);
@@ -575,7 +623,7 @@ namespace Net
                         discoverySocket = -1;
                     }
                 }
-                TraceLog(LOG_INFO, "NET: hosting province %d on port %d", province, (int)kGamePort);
+                TraceLog(LOG_INFO, "NET: hosting province %d on port %d (up to %d guests)", province, (int)kGamePort, kMaxGuests);
             }
         }
 #endif
@@ -588,23 +636,30 @@ namespace Net
         }
     }
 
+    void Session::ResetRemote(Remote& r)
+    {
+        r = Remote{};
+    }
+
     void Session::Stop()
     {
-        if (connected && link != Link::None)
+        if (role != Role::None)
         {
             Writer w;
             w.U8((uint8_t)Msg::Leave);
-            Send(w.data, true);
+            for (int i = 0; i < kMaxGuests; ++i)
+            {
+                if (remotes[i].connected && remotes[i].link != Link::None) SendTo(i, w.data, true);
+            }
         }
 #if !defined(__EMSCRIPTEN__)
-        if (peer && link == Link::Lan && connected)
+        for (Remote& r : remotes)
         {
-            enet_peer_disconnect(AsPeer(peer), 0);
-            enet_host_flush(AsHost(host));
+            if (r.peer && r.link == Link::Lan) enet_peer_disconnect(AsPeer(r.peer), 0);
         }
+        if (host) enet_host_flush(AsHost(host));
         if (host) enet_host_destroy(AsHost(host));
         host = nullptr;
-        peer = nullptr;
         if (role == Role::Host && (ENetSocket)discoverySocket != ENET_SOCKET_NULL && discoverySocket != -1)
         {
             enet_socket_destroy((ENetSocket)discoverySocket);
@@ -617,56 +672,57 @@ namespace Net
             RelayClose();
             relayOpen = false;
         }
-        partner = false;
-        connected = false;
+        for (Remote& r : remotes) ResetRemote(r);
         joinPending = false;
         hasLatest = false;
         roomCode = 0;
-        link = Link::None;
         role = Role::None;
-        lostAt = lastHeard = 0.0;
+        target = -1;
         joinTicket.clear();
     }
 
-    void Session::AnswerJoin(bool accept, int province)
+    void Session::AnswerJoin(int slot, bool accept, int province)
     {
-        if (link == Link::None) return;
+        if (slot < 0 || slot >= kMaxGuests) return;
+        Remote& r = remotes[slot];
+        if (r.link == Link::None) return;
         Writer w;
         w.U8((uint8_t)Msg::JoinReply);
         w.U8(accept ? 1 : 0);
         w.U8((uint8_t)province);
         w.U16(kProtocolVersion);
         w.Str(name); // хостын нэр (зочны дэлгэцэд)
-        Send(w.data, true);
+        SendTo(slot, w.data, true);
+        r.pending = false;
         if (accept)
         {
-            connected = true;
-            lastHeard = GetTime();
-            lostAt = 0.0;
+            r.connected = true;
+            r.lastHeard = GetTime();
+            r.lostAt = 0.0;
             return;
         }
 #if !defined(__EMSCRIPTEN__)
-        if (link == Link::Lan && peer)
+        if (r.link == Link::Lan && r.peer)
         {
-            enet_peer_disconnect_later(AsPeer(peer), 0);
-            peer = nullptr;
+            enet_peer_disconnect_later(AsPeer(r.peer), 0);
+            r.peer = nullptr;
         }
 #endif
         // Relay: татгалзсан зочин өөрөө гарна (сервер хостод "left" илгээнэ)
-        connected = false;
-        link = Link::None;
+        ResetRemote(r);
     }
 
     void Session::RequestJoin(const FoundGame& game)
     {
         if (!Available()) return;
         Stop();
+        Remote& r = remotes[0];
         if (game.relay)
         {
             if (!relay) return;
             RelayOpen(TextFormat("?join=%u", game.address));
             relayOpen = true;
-            link = Link::Relay;
+            r.link = Link::Relay;
         }
         else
         {
@@ -677,15 +733,14 @@ namespace Net
             ENetAddress address;
             address.host = game.address;
             address.port = kGamePort;
-            peer = enet_host_connect(AsHost(host), &address, 2, 0);
-            link = Link::Lan;
+            r.peer = enet_host_connect(AsHost(host), &address, 2, 0);
+            r.link = Link::Lan;
 #else
             return;
 #endif
         }
         role = Role::Guest;
         joinPending = true;
-        connected = false;
     }
 
     void Session::RequestJoinTicket(const std::string& value)
@@ -695,10 +750,9 @@ namespace Net
         RelayOpen(("?ticket=" + value).c_str());
         relayOpen = true;
         joinTicket = value;
-        link = Link::Relay;
+        remotes[0].link = Link::Relay;
         role = Role::Guest;
         joinPending = true;
-        connected = false;
     }
 
     void Session::StopDiscovery()
@@ -813,7 +867,7 @@ namespace Net
             Writer w;
             w.Raw(kReply, 4);
             w.U8((uint8_t)hostedProvince);
-            w.U8(connected ? 1 : 0);
+            w.U8(ConnectedCount() >= kMaxGuests ? 1 : 0); // (дүүрсэн эсэх)
             w.Str(name);
             ENetBuffer reply;
             reply.data = w.data.data();
@@ -821,6 +875,43 @@ namespace Net
             enet_socket_send(socket, &from, &reply, 1);
         }
 #endif
+    }
+
+    int Session::FindRemote(void* enetPeer) const
+    {
+        for (int i = 0; i < kMaxGuests; ++i)
+        {
+            if (remotes[i].link == Link::Lan && remotes[i].peer == enetPeer) return i;
+        }
+        return -1;
+    }
+
+    int Session::FindRelaySlot(int relaySlot) const
+    {
+        for (int i = 0; i < kMaxGuests; ++i)
+        {
+            if (remotes[i].link == Link::Relay && remotes[i].relaySlot == relaySlot) return i;
+        }
+        return -1;
+    }
+
+    int Session::FreeRemote() const
+    {
+        for (int i = 0; i < kMaxGuests; ++i)
+        {
+            if (remotes[i].link == Link::None) return i;
+        }
+        return -1;
+    }
+
+    void Session::SendJoinRequest()
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::JoinRequest);
+        w.Str(name);
+        w.U16(kProtocolVersion);
+        w.U8(joinCoop ? 1 : 0);
+        SendTo(0, w.data, true);
     }
 
     void Session::Poll(std::vector<Event>& events)
@@ -836,49 +927,46 @@ namespace Net
             case ENET_EVENT_TYPE_CONNECT:
                 if (role == Role::Host)
                 {
-                    if (link != Link::None && !(link == Link::Lan && AsPeer(peer) == event.peer))
+                    const int slot = FindRemote(event.peer) >= 0 ? FindRemote(event.peer) : FreeRemote();
+                    if (slot < 0)
                     {
-                        enet_peer_disconnect_now(event.peer, 0); // нэг зочин л хүлээн авна
+                        enet_peer_disconnect_now(event.peer, 0); // өрөө дүүрсэн
                     }
                     else
                     {
-                        peer = event.peer; // хүсэлтийг хүлээнэ (JoinRequest)
-                        link = Link::Lan;
+                        remotes[slot].peer = event.peer; // хүсэлтийг хүлээнэ (JoinRequest)
+                        remotes[slot].link = Link::Lan;
                     }
                 }
-                else if (role == Role::Guest && link == Link::Lan)
+                else if (role == Role::Guest && remotes[0].link == Link::Lan)
                 {
-                    Writer w;
-                    w.U8((uint8_t)Msg::JoinRequest);
-                    w.Str(name);
-                    w.U16(kProtocolVersion);
-                    w.U8(joinCoop ? 1 : 0);
-                    Send(w.data, true);
+                    SendJoinRequest();
                 }
                 break;
             case ENET_EVENT_TYPE_RECEIVE:
-                if (link == Link::Lan && AsPeer(peer) == event.peer) HandlePacket(event.packet->data, event.packet->dataLength, events);
+            {
+                const int slot = role == Role::Host ? FindRemote(event.peer) : (remotes[0].link == Link::Lan && remotes[0].peer == event.peer ? 0 : -1);
+                if (slot >= 0) HandlePacket(slot, event.packet->data, event.packet->dataLength, events);
                 enet_packet_destroy(event.packet);
                 break;
+            }
             case ENET_EVENT_TYPE_DISCONNECT:
-                if (peer && AsPeer(peer) == event.peer)
+            {
+                const int slot = role == Role::Host ? FindRemote(event.peer) : (remotes[0].peer == event.peer ? 0 : -1);
+                if (slot < 0) break;
+                Remote& r = remotes[slot];
+                const bool wasActive = r.connected || r.pending || role == Role::Guest;
+                ResetRemote(r);
+                if (wasActive)
                 {
-                    const bool wasActive = connected || joinPending || role == Role::Guest;
-                    peer = nullptr;
-                    connected = false;
-                    if (link == Link::Lan) link = Link::None;
-                    if (wasActive)
-                    {
-                        Event e;
-                        e.type = Msg::Leave;
-                        events.push_back(e);
-                    }
-                    if (role == Role::Guest)
-                    {
-                        joinPending = false;
-                    }
+                    Event e;
+                    e.type = Msg::Leave;
+                    e.slot = slot;
+                    events.push_back(e);
                 }
+                if (role == Role::Guest) joinPending = false;
                 break;
+            }
             default:
                 break;
             }
@@ -888,27 +976,20 @@ namespace Net
         UpdateResume(events);
     }
 
-    bool Session::CanResume() const
+    bool Session::CanResume(int slot) const
     {
         // Зөвхөн тасалбартай өрөө (relay өрөөг хадгалж, ижил тоглогч буцаж орно) ба тоглолт эхэлсэн үед
-        return link == Link::Relay && connected && (role == Role::Host ? !ticket.empty() : !joinTicket.empty());
+        const Remote& r = remotes[slot];
+        return r.link == Link::Relay && r.connected && (role == Role::Host ? !ticket.empty() : !joinTicket.empty());
     }
 
-    int Session::ReconnectSecondsLeft() const
+    void Session::GiveUp(int slot, std::vector<Event>& events)
     {
-        return lostAt > 0.0 ? std::max(0, (int)std::ceil(kResumeGrace - (GetTime() - lostAt))) : 0;
-    }
-
-    void Session::GiveUp(std::vector<Event>& events)
-    {
-        TraceLog(LOG_INFO, "NET: partner did not come back in %.0f s", kResumeGrace);
-        lostAt = 0.0;
-        partner = false;
-        connected = false;
-        joinPending = false;
-        link = Link::None;
+        TraceLog(LOG_INFO, "NET: player %d did not come back in %.0f s", slot, kResumeGrace);
+        ResetRemote(remotes[slot]);
         if (role == Role::Guest)
         {
+            joinPending = false;
             if (relayOpen) RelayClose();
             relayOpen = false;
             role = Role::None;
@@ -916,31 +997,39 @@ namespace Net
         }
         else if (!relayOpen)
         {
-            retryAt = 0.0; // хост: дараагийн зочинд өрөөгөө дахин нээнэ (StartHosting)
+            retryAt = 0.0; // хост: дараагийн зочдод өрөөгөө дахин нээнэ (StartHosting)
         }
         Event e;
         e.type = Msg::Leave;
+        e.slot = slot;
         events.push_back(e);
     }
 
     void Session::UpdateResume(std::vector<Event>& events)
     {
-        if (link != Link::Relay || !connected) return;
         const double now = GetTime();
-        // Нөгөө тал чимээгүй (апп нуугдсан, утас сүлжээ сольсон г.м.): холболт нээлттэй ч тасарсанд тооцно
-        if (lostAt <= 0.0 && partner && lastHeard > 0.0 && now - lastHeard > kSilenceLimit)
+        bool anyLost = false;
+        for (int slot = 0; slot < kMaxGuests; ++slot)
         {
-            lostAt = now;
-            TraceLog(LOG_INFO, "NET: partner silent for %.0f s, waiting for them", now - lastHeard);
-        }
-        if (lostAt <= 0.0) return;
-        if (now - lostAt > kResumeGrace)
-        {
-            GiveUp(events);
-            return;
+            Remote& r = remotes[slot];
+            if (r.link != Link::Relay || !r.connected) continue;
+            // Нөгөө тал чимээгүй (апп нуугдсан, утас сүлжээ сольсон г.м.): холболт нээлттэй ч тасарсанд тооцно
+            if (r.lostAt <= 0.0 && r.partner && r.lastHeard > 0.0 && now - r.lastHeard > kSilenceLimit)
+            {
+                r.lostAt = now;
+                TraceLog(LOG_INFO, "NET: player %d silent for %.0f s, waiting for them", slot, now - r.lastHeard);
+            }
+            if (r.lostAt <= 0.0) continue;
+            if (now - r.lostAt > kResumeGrace)
+            {
+                GiveUp(slot, events);
+                if (role != Role::Host) return;
+                continue;
+            }
+            anyLost = true;
         }
         // Өөрийн relay холболт тасарсан: ижил тасалбараар дахин холбогдоно
-        if (!relayOpen && now >= reconnectAt)
+        if (anyLost && !relayOpen && now >= reconnectAt && (role == Role::Host ? !ticket.empty() : !joinTicket.empty()))
         {
             reconnectAt = now + kResumeEvery;
             const std::string query = role == Role::Host ? "?host&ticket=" + ticket : "?ticket=" + joinTicket;
@@ -964,16 +1053,30 @@ namespace Net
             {
                 buffer.resize((size_t)std::max(size, 1));
                 RelayPop(buffer.data());
-                if (link == Link::Relay)
+                // Хост: эхний байт нь илгээсэн зочны relay дугаар
+                int slot = 0;
+                const uint8_t* payload = buffer.data();
+                size_t length = (size_t)size;
+                if (role == Role::Host)
                 {
-                    lastHeard = GetTime();
-                    if (lostAt > 0.0 && partner)
-                    {
-                        lostAt = 0.0; // чимээгүй байсан тал дахин илгээж эхэллээ
-                        TraceLog(LOG_INFO, "NET: partner is back");
-                    }
-                    HandlePacket(buffer.data(), (size_t)size, events);
+                    if (length < 1) continue;
+                    slot = FindRelaySlot(payload[0]);
+                    ++payload;
+                    --length;
                 }
+                else if (remotes[0].link != Link::Relay)
+                {
+                    slot = -1;
+                }
+                if (slot < 0) continue;
+                Remote& r = remotes[slot];
+                r.lastHeard = GetTime();
+                if (r.lostAt > 0.0 && r.partner)
+                {
+                    r.lostAt = 0.0; // чимээгүй байсан тал дахин илгээж эхэллээ
+                    TraceLog(LOG_INFO, "NET: player %d is back", slot);
+                }
+                HandlePacket(slot, payload, length, events);
                 continue;
             }
             RelayPop(nullptr);
@@ -984,107 +1087,139 @@ namespace Net
                 TraceLog(LOG_INFO, "NET: hosting province %d, room %d", hostedProvince, roomCode);
                 break;
             case kRelayPaired:
-                if (link == Link::Relay && connected)
+            {
+                if (role == Role::Guest)
                 {
-                    // Тасарсан тал (эсвэл бид) буцаж холбогдлоо: тоглолт үргэлжилнэ (дахин нэгдэх хүсэлтгүй)
-                    partner = true;
-                    lostAt = 0.0;
-                    lastHeard = GetTime();
-                    TraceLog(LOG_INFO, "NET: reconnected, game continues");
+                    Remote& r = remotes[0];
+                    if (r.link != Link::Relay) break;
+                    r.partner = true;
+                    if (r.connected)
+                    {
+                        // Тасарсан тал (эсвэл бид) буцаж холбогдлоо: тоглолт үргэлжилнэ (дахин нэгдэх хүсэлтгүй)
+                        r.lostAt = 0.0;
+                        r.lastHeard = GetTime();
+                        TraceLog(LOG_INFO, "NET: reconnected, game continues");
+                    }
+                    else
+                    {
+                        SendJoinRequest(); // ENet-ийн CONNECT-тэй адил: хостод нэгдэх хүсэлт
+                    }
+                    break;
                 }
-                else if (role == Role::Guest)
+                // Хост: value = зочны relay дугаар
+                int slot = FindRelaySlot(value);
+                if (slot >= 0 && remotes[slot].connected)
                 {
-                    // ENet-ийн CONNECT-тэй адил: хостод нэгдэх хүсэлт илгээнэ.
-                    partner = true;
+                    remotes[slot].partner = true;
+                    remotes[slot].lostAt = 0.0;
+                    remotes[slot].lastHeard = GetTime();
+                    TraceLog(LOG_INFO, "NET: player %d reconnected, game continues", slot);
+                    break;
+                }
+                if (slot < 0) slot = FreeRemote();
+                if (slot < 0)
+                {
+                    // Дотоод сүлжээний зочдоор дүүрсэн: шинэ зочинд татгалзсан хариу (тэр өөрөө гарна)
                     Writer w;
-                    w.U8((uint8_t)Msg::JoinRequest);
-                    w.Str(name);
-                    w.U16(kProtocolVersion);
-                    w.U8(joinCoop ? 1 : 0);
-                    Send(w.data, true);
-                }
-                else if (link == Link::None)
-                {
-                    partner = true; // хүсэлтийг хүлээнэ (JoinRequest)
-                    link = Link::Relay;
-                }
-                else
-                {
-                    // Дотоод сүлжээний зочин аль хэдийн нэгдсэн: шинэ зочинд татгалзсан хариу (тэр өөрөө гарна)
-                    Writer w;
+                    w.U8((uint8_t)value);
                     w.U8((uint8_t)Msg::JoinReply);
                     w.U8(0);
                     w.U8((uint8_t)hostedProvince);
                     w.U16(kProtocolVersion);
                     RelaySend(w.data.data(), w.data.size(), true);
+                    break;
                 }
+                remotes[slot].link = Link::Relay;
+                remotes[slot].relaySlot = value;
+                remotes[slot].partner = true; // хүсэлтийг хүлээнэ (JoinRequest)
                 break;
+            }
             case kRelayLeft:
-                if (CanResume())
+            {
+                const int slot = role == Role::Host ? FindRelaySlot(value) : (remotes[0].link == Link::Relay ? 0 : -1);
+                if (slot < 0) break;
+                Remote& r = remotes[slot];
+                if (CanResume(slot))
                 {
                     // Нөгөө тал тасарсан: буцаж орохыг хүлээнэ (kResumeGrace), тоглолт хэвээр
-                    partner = false;
-                    if (lostAt <= 0.0) lostAt = GetTime();
-                    TraceLog(LOG_INFO, "NET: partner disconnected, waiting up to %.0f s", kResumeGrace);
+                    r.partner = false;
+                    if (r.lostAt <= 0.0) r.lostAt = GetTime();
+                    TraceLog(LOG_INFO, "NET: player %d disconnected, waiting up to %.0f s", slot, kResumeGrace);
+                    break;
                 }
-                else if (link == Link::Relay)
+                const bool wasActive = r.connected || r.pending || role == Role::Guest || r.partner;
+                ResetRemote(r);
+                if (role == Role::Guest) joinPending = false;
+                if (wasActive)
                 {
-                    const bool wasActive = connected || joinPending || role == Role::Guest || partner;
-                    partner = false;
-                    connected = false;
-                    joinPending = false;
-                    link = Link::None;
-                    if (wasActive)
-                    {
-                        Event e;
-                        e.type = Msg::Leave;
-                        events.push_back(e);
-                    }
+                    Event e;
+                    e.type = Msg::Leave;
+                    e.slot = slot;
+                    events.push_back(e);
                 }
                 break;
+            }
             case kRelayError:
             case kRelayClosed:
             {
-                if (kind == kRelayClosed && CanResume())
+                bool resumable = false;
+                for (int slot = 0; slot < kMaxGuests; ++slot) resumable = resumable || CanResume(slot);
+                if (kind == kRelayClosed && resumable)
                 {
                     // Өөрийн холболт тасарсан (сүлжээ сольсон г.м.): тоглолт хэвээр, UpdateResume дахин холбогдоно
                     RelayClose();
                     relayOpen = false;
-                    partner = false;
-                    if (lostAt <= 0.0) lostAt = GetTime();
+                    for (Remote& r : remotes)
+                    {
+                        if (r.link != Link::Relay || !r.connected) continue;
+                        r.partner = false;
+                        if (r.lostAt <= 0.0) r.lostAt = GetTime();
+                    }
                     reconnectAt = GetTime() + 1.0;
                     retryAt = GetTime() + kResumeGrace; // (StartHosting өөрөө шинэ өрөө нээхгүй)
                     TraceLog(LOG_INFO, "NET: relay connection lost, reconnecting");
                     return;
                 }
-                if (kind == kRelayError && lostAt > 0.0 && connected)
+                if (kind == kRelayError && resumable && Reconnecting())
                 {
                     // Дахин холбогдоход өрөө алга болсон (нөгөө тал удаан эзгүй): тоглолт дууслаа
                     RelayClose();
                     relayOpen = false;
-                    GiveUp(events);
+                    for (int slot = 0; slot < kMaxGuests; ++slot)
+                    {
+                        if (remotes[slot].link == Link::Relay) GiveUp(slot, events);
+                        if (role != Role::Host) break;
+                    }
                     return;
                 }
-                // Сервер хүрэхгүй, өрөө олдсонгүй, эсвэл холболт тасарсан.
-                const bool ours = link == Link::Relay;
-                const bool wasActive = ours && (connected || joinPending || role == Role::Guest || partner);
+                // Сервер хүрэхгүй, өрөө олдсонгүй, эсвэл холболт тасарсан: relay-ээр холбогдсон бүх тал гарна.
                 if (kind == kRelayClosed && role == Role::Host) retryAt = GetTime() + kRelayRetry;
-                Event e;
-                e.type = Msg::Leave;
-                if (kind == kRelayError) e.text = value == 1 ? "Тоглолт олдсонгүй" : value == 2 ? "Тоглолт дүүрсэн байна" : "";
-                else if (role == Role::Guest && joinPending) e.text = "Сервертэй холбогдож чадсангүй";
+                std::string reason;
+                if (kind == kRelayError) reason = value == 1 ? "Тоглолт олдсонгүй" : value == 2 ? "Тоглолт дүүрсэн байна" : "";
+                else if (role == Role::Guest && joinPending) reason = "Сервертэй холбогдож чадсангүй";
                 RelayClose();
                 relayOpen = false;
                 roomCode = 0;
-                partner = false;
-                if (ours)
+                for (int slot = 0; slot < kMaxGuests; ++slot)
                 {
-                    connected = false;
-                    joinPending = false;
-                    link = Link::None;
-                    if (role == Role::Guest) role = Role::None;
+                    Remote& r = remotes[slot];
+                    if (r.link != Link::Relay) continue;
+                    const bool wasActive = r.connected || r.pending || role == Role::Guest || r.partner;
+                    ResetRemote(r);
+                    if (wasActive)
+                    {
+                        Event e;
+                        e.type = Msg::Leave;
+                        e.slot = slot;
+                        e.text = reason;
+                        events.push_back(e);
+                    }
                 }
-                if (wasActive) events.push_back(e);
+                if (role == Role::Guest)
+                {
+                    joinPending = false;
+                    role = Role::None;
+                }
                 return;
             }
             default:
@@ -1093,35 +1228,67 @@ namespace Net
         }
     }
 
-    void Session::Send(const std::vector<uint8_t>& data, bool reliable)
+    void Session::SendTo(int slot, const std::vector<uint8_t>& data, bool reliable)
     {
-        if (data.empty()) return;
-        if (link == Link::Relay)
+        if (data.empty() || slot < 0 || slot >= kMaxGuests) return;
+        Remote& r = remotes[slot];
+        if (r.link == Link::Relay)
         {
-            if (partner) RelaySend(data.data(), data.size(), reliable);
+            if (!r.partner) return;
+            if (role == Role::Host)
+            {
+                // Хост: эхний байт нь хүлээн авагч зочны relay дугаар
+                std::vector<uint8_t> framed;
+                framed.reserve(data.size() + 1);
+                framed.push_back((uint8_t)r.relaySlot);
+                framed.insert(framed.end(), data.begin(), data.end());
+                RelaySend(framed.data(), framed.size(), reliable);
+            }
+            else
+            {
+                RelaySend(data.data(), data.size(), reliable);
+            }
             return;
         }
 #if !defined(__EMSCRIPTEN__)
-        if (link != Link::Lan || !host || !peer) return;
+        if (r.link != Link::Lan || !host || !r.peer) return;
         const enet_uint32 flags = reliable ? ENET_PACKET_FLAG_RELIABLE : ENET_PACKET_FLAG_UNRELIABLE_FRAGMENT;
         ENetPacket* packet = enet_packet_create(data.data(), data.size(), flags);
-        enet_peer_send(AsPeer(peer), reliable ? 0 : 1, packet);
+        enet_peer_send(AsPeer(r.peer), reliable ? 0 : 1, packet);
         enet_host_flush(AsHost(host));
 #endif
     }
 
-    void Session::HandlePacket(const uint8_t* data, size_t size, std::vector<Event>& events)
+    void Session::Send(const std::vector<uint8_t>& data, bool reliable)
+    {
+        const int only = target;
+        target = -1; // (To() нь зөвхөн дараагийн нэг илгээлтэд)
+        if (role != Role::Host)
+        {
+            SendTo(0, data, reliable);
+            return;
+        }
+        // Хост: нэг зочин (To) эсвэл нэгдсэн бүх зочид руу
+        for (int slot = 0; slot < kMaxGuests; ++slot)
+        {
+            if (only >= 0 ? slot == only : remotes[slot].connected) SendTo(slot, data, reliable);
+        }
+    }
+
+    void Session::HandlePacket(int slot, const uint8_t* data, size_t size, std::vector<Event>& events)
     {
         if (size < 1) return;
         Reader r{ data + 1, size - 1 };
         Event e;
         e.type = (Msg)data[0];
+        e.slot = slot;
         switch (e.type)
         {
         case Msg::JoinRequest:
             e.text = r.Str();
             e.version = r.at + 2 <= r.size ? r.U16() : 0; // хуучин хувилбар хувилбаргүй илгээдэг
             e.coop = r.at + 1 <= r.size && r.U8() != 0;
+            remotes[slot].pending = true;
             break;
         case Msg::JoinReply:
             e.accepted = r.U8() != 0;
@@ -1129,9 +1296,9 @@ namespace Net
             e.version = r.at + 2 <= r.size ? r.U16() : 0;
             e.text = r.at + 2 <= r.size ? r.Str() : std::string(); // хостын нэр (хуучин хувилбар илгээдэггүй)
             joinPending = false;
-            connected = e.accepted;
-            lastHeard = GetTime();
-            lostAt = 0.0;
+            remotes[0].connected = e.accepted;
+            remotes[0].lastHeard = GetTime();
+            remotes[0].lostAt = 0.0;
             break;
         case Msg::GuestState:
             e.avatar = ReadAvatar(r);

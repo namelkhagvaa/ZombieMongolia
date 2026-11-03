@@ -1,6 +1,11 @@
 // Zombie Mongolia — хамтарсан тоглолтын relay сервер (хөтөч, компьютер, Android хоорондоо).
 //
-// Тоглоомын тооцоолол хийхгүй: хоёр тоглогчийн мессежийг бие бие рүү нь дамжуулна (src/Net.cpp).
+// Тоглоомын тооцоолол хийхгүй: хост ба зочдын (нэг өрөөнд MAX_GUESTS хүртэл) мессежийг дамжуулна (src/Net.cpp).
+//
+// Олон зочин (протокол 2): зочин бүр өрөөнд нэгдмэгц дугаар (slot 0..MAX_GUESTS-1) авна.
+//   Хост -> relay: binary мессежийн эхний байт нь хүлээн авагч зочны дугаар (0xFE = бүх нэгдсэн зочид), дараа нь
+//   өгөгдөл. Relay -> хост: эхний байт нь илгээсэн зочны дугаар. Зочны тал өөрчлөгдөөгүй (дугааргүй).
+//   Хостод ирэх удирдлагын мессеж paired, left нь "slot"-той: {"type":"paired","slot":2}.
 // Хоёр төрлийн холболт хүлээн авна; нэг өрөөнд аль ч төрлийнх нь орж болно:
 //
 //   WebSocket (хөтөч, PORT, анхдагч 8090; nginx-ийн /relay-ээр wss://):
@@ -39,6 +44,8 @@ const MAX_MESSAGE = 1 << 20; // 1 MB: snapshot хэдэн арван KB байд
 const GRACE_MS = 45000;      // тасарсан хостыг (тасалбартай өрөө) хүлээх хугацаа
 const BACKLOG_LIMIT = 65536; // хүлээн авагчийн илгээгээгүй дараалал: үүнээс их бол хаяж болох мессежийг хаяна
 const DROP_MARK = 0xff;      // WebSocket: хаяж болох мессежийн эхний байт
+const MAX_GUESTS = 5;        // нэг өрөөнд (хост + 5 = 6 тоглогч)
+const ALL_GUESTS = 0xfe;     // хостын мессеж: бүх зочид руу
 
 const RELAY_SECRET = process.env.RELAY_SECRET || '';
 
@@ -77,6 +84,15 @@ function deliver(target, data, droppable) {
   target.send(data);
 }
 
+function newRoom(peer, ticket, ip) {
+  return { host: peer, guests: new Array(MAX_GUESTS).fill(null), guestPlayers: new Array(MAX_GUESTS).fill(null), ticket, ip,
+           hostGone: null };
+}
+
+function eachGuest(room, fn) {
+  for (let slot = 0; slot < MAX_GUESTS; slot++) if (room.guests[slot]) fn(room.guests[slot], slot);
+}
+
 function deleteRoom(code, room) {
   if (rooms.get(code) !== room) return;
   rooms.delete(code);
@@ -99,7 +115,7 @@ function attach(peer, hello) {
     // Тасалбаргүй (дотоод сүлжээ, хуучин хувилбар): санамсаргүй код
     const code = rooms.size < MAX_ROOMS ? newCode() : 0;
     if (!code) { peer.control({ type: 'error', reason: 'full' }); peer.close(); return; }
-    const room = { host: peer, guest: null, guestPlayer: null, ticket: false, ip: peer.ip, hostGone: null };
+    const room = newRoom(peer, false, peer.ip);
     rooms.set(code, room);
     peer.control({ type: 'room', code });
     bindHost(peer, room, code);
@@ -129,60 +145,70 @@ function hostTicketRoom(peer, code, id, ticket) {
     if (previous) previous.close(); // (onClose нь room.host !== peer тул юу ч хийхгүй)
   } else {
     if (rooms.size >= MAX_ROOMS) { peer.control({ type: 'error', reason: 'full' }); peer.close(); return; }
-    room = { host: peer, guest: null, guestPlayer: null, ticket: true, ip: null, hostGone: null };
+    room = newRoom(peer, true, null);
     rooms.set(code, room);
   }
   room.hostPlayer = ticket.p;
   room.hostExp = ticket.exp;
   peer.control({ type: 'room', code: id });
   bindHost(peer, room, code);
-  if (room.guest) {
-    peer.control({ type: 'paired' });
-    room.guest.control({ type: 'paired' });
-  }
+  eachGuest(room, (guest, slot) => {
+    peer.control({ type: 'paired', slot });
+    guest.control({ type: 'paired' });
+  });
 }
 
 function bindHost(peer, room, code) {
-  peer.onData = (data, droppable) => deliver(room.guest, data, droppable);
+  // Эхний байт: хүлээн авагч зочин (ALL_GUESTS = бүгд)
+  peer.onData = (data, droppable) => {
+    if (data.length < 1) return;
+    const slot = data[0], payload = data.subarray(1);
+    if (slot === ALL_GUESTS) eachGuest(room, (guest) => deliver(guest, payload, droppable));
+    else if (slot < MAX_GUESTS) deliver(room.guests[slot], payload, droppable);
+  };
   peer.onClose = () => {
     if (room.host !== peer) return; // орлогдсон
     room.host = null;
     if (room.ticket) {
-      // Хост буцаж орохыг хүлээнэ: зочин холбогдсон хэвээр ("left": тоглоом хүлээх горимд орно)
-      if (room.guest) room.guest.control({ type: 'left' });
+      // Хост буцаж орохыг хүлээнэ: зочид холбогдсон хэвээр ("left": тоглоом хүлээх горимд орно)
+      eachGuest(room, (guest) => guest.control({ type: 'left' }));
       room.hostGone = setTimeout(() => {
         if (room.host) return;
         deleteRoom(code, room);
-        if (room.guest) { room.guest.control({ type: 'left' }); room.guest.close(); }
+        eachGuest(room, (guest) => { guest.control({ type: 'left' }); guest.close(); });
       }, GRACE_MS);
       return;
     }
     deleteRoom(code, room);
-    if (room.guest) { room.guest.control({ type: 'left' }); room.guest.close(); }
+    eachGuest(room, (guest) => { guest.control({ type: 'left' }); guest.close(); });
   };
 }
 
 function joinRoom(peer, code, player) {
   const room = rooms.get(code);
   if (!room) { peer.control({ type: 'error', reason: 'notfound' }); peer.close(); return; }
-  if (room.guest) {
-    // Ижил тоглогч дахин холбогдож байна (хуучин холболт хариу өгөхгүй болсон): орлоно. Өөр хүн бол дүүрсэн.
-    if (player === null || room.guestPlayer !== player) { peer.control({ type: 'error', reason: 'full' }); peer.close(); return; }
-    const previous = room.guest;
-    room.guest = null;
+  // Ижил тоглогч дахин холбогдож байна (хуучин холболт хариу өгөхгүй болсон): өөрийн дугаараа орлоно
+  let slot = player === null ? -1 : room.guestPlayers.indexOf(player);
+  if (slot >= 0 && room.guests[slot]) {
+    const previous = room.guests[slot];
+    room.guests[slot] = null;
     previous.close();
   }
-  room.guest = peer;
-  room.guestPlayer = player;
+  if (slot < 0) slot = room.guests.indexOf(null);
+  if (slot < 0) { peer.control({ type: 'error', reason: 'full' }); peer.close(); return; }
+  room.guests[slot] = peer;
+  room.guestPlayers[slot] = player;
   if (room.host) {
-    room.host.control({ type: 'paired' });
+    room.host.control({ type: 'paired', slot });
     peer.control({ type: 'paired' });
   }
-  peer.onData = (data, droppable) => deliver(room.host, data, droppable);
+  const prefix = Buffer.from([slot]);
+  peer.onData = (data, droppable) => { if (room.host) deliver(room.host, Buffer.concat([prefix, data]), droppable); };
   peer.onClose = () => {
-    if (room.guest !== peer) return; // орлогдсон
-    room.guest = null; // хост өрөөндөө үлдэж, зочин буцаж орох эсвэл дараагийн зочныг хүлээнэ
-    if (room.host) room.host.control({ type: 'left' });
+    if (room.guests[slot] !== peer) return; // орлогдсон
+    room.guests[slot] = null; // (тасалбартай өрөөнд guestPlayers хадгалагдана: буцаж ормогц ижил дугаар)
+    if (!room.ticket) room.guestPlayers[slot] = null;
+    if (room.host) room.host.control({ type: 'left', slot });
   };
 }
 
@@ -190,7 +216,7 @@ function joinRoom(peer, code, player) {
 const server = http.createServer((req, res) => {
   // Хостингийн health check: сервер ажиллаж байгааг шалгана
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-  res.end(`Zombie Mongolia relay: ${rooms.size} rooms\n`);
+  res.end(`Zombie Mongolia relay: ${rooms.size} rooms (protocol 2, ${MAX_GUESTS + 1} players)\n`);
 });
 const wss = new WebSocketServer({ server, maxPayload: MAX_MESSAGE });
 
