@@ -3006,7 +3006,11 @@ void Game::UpdateSounds(float dt, float throttle)
         const Vehicle& v = garage.At(i);
         // Тоглогчийн унаа ба араас дагаж яваа багийн унаа: давхар хөдөлгүүрийн дуу гаргахгүй
         // (нисдэг тэрэг агаарт зогсож байхад ч сэнс нь сонсогдоно)
-        if (i == garage.Driven() || i == garage.Escort() || (std::fabs(v.speed) < 0.5f && !IsHelicopter(v.type)) || engineOf(v) == EngineSound::Off) continue;
+        // (жолоочгүй гулсаж буй унаа чимээгүй: морь унахад баг дагуулж явсан машинаасаа буухад хөдөлгүүрийн дуу гардаг байв)
+        bool driven = v.occupied || v.remote;
+        for (const Soldier& s : squad.All()) driven = driven || (s.alive && s.riding == i);
+        if (i == garage.Driven() || i == garage.Escort() || (std::fabs(v.speed) < 0.5f && !IsHelicopter(v.type)) || engineOf(v) == EngineSound::Off ||
+            !driven) continue;
         const float d = Vector3Distance(v.position, view.position);
         if (d < nearestDistance) { nearestDistance = d; nearest = i; }
     }

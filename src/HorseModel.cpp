@@ -177,6 +177,18 @@ void DrawHorseModel(float animation, float gait, float steer, float seed, float 
     // дараа нь бүх хөл агаарт (биеийн доор хумигдана). Алхмын үе p = 0..1 (HorseStridePhase).
     static const float kGallopPhase[4] = { 0.35f, 0.45f, 0.0f, 0.1f }; // FL, FR, HL, HR
     const float stride = HorseStridePhase(animation);
+    const float time = (float)GetTime() + seed * 7.3f;
+    const float idle = (1.0f - std::min(1.0f, gait * 1.5f)) * (dead > 0.0f ? 0.0f : 1.0f);
+    // Зогсож байхад амьд амьтан шиг: ~14 секунд тутам нэг хойд хөлөө амраана (туурайн үзүүрээр тулж, шилбээ
+    // нугална: жин нөгөө хөл рүү шилжинэ), хааяа урд туурайгаараа газар тарчина.
+    const float restCycle = time * 0.07f + seed * 0.37f;
+    const float restPhase = restCycle - std::floor(restCycle);
+    const int restLeg = ((int)std::floor(restCycle) & 1) ? 3 : 2; // HL эсвэл HR
+    auto window = [](float x, float a, float b) { const float t = std::clamp((x - a) / (b - a), 0.0f, 1.0f); return t * t * (3.0f - 2.0f * t); };
+    const float rest = idle * window(restPhase, 0.05f, 0.18f) * (1.0f - window(restPhase, 0.78f, 0.92f));
+    const float pawGate = std::pow(std::max(0.0f, std::sin(time * 0.17f + seed * 1.3f)), 30.0f); // хааяа, 2-3 секунд
+    const float paw = idle * pawGate;
+    const int pawLeg = ((int)std::floor(time * 0.17f / PI + seed) & 1) ? 1 : 0; // FL эсвэл FR
     for (int index = 0; index < 4; ++index)
     {
         const Leg& leg = kLegs[index];
@@ -207,8 +219,15 @@ void DrawHorseModel(float animation, float gait, float steer, float seed, float 
             gallopLift = std::sin(PI * std::min(1.0f, s * 1.15f)) * (leg.hind ? 1.2f : 1.0f);
         }
 
-        const float swing = trotSwing + (gallopSwing * gait - trotSwing) * gallop;
-        const float lift = trotLift + (gallopLift * gait - trotLift) * gallop;
+        float swing = trotSwing + (gallopSwing * gait - trotSwing) * gallop;
+        float lift = trotLift + (gallopLift * gait - trotLift) * gallop;
+        if (index == restLeg) lift += 0.45f * rest;   // амраасан хойд хөл: үеэ бага зэрэг нугална
+        if (index == pawLeg)
+        {
+            // туурайгаараа газар тарчих: хөлөө өргөөд урагш хойш хоёр гурван удаа
+            lift += 0.7f * paw;
+            swing += paw * 0.28f * std::sin(time * 8.0f);
+        }
         Turn(leg.upper, side, -swing);
         Turn(leg.middle, side, leg.hind ? -0.75f * lift : 0.95f * lift);
         Turn(leg.lower, side, 0.6f * lift);
@@ -224,8 +243,12 @@ void DrawHorseModel(float animation, float gait, float steer, float seed, float 
     }
     // Хүзүү, толгой: давхихад дохиж, эргэх зүг рүү эргэнэ.
     // Зогсолт (gait 0) ба явдлын хооронд зөөлөн шилжинэ.
-    const float time = (float)GetTime() + seed * 7.3f;
-    const float idle = 1.0f - std::min(1.0f, gait * 1.5f);
+    // Амьсгал: цээж, гэдэс жигд томорч жижгэрнэ (зогсоход тод, явахад ч бага зэрэг)
+    const float breath = std::sin(time * 1.5f);
+    Turn("Back_1", side, (0.006f + 0.006f * idle) * breath);
+    Turn("Belly", side, 0.02f * idle * breath);
+    Turn("Chest_L", up, 0.015f * idle * breath);
+    Turn("Chest_R", up, -0.015f * idle * breath);
 
     // Хүзүү, толгой: явахад алхам бүрд дохиж, эргэх зүг рүү эргэнэ. Зогсож байхад аажим толгойгоо өргөж
     // буулгаж, хажуу тийш эргэн тойрноо харна; хааяа толгойгоо сэгсэрнэ.
