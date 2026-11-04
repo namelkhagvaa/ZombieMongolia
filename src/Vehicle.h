@@ -35,7 +35,7 @@ constexpr float kHeliCruise = 45.0f;    // газар дээрх нислэги�
 constexpr float kHeliClearance = 15.0f; // хамгийн өндөр барилгын оройгоос дээш, м
 constexpr float kHeliFloor = 15.0f;     // доорх газраас хамгийн багадаа, м
 constexpr float kHeliControl = 6.0f;  // үүнээс өндөр гарсны дараа хөдөлж эхэлнэ
-constexpr int kHeliSeats = 6;         // нисгэгчээс гадна: 2 хаалганы буудагч (баг), 4 бүхээгт (нөгөө тоглогч, түүний баг)
+constexpr int kHeliSeats = 9;         // нисгэгчээс гадна: 2 хаалганы буудагч (баг), 4 бүхээгт (зорчигч, түүний баг), 3 бусад зорчигчид
 
 // Бүхээгтэй суудлын машин (жийп, X-Trail, Yaris, Crown, Aqua): жолооч зүүн, зорчигч баруун урд суудалд.
 inline bool IsCar(VehicleType type)

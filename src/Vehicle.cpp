@@ -2331,7 +2331,7 @@ Vector3 Garage::HelicopterSeat(int index, int slot, float& facing) const
     // Ми-8-ийн их бие (local: +Z урагш, +X зүүн): зүүн урд том хаалга, баруун талд цонх. Хаалганы буудагчид
     // хаалганы хүрээн дээр гадагш харж сууна (хөл нь гадна унжина), бусад нь бүхээгийн сандал дээр.
     const Vehicle& vehicle = vehicles[(size_t)index];
-    // 0, 1: нисгэгчийн баг; 2: нөгөө тоглогч (буудагч), 3, 4: түүний баг; 5: бүхээгт
+    // 0, 1: нисгэгчийн баг; 2: зорчигч (буудагч), 3, 4: түүний баг; 5-8: бусад зорчигчид (Game::HeliSeatOf)
     // Текстуртай загвар (heli.vmesh): хоёр талдаа ижил онгорхой хаалгатай (z -1.0..2.1, шал 1.7 м, дунд нь хүрээ)
     static const Vector3 modelSeats[kHeliSeats] = {
         { 1.45f, 1.85f, 1.55f },  // зүүн хаалганы урд хэсэг
@@ -2340,6 +2340,9 @@ Vector3 Garage::HelicopterSeat(int index, int slot, float& facing) const
         { 1.45f, 1.85f, -0.3f },  // зүүн хаалганы хойд хэсэг
         { -1.0f, 1.85f, 0.6f },   // баруун хаалганы дунд, арай дотор
         { 0.0f, 1.85f, 0.6f },    // бүхээгийн төв
+        { 0.9f, 1.85f, -1.3f },   // бүхээгийн хойд хэсэг, зүүн
+        { -0.9f, 1.85f, -1.3f },  // бүхээгийн хойд хэсэг, баруун
+        { 0.0f, 1.85f, -0.7f },   // бүхээгийн төвийн ард
     };
     static const Vector3 seats[kHeliSeats] = {
         { 1.05f, 1.45f, 3.0f },   // зүүн хаалга
@@ -2348,10 +2351,13 @@ Vector3 Garage::HelicopterSeat(int index, int slot, float& facing) const
         { 1.05f, 1.45f, 1.4f },   // зүүн хаалганы ард
         { -1.05f, 1.45f, -0.5f }, // баруун хойд цонх
         { 0.0f, 1.45f, 0.4f },    // бүхээгийн төв
+        { 1.05f, 1.45f, -0.5f },  // зүүн хойд цонх
+        { -1.05f, 1.45f, -2.0f }, // баруун ард
+        { 1.05f, 1.45f, -2.0f },  // зүүн ард
     };
     const int k = std::clamp(slot, 0, kHeliSeats - 1);
     const Vector3& seat = HasVehicleModel(VehicleModelId::Helicopter) ? modelSeats[k] : seats[k];
-    facing = vehicle.heading + (k == 5 ? 0.0f : seat.x > 0.0f ? PI * 0.5f : -PI * 0.5f);
+    facing = vehicle.heading + (seat.x == 0.0f ? 0.0f : seat.x > 0.0f ? PI * 0.5f : -PI * 0.5f);
     return HumanoidLocalToWorld(vehicle.position, vehicle.heading, PitchLocal(vehicle, seat));
 }
 

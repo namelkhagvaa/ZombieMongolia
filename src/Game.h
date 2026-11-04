@@ -649,6 +649,7 @@ private:
         Net::AvatarState state; // сүүлийн байдал (бусад зочдод snapshot-оор)
         int vehicle = -1;       // жолоодож буй унаа
         float health = 0.0f;    // сүүлд мэдэгдсэн амь (тасарвал AI дайчин болно)
+        double revivedUntil = 0.0; // энэ цаг хүртэл зочны амийн тооцоог шинээр эхлүүлнэ (саяхан босгосон)
         bool rejoined = false;  // тасарсан зочин багаа хэвээр (тулаанд) буцаж нэгдлээ: анхны байдлаар биед нь оруулна
         bool keepRecruits = false; // (дахин нэгдсэн) зочны Gold-ийн цэргүүд аль хэдийн байгаа: дахин үүсгэхгүй
         float memberHealth = 100.0f; // гишүүдийн амийн дээд хэмжээ (GuestSetup)
@@ -686,6 +687,10 @@ private:
     bool ReturningGuest(const std::string& name) const; // саяхан гарсан найз (асуулгүй хүлээн авна)
     void PumpJoinQueue();           // хүлээж буй дараагийн хүсэлтийг хариулах цонхонд
     void SendRoster();
+    int OwnWho() const { return coopGuest ? ownSlot + 1 : 0; } // энэ тоглогчийн who (ForEachOtherPlayer)
+    bool IsEnemyOf(int who, int other) const { return TeamOf(who) != TeamOf(other); }
+    int HeliPassengerRank(int heli, int who) const;
+    int HeliSeatOf(int heli, int who) const; // олон зорчигч: хүн бүр өөр суудалд
     std::string PlayerNameOf(int who) const; // ForEachOtherPlayer-ийн who
     // ---- Өрөөний горим: хамтран тоглох эсвэл найзуудын тулаан (сервер, Gold-гүй). Тулаан дуусмагц бүгд амилж, хамтын
     // тоглолт хэвээр үргэлжилнэ. Gold-той нээлттэй өрөөний тулаан (1 эсрэг 1): skirmish биш.

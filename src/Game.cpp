@@ -1857,6 +1857,7 @@ void Game::UpdateDowned(float dt)
             if (!coopGuest)
             {
                 guests[downedPlayer - 1].shadow = -1.0f;
+                guests[downedPlayer - 1].revivedUntil = GetTime() + 2.0;
                 guests[downedPlayer - 1].forcedDown = false;
             }
             SetNotice("НӨХРӨӨ БОСГОЛОО!", 2.0f);
@@ -3353,7 +3354,7 @@ void Game::UpdateVehicles(float dt)
                 heliPassenger = target.crew;
                 heliPassengerAir = false;
                 float doorFacing = 0.0f;
-                garage.HelicopterSeat(heliPassenger, 2, doorFacing);
+                garage.HelicopterSeat(heliPassenger, HeliSeatOf(heliPassenger, OwnWho()), doorFacing);
                 camera.SetView(doorFacing, 0.6f); // хаалганаас гадагш, доош газар луу
                 SetNotice("Нисдэг тэргэнд буудагчаар суулаа — нисгэгчийг дагана", 3.0f);
                 Audio::Announce("heli_gunner");
@@ -3688,7 +3689,7 @@ void Game::UpdateVehicles(float dt)
         {
             if (!airborne && !vehicle.wrecked) heliPassengerAir = false;
             float facing = vehicle.heading;
-            player.Ride(dt, vehicle.position, garage.HelicopterSeat(heliPassenger, 2, facing), vehicle.heading, RideStyle::Bike);
+            player.Ride(dt, vehicle.position, garage.HelicopterSeat(heliPassenger, HeliSeatOf(heliPassenger, OwnWho()), facing), vehicle.heading, RideStyle::Bike);
         }
     }
     else if (gunnerVehicle >= 0)
@@ -3787,6 +3788,23 @@ Vector3 Game::HeliExit(const Vehicle& heli, std::initializer_list<Vector3> local
     return first;
 }
 
+int Game::HeliPassengerRank(int heli, int who) const
+{
+    // Энэ тэргэнд сууж буй, who-оос бага дугаартай зорчигчдын тоо (бүх тоглоомд ижил дарааллаар)
+    int rank = heliPassenger == heli && OwnWho() < who ? 1 : 0;
+    ForEachOtherPlayer([&](const RemoteFigure& other, const std::string&, int index) {
+        if (index < who && other.alive && other.vehicle == heli && (other.flags & Net::kPassenger)) ++rank;
+    });
+    return rank;
+}
+
+int Game::HeliSeatOf(int heli, int who) const
+{
+    // Суудал 2: хаалга; 3, 4: эхний зорчигчийн баг; 0, 1: нисгэгчийн баг (Garage::HelicopterSeat)
+    static const int seats[Net::kMaxGuests] = { 2, 5, 6, 7, 8 };
+    return seats[std::min(HeliPassengerRank(heli, who), Net::kMaxGuests - 1)];
+}
+
 void Game::UpdateGuestHelicopterCrew()
 {
     if (coopGuest) return;
@@ -3799,6 +3817,12 @@ void Game::UpdateGuestHelicopterCrew()
     {
         heli = guestFigure.vehicle;
         first = (guestFigure.flags & Net::kPassenger) ? 3 : 0; // зочин нисгэгч бол түүний баг хаалганд
+        // Эхний зорчигчийн баг л сууна (суудал хүрэлцэхгүй): бусдын баг газар үлдэнэ (суусан бол буух хүртэл суудалдаа)
+        if (first > 0 && HeliPassengerRank(heli, owner + 1) > 0 &&
+            std::none_of(squad.All().begin(), squad.All().end(), [&](const Soldier& soldier) { return soldier.guestOwner == owner && soldier.riding == heli; }))
+        {
+            heli = -1;
+        }
     }
     std::vector<Soldier>& all = squad.All();
     int out = 0;
@@ -4682,7 +4706,7 @@ void Game::UpdateMission(float dt)
         // Хаалганы буудагч: нүд нь онгорхой хаалганы гадна ирмэг дээр (бүхээгийн дотор, нисгэгч харааг хаахгүй),
         // хаалганаас гадагш талын хагас бөмбөрцөгт л эргэнэ
         float doorFacing = 0.0f;
-        const Vector3 seat = garage.HelicopterSeat(heliPassenger, 2, doorFacing);
+        const Vector3 seat = garage.HelicopterSeat(heliPassenger, HeliSeatOf(heliPassenger, OwnWho()), doorFacing);
         cameraFocus = { seat.x + std::sin(doorFacing) * 1.1f, seat.y, seat.z + std::cos(doorFacing) * 1.1f };
         cameraDrop = config.cameraTargetHeight - 0.7f;
         const float off = std::remainder(camera.Yaw() - doorFacing, 2.0f * PI);
@@ -6719,7 +6743,11 @@ int Game::RemoteSeat(const RemoteFigure& figure, Vector3& seat, float& facing, f
         if (IsHelicopter(vehicle.type) && (figure.flags & Net::kPassenger))
         {
             seatStyle = 1; // нисдэг тэрэгний буудагч: хажуугийн хаалганд харагдана
-            seat = garage.HelicopterSeat(figure.vehicle, 2, seatHeading);
+            int who = -1;
+            ForEachOtherPlayer([&](const RemoteFigure& other, const std::string&, int index) {
+                if (&other == &figure) who = index;
+            });
+            seat = garage.HelicopterSeat(figure.vehicle, who >= 0 ? HeliSeatOf(figure.vehicle, who) : 2, seatHeading);
         }
         if (vehicle.type == VehicleType::Armored && (figure.flags & Net::kPassenger)) seatStyle = 6; // пулемётын ард
         // Онилж буудаж байвал бие тэр зүг рүү (±120 градус), үгүй бол суудлын зүгт.
@@ -7069,7 +7097,8 @@ void Game::UpdateNetwork(float dt)
             {
                 // Тулаан: зочны мэдэгдсэн амь хостын тооцооноос их бол (хохирлоо хасаагүй) хостынхоор. ~3 секунд (20/с)
                 // дараалан илүү мэдэгдвэл хуурамч: тулаанд унасанд тооцно. (Сүлжээний хоцролтоос болох зөрүүнд тэсвэртэй.)
-                if (peer.shadow < 0.0f) peer.shadow = event.avatar.health;
+                // (Саяхан босгосон: зочин босоогүй үеийн мессеж замд явж байж магадгүй тул тооцоог шинээр эхлүүлнэ)
+                if (peer.shadow < 0.0f || GetTime() < peer.revivedUntil) peer.shadow = event.avatar.health;
                 if (event.avatar.health <= peer.shadow + 0.25f * peer.memberHealth)
                 {
                     peer.shadow = std::min(peer.shadow, event.avatar.health);
@@ -7253,8 +7282,15 @@ void Game::UpdateNetwork(float dt)
         {
             if (!coopGuest && event.player > 0)
             {
-                // Зочин өөр зочныг босгов: тэр зочинд дамжуулна
-                net.To(event.player - 1);
+                // Зочин өөр зочныг босгов: нэг багийнх, дэргэд нь байвал тэр зочинд дамжуулна. Хостын тооцоо ч босно
+                // (эс бөгөөс босгосон зочны амь "хуурамч" гэж тооцогдож, тулаанд унасанд орно).
+                const int downed = event.player - 1;
+                if (downed >= Net::kMaxGuests || !guests[downed].active || IsEnemyOf(event.slot + 1, event.player) ||
+                    HorizontalDistance(peer.figure.position, guests[downed].figure.position) > 8.0f) break;
+                guests[downed].shadow = -1.0f;
+                guests[downed].revivedUntil = GetTime() + 2.0;
+                guests[downed].forcedDown = false;
+                net.To(downed);
                 net.SendRevive(event.player);
                 break;
             }
