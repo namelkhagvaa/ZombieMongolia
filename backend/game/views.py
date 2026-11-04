@@ -212,8 +212,8 @@ def room_coop(request):
 
 @api(["POST"])
 def room_accept(request, room_id):
-    """Хост: зочин тоглоомоор холбогдлоо (тулаан тоологдож эхэлнэ)."""
-    room = logic.accept_guest(request.token.player, room_id)
+    """Хост: {"player": <зочны дугаар>} тоглоомоор холбогдлоо (тулаан тоологдож эхэлнэ, найз шагналын эрхтэй болно)."""
+    room = logic.accept_guest(request.token.player, room_id, request.json.get("player"))
     return ok(**logic.room_state(room))
 
 

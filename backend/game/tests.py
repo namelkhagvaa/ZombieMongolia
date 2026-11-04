@@ -9,7 +9,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from . import logic, qpay
-from .models import AuthToken, Cashout, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, Verification
+from .models import AuthToken, Cashout, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, RoomFriend, Verification
 
 UB = 15  # Улаанбаатар
 
@@ -294,6 +294,106 @@ class FlowTests(TestCase):
         self.post(f"rooms/{room['id']}/complete/", {}, host)
         h, g = Player.objects.get(phone="+97699112233"), Player.objects.get(phone="+97688112233")
         self.assertEqual((h.gold, g.gold, h.won_gold, g.won_gold), (90, 530, 0, 0))
+
+    def friends(self, count):
+        """count найз: [(токен, тоглогч)]."""
+        result = []
+        for i in range(count):
+            reply = self.register(phone=f"9900{i:04d}", device=f"device-friend-{i:04d}", name=f"Найз{i}")
+            result.append((reply["token"], Player.objects.get(name=f"Найз{i}")))
+        return result
+
+    def test_six_players_in_one_room(self):
+        host, _ = self.two_players()
+        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
+        friends = self.friends(6)
+        for token, _ in friends[:5]:
+            joined = self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, token)["room"]
+            self.assertEqual((joined["role"], joined["coop"]), ("guest", True))
+        self.assertEqual(self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, friends[5][0], status=409)["error"],
+                         "room_full")
+        # Дахин орж буй найз дүүрсэн өрөөнд орж чадна, давхар бичигдэхгүй
+        self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, friends[0][0])
+        self.assertEqual(RoomFriend.objects.filter(room_id=room["id"]).count(), 5)
+        # Найз бүр дохио өгнө, хост хүн бүрийн мэдээг авна
+        state = self.post(f"rooms/{room['id']}/beat/", {}, friends[3][0])
+        self.assertEqual({m["player"] for m in state["members"]}, {p.pk for _, p in friends[:5]})
+        self.assertEqual(state["battle"], 0)
+
+    def test_friends_get_the_reward_only_if_they_arrived_and_stayed(self):
+        host, _ = self.two_players()
+        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
+        friends = self.friends(4)
+        for token, _ in friends:
+            self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, token)
+        url = f"rooms/{room['id']}/accept/"
+        for _, player in friends[:3]:
+            self.post(url, {"player": player.pk}, host)
+        # Хост бус хүн баталгаажуулж чадахгүй; өрөөнд байхгүй тоглогчийн дугаар юу ч хийхгүй
+        self.post(url, {"player": friends[3][1].pk}, friends[1][0], status=403)
+        self.post(url, {"player": 999999}, host)
+        self.assertEqual(RoomFriend.objects.filter(room_id=room["id"], confirmed=True).count(), 3)
+        self.post(f"rooms/{room['id']}/leave/", {}, friends[2][0])  # ирсэн ч төгсгөлд хүрээгүй
+        self.played(room["id"], host)
+        Room.objects.filter(pk=room["id"]).update(created=timezone.now() - timedelta(minutes=30))
+        self.post(f"rooms/{room['id']}/complete/", {}, host)
+        gold = [Player.objects.get(pk=p.pk).gold - p.gold for _, p in friends]
+        xp = [Player.objects.get(pk=p.pk).xp for _, p in friends]
+        self.assertEqual(gold, [30, 30, 0, 0])  # (сүүлийнх нь тоглоомоор ирээгүй)
+        self.assertEqual(xp, [50, 50, 0, 0])
+
+    def test_accept_without_a_player_needs_one_waiting_friend(self):
+        host, _ = self.two_players()
+        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
+        friends = self.friends(3)
+        self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, friends[0][0])
+        self.accept(room["id"], host)
+        self.assertTrue(RoomFriend.objects.get(player=friends[0][1]).confirmed)
+        self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, friends[1][0])
+        self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, friends[2][0])
+        self.accept(room["id"], host)  # хоёр хүн хүлээж байна: алийг нь гэдэг нь тодорхойгүй
+        self.assertEqual(RoomFriend.objects.filter(room_id=room["id"], confirmed=True).count(), 1)
+
+    def test_accept_with_a_player_confirms_only_that_battle_guest(self):
+        host, guest = self.two_players()
+        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
+        self.post("rooms/join/", {"protocol": 13}, guest)
+        guest_id = Player.objects.get(name="Дорж").pk
+        self.post(f"rooms/{room['id']}/accept/", {"player": guest_id + 1000}, host)
+        self.assertFalse(Room.objects.get(pk=room["id"]).guest_confirmed)
+        state = self.post(f"rooms/{room['id']}/accept/", {"player": guest_id}, host)
+        self.assertTrue(Room.objects.get(pk=room["id"]).guest_confirmed)
+        self.assertEqual((state["battle"], state["members"][0]["player"]), (1, guest_id))
+
+    def test_friends_and_battle_guests_do_not_mix(self):
+        host, guest = self.two_players()
+        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
+        (token, _), = self.friends(1)
+        self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, token)
+        # Найзтай өрөө тулааны жагсаалтад гарахгүй, урилгагүй орохгүй
+        self.assertEqual(self.get("rooms/list/?protocol=13", guest)["rooms"], [])
+        self.post("rooms/join/", {"protocol": 13}, guest, status=404)
+        self.post(f"rooms/{room['id']}/leave/", {}, token)
+        self.assertFalse(Room.objects.get(pk=room["id"]).guest_coop)
+        # Найз гарсны дараа дахин нээлттэй; тулаан явагдаж байхад найз орохгүй
+        self.post("rooms/join/", {"protocol": 13}, guest)
+        self.assertEqual(self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, token, status=409)["error"], "room_full")
+
+    def test_silent_friend_expires_and_host_leaving_drops_all(self):
+        host, _ = self.two_players()
+        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
+        friends = self.friends(3)
+        for token, _ in friends:
+            self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, token)
+        RoomFriend.objects.filter(player=friends[0][1]).update(seen=timezone.now() - timedelta(hours=1))
+        with transaction.atomic():
+            logic.expire_rooms()
+        self.assertEqual(RoomFriend.objects.filter(room_id=room["id"]).count(), 2)
+        self.post(f"rooms/{room['id']}/beat/", {}, friends[0][0], status=410)
+        self.post(f"rooms/{room['id']}/leave/", {}, host)
+        self.assertEqual(Room.objects.get(pk=room["id"]).status, Room.CLOSED)
+        self.assertEqual(RoomFriend.objects.filter(room_id=room["id"]).count(), 0)
+        self.post(f"rooms/{room['id']}/beat/", {}, friends[1][0], status=410)
 
     def test_coop_guest_leaving_is_no_penalty(self):
         host, guest = self.two_players()
@@ -764,7 +864,7 @@ class FlowTests(TestCase):
         room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
         self.post("rooms/join/", {"protocol": 13}, guest)
         state = self.accept(room_id, host)
-        self.assertEqual((state["guest_soldiers"], state["guest_health_level"]), (2, 3))
+        self.assertEqual((state["members"][0]["soldiers"], state["members"][0]["health_level"]), (2, 3))
 
     def test_stage_cannot_be_completed_during_a_battle(self):
         # Ялагдах гэж буй хост сүүлийн даалгаврыг дуусгаж өрөөг хааж тулааныг хүчингүй болгож чадахгүй

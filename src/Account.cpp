@@ -109,10 +109,14 @@ namespace
     std::string roomSearchNote;
     // Нээлттэй өрөө (сервер нээсэн / орсон)
     int roomId = -1, roomProvince = -1, roomBattle = 0, roomRecruits = 0;
-    int roomGuestSoldiers = -1, roomGuestHealthLevel = -1; // хост: серверийн мэдэх зочны цэрэг, амийн түвшин (-1 = мэдэхгүй)
-    int roomGuestDamageLevel = -1;                          // хост: зочны хохирлын түвшин (мэдэгдлийг хязгаарлахад)
+    // Хост: серверийн мэдэх зочин бүрийн цэрэг, амь, хохирлын түвшин, зэрэг (мэдэгдлийг хязгаарлахад)
+    struct RoomMember
+    {
+        int player = -1, soldiers = -1, healthLevel = -1, damageLevel = -1, rank = -1;
+    };
+    std::vector<RoomMember> roomMembers;
     int xp = 0, rank = 1;                                   // дансны XP, зэрэг (сервер)
-    int roomHostRank = -1, roomGuestRank = -1;             // өрөөний хост, зочны зэрэг (-1 = мэдэхгүй)
+    int roomHostRank = -1;                                 // өрөөний хостын зэрэг (-1 = мэдэхгүй)
     std::string roomStage, roomCode;
     bool roomPvp = false, roomCoop = false;
     std::string roomPvpNote;
@@ -530,22 +534,33 @@ namespace
     int guestLostTotal = 0, guestLostBattle = 0; // хост: зочны алдсан Gold-ийн цэрэг (энэ тулаанд, нийт)
     bool guestLostDirty = false;
 
-    bool guestConfirmPending = false; // хост: "зочин ирлээ" (rooms/accept) амжилттай болтол давтана
+    std::vector<int> guestConfirms;   // хост: "зочин ирлээ" (rooms/accept) амжилттай болтол давтана (нэг нэгээр)
     double nextGuestConfirm = 0.0;
+
+    RoomMember FindRoomMember(int player)
+    {
+        for (const RoomMember& member : roomMembers)
+        {
+            if (member.player == player) return member;
+        }
+        return player < 0 && roomMembers.size() == 1 ? roomMembers[0] : RoomMember{};
+    }
 
     void BeatHandler(int status, const Json& reply);
 
     void SendGuestConfirm()
     {
-        // (roomBeat-тэй ижил хариу: тулааны дугаар, зочны серверийн цэрэг, амийн түвшин)
-        roomBeat.id = Online::Send("POST", apiBase + "rooms/" + std::to_string(roomId) + "/accept/", "{}", token);
+        // (roomBeat-тэй ижил хариу: тулааны дугаар, зочдын серверийн цэрэг, амийн түвшин)
+        const int player = guestConfirms.front();
+        roomBeat.id = Online::Send("POST", apiBase + "rooms/" + std::to_string(roomId) + "/accept/",
+                                   player >= 0 ? Obj({ { "player", std::to_string(player) } }) : std::string("{}"), token);
         roomBeat.handler = [](int status, const Json& reply) {
             if (status == 0 || status >= 500)
             {
                 nextGuestConfirm = GetTime() + 3.0; // сүлжээ: дахин (эс бөгөөс сервер тулалдаж буй зочныг "ирээгүй" гэж гаргана)
                 return;
             }
-            guestConfirmPending = false;
+            if (!guestConfirms.empty()) guestConfirms.erase(guestConfirms.begin());
             BeatHandler(status, reply);
         };
     }
@@ -557,10 +572,19 @@ namespace
         {
             roomBattle = reply["battle"].Int(roomBattle);
             roomCoop = reply["coop"].Bool();
-            roomGuestSoldiers = reply["guest_soldiers"].Int(-1);
-            roomGuestHealthLevel = reply["guest_health_level"].Int(-1);
-            roomGuestDamageLevel = reply["guest_damage_level"].Int(-1);
-            roomGuestRank = reply["guest_rank"].Int(-1);
+            roomMembers.clear();
+            const Json& members = reply["members"];
+            for (size_t i = 0; i < members.Size(); ++i)
+            {
+                const Json& row = members[i];
+                RoomMember member;
+                member.player = row["player"].Int(-1);
+                member.soldiers = row["soldiers"].Int(-1);
+                member.healthLevel = row["health_level"].Int(-1);
+                member.damageLevel = row["damage_level"].Int(-1);
+                member.rank = row["rank"].Int(-1);
+                roomMembers.push_back(member);
+            }
         }
     }
 
@@ -2076,9 +2100,9 @@ void Account::Tick()
             };
         }
     }
-    if (guestConfirmPending && roomBeat.id < 0 && GetTime() >= nextGuestConfirm)
+    if (!guestConfirms.empty() && roomBeat.id < 0 && GetTime() >= nextGuestConfirm)
     {
-        if (roomId < 0 || roomRole != Account::RoomRole::Host) guestConfirmPending = false;
+        if (roomId < 0 || roomRole != Account::RoomRole::Host) guestConfirms.clear();
         else SendGuestConfirm();
     }
     if (guestLostDirty && guestLostCall.id < 0 && roomId >= 0 && roomRole == Account::RoomRole::Host)
@@ -2711,17 +2735,19 @@ bool Account::TakeJoinedRoom() { return std::exchange(roomJoined, false); }
 void Account::LeaveRoom() { RoomCall("leave"); }
 void Account::CompleteRoom() { RoomCall("complete"); }
 
-void Account::ConfirmGuest()
+void Account::ConfirmGuest(int player)
 {
     if (roomId < 0 || roomRole != RoomRole::Host) return;
-    roomGuestSoldiers = roomGuestHealthLevel = roomGuestDamageLevel = -1;
-    guestConfirmPending = true;
-    SendGuestConfirm();
+    roomMembers.erase(std::remove_if(roomMembers.begin(), roomMembers.end(),
+                                     [player](const RoomMember& member) { return player < 0 || member.player == player; }),
+                      roomMembers.end()); // (хариу ирэхэд шинэчлэгдэнэ)
+    guestConfirms.push_back(player);
+    if (roomBeat.id < 0) SendGuestConfirm();
 }
 
-int Account::RoomGuestSoldiers() { return roomGuestSoldiers; }
-int Account::RoomGuestHealthLevel() { return roomGuestHealthLevel; }
-int Account::RoomGuestDamageLevel() { return roomGuestDamageLevel; }
+int Account::RoomGuestSoldiers(int player) { return FindRoomMember(player).soldiers; }
+int Account::RoomGuestHealthLevel(int player) { return FindRoomMember(player).healthLevel; }
+int Account::RoomGuestDamageLevel(int player) { return FindRoomMember(player).damageLevel; }
 int Account::Xp() { return SignedIn() ? xp : 0; }
 void Account::TestSignIn(const std::string& name, int testGold, int testXp)
 {
@@ -2733,7 +2759,7 @@ void Account::TestSignIn(const std::string& name, int testGold, int testXp)
 }
 int Account::Rank() { return SignedIn() ? std::max(1, rank) : 1; }
 int Account::RoomHostRank() { return roomHostRank; }
-int Account::RoomGuestRank() { return roomGuestRank; }
+int Account::RoomGuestRank(int player) { return FindRoomMember(player).rank; }
 
 void Account::RefreshRoom()
 {

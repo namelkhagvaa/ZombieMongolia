@@ -5,7 +5,8 @@
 // Олон зочин (протокол 2): зочин бүр өрөөнд нэгдмэгц дугаар (slot 0..MAX_GUESTS-1) авна.
 //   Хост -> relay: binary мессежийн эхний байт нь хүлээн авагч зочны дугаар (0xFE = бүх нэгдсэн зочид), дараа нь
 //   өгөгдөл. Relay -> хост: эхний байт нь илгээсэн зочны дугаар. Зочны тал өөрчлөгдөөгүй (дугааргүй).
-//   Хостод ирэх удирдлагын мессеж paired, left нь "slot"-той: {"type":"paired","slot":2}.
+//   Хостод ирэх удирдлагын мессеж paired, left нь "slot"-той: {"type":"paired","slot":2}. Тасалбартай өрөөнд paired нь
+//   "player"-тэй (backend-ийн тоглогчийн дугаар: хост серверээс зочин бүрийн мэдээг ялгана).
 // Хоёр төрлийн холболт хүлээн авна; нэг өрөөнд аль ч төрлийнх нь орж болно:
 //
 //   WebSocket (хөтөч, PORT, анхдагч 8090; nginx-ийн /relay-ээр wss://):
@@ -153,7 +154,7 @@ function hostTicketRoom(peer, code, id, ticket) {
   peer.control({ type: 'room', code: id });
   bindHost(peer, room, code);
   eachGuest(room, (guest, slot) => {
-    peer.control({ type: 'paired', slot });
+    peer.control({ type: 'paired', slot, player: room.guestPlayers[slot] });
     guest.control({ type: 'paired' });
   });
 }
@@ -194,12 +195,14 @@ function joinRoom(peer, code, player) {
     room.guests[slot] = null;
     previous.close();
   }
+  // Сул дугаар: тасарсан тоглогчийнхыг (буцаж ирж магадгүй) аль болох хөндөхгүй
+  if (slot < 0) slot = room.guests.findIndex((guest, i) => !guest && room.guestPlayers[i] === null);
   if (slot < 0) slot = room.guests.indexOf(null);
   if (slot < 0) { peer.control({ type: 'error', reason: 'full' }); peer.close(); return; }
   room.guests[slot] = peer;
   room.guestPlayers[slot] = player;
   if (room.host) {
-    room.host.control({ type: 'paired', slot });
+    room.host.control({ type: 'paired', slot, player });
     peer.control({ type: 'paired' });
   }
   const prefix = Buffer.from([slot]);

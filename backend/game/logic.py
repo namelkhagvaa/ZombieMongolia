@@ -18,7 +18,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from . import gamelog, qpay, sms
-from .models import (AuthToken, Cashout, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, UnlockedProvince,
+from .models import (AuthToken, Cashout, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, RoomFriend, UnlockedProvince,
                      Verification)
 
 def request_ip(request):
@@ -55,6 +55,7 @@ JOIN_FAILURES = 3                     # 10 минутад ийм олон уда
 DISPUTE_LIMIT = 3                     # 7 хоногт ийм олон маргаантай тулаан: нээлттэй (тулаант) өрөөнд оруулахгүй
 DISPUTE_WINDOW = timedelta(days=7)
 MIN_STAGE_UPDATES = 3                 # үе шатны шагнал: даалгаврын ахиц ядаж ийм олон удаа өөрчлөгдсөн байх
+ROOM_FRIENDS = 5                      # нэг өрөөнд найзын кодоор орох дээд тоо (хосттой нийлээд 6: server/relay.js)
 COOP_JOIN_ATTEMPTS = 10               # найзын кодыг 10 минутад ийм олон удаа буруу оруулбал түр хаана
 WEB_DEVICE = "web-topup"              # вэбээр (Gold цэнэглэх хуудас) нэвтэрсэн токен: төхөөрөмж биш
 DEFAULT_GOLD_PACKS = [[300, 3000], [550, 5000], [1200, 10000]]  # [Gold, ₮]: admin-аас өөрчилнө
@@ -649,12 +650,20 @@ def _drop_guest(room, refund=False):
     room.guest = None
     room.guest_stake = 0
     room.guest_seen = None
-    room.guest_coop = False
     room.guest_confirmed = False
     room.guest_joined = None
     room.guest_fee = 0
     _reset_battle(room)
     room.save()
+
+
+def _drop_friend(friend):
+    """Найзыг өрөөнөөс гаргана (шийтгэлгүй: төлбөр, барьцаагүй)."""
+    room = friend.room
+    gamelog.server(room, "guest_removed", f"найз {friend.player.name} өрөөнөөс гарав")
+    friend.delete()
+    room.guest_coop = room.friends.exists()
+    room.save(update_fields=["guest_coop"])
 
 
 def _resolve_reported(room, device_id="", ip=None):
@@ -692,6 +701,8 @@ def expire_rooms():
     for room in Room.objects.select_for_update().filter(status=Room.OPEN, guest__isnull=False, guest_seen__lt=stale,
                                                         guest_left=False):
         _drop_guest(room)
+    for friend in RoomFriend.objects.select_for_update().filter(room__status=Room.OPEN, seen__lt=stale):
+        _drop_friend(friend)
     # Орсон ч тоглоомоор холбогдож чадаагүй зочин (хувилбар зөрсөн, relay хүрээгүй, апп унасан): төлбөр буцна
     unconfirmed = timezone.now() - UNCONFIRMED_TIMEOUT
     for room in Room.objects.select_for_update().filter(status=Room.OPEN, guest__isnull=False, guest_confirmed=False,
@@ -706,11 +717,13 @@ def _drop_rooms(locked, device_id, ip):
         log_event(locked, "room_closed", {"room": room.pk, "reason": "replaced"}, device_id, ip)
     for room in Room.objects.select_for_update().filter(status=Room.OPEN, guest=locked):
         _drop_guest(room)
+    for friend in RoomFriend.objects.select_for_update().filter(room__status=Room.OPEN, player=locked):
+        _drop_friend(friend)
 
 
 def _own_room(player, room_id):
     room = Room.objects.select_for_update().filter(pk=room_id, status=Room.OPEN).first() if isinstance(room_id, int) else None
-    if room is None or player.pk not in (room.host_id, room.guest_id):
+    if room is None or (player.pk not in (room.host_id, room.guest_id) and not room.friends.filter(player=player).exists()):
         raise GameError("room_closed", "Өрөө хаагдсан байна", 410)
     return room
 
@@ -727,7 +740,7 @@ def list_rooms(player, protocol=0, limit=40):
     level = rank_level(player.xp)
     low, high = rank_band(level)
     now = timezone.now()
-    rooms = (Room.objects.filter(status=Room.OPEN, pvp=True, guest__isnull=True, host_seen__gte=now - ROOM_JOINABLE)
+    rooms = (Room.objects.filter(status=Room.OPEN, pvp=True, guest__isnull=True, guest_coop=False, host_seen__gte=now - ROOM_JOINABLE)
              .exclude(host=player).select_related("host").order_by("created")[:limit])
     result = []
     for room in rooms:
@@ -774,7 +787,7 @@ def join_room(player, device_id, ip, protocol=0, room_id=None):
         # Ойролцоо зэрэгтэй хосттой л тулалдана (хэт давуу байдал үүсэхгүй): ±max(3, 15%)
         low, high = rank_band(rank_level(locked.xp))
         rooms = (Room.objects.select_for_update()
-                 .filter(status=Room.OPEN, pvp=True, guest__isnull=True, host_seen__gte=timezone.now() - ROOM_JOINABLE,
+                 .filter(status=Room.OPEN, pvp=True, guest__isnull=True, guest_coop=False, host_seen__gte=timezone.now() - ROOM_JOINABLE,
                          protocol=_protocol(protocol), host__xp__gte=rank_xp(low), host__xp__lt=rank_xp(high + 1))
                  .exclude(host=locked))
         if room_id is not None:
@@ -790,14 +803,14 @@ def join_room(player, device_id, ip, protocol=0, room_id=None):
             best = min(ids, key=lambda pk: abs(rank_level(hosts.get(pk, 0)) - level), default=None)
             room = rooms.filter(pk=best).first() if best is not None else None
         if room is None:
-            other_rank = (Room.objects.filter(status=Room.OPEN, pvp=True, guest__isnull=True,
+            other_rank = (Room.objects.filter(status=Room.OPEN, pvp=True, guest__isnull=True, guest_coop=False,
                                               host_seen__gte=timezone.now() - ROOM_JOINABLE, protocol=_protocol(protocol))
                           .exclude(host=locked).exists())
             if other_rank:
                 raise GameError("no_rooms", f"Таны зэрэгтэй ойролцоо ({low}–{high}) тоглогчийн нээлттэй өрөө алга. "
                                             "Дараа дахин оролдоно уу", 404)
             # Өөр хувилбартай нээлттэй өрөө байвал (нэг нь тоглоомоо шинэчлээгүй) тэрийгээ хэлнэ
-            other = (Room.objects.filter(status=Room.OPEN, pvp=True, guest__isnull=True,
+            other = (Room.objects.filter(status=Room.OPEN, pvp=True, guest__isnull=True, guest_coop=False,
                                          host_seen__gte=timezone.now() - ROOM_JOINABLE)
                      .exclude(host=locked).exclude(protocol=_protocol(protocol)).exists())
             if other:
@@ -819,7 +832,8 @@ def join_room(player, device_id, ip, protocol=0, room_id=None):
 
 
 def join_coop(player, device_id, code, ip, protocol=0):
-    """Найзын кодоор: тэр өрөөнд хамт тоглоно (тулаангүй, төлбөр, барьцаагүй). Хост тоглоомдоо зөвшөөрнө."""
+    """Найзын кодоор: тэр өрөөнд хамт тоглоно (тулаангүй, төлбөр, барьцаагүй; ROOM_FRIENDS хүртэл). Хост тоглоомдоо
+    зөвшөөрнө."""
     if not device_ok(player, device_id):
         raise GameError("device_change_required", "Энэ төхөөрөмж дээр тоглохын тулд төхөөрөмж солих төлбөр төлнө", 402)
     since = timezone.now() - timedelta(minutes=10)
@@ -839,32 +853,39 @@ def join_coop(player, device_id, code, ip, protocol=0):
         if room is None:
             raise GameError("no_room", "Ийм кодтой өрөө алга (найз тань аймгаа эхлүүлсэн эсэхийг шалгаарай)", 404)
         if room.protocol != _protocol(protocol):
-            raise GameError("version_mismatch", "Найзын тань тоглоомын хувилбар өөр байна. Хоёулаа шинэчилнэ үү", 409)
+            raise GameError("version_mismatch", "Найзын тань тоглоомын хувилбар өөр байна. Бүгд шинэчилнэ үү", 409)
         if room.host_id == locked.pk:
             raise GameError("own_room", "Энэ таны өөрийн өрөө байна", 409)
         if room.guest_id:
-            raise GameError("room_full", "Өрөөнд аль хэдийн өөр тоглогч байна", 409)
-        _drop_rooms(locked, device_id, ip)
-        room.guest = locked
-        room.guest_stake = 0
-        room.guest_seen = room.guest_joined = timezone.now()
+            raise GameError("room_full", "Энэ өрөөнд одоо тулаан явагдаж байна", 409)
+        if room.friends.exclude(player=locked).count() >= ROOM_FRIENDS:
+            raise GameError("room_full", f"Өрөө дүүрсэн байна ({ROOM_FRIENDS + 1} тоглогч)", 409)
+        _drop_rooms(locked, device_id, ip)  # (энэ өрөөнд дахин орж байвал хуучин бичлэг нь устана)
+        now = timezone.now()
+        RoomFriend.objects.create(room=room, player=locked, seen=now, joined=now)
         room.guest_coop = True
-        room.guest_confirmed = False
-        room.guest_fee = 0
-        _reset_battle(room)
-        room.save()
+        room.save(update_fields=["guest_coop"])
         log_event(locked, "coop_joined", {"room": room.pk, "province": room.province, "host": room.host_id}, device_id, ip)
         gamelog.server(room, "guest_joined", f"{locked.name} найзын кодоор орох эрх авав (хост {room.host.name})", locked)
     return room
 
 
-def accept_guest(player, room_id):
-    """Хост: зочин тоглоомоор (relay) холбогдож нэгдлээ. Үүнээс хойш тулаан тоологдоно, гарвал төлбөр буцахгүй."""
+def accept_guest(player, room_id, member=None):
+    """Хост: зочин тоглоомоор (relay) холбогдож нэгдлээ. Тулааны зочин: үүнээс хойш тулаан тоологдоно, гарвал төлбөр
+    буцахгүй. Найз: хамт давсны шагнал авах эрхтэй болно. member: тоглогчийн дугаар (relay-ийн тасалбараас); мэдэхгүй бол
+    хүлээгдэж буй ганц хүн."""
+    known = isinstance(member, int) and not isinstance(member, bool)
     with transaction.atomic():
         room = _own_room(player, room_id)
         if room.host_id != player.pk:
             raise GameError("not_host", "Зөвхөн хост", 403)
-        if room.guest_id and not room.guest_confirmed:
+        friends = room.friends.filter(player_id=member) if known else room.friends.filter(confirmed=False)
+        friends = list(friends.select_related("player")[:2])
+        if len(friends) == 1 and not friends[0].confirmed:
+            friends[0].confirmed = True
+            friends[0].save(update_fields=["confirmed"])
+            gamelog.server(room, "guest_arrived", f"хост: найз {friends[0].player.name} тоглоомоор ирлээ")
+        if room.guest_id and not room.guest_confirmed and (not known or member == room.guest_id):
             room.guest_confirmed = True
             gamelog.server(room, "guest_arrived", f"хост: зочин {room.guest.name} тоглоомоор ирлээ (тулаан тоологдоно)")
             room.guest_soldiers_start = min(room.guest.soldiers, 32767)
@@ -907,29 +928,32 @@ def room_beat(player, room_id):
         if room.host_id == player.pk:
             room.host_seen = timezone.now()
             room.save(update_fields=["host_seen"])
-        else:
+        elif room.guest_id == player.pk:
             room.guest_seen = timezone.now()
             room.save(update_fields=["guest_seen"])
+        else:
+            room.friends.filter(player=player).update(seen=timezone.now())
     return room
 
 
 def room_phase(room):
-    """WAITING/MISSION (хост ганцаараа даалгавар хийж, зочин хүлээж байна), BATTLE (зочин орсон), COMPLETED (сүүлийн
-    даалгавар биелсэн), CLOSED (хост гарсан, холболт тасарсан). Хүснэгтэд тусдаа талбаргүй: status, guest-ээс."""
+    """MISSION (хост ганцаараа даалгавар хийж, зочин хүлээж байна), COOP (найзуудтай), BATTLE (тулааны зочин орсон),
+    COMPLETED (сүүлийн даалгавар биелсэн), CLOSED (хост гарсан, холболт тасарсан). Хүснэгтэд тусдаа талбаргүй."""
     if room.status == Room.CLOSED:
         return "completed" if room.closed_reason == "completed" else "closed"
-    return "battle" if room.guest_id else "mission"
+    return "battle" if room.guest_id else "coop" if room.guest_coop else "mission"
 
 
 def room_state(room):
-    """Хост, зочинд: одоогийн тулаан (зочин орсон бол), зочны нэр."""
-    data = {"battle": room.battle if room.guest_id and not room.guest_coop else 0,
-            "guest": room.guest.name if room.guest_id else None, "coop": room.guest_coop}
+    """Хост, зочинд: одоогийн тулаан (тулааны зочин орсон бол), зочид. members: хост зочин бүрийн мэдэгдсэн цэрэг, амийг
+    серверийнхтэй тулгана (тоглоомын хуурамч мэдэгдлээс). player: relay-ийн тасалбарын тоглогчийн дугаар."""
+    players = [friend.player for friend in room.friends.select_related("player")]
     if room.guest_id:
-        # Хост зочны мэдэгдсэн цэрэг, амийг серверийнхтэй тулгана (тоглоомын хуурамч мэдэгдлээс)
-        data.update(guest_soldiers=room.guest.soldiers, guest_health_level=room.guest.health_level,
-                    guest_damage_level=room.guest.damage, guest_rank=rank_level(room.guest.xp))
-    return data
+        players.insert(0, room.guest)
+    return {"battle": room.battle if room.guest_id else 0, "guest": players[0].name if players else None,
+            "coop": room.guest_coop,
+            "members": [{"player": p.pk, "soldiers": p.soldiers, "health_level": p.health_level, "damage_level": p.damage,
+                         "rank": rank_level(p.xp)} for p in players]}
 
 
 def save_stage(player, room_id, stage, recruits):
@@ -1083,13 +1107,14 @@ def leave_room(player, device_id, room_id, ip):
     with transaction.atomic():
         room = _own_room(player, room_id)
         gamelog.server(room, "left", f"{player.name} өрөөнөөс гарах хүсэлт ({'хост' if room.host_id == player.pk else 'зочин'})", player)
-        if room.guest_id and room.guest_coop:
-            # Хамт тоглолт: шийтгэлгүй. Зочин гарвал өрөө хэвээр, хост гарвал (барьцаатай бол шатаж) хаагдана.
-            if room.guest_id == player.pk:
-                _drop_guest(room)
-                log_event(player, "coop_left", {"room": room.pk}, device_id, ip)
-                return
-            _drop_guest(room)
+        # Хамт тоглолт: шийтгэлгүй. Найз гарвал өрөө хэвээр, хост гарвал бүгд гарч өрөө хаагдана.
+        for friend in room.friends.select_for_update().select_related("player"):
+            if room.host_id == player.pk or friend.player_id == player.pk:
+                friend.room = room  # (_drop_friend guest_coop-ыг энэ объектод шинэчилнэ)
+                _drop_friend(friend)
+                if friend.player_id == player.pk:
+                    log_event(player, "coop_left", {"room": room.pk}, device_id, ip)
+                    return
         if room.guest_id and room.guest_id == player.pk and not room.guest_confirmed:
             # Тоглоомоор холбогдож чадаагүй (хувилбар зөрсөн, сүлжээ): тулаан болоогүй тул төлбөр буцна
             _drop_guest(room, refund=True)
@@ -1133,7 +1158,7 @@ def complete_room(player, device_id, room_id, ip):
         room = _own_room(player, room_id)
         if room.host_id != player.pk:
             raise GameError("not_host", "Зөвхөн хост үе шатыг дуусгана", 403)
-        if room.guest_id and not room.guest_coop:
+        if room.guest_id:
             if room.guest_confirmed:
                 # Тулаан шийдэгдээгүй: үе дуусгаж өрөөг хаавал тулаан хүчингүй болно (ялагдах гэж буй хост зугтана)
                 raise GameError("battle_active", "Тулаан дуусаагүй байна", 409)
@@ -1150,15 +1175,18 @@ def complete_room(player, device_id, room_id, ip):
             change_gold(locked, settings.stage_bonus, GoldTransaction.STAGE_COMPLETE, f"complete:{room.pk}", {"room": room.pk})
             if not locked.phone_verified:
                 missed += settings.stage_bonus
+        # Тоглоомоор ирж, төгсгөл хүртэл өрөөнд үлдсэн найзууд
+        arrived = room.friends.filter(confirmed=True).order_by("player_id").values_list("player_id", flat=True)
+        friends = [Player.objects.select_for_update().get(pk=pk) for pk in arrived]
         if played:
-            # Зэрэг: үе давсан (хамт давсан бол хоёуланд нь)
+            # Зэрэг: үе давсан (хамт давсан бол бүгдэд)
             add_xp(locked, XP_STAGE, "stage", f"complete:{room.pk}")
-            if room.guest_id and room.guest_coop and room.guest_confirmed:
-                add_xp(Player.objects.select_for_update().get(pk=room.guest_id), XP_STAGE, "stage", f"complete:{room.pk}")
-        if room.guest_id and room.guest_coop and room.guest_confirmed and played and settings.coop_reward:
-            # Найзтайгаа хамт давсан: хоёуланд нь (урамшуулал), тоглогч бүр өдөрт coop_daily_limit удаа хүртэл
+            for friend in friends:
+                add_xp(friend, XP_STAGE, "stage", f"complete:{room.pk}")
+        if friends and played and settings.coop_reward:
+            # Найзуудтайгаа хамт давсан: хүн бүрд (урамшуулал), тоглогч бүр өдөрт coop_daily_limit удаа хүртэл
             since = timezone.now() - timedelta(days=1)
-            for member in (locked, Player.objects.select_for_update().get(pk=room.guest_id)):
+            for member in [locked] + friends:
                 done = GoldTransaction.objects.filter(player=member, reason=GoldTransaction.COOP_WIN, created__gte=since).count()
                 if done < settings.coop_daily_limit:
                     change_gold(member, settings.coop_reward, GoldTransaction.COOP_WIN, f"coop:{room.pk}:{member.pk}",

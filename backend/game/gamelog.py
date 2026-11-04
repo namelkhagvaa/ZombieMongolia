@@ -148,6 +148,7 @@ def format_lines(rows):
                 if room:
                     title += (f" · аймаг {room.province + 1} · одоогийн хост {room.host.name}"
                               + (f" · зочин {room.guest.name}" if room.guest_id else "")
+                              + "".join(f" · найз {f.player.name}" for f in room.friends.select_related("player"))
                               + (f" · хаагдсан ({room.closed_reason})" if room.status == Room.CLOSED else ""))
                 lines.append(f"== {title}")
             else:

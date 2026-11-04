@@ -240,6 +240,7 @@ namespace Net
         bool Connected() const;
         bool SlotConnected(int slot) const; // хост: тухайн зочин
         int ConnectedCount() const;         // хост: нэгдсэн зочдын тоо
+        int SlotPlayer(int slot) const { return slot >= 0 && slot < kMaxGuests ? remotes[slot].player : -1; } // backend-ийн тоглогч
         // Аль нэг тал тасарсан эсвэл чимээгүй болсон: дахин холбогдохыг хүлээж байна (kResumeGrace секунд хүртэл)
         bool Reconnecting() const;
         int ReconnectSecondsLeft() const;
@@ -330,6 +331,7 @@ namespace Net
             Link link = Link::None;
             void* peer = nullptr;   // ENetPeer* (дотоод сүлжээ)
             int relaySlot = -1;     // relay-ийн зочны дугаар (хост)
+            int player = -1;        // backend-ийн тоглогчийн дугаар (хост, тасалбартай өрөө; -1 = мэдэхгүй)
             bool partner = false;   // relay: нөгөө тал өрөөнд байгаа
             bool pending = false;   // хост: нэгдэх хүсэлт ирсэн, хариу өгөөгүй
             bool connected = false; // нэгдсэн, тоглож байна

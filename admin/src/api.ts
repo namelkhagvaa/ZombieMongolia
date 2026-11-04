@@ -193,6 +193,7 @@ export interface RoomRow {
   phase: 'mission' | 'battle' | 'completed' | 'closed';
   host: { id: number; name: string; phone: string };
   guest: { id: number; name: string; phone: string } | null;
+  friends: { id: number; name: string; phone: string }[];
   battle: number;
   host_stake: number;
   guest_stake: number;

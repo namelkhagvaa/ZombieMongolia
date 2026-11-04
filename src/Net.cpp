@@ -219,7 +219,7 @@ namespace Net
                     var m = {};
                     try { m = JSON.parse(e.data); } catch (err) {}
                     if (m.type === 'room') queue.push({ k: 2, v: m.code | 0 });
-                    else if (m.type === 'paired') queue.push({ k: 3, v: m.slot | 0 });
+                    else if (m.type === 'paired') queue.push({ k: 3, v: (m.slot | 0) + 8 * (m.player == null ? 0 : m.player + 1) });
                     else if (m.type === 'left') queue.push({ k: 4, v: m.slot | 0 });
                     else if (m.type === 'error') queue.push({ k: 5, v: m.reason === 'notfound' ? 1 : m.reason === 'full' ? 2 : 0 });
                 } else {
@@ -444,6 +444,14 @@ namespace Net
                 return at == std::string::npos ? 0 : std::atoi(text.c_str() + at + 7);
             }
 
+            // Paired: дугаар + 8 * (тасалбарын тоглогч + 1); тоглогч байхгүй (null) бол зөвхөн дугаар
+            static int PairedValue(const std::string& text)
+            {
+                const size_t at = text.find("\"player\":");
+                const int player = at == std::string::npos ? -1 : std::atoi(text.c_str() + at + 9);
+                return SlotOf(text) + 8 * (player > 0 ? player + 1 : 0);
+            }
+
             // Бүрэн ирсэн мессежүүдийг дараалалд нэмнэ. Буруу өгөгдөл ирвэл холболтыг хааж false буцаана.
             bool Parse()
             {
@@ -474,7 +482,7 @@ namespace Net
                             const size_t codeAt = text.find("\"code\":");
                             queue.push_back({ kRelayRoom, codeAt == std::string::npos ? 0 : std::atoi(text.c_str() + codeAt + 7), {} });
                         }
-                        else if (text.find("\"type\":\"paired\"") != std::string::npos) queue.push_back({ kRelayPaired, SlotOf(text), {} });
+                        else if (text.find("\"type\":\"paired\"") != std::string::npos) queue.push_back({ kRelayPaired, PairedValue(text), {} });
                         else if (text.find("\"type\":\"left\"") != std::string::npos) queue.push_back({ kRelayLeft, SlotOf(text), {} });
                         else if (text.find("\"type\":\"error\"") != std::string::npos)
                         {
@@ -1106,10 +1114,13 @@ namespace Net
                     }
                     break;
                 }
-                // Хост: value = зочны relay дугаар
+                // Хост: дугаар + 8 * (тоглогч + 1) (Parse)
+                const int player = value / 8 - 1;
+                value %= 8;
                 int slot = FindRelaySlot(value);
                 if (slot >= 0 && remotes[slot].connected)
                 {
+                    remotes[slot].player = player;
                     remotes[slot].partner = true;
                     remotes[slot].lostAt = 0.0;
                     remotes[slot].lastHeard = GetTime();
@@ -1131,6 +1142,7 @@ namespace Net
                 }
                 remotes[slot].link = Link::Relay;
                 remotes[slot].relaySlot = value;
+                remotes[slot].player = player;
                 remotes[slot].partner = true; // хүсэлтийг хүлээнэ (JoinRequest)
                 break;
             }

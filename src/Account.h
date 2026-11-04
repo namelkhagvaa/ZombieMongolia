@@ -126,16 +126,17 @@ namespace Account
     void RefreshRoom();
     // Хост: зочин тоглоомоор холбогдлоо (серверт мэдэгдэнэ: тулаан тоологдож эхэлнэ, түүнээс өмнө гарвал төлбөр буцна).
     // Хариунд зочны серверийн мэдээлэл: Gold-оор авсан цэрэг, амийн түвшин (-1 = хараахан мэдэхгүй).
-    void ConfirmGuest();
-    int RoomGuestSoldiers();
-    int RoomGuestHealthLevel();
-    int RoomGuestDamageLevel(); // хост: зочны зэвсгийн хохирлын түвшин (-1 = мэдэхгүй)
+    // player: зочны тоглогчийн дугаар (Net::Session::SlotPlayer, -1 = мэдэхгүй: өрөөнд ганц зочин байвал тэр).
+    void ConfirmGuest(int player);
+    int RoomGuestSoldiers(int player);
+    int RoomGuestHealthLevel(int player);
+    int RoomGuestDamageLevel(int player); // хост: зочны зэвсгийн хохирлын түвшин (-1 = мэдэхгүй)
     // Зэрэг (src/Rank.h): дансны XP, зэрэг (нэвтрээгүй бол 0 XP, 1-р зэрэг). Өрөөний хост, зочны зэрэг (-1 = мэдэхгүй):
     // хамтын тоглолтод зомбины хүч хостын зэргээр, хост зочны амийг серверийн мэдэх зэргээр хязгаарлана.
     int Xp();
     int Rank();
     int RoomHostRank();
-    int RoomGuestRank();
+    int RoomGuestRank(int player);
     int RoomBattle();
     // Хост: даалгаврын ахиц, амьд элсүүлсэн цэргийн тоог серверт хадгална (зочин ялбал тэр үргэлжлүүлнэ).
     void UploadStage(const std::string& stage, int recruits);

@@ -129,6 +129,8 @@ def room_row(room):
         "phase": logic.room_phase(room),
         "host": {"id": room.host_id, "name": room.host.name, "phone": room.host.contact},
         "guest": {"id": room.guest_id, "name": room.guest.name, "phone": room.guest.contact} if room.guest_id else None,
+        "friends": [{"id": f.player_id, "name": f.player.name, "phone": f.player.contact}
+                    for f in room.friends.select_related("player")],
         "battle": room.battle,
         "host_stake": room.host_stake,
         "guest_stake": room.guest_stake,

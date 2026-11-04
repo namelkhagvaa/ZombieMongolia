@@ -352,8 +352,8 @@ class Cashout(models.Model):
 
 
 class Room(models.Model):
-    """Нээлттэй өрөө: нэг хост (аймгийг тоглож буй), хамгийн ихдээ нэг зочин. Тоглоомын тооцооллыг хостын төхөөрөмж
-    хийнэ; сервер нь хэн орсон, барьцаа, шагналыг л хариуцна."""
+    """Нээлттэй өрөө: нэг хост (аймгийг тоглож буй), нэг тулааны зочин (guest) эсвэл хэд хэдэн найз (RoomFriend).
+    Тоглоомын тооцооллыг хостын төхөөрөмж хийнэ; сервер нь хэн орсон, барьцаа, шагналыг л хариуцна."""
 
     OPEN, CLOSED = "open", "closed"
     STATUSES = [(OPEN, "Нээлттэй"), (CLOSED, "Хаагдсан")]
@@ -361,7 +361,7 @@ class Room(models.Model):
     province = models.PositiveSmallIntegerField("Аймаг")
     status = models.CharField("Төлөв", max_length=8, choices=STATUSES, default=OPEN, db_index=True)
     host = models.ForeignKey(Player, verbose_name="Хост", related_name="hosted_rooms", on_delete=models.CASCADE)
-    guest = models.ForeignKey(Player, verbose_name="Зочин", related_name="guest_rooms", null=True, blank=True,
+    guest = models.ForeignKey(Player, verbose_name="Тулааны зочин", related_name="guest_rooms", null=True, blank=True,
                               on_delete=models.SET_NULL)
     host_stake = models.PositiveIntegerField("Хостын барьцаа", default=0)
     guest_stake = models.PositiveIntegerField("Зочны барьцаа", default=0)
@@ -382,7 +382,7 @@ class Room(models.Model):
     # тоглогч урилгагүй орж тулалдана (эс бөгөөс зөвхөн найз кодоор).
     code = models.CharField("Найзын код", max_length=6, blank=True, db_index=True)
     pvp = models.BooleanField("Нээлттэй (тулаан)", default=True)
-    guest_coop = models.BooleanField("Зочин кодоор орсон найз", default=False)
+    guest_coop = models.BooleanField("Кодоор орсон найзтай (RoomFriend)", default=False)
     # Өрөөний даалгаврын ахиц: хост илгээнэ (тоглоомын StageSave-ийн мөр), шинэ хост үргэлжлүүлнэ
     stage_state = models.TextField("Даалгаврын ахиц", blank=True)
     stage_updates = models.PositiveIntegerField("Ахиц өөрчлөгдсөн удаа", default=0)  # үе шатны шагналын шалгалт
@@ -406,6 +406,26 @@ class Room(models.Model):
 
     def __str__(self):
         return f"#{self.pk} аймаг {self.province} ({self.get_status_display()})"
+
+
+class RoomFriend(models.Model):
+    """Найзын кодоор өрөөнд орсон тоглогч: хамт тоглоно (төлбөр, барьцаагүй). Тулааны зочин (Room.guest) байхад
+    найз орохгүй, найзтай өрөөнд тулааны зочин орохгүй."""
+
+    room = models.ForeignKey(Room, verbose_name="Өрөө", related_name="friends", on_delete=models.CASCADE)
+    player = models.ForeignKey(Player, verbose_name="Тоглогч", related_name="friend_rooms", on_delete=models.CASCADE)
+    seen = models.DateTimeField("Сүүлийн дохио")
+    joined = models.DateTimeField("Орсон")
+    confirmed = models.BooleanField("Тоглоомоор холбогдсон", default=False)
+
+    class Meta:
+        verbose_name = "Өрөөний найз"
+        verbose_name_plural = "Өрөөний найзууд"
+        ordering = ["joined", "pk"]
+        constraints = [models.UniqueConstraint(fields=["room", "player"], name="unique_room_friend")]
+
+    def __str__(self):
+        return f"#{self.room_id} {self.player}"
 
 
 class Event(models.Model):

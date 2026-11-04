@@ -4994,7 +4994,7 @@ void Game::UpdateAirstrike(float dt)
             SendMyStats();
             net.SendMissionWon(params.reward);
         }
-        if (AnyGuest() && joinCoop && Account::Enabled()) SetNotice(TextFormat("ХАМТ ДАВЛАА! Хоёулаа +%d Gold", Account::CoopReward()), 5.0f);
+        if (AnyGuest() && joinCoop && Account::Enabled()) SetNotice(TextFormat("ХАМТ ДАВЛАА! Хүн бүр +%d Gold", Account::CoopReward()), 5.0f);
         state = GameState::Won;
     }
 }
@@ -6872,7 +6872,7 @@ void Game::StartCoopGuest(int province)
     TraceLog(LOG_INFO, "STEP: guest_joined province %d, host %s (%s)", province + 1, hostName.c_str(),
              battleActive ? "battle" : "co-op");
     SetNotice(battleActive ? "ТУЛААН! Хостын үндсэн 3 дайчныг ал"
-              : Account::RoomCoop() ? TextFormat("ХАМТ ТОГЛОЛТ: үеийг хамт давбал хоёулаа %d Gold", Account::CoopReward())
+              : Account::RoomCoop() ? TextFormat("ХАМТ ТОГЛОЛТ: үеийг хамт давбал хүн бүр %d Gold", Account::CoopReward())
                                     : "ХАМТАРСАН ТОГЛОЛТ ЭХЭЛЛЭЭ", 3.5f);
     if (guestResume.valid) SetNotice("ХАМТ ТОГЛОЛТ РУУГАА БУЦЛАА", 3.0f);
 }
@@ -7025,7 +7025,7 @@ void Game::UpdateNetwork(float dt)
             {
                 // Өөр хувилбартай тоглогч: өгөгдөл таарахгүй тул нэгдүүлэхгүй
                 net.AnswerJoin(event.slot, false, provinceIndex);
-                SetNotice(event.text + ": тоглоомын хувилбар өөр — хоёулаа шинэчилнэ үү", 3.5f);
+                SetNotice(event.text + ": тоглоомын хувилбар өөр — бүгд шинэчилнэ үү", 3.5f);
             }
             else if (state == GameState::Playing && !coopGuest && !battleActive && event.coop && !joinRequestPending &&
                      ReturningGuest(event.text))
@@ -7095,7 +7095,7 @@ void Game::UpdateNetwork(float dt)
                 TraceLog(LOG_INFO, "STEP: guest_arrived %s%s (slot %d)", peer.name.c_str(), peer.rejoined ? " (rejoined)" : "", event.slot);
                 rosterDirty = true;
                 // Сервер: зочин тоглоомоор холбогдож ертөнцөд ирлээ (тулаан тоологдоно; хариунд зочны цэрэг, амь)
-                if (Account::CurrentRoomRole() == Account::RoomRole::Host) Account::ConfirmGuest();
+                if (Account::CurrentRoomRole() == Account::RoomRole::Host) Account::ConfirmGuest(net.SlotPlayer(event.slot));
             }
             if (peer.rejoined)
             {
@@ -7320,7 +7320,7 @@ void Game::UpdateNetwork(float dt)
                 peer.humanTokens -= 1.0f;
                 float amount = event.amount;
                 if (!(amount == amount)) break; // NaN
-                amount = std::clamp(amount, -2100.0f, GuestHumanDamageCap());
+                amount = std::clamp(amount, -2100.0f, GuestHumanDamageCap(event.slot));
                 if (amount < 0.0f) amount = std::max(amount, -0.5f);
                 else amount *= PvpScale(); // хүн хоорондын хохирол (Team.h); тулааны эхэнд 0
                 const bool share = amount < 0.0f;
@@ -7638,9 +7638,9 @@ void Game::UpdateNetwork(float dt)
                 SendMyStats();
                 Save();
                 state = GameState::Won;
-                // Хамт тоглолт: өрөөнөөс гарсан гэж мэдэгдэхгүй (хост дуусгахад сервер хоёуланд нь шагнал өгч өрөөг хаана)
+                // Хамт тоглолт: өрөөнөөс гарсан гэж мэдэгдэхгүй (хост дуусгахад сервер бүгдэд шагнал өгч өрөөг хаана)
                 const bool coop = Account::RoomCoop();
-                if (coop) SetNotice(TextFormat("ХАМТ ДАВЛАА! Хоёулаа +%d Gold", Account::CoopReward()), 5.0f);
+                if (coop) SetNotice(TextFormat("ХАМТ ДАВЛАА! Хүн бүр +%d Gold", Account::CoopReward()), 5.0f);
                 LeaveCoop(!coop);
             }
             break;
@@ -7919,7 +7919,8 @@ Rectangle Game::RoomChipRect() const
 bool Game::RoomPanelAllowed() const
 {
     if (state != GameState::Playing || !net.Connected() || (battleActive && !skirmish)) return false;
-    return coopGuest || !(Account::CurrentRoomRole() == Account::RoomRole::Host && Account::RoomPvp());
+    // Gold-той өрөөнд тулааны зочин орж ирнэ; найзтай бол сервер тулааны зочин оруулахгүй
+    return coopGuest || !(Account::CurrentRoomRole() == Account::RoomRole::Host && Account::RoomPvp() && !Account::RoomCoop());
 }
 
 namespace
@@ -8171,11 +8172,12 @@ float Game::WallDt()
     return std::min(GetFrameTime(), 1.0f);
 }
 
-float Game::GuestHumanDamageCap() const
+float Game::GuestHumanDamageCap(int slot) const
 {
     // Зочны хамгийн хүчтэй зэвсгийн нэг сум, толгойд (серверийн мэдэх хохирлын түвшин, зэргээр). Мэдэхгүй бол хуучин
     // ерөнхий хязгаар (2100: дурантай буу, дээд түвшин, толгойд). 5% сүлжээний бөөрөнхийлөлтийн зөрүү.
-    const int level = Account::RoomGuestDamageLevel(), rank = Account::RoomGuestRank();
+    const int who = net.SlotPlayer(slot);
+    const int level = Account::RoomGuestDamageLevel(who), rank = Account::RoomGuestRank(who);
     if (level < 0 || rank <= 0) return 2100.0f;
     return std::min(2100.0f, WeaponMaxDamage(level) * RankBonus(rank) * HitZoneMultiplier(HitZone::Head) * 1.05f);
 }
@@ -8195,8 +8197,9 @@ void Game::ApplyGuestSetup(int slot)
 {
     GuestPeer& peer = guests[slot];
     // Зочны мэдэгдсэн амь, Gold-ийн цэргийг серверийн мэдээгээр хязгаарлана (тоглоомоо өөрчилж нэмэхээс)
-    const int serverSoldiers = Account::RoomGuestSoldiers(), serverLevel = Account::RoomGuestHealthLevel();
-    const int guestRank = Account::RoomGuestRank();
+    const int who = net.SlotPlayer(slot);
+    const int serverSoldiers = Account::RoomGuestSoldiers(who), serverLevel = Account::RoomGuestHealthLevel(who);
+    const int guestRank = Account::RoomGuestRank(who);
     const float maxHealth = (config.playerBaseHealth +
                              kHealthPerLevel * (float)(serverLevel >= 0 ? serverLevel : ShopMaxLevel(ShopItem::Health))) *
                             RankBonus(guestRank > 0 ? guestRank : 1);
@@ -8971,7 +8974,7 @@ void Game::AcceptGuest()
     }
     else
     {
-        SetNotice(joinCoop && Account::Enabled() ? joinRequester + TextFormat(" нэгдлээ — ХАМТ ТОГЛОЛТ: үеийг хамт давбал хоёулаа %d Gold",
+        SetNotice(joinCoop && Account::Enabled() ? joinRequester + TextFormat(" нэгдлээ — ХАМТ ТОГЛОЛТ: үеийг хамт давбал хүн бүр %d Gold",
                                                                               Account::CoopReward())
                                                  : joinRequester + " нэгдлээ", 4.0f);
     }
@@ -9007,7 +9010,7 @@ void Game::UpdateCoopMission(float dt)
             if (peer.setup.pending)
             {
                 peer.setup.waited += dt;
-                const bool serverKnows = Account::RoomGuestSoldiers() >= 0;
+                const bool serverKnows = Account::RoomGuestSoldiers(net.SlotPlayer(slot)) >= 0;
                 const bool noServer = Account::CurrentRoomRole() != Account::RoomRole::Host;
                 if (peer.active && (serverKnows || noServer || peer.setup.waited > 6.0f)) ApplyGuestSetup(slot);
             }
@@ -10143,7 +10146,7 @@ void Game::DrawCoopMap() const
         const bool enough = Account::GoldAvailable() >= Account::RoomEntry();
         const bool searching = Account::SearchingRoom();
         Ui::Text("Найзтайгаа: кодоор нь нэгдэж хамт давна", (int)panel.x + 18, 632, 15, Ui::kText);
-        Ui::Text(TextFormat("Үнэгүй · хамт давбал хоёулаа %d Gold", Account::CoopReward()), (int)panel.x + 18, 650, 12, Ui::kTextDim);
+        Ui::Text(TextFormat("Үнэгүй · хамт давбал хүн бүр %d Gold", Account::CoopReward()), (int)panel.x + 18, 650, 12, Ui::kTextDim);
         {
             const Rectangle friendButton = FriendButtonRect();
             Ui::Fill(friendButton, Fade(Ui::kGood, 0.85f));

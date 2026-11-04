@@ -385,7 +385,7 @@ private:
     void GiveCrateReward();
     void DamageGuest(int slot, float amount);   // хост: зочныг гэмтээнэ (илгээж, амийг нь давхар тооцно)
     bool AllowGuestHit(int slot, float& amount, float cap); // хост: зочны оноолтыг хязгаарлана; хэтэрсэн бол false
-    float GuestHumanDamageCap() const;            // хост: зочны хүнд учруулах нэг сумны дээд хохирол (серверийн түвшнээр)
+    float GuestHumanDamageCap(int slot) const;    // хост: зочны хүнд учруулах нэг сумны дээд хохирол (серверийн түвшнээр)
     static float WallDt();                        // бодит кадрын хугацаа (сервертэй уялдсан хугацаанд)
     void ApplyGuestSetup(int slot);
     int GuestViewVerdict() const;     // зочин: өөрийн харж буй тулааны үр дүн (-1 шийдэгдээгүй, 0 хост, 1 зочин ялсан)

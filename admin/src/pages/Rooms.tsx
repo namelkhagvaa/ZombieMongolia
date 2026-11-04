@@ -59,6 +59,8 @@ export default function RoomsPage() {
       render: (value, row) =>
         row.phase === 'battle' ? (
           <Tag color="red">Тулаан</Tag>
+        ) : row.phase === 'coop' ? (
+          <Tag color="blue">Найзуудтай · {row.friends.length + 1} хүн</Tag>
         ) : value === 'open' ? (
           <Tag color="green">Даалгавар · зочин хүлээж байна</Tag>
         ) : (
@@ -66,7 +68,20 @@ export default function RoomsPage() {
         ),
     },
     { title: 'Хост', dataIndex: 'host', render: (_, row) => person(row.host, row.host_stake) },
-    { title: 'Зочин', dataIndex: 'guest', render: (_, row) => person(row.guest, row.guest_stake) },
+    {
+      title: 'Зочин',
+      dataIndex: 'guest',
+      render: (_, row) =>
+        row.friends.length ? (
+          <Space direction="vertical" size={4}>
+            {row.friends.map((friend) => (
+              <div key={friend.id}>{person(friend, 0)}</div>
+            ))}
+          </Space>
+        ) : (
+          person(row.guest, row.guest_stake)
+        ),
+    },
     { title: 'Тулаан', dataIndex: 'battle', align: 'center', width: 80 },
     { title: 'Цэрэг', dataIndex: 'recruits', align: 'center', width: 80, responsive: ['md'] },
     {
