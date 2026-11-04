@@ -26,18 +26,31 @@ let failed = 0;
 const check = (name, ok) => { console.log((ok ? 'OK   ' : 'FAIL ') + name); if (!ok) failed++; };
 
 await wait(800);
-const host = connect('?host');
+const oldHost = connect('?host');
+await wait(200);
+const oldCode = oldHost.control.find((m) => m.type === 'room')?.code;
+check('an old host can still open a room', Boolean(oldCode));
+const newToOld = connect(`?v=2&join=${oldCode}`);
+await wait(200);
+check('a new guest cannot join an old host', newToOld.control.some((m) => m.type === 'error' && m.reason === 'update') && newToOld.closed);
+oldHost.close();
+await wait(100);
+
+const host = connect('?v=2&host');
 await wait(300);
 const code = host.control.find((m) => m.type === 'room').code;
 check('host gets a room code', code > 0);
 
 const guests = [];
-for (let i = 0; i < 5; i++) { guests.push(connect(`?join=${code}`)); await wait(150); }
+for (let i = 0; i < 5; i++) { guests.push(connect(`?v=2&join=${code}`)); await wait(150); }
 const slots = host.control.filter((m) => m.type === 'paired').map((m) => m.slot);
 check('five guests get slots 0..4', JSON.stringify(slots) === '[0,1,2,3,4]');
 check('every guest is paired', guests.every((g) => g.control.some((m) => m.type === 'paired')));
 
-const sixth = connect(`?join=${code}`);
+const oldGuest = connect(`?join=${code}`);
+await wait(200);
+check('an old guest is told to update', oldGuest.control.some((m) => m.type === 'error' && m.reason === 'update') && oldGuest.closed);
+const sixth = connect(`?v=2&join=${code}`);
 await wait(300);
 check('sixth guest is refused (room full)', sixth.closed && sixth.control.some((m) => m.reason === 'full'));
 
@@ -61,7 +74,7 @@ check('broadcast reaches all guests', guests.every((g) => g.data.at(-1)?.equals(
 guests[1].close();
 await wait(300);
 check('host is told which slot left', host.control.some((m) => m.type === 'left' && m.slot === 1));
-const late = connect(`?join=${code}`);
+const late = connect(`?v=2&join=${code}`);
 await wait(300);
 check('a new guest takes the freed slot', host.control.filter((m) => m.type === 'paired').at(-1).slot === 1 && !late.closed);
 

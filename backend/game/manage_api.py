@@ -130,7 +130,7 @@ def room_row(room):
         "host": {"id": room.host_id, "name": room.host.name, "phone": room.host.contact},
         "guest": {"id": room.guest_id, "name": room.guest.name, "phone": room.guest.contact} if room.guest_id else None,
         "friends": [{"id": f.player_id, "name": f.player.name, "phone": f.player.contact}
-                    for f in room.friends.select_related("player")],
+                    for f in room.friends.all()],
         "battle": room.battle,
         "host_stake": room.host_stake,
         "guest_stake": room.guest_stake,
@@ -569,7 +569,7 @@ def cashout_reject(request, cashout_id):
 
 @staff_api(["GET"])
 def rooms(request):
-    qs = Room.objects.select_related("host", "guest")
+    qs = Room.objects.select_related("host", "guest").prefetch_related("friends__player")
     if request.GET.get("status") in (Room.OPEN, Room.CLOSED):
         qs = qs.filter(status=request.GET["status"])
     return ok(**page_of(request, qs.order_by("-created"), room_row))

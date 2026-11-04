@@ -741,6 +741,7 @@ void Game::Run()
                      !journalOpen && !fullMap.IsOpen() && (roomPanelOpen || RoomPanelAllowed()))
             {
                 roomPanelOpen = !roomPanelOpen;
+                roomPanelJustOpened = roomPanelOpen;
                 if (roomPanelOpen) EnableCursor();
                 else LockCursor();
             }
@@ -766,7 +767,8 @@ void Game::Run()
             if (roomPanelOpen)
             {
                 // Өрөөний цонх: ертөнц хөдөлсөөр, энэ тоглогчийн оролтгүй
-                UpdateRoomPanel();
+                if (!roomPanelJustOpened) UpdateRoomPanel();
+                roomPanelJustOpened = false;
                 InSetMuted(true);
                 UpdateMission(dt);
             }
@@ -2813,8 +2815,11 @@ void Game::ThrowGrenade(Ray aim)
 void Game::SpawnVehicles()
 {
     garage.Clear();
-    sentVehiclePosition.clear(); // шинэ унаанууд: зочинд дахин илгээнэ
-    sentVehicleHealth.clear();
+    for (GuestPeer& peer : guests)
+    {
+        peer.sentVehiclePosition.clear(); // шинэ унаанууд: зочинд дахин илгээнэ
+        peer.sentVehicleHealth.clear();
+    }
     world.SetVehicleBlockers({}); // (өмнөх тоглолтын унаанууд байрлалд нөлөөлөхгүй: хост, зочин хоёрт ижил)
 
     // Аймгийн хилийн дотор байгаа цэгүүдэд л байрлуулна.
@@ -7055,13 +7060,13 @@ void Game::UpdateNetwork(float dt)
                 SetNotice(event.text + ": тоглоомын хувилбар өөр — бүгд шинэчилнэ үү", 3.5f);
             }
             else if (state == GameState::Playing && !coopGuest && !battleActive && event.coop && !joinRequestPending &&
-                     ReturningGuest(event.text))
+                     ReturningGuest(event.slot, event.text))
             {
                 // Ижил найз буцаж ирлээ (хуудсаа refresh хийсэн, тасарсан г.м.): асуулгүй, багийг нь хэвээр
                 TraceLog(LOG_INFO, "STEP: guest_returned %s", event.text.c_str());
                 for (int i = 0; i < Net::kMaxGuests; ++i)
                 {
-                    if (guests[i].joined && guests[i].name == event.text) ResetGuest(i);
+                    if (IsGuestReturning(i, event.slot, event.text)) ResetGuest(i);
                 }
                 joinRequestPending = true;
                 pendingSlot = event.slot;
@@ -7129,7 +7134,7 @@ void Game::UpdateNetwork(float dt)
             if (peer.rejoined)
             {
                 peer.rejoined = false;
-                ResumeGuestBody();
+                ResumeGuestBody(event.slot);
                 peer.active = true;
                 break;
             }
@@ -7716,7 +7721,7 @@ void Game::UpdateNetwork(float dt)
                 {
                     SetNotice(peer.name + " тоглолтоос гарлаа", 2.5f);
                 }
-                recentGuests.push_back({ peer.name, GetTime() }); // (буцаж ирвэл асуулгүй хүлээн авна)
+                recentGuests.push_back({ peer.name, peer.player, GetTime() }); // (буцаж ирвэл асуулгүй хүлээн авна)
                 ResetGuest(event.slot);
                 rosterDirty = true;
             }
@@ -7743,10 +7748,12 @@ void Game::ResetGuest(int slot)
     // (тулаан: баг нь үлдэж, тэр зочин буцаж ирж болно)
     const bool teamSpawned = peer.teamSpawned;
     const std::string teamOwner = peer.teamOwner;
+    const int teamOwnerPlayer = peer.teamOwnerPlayer;
     const float memberHealth = peer.memberHealth;
     peer = GuestPeer{};
     peer.teamSpawned = teamSpawned;
     peer.teamOwner = teamOwner;
+    peer.teamOwnerPlayer = teamOwnerPlayer;
     peer.memberHealth = memberHealth;
 }
 
@@ -7791,9 +7798,20 @@ void Game::SetRoomMode(RoomMode mode)
     rosterDirty = true;
 }
 
+bool Game::SkirmishWaiting() const
+{
+    // Тулааны мэдэгдлийг ирсэн зочдод л илгээдэг: ачаалж буй зочин, хариу хүлээж буй хүсэлт байвал эхлэхгүй
+    if (joinRequestPending || !pendingJoins.empty()) return true;
+    for (const GuestPeer& peer : guests)
+    {
+        if (peer.joined && !peer.active) return true;
+    }
+    return false;
+}
+
 bool Game::SkirmishReady() const
 {
-    if (roomMode == RoomMode::Coop || coopGuest) return false;
+    if (roomMode == RoomMode::Coop || coopGuest || SkirmishWaiting()) return false;
     for (int i = 0; i < Net::kMaxGuests; ++i)
     {
         if (guests[i].active && TeamOf(i + 1) != TeamOf(0)) return true;
@@ -7983,10 +8001,10 @@ namespace
 
 void Game::UpdateRoomPanel()
 {
-    if (coopGuest || !InMousePressed(MOUSE_BUTTON_LEFT)) return;
+    if (!InMousePressed(MOUSE_BUTTON_LEFT)) return;
     const Vector2 pointer = InPointer();
     const Rectangle panel = RoomPanelArea(ViewWidth(), ViewHeight());
-    if (!CheckCollisionPointRec(pointer, panel))
+    if (coopGuest || !CheckCollisionPointRec(pointer, panel)) // (зочин горим өөрчлөхгүй: хаа ч дарвал хаагдана)
     {
         roomPanelOpen = false;
         LockCursor();
@@ -8074,7 +8092,7 @@ void Game::DrawRoomPanel() const
     }
     else
     {
-        const char* text = "Эсрэг талд хамгийн багадаа нэг тоглогч хэрэгтэй";
+        const char* text = SkirmishWaiting() ? "Тоглогч нэгдэж байна, түр хүлээнэ үү" : "Эсрэг талд хамгийн багадаа нэг тоглогч хэрэгтэй";
         Ui::Text(text, (int)(start.x + start.width * 0.5f) - Ui::Measure(text, 16) / 2, (int)start.y + 14, 16, Ui::kTextDim);
     }
 }
@@ -8138,15 +8156,25 @@ bool Game::CanTakeGuest(int slot, bool coop) const
     return !rival.active && !(rival.joined && guestSlot != slot && net.SlotConnected(guestSlot));
 }
 
-bool Game::ReturningGuest(const std::string& name) const
+bool Game::IsGuestReturning(int index, int slot, const std::string& name) const
 {
-    for (const GuestPeer& peer : guests)
+    const GuestPeer& peer = guests[index];
+    const int player = net.SlotPlayer(slot);
+    if (!peer.joined || !SamePlayer(peer.name, peer.player, name, player)) return false;
+    // Данс мэдэгдэхгүй үед холбоотой өөр зочинтой ижил нэртэй бол өөр хүн (тэр зочныг хөөхгүй)
+    return (peer.player >= 0 && player >= 0) || index == slot || !net.SlotConnected(index);
+}
+
+bool Game::ReturningGuest(int slot, const std::string& name) const
+{
+    for (int i = 0; i < Net::kMaxGuests; ++i)
     {
-        if (peer.joined && peer.name == name) return true;
+        if (IsGuestReturning(i, slot, name)) return true;
     }
-    for (const auto& entry : recentGuests)
+    const int player = net.SlotPlayer(slot);
+    for (const RecentGuest& entry : recentGuests)
     {
-        if (entry.first == name && GetTime() - entry.second < 10.0 * 60.0) return true;
+        if (SamePlayer(entry.name, entry.player, name, player) && GetTime() - entry.leftAt < 10.0 * 60.0) return true;
     }
     return false;
 }
@@ -8595,7 +8623,11 @@ void Game::WinBattleAsHost()
     // Ялагдсан багийн элсүүлсэн цэргүүд ялагчид шилжинэ
     for (Soldier& soldier : squad.All())
     {
-        if (soldier.guestTeam && soldier.member < 0 && soldier.alive) soldier.guestTeam = false;
+        if (soldier.guestTeam && soldier.member < 0 && soldier.alive)
+        {
+            soldier.guestTeam = false;
+            soldier.guestOwner = -1;
+        }
     }
     squad.RemoveGuestTeam();
     BattleGuest().teamSpawned = true; // ялагдсан зочин гартал (UpdateCoopMission) дахин үүсгэхгүй
@@ -8894,32 +8926,34 @@ void Game::UpdateBattle(float dt)
     }
 }
 
-void Game::ResumeGuestBody()
+void Game::ResumeGuestBody(int slot)
 {
     // Зочны дүрийн гишүүнтэй ижил (тасрахад үлдсэн бие), эсвэл бусад зогсож буй гишүүн. Хэн ч үлдээгүй бол зочин
     // унасанд тооцогдоно (шинэ бүтэн бие авч тулааныг дахин эхлүүлэхгүй).
     std::vector<Soldier>& soldiers = squad.All();
+    GuestPeer& peer = guests[slot];
     int pick = -1;
     for (int i = 0; i < (int)soldiers.size(); ++i)
     {
         const Soldier& s = soldiers[(size_t)i];
-        if (!s.guestTeam || s.member < 0 || !s.alive || s.downed) continue;
-        if (pick < 0 || s.member == (int)BattleGuest().figure.member) pick = i;
-        if (s.member == (int)BattleGuest().figure.member) break;
+        if (!s.guestTeam || s.guestOwner != slot || s.member < 0 || !s.alive || s.downed) continue;
+        if (pick < 0 || s.member == (int)peer.figure.member) pick = i;
+        if (s.member == (int)peer.figure.member) break;
     }
     if (pick < 0)
     {
         TraceLog(LOG_INFO, "BATTLE: rejoined guest has no standing fighter left");
-        BattleGuest().forcedDown = true;
+        peer.forcedDown = true;
         return;
     }
     const Soldier body = soldiers[(size_t)pick];
     soldiers.erase(soldiers.begin() + pick);
+    net.To(slot);
     net.SendTakeover(body.mover.position, body.health, body.member);
-    BattleGuest().figure.position = BattleGuest().figure.target = body.mover.position;
-    BattleGuest().figure.member = (uint8_t)body.member;
-    BattleGuest().health = body.health;
-    BattleGuest().ResetHealthCheck();
+    peer.figure.position = peer.figure.target = body.mover.position;
+    peer.figure.member = (uint8_t)body.member;
+    peer.health = body.health;
+    peer.ResetHealthCheck();
     TraceLog(LOG_INFO, "BATTLE: rejoined guest took back member %d (%.0f hp)", body.member, body.health);
 }
 
@@ -8951,11 +8985,12 @@ void Game::AcceptGuest()
     {
         // Тулаан: дахин холбогдсон ижил тоглогч өөр дугаар авсан бол багаа авна; шинэ тоглогчид хуучин баг устана (доор)
         GuestPeer& previous = BattleGuest();
-        if (previous.teamOwner == joinRequester)
+        if (SamePlayer(previous.teamOwner, previous.teamOwnerPlayer, joinRequester, net.SlotPlayer(slot)))
         {
             squad.ReownGuestTeam(guestSlot, slot);
             guests[slot].teamSpawned = previous.teamSpawned;
             guests[slot].teamOwner = previous.teamOwner;
+            guests[slot].teamOwnerPlayer = previous.teamOwnerPlayer;
             guests[slot].memberHealth = previous.memberHealth;
         }
         else if (squad.HasGuestTeam(guestSlot))
@@ -8965,12 +9000,14 @@ void Game::AcceptGuest()
         ResetGuest(guestSlot);
         previous.teamSpawned = false;
         previous.teamOwner.clear();
+        previous.teamOwnerPlayer = -1;
     }
     if (BattleRoom(joinCoop)) guestSlot = slot;
     GuestPeer& peer = guests[slot];
     peer.joined = true;
     peer.active = false;
     peer.name = joinRequester;
+    peer.player = net.SlotPlayer(slot);
     if (BattleRoom(joinCoop)) SetDuelTeams();
     else AddToRoomTeams(slot + 1);
     peer.figure = RemoteFigure{};
@@ -8991,12 +9028,13 @@ void Game::AcceptGuest()
     guestBoughtLost = 0;
     // Өмнөх (өөр) зочны үлдсэн AI баг: тэр гарсан ч тулаанд үлдсэн байж болно. Шинэ зочинд өөрийн бүтэн баг (түүний
     // дэргэд) үүснэ. Ижил зочин дахин холбогдвол багаа (унасан гишүүдтэй нь) хэвээр авна.
-    if (squad.HasGuestTeam(slot) && joinRequester != peer.teamOwner)
+    if (squad.HasGuestTeam(slot) && !SamePlayer(peer.teamOwner, peer.teamOwnerPlayer, joinRequester, peer.player))
     {
         TraceLog(LOG_INFO, "COOP: removed the previous guest's team");
         squad.RemoveGuestTeam(slot);
     }
-    peer.rejoined = peer.keepRecruits = squad.HasGuestMembers(slot); // ижил зочин буцаж ирэв (тулаанд баг нь үлдсэн)
+    // Ижил зочин Gold-той тулаанд буцаж ирэв (баг нь үлдсэн). Хамтын тоглолтод баг нь гарахад устаж, шинээр үүснэ.
+    peer.rejoined = peer.keepRecruits = (battleActive || BattleRoom(joinCoop)) && !skirmish && squad.HasGuestMembers(slot);
     if ((Account::CurrentRoomRole() == Account::RoomRole::Host && !joinCoop) || options.battleTest)
     {
         TraceLog(LOG_INFO, "BATTLE: guest %s joined, battle started", joinRequester.c_str());
@@ -9063,6 +9101,7 @@ void Game::UpdateCoopMission(float dt)
             {
                 squad.AddGuestTeam(slot, peer.figure.member, peer.figure.position, world, peer.memberHealth);
                 peer.teamOwner = peer.name;
+                peer.teamOwnerPlayer = peer.player;
                 TraceLog(LOG_INFO, "COOP: guest team spawned for %s (slot %d, battle %d)", peer.name.c_str(), slot, (int)battleActive);
                 peer.teamSpawned = battleActive; // тулаанд: унасан дайчид дахин үүсэхгүй
             }
@@ -9097,9 +9136,9 @@ void Game::UpdateCoopMission(float dt)
             skirmishTestTimer += dt;
             if (skirmishTestTimer > 5.0f)
             {
-                skirmishTestDone = true;
                 SetRoomMode(options.skirmishTest == 2 ? RoomMode::Free : RoomMode::Teams);
                 StartSkirmish();
+                skirmishTestDone = skirmish; // (хэн нэгэн ачаалж байвал дараа дахин оролдоно)
             }
         }
         return;
@@ -9355,37 +9394,6 @@ void Game::SendHostSnapshot(float dt)
         s.health = soldier.health;
         snapshot.soldiers.push_back(s);
     }
-    // Унаа: хөдөлсөн, гэмтсэн, сууж яваа унааг л илгээнэ (хотод зуу гаруй унаа зогсож байдаг: snapshot-ыг багасгана).
-    // Хоёр тал эхэндээ ижил байрлалд үүсгэдэг тул хөдлөөгүй унааг илгээх шаардлагагүй; гэхдээ snapshot
-    // бүрд хэдэн унааг ээлжлэн илгээж, алдагдсан пакет, хожуу нэгдсэн зочныг нөхнө.
-    sentVehiclePosition.resize((size_t)garage.Count(), { 1e9f, 0.0f, 0.0f });
-    sentVehicleHealth.resize((size_t)garage.Count(), -1.0f);
-    const int resendFrom = vehicleResend, resendCount = std::min(garage.Count(), 6);
-    vehicleResend = garage.Count() > 0 ? (vehicleResend + resendCount) % garage.Count() : 0;
-    for (int i = 0; i < garage.Count(); ++i)
-    {
-        const Vehicle& vehicle = garage.At(i);
-        const bool occupied = i == garage.Driven() || i == teamVehicle || vehicle.remote;
-        const float health = vehicle.wrecked ? 0.0f : vehicle.health;
-        const bool changed = occupied || std::fabs(vehicle.speed) > 0.01f ||
-                             Vector3Distance(vehicle.position, sentVehiclePosition[(size_t)i]) > 0.02f ||
-                             health != sentVehicleHealth[(size_t)i];
-        const bool resend = garage.Count() > 0 && (i - resendFrom + garage.Count()) % garage.Count() < resendCount;
-        if (!changed && !resend) continue;
-        sentVehiclePosition[(size_t)i] = vehicle.position;
-        sentVehicleHealth[(size_t)i] = health;
-        Net::VehicleState v;
-        v.index = (uint8_t)i;
-        v.type = (uint8_t)vehicle.type;
-        v.position = vehicle.position;
-        v.heading = vehicle.heading;
-        v.speed = vehicle.speed;
-        v.steer = vehicle.steer;
-        v.occupied = occupied ? 1 : 0;
-        v.health = health;
-        snapshot.vehicles.push_back(v);
-        if (snapshot.vehicles.size() >= 255) break;
-    }
     snapshot.doorCount = world.DoorCount();
     snapshot.doors.assign((size_t)(snapshot.doorCount + 7) / 8, 0);
     for (int i = 0; i < snapshot.doorCount; ++i)
@@ -9413,6 +9421,39 @@ void Game::SendHostSnapshot(float dt)
     if (!net.SlotConnected(slot)) return;
     snapshotSlot = slot;
     const RemoteFigure& guestFigure = guests[slot].figure;
+    // Унаа: хөдөлсөн, гэмтсэн, сууж яваа унааг л илгээнэ (хотод зуу гаруй унаа зогсож байдаг: snapshot-ыг багасгана).
+    // Хоёр тал эхэндээ ижил байрлалд үүсгэдэг тул хөдлөөгүй унааг илгээх шаардлагагүй; гэхдээ snapshot
+    // бүрд хэдэн унааг ээлжлэн илгээж, алдагдсан пакет, хожуу нэгдсэн зочныг нөхнө.
+    snapshot.vehicles.clear();
+    GuestPeer& target = guests[slot];
+    target.sentVehiclePosition.resize((size_t)garage.Count(), { 1e9f, 0.0f, 0.0f });
+    target.sentVehicleHealth.resize((size_t)garage.Count(), -1.0f);
+    const int resendFrom = target.vehicleResend, resendCount = std::min(garage.Count(), 6);
+    target.vehicleResend = garage.Count() > 0 ? (target.vehicleResend + resendCount) % garage.Count() : 0;
+    for (int i = 0; i < garage.Count(); ++i)
+    {
+        const Vehicle& vehicle = garage.At(i);
+        const bool occupied = i == garage.Driven() || i == teamVehicle || vehicle.remote;
+        const float health = vehicle.wrecked ? 0.0f : vehicle.health;
+        const bool changed = occupied || std::fabs(vehicle.speed) > 0.01f ||
+                             Vector3Distance(vehicle.position, target.sentVehiclePosition[(size_t)i]) > 0.02f ||
+                             health != target.sentVehicleHealth[(size_t)i];
+        const bool resend = garage.Count() > 0 && (i - resendFrom + garage.Count()) % garage.Count() < resendCount;
+        if (!changed && !resend) continue;
+        target.sentVehiclePosition[(size_t)i] = vehicle.position;
+        target.sentVehicleHealth[(size_t)i] = health;
+        Net::VehicleState v;
+        v.index = (uint8_t)i;
+        v.type = (uint8_t)vehicle.type;
+        v.position = vehicle.position;
+        v.heading = vehicle.heading;
+        v.speed = vehicle.speed;
+        v.steer = vehicle.steer;
+        v.occupied = occupied ? 1 : 0;
+        v.health = health;
+        snapshot.vehicles.push_back(v);
+        if (snapshot.vehicles.size() >= 255) break;
+    }
     std::size_t soldierIndex = 0;
     for (const Soldier& soldier : squad.All())
     {

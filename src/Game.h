@@ -347,7 +347,7 @@ private:
     // Хост: манай үндсэн баг бүгд унав (зочин ялна): мэдэгдэж, тоглолт дуусна (relay-ээс хэдэн секундын дараа гарна)
     void LoseBattleAsHost();
     // Хост: тасраад буцаж нэгдсэн зочин шинэ бие авахгүй: өөрийн AI дайчныхаа (тасрахад үлдсэн) биед орно
-    void ResumeGuestBody();
+    void ResumeGuestBody(int slot);
     // Зогсож буй (унаагүй, үхээгүй) үндсэн дайчид. Унасан дайчныг босгох хүн үлдээгүй бол баг унасан гэж тооцно.
     int TeamStanding(int team) const;   // хост: тухайн багийн зогсож буй үндсэн дайчид
     // Сум тулаанд оролцогч хүнд тусав уу: хост буудвал kGuestTarget эсвэл squad-ийн индекс (зочны баг),
@@ -420,9 +420,6 @@ private:
     std::vector<std::pair<int, double>> rammedAt;     // дайрсан хүн ба цаг (нэг дайралтанд нэг л удаа хасна)
     Navigator navigator;         // газрын зураг дээр тэмдэглэсэн газар руу хөтлөх зам
     // Хамтарсан тоглолт: зочинд сүүлд илгээсэн унааны байрлал, эрүүл мэнд (хөдлөөгүйг дахин илгээхгүй)
-    std::vector<Vector3> sentVehiclePosition;
-    std::vector<float> sentVehicleHealth;
-    int vehicleResend = 0; // хөдлөөгүй унааг ч ээлжлэн илгээнэ (алдагдсан пакетыг нөхнө)
     float teamBoardTimer = 0.0f; // суух гэж эхэлснээс хойших хугацаа
     float escortStuck = 0.0f;    // дагаж буй хэрэгсэл гацсан хугацаа
     Grenades grenades;
@@ -650,6 +647,9 @@ private:
         int vehicle = -1;       // жолоодож буй унаа
         float health = 0.0f;    // сүүлд мэдэгдсэн амь (тасарвал AI дайчин болно)
         double healthResyncUntil = 0.0; // энэ цаг хүртэл амийн тооцоог зочны мэдээгээр шинэчилнэ
+        std::vector<Vector3> sentVehiclePosition; // энэ зочинд сүүлд илгээсэн унаанууд (snapshot зочин бүрд тусдаа)
+        std::vector<float> sentVehicleHealth;
+        int vehicleResend = 0; // хөдлөөгүй унааг ч ээлжлэн илгээнэ (алдагдсан пакетыг нөхнө)
         void ResetHealthCheck() // амь нь сэргэв (босгосон, эмийн хайрцаг, өөр биед шилжсэн)
         {
             shadow = -1.0f;
@@ -668,6 +668,8 @@ private:
         PendingGuestSetup setup;     // серверээс зочны мэдээлэл ирэх хүртэл хүлээнэ
         bool teamSpawned = false;    // энэ тулаанд AI дайчдыг нэг л удаа үүсгэнэ
         std::string teamOwner;       // AI баг хэний (өөр зочин орж ирвэл хуучин багийг устгана)
+        int teamOwnerPlayer = -1;    // тэр зочны данс (нэр давхцаж болно)
+        int player = -1;             // энэ зочны данс (Net::Session::SlotPlayer; -1 = данс мэдэгдэхгүй)
     };
     GuestPeer guests[Net::kMaxGuests];
     int guestSlot = 0;              // хост: тулааны өрсөлдөгч зочин (тулаан нэг зочинтой)
@@ -689,9 +691,16 @@ private:
     bool GuestNear(Vector3 position, float distance) const;
     bool BattleRoom(bool coop) const; // энэ хүсэлт тулаан эхлүүлнэ (нээлттэй өрөө, найзын код биш)
     bool CanTakeGuest(int slot, bool coop) const;
-    bool ReturningGuest(const std::string& name) const; // саяхан гарсан найз (асуулгүй хүлээн авна)
+    // Нэг хүн мөн эсэх: данс мэдэгдэж байвал дансаар (нэр давхцаж болно), эс бөгөөс нэрээр
+    static bool SamePlayer(const std::string& nameA, int playerA, const std::string& nameB, int playerB)
+    {
+        return playerA >= 0 && playerB >= 0 ? playerA == playerB : nameA == nameB;
+    }
+    bool IsGuestReturning(int index, int slot, const std::string& name) const; // index дахь зочин slot-оор буцаж ирэв
+    bool ReturningGuest(int slot, const std::string& name) const; // саяхан гарсан найз (асуулгүй хүлээн авна)
     void PumpJoinQueue();           // хүлээж буй дараагийн хүсэлтийг хариулах цонхонд
     void SendRoster();
+    bool SkirmishWaiting() const;   // хост: хэн нэгэн ачаалж (эсвэл хариу хүлээж) байна
     int OwnWho() const { return coopGuest ? ownSlot + 1 : 0; } // энэ тоглогчийн who (ForEachOtherPlayer)
     bool IsEnemyOf(int who, int other) const { return TeamOf(who) != TeamOf(other); }
     int HeliPassengerRank(int heli, int who) const;
@@ -704,6 +713,7 @@ private:
     bool skirmish = false;                     // найзуудын тулаан явагдаж байна (battleActive-тай хамт)
     uint8_t playerTeam[Net::kMaxGuests + 1] = {}; // who бүрийн баг
     int ownSlot = 0;                           // зочин: өөрийн дугаар (Roster)
+    bool roomPanelJustOpened = false; // энэ кадрт нээгдсэн (нээсэн товшилт цонхны гадна дарсанд тооцогдохгүй)
     bool roomPanelOpen = false;
     bool skirmishTestDone = false;
     float skirmishTestTimer = 0.0f;
@@ -781,7 +791,13 @@ private:
     bool worldModelsLoaded = false;
     float heliRoofLog = 0.0f;       // туршилт (--heli-roof): багийнхны байдлыг бичих хугацаа // унаа, мод, торхны загварууд (хөтөч: "world" багц ирсний дараа)
     int scopeZoom = 1;              // мэргэн буудагчийн дуран: 1x, 2x (баруун товч дахин дарахад)   // зочин: тасалбарыг хадгалах завсар
-    std::vector<std::pair<std::string, double>> recentGuests; // хост: гарсан зочид, цаг (буцаж ирвэл асуулгүй хүлээн авна)
+    struct RecentGuest
+    {
+        std::string name;
+        int player;
+        double leftAt;
+    };
+    std::vector<RecentGuest> recentGuests; // хост: гарсан зочид (буцаж ирвэл асуулгүй хүлээн авна)
     RemoteFigure hostFigure;        // зочин дээрх хост
     std::vector<RemoteFigure> hostSoldiers;
     Net::Snapshot guestView;        // зочин: хостын сүүлийн мэдээлэл (даалгаврын бичиг г.м.)

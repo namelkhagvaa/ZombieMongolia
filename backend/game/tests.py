@@ -4,8 +4,9 @@ import hmac
 import json
 from datetime import timedelta
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from . import logic, qpay
@@ -250,7 +251,7 @@ class FlowTests(TestCase):
 
     def test_enough_gold_opens_a_room_otherwise_solo(self):
         host = self.register()["token"]
-        result = self.post("provinces/start/", {"province": 3, "protocol": 13}, host)
+        result = self.post("provinces/start/", {"province": 3, "protocol": 22}, host)
         room = result["room"]
         self.assertEqual((room["province"], room["role"]), (3, "host"))
         self.assertEqual((result["account"]["gold"], result["account"]["gold_locked"]), (480, 50))
@@ -260,28 +261,28 @@ class FlowTests(TestCase):
         payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
         self.assertEqual((payload["r"], payload["role"]), (room["id"], "host"))
         # Дахин эхэлбэл өмнөх өрөө (апп унасан г.м.) шийтгэлгүй хаагдаж, шинэ өрөө нээгдэнэ
-        result = self.post("provinces/start/", {"province": 4, "protocol": 13}, host)
+        result = self.post("provinces/start/", {"province": 4, "protocol": 22}, host)
         self.assertEqual((result["account"]["gold"], result["account"]["gold_locked"]), (460, 50))
         self.assertEqual(Room.objects.get(pk=room["id"]).closed_reason, "replaced")
         # 70-аас бага Gold: хаалттай өрөө (зөвхөн найз кодоор, тулаангүй), Gold өөрчлөгдөхгүй
         poor = self.register(phone="88112233", device="device-bbbb-2222", name="Дорж")["token"]
         Player.objects.filter(phone="+97688112233").update(gold=69)
-        result = self.post("provinces/start/", {"province": 4, "protocol": 13}, poor)
+        result = self.post("provinces/start/", {"province": 4, "protocol": 22}, poor)
         self.assertEqual((result["room"]["pvp"], len(result["room"]["code"])), (False, 6))
         self.assertEqual((result["account"]["gold"], result["account"]["gold_locked"]), (69, 0))
         # Хаалттай өрөөнд тулааны хайлтаар орохгүй
         third = self.register(phone="95112233", device="device-cccc-3333", name="Сүх")["token"]
-        self.post("provinces/start/", {"province": 1, "protocol": 13}, host)  # (хостын өрөө: зочинтой биш, зөвхөн өөр)
+        self.post("provinces/start/", {"province": 1, "protocol": 22}, host)  # (хостын өрөө: зочинтой биш, зөвхөн өөр)
         Room.objects.filter(host__phone="+97699112233").update(status=Room.CLOSED)
-        self.assertEqual(self.post("rooms/join/", {"protocol": 13}, third, status=404)["error"], "no_rooms")
+        self.assertEqual(self.post("rooms/join/", {"protocol": 22}, third, status=404)["error"], "no_rooms")
 
     def test_friends_play_together_by_code(self):
         host, guest = self.two_players()
         Player.objects.filter(phone="+97699112233").update(gold=60, bonus_gold=60)  # тулаанд Gold хүрэлцэхгүй
-        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
+        room = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]
         self.assertEqual(self.post("rooms/coop/", {"code": "12a4"}, guest, status=400)["error"], "bad_code")
-        self.assertEqual(self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, host, status=409)["error"], "own_room")
-        joined = self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, guest)
+        self.assertEqual(self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, host, status=409)["error"], "own_room")
+        joined = self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, guest)
         self.assertEqual((joined["room"]["role"], joined["room"]["coop"]), ("guest", True))
         self.accept(room["id"], host)
         self.played(room["id"], host)
@@ -305,15 +306,15 @@ class FlowTests(TestCase):
 
     def test_six_players_in_one_room(self):
         host, _ = self.two_players()
-        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
+        room = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]
         friends = self.friends(6)
         for token, _ in friends[:5]:
-            joined = self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, token)["room"]
+            joined = self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, token)["room"]
             self.assertEqual((joined["role"], joined["coop"]), ("guest", True))
-        self.assertEqual(self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, friends[5][0], status=409)["error"],
+        self.assertEqual(self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, friends[5][0], status=409)["error"],
                          "room_full")
         # Дахин орж буй найз дүүрсэн өрөөнд орж чадна, давхар бичигдэхгүй
-        self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, friends[0][0])
+        self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, friends[0][0])
         self.assertEqual(RoomFriend.objects.filter(room_id=room["id"]).count(), 5)
         # Найз бүр дохио өгнө, хост хүн бүрийн мэдээг авна
         state = self.post(f"rooms/{room['id']}/beat/", {}, friends[3][0])
@@ -322,10 +323,10 @@ class FlowTests(TestCase):
 
     def test_friends_get_the_reward_only_if_they_arrived_and_stayed(self):
         host, _ = self.two_players()
-        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
+        room = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]
         friends = self.friends(4)
         for token, _ in friends:
-            self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, token)
+            self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, token)
         url = f"rooms/{room['id']}/accept/"
         for _, player in friends[:3]:
             self.post(url, {"player": player.pk}, host)
@@ -344,20 +345,20 @@ class FlowTests(TestCase):
 
     def test_accept_without_a_player_needs_one_waiting_friend(self):
         host, _ = self.two_players()
-        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
+        room = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]
         friends = self.friends(3)
-        self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, friends[0][0])
+        self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, friends[0][0])
         self.accept(room["id"], host)
         self.assertTrue(RoomFriend.objects.get(player=friends[0][1]).confirmed)
-        self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, friends[1][0])
-        self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, friends[2][0])
+        self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, friends[1][0])
+        self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, friends[2][0])
         self.accept(room["id"], host)  # хоёр хүн хүлээж байна: алийг нь гэдэг нь тодорхойгүй
         self.assertEqual(RoomFriend.objects.filter(room_id=room["id"], confirmed=True).count(), 1)
 
     def test_accept_with_a_player_confirms_only_that_battle_guest(self):
         host, guest = self.two_players()
-        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
-        self.post("rooms/join/", {"protocol": 13}, guest)
+        room = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]
+        self.post("rooms/join/", {"protocol": 22}, guest)
         guest_id = Player.objects.get(name="Дорж").pk
         self.post(f"rooms/{room['id']}/accept/", {"player": guest_id + 1000}, host)
         self.assertFalse(Room.objects.get(pk=room["id"]).guest_confirmed)
@@ -365,26 +366,35 @@ class FlowTests(TestCase):
         self.assertTrue(Room.objects.get(pk=room["id"]).guest_confirmed)
         self.assertEqual((state["battle"], state["members"][0]["player"]), (1, guest_id))
 
+    def test_old_game_versions_are_told_to_update(self):
+        host, guest = self.two_players()
+        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]  # хуучин хост: ганцаараа тоглоно
+        self.assertFalse(room["pvp"])
+        error = self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, guest, status=426)
+        self.assertEqual(error["error"], "update_required")
+        self.assertEqual(RoomFriend.objects.count(), 0)
+        self.assertEqual(Player.objects.get(phone="+97688112233").gold, 500)  # Gold хасагдаагүй
+
     def test_friends_and_battle_guests_do_not_mix(self):
         host, guest = self.two_players()
-        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
+        room = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]
         (token, _), = self.friends(1)
-        self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, token)
+        self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, token)
         # Найзтай өрөө тулааны жагсаалтад гарахгүй, урилгагүй орохгүй
-        self.assertEqual(self.get("rooms/list/?protocol=13", guest)["rooms"], [])
-        self.post("rooms/join/", {"protocol": 13}, guest, status=404)
+        self.assertEqual(self.get("rooms/list/?protocol=22", guest)["rooms"], [])
+        self.post("rooms/join/", {"protocol": 22}, guest, status=404)
         self.post(f"rooms/{room['id']}/leave/", {}, token)
         self.assertFalse(Room.objects.get(pk=room["id"]).guest_coop)
         # Найз гарсны дараа дахин нээлттэй; тулаан явагдаж байхад найз орохгүй
-        self.post("rooms/join/", {"protocol": 13}, guest)
-        self.assertEqual(self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, token, status=409)["error"], "room_full")
+        self.post("rooms/join/", {"protocol": 22}, guest)
+        self.assertEqual(self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, token, status=409)["error"], "room_full")
 
     def test_silent_friend_expires_and_host_leaving_drops_all(self):
         host, _ = self.two_players()
-        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
+        room = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]
         friends = self.friends(3)
         for token, _ in friends:
-            self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, token)
+            self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, token)
         RoomFriend.objects.filter(player=friends[0][1]).update(seen=timezone.now() - timedelta(hours=1))
         with transaction.atomic():
             logic.expire_rooms()
@@ -397,8 +407,8 @@ class FlowTests(TestCase):
 
     def test_coop_guest_leaving_is_no_penalty(self):
         host, guest = self.two_players()
-        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]  # нээлттэй (тулаант) өрөө
-        self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, guest)
+        room = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]  # нээлттэй (тулаант) өрөө
+        self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, guest)
         account = self.post(f"rooms/{room['id']}/leave/", {}, guest)["account"]
         self.assertEqual((account["gold"], account["gold_locked"]), (500, 0))
         self.assertIsNone(Room.objects.get(pk=room["id"]).guest)
@@ -433,8 +443,8 @@ class FlowTests(TestCase):
         GameSettings.objects.filter(pk=GameSettings.load().pk).update(coop_reward=12, coop_daily_limit=1)
         host, guest = self.two_players()
         for expected in (12, 12):  # өдөрт 1 удаа: хоёр дахь удаа шагналгүй
-            room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
-            self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, guest)
+            room = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]
+            self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, guest)
             self.accept(room["id"], host)
             self.played(room["id"], host)
             Room.objects.filter(pk=room["id"]).update(created=timezone.now() - timedelta(minutes=30))
@@ -451,8 +461,8 @@ class FlowTests(TestCase):
 
     def test_stage_and_battle_give_xp(self):
         host, guest = self.two_players()
-        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
-        self.post("rooms/coop/", {"code": room["code"], "protocol": 13}, guest)
+        room = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]
+        self.post("rooms/coop/", {"code": room["code"], "protocol": 22}, guest)
         self.accept(room["id"], host)
         self.played(room["id"], host)
         Room.objects.filter(pk=room["id"]).update(created=timezone.now() - timedelta(minutes=30))
@@ -460,8 +470,8 @@ class FlowTests(TestCase):
         self.assertEqual((account["xp"], account["rank"]), (50, 2))
         self.assertEqual(Player.objects.get(phone="+97688112233").xp, 50)  # хамт давсан зочин ч авна
         # Тулаанд ялсан нь +25, ялагдсан нь 0
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        self.post("rooms/join/", {"protocol": 13}, guest)
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        self.post("rooms/join/", {"protocol": 22}, guest)
         self.accept(room_id, host)
         self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, host)
         self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, guest)
@@ -470,50 +480,50 @@ class FlowTests(TestCase):
     def test_battles_only_between_close_ranks(self):
         host, guest = self.two_players()
         Player.objects.filter(phone="+97699112233").update(xp=logic.rank_xp(20))  # хост 20-р зэрэг
-        self.post("provinces/start/", {"province": 7, "protocol": 13}, host)
-        error = self.post("rooms/join/", {"protocol": 13}, guest, status=404)  # зочин 1-р зэрэг
+        self.post("provinces/start/", {"province": 7, "protocol": 22}, host)
+        error = self.post("rooms/join/", {"protocol": 22}, guest, status=404)  # зочин 1-р зэрэг
         self.assertIn("зэрэгтэй ойролцоо", error["message"])
         Player.objects.filter(phone="+97688112233").update(xp=logic.rank_xp(17))  # 20 ± 3
-        self.assertEqual(self.post("rooms/join/", {"protocol": 13}, guest)["room"]["host_rank"], 20)
+        self.assertEqual(self.post("rooms/join/", {"protocol": 22}, guest)["room"]["host_rank"], 20)
 
     def test_room_list_and_join_chosen_room(self):
         host, guest = self.two_players()
-        self.assertEqual(self.get("rooms/list/?protocol=13", guest)["rooms"], [])
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        self.assertEqual(self.get("rooms/list/?protocol=13", host)["rooms"], [])  # өөрийн өрөө харагдахгүй
-        rooms = self.get("rooms/list/?protocol=13", guest)["rooms"]
+        self.assertEqual(self.get("rooms/list/?protocol=22", guest)["rooms"], [])
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        self.assertEqual(self.get("rooms/list/?protocol=22", host)["rooms"], [])  # өөрийн өрөө харагдахгүй
+        rooms = self.get("rooms/list/?protocol=22", guest)["rooms"]
         self.assertEqual([(r["id"], r["host"], r["province"], r["joinable"]) for r in rooms], [(room_id, "Бат", 7, True)])
         self.assertFalse(self.get("rooms/list/?protocol=12", guest)["rooms"][0]["joinable"])  # хувилбар өөр
-        self.assertEqual(self.post("rooms/join/", {"protocol": 13, "room": room_id + 99}, guest, status=404)["error"],
+        self.assertEqual(self.post("rooms/join/", {"protocol": 22, "room": room_id + 99}, guest, status=404)["error"],
                          "room_gone")
-        self.assertEqual(self.post("rooms/join/", {"protocol": 13, "room": room_id}, guest)["room"]["id"], room_id)
-        self.assertEqual(self.get("rooms/list/?protocol=13", guest)["rooms"], [])  # дүүрсэн
+        self.assertEqual(self.post("rooms/join/", {"protocol": 22, "room": room_id}, guest)["room"]["id"], room_id)
+        self.assertEqual(self.get("rooms/list/?protocol=22", guest)["rooms"], [])  # дүүрсэн
 
     def test_disputed_player_is_told_why(self):
         host, guest = self.two_players()
         for player in Player.objects.all():
             for _ in range(logic.DISPUTE_LIMIT):
                 Event.objects.create(player=player, kind="battle_disputed")
-        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
+        room = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]
         self.assertFalse(room["pvp"])
         self.assertIn("үр дүн зөрсөн", room["pvp_note"])
-        listing = self.get("rooms/list/?protocol=13", guest)
+        listing = self.get("rooms/list/?protocol=22", guest)
         self.assertEqual(listing["rooms"], [])
         self.assertIn("үр дүн зөрсөн", listing["blocked"])
 
     def test_room_list_marks_far_ranks(self):
         host, guest = self.two_players()
         Player.objects.filter(phone="+97699112233").update(xp=logic.rank_xp(20))
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        row = self.get("rooms/list/?protocol=13", guest)["rooms"][0]
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        row = self.get("rooms/list/?protocol=22", guest)["rooms"][0]
         self.assertEqual((row["host_rank"], row["joinable"]), (20, False))
-        self.post("rooms/join/", {"protocol": 13, "room": room_id}, guest, status=404)
+        self.post("rooms/join/", {"protocol": 22, "room": room_id}, guest, status=404)
 
     def test_join_refusal_and_game_failure_are_logged(self):
         host, guest = self.two_players()
         Player.objects.filter(phone="+97699112233").update(xp=logic.rank_xp(20))
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        self.post("rooms/join/", {"protocol": 13, "room": room_id}, guest, status=404)
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        self.post("rooms/join/", {"protocol": 22, "room": room_id}, guest, status=404)
         refused = Event.objects.get(kind="room_join_refused")
         self.assertEqual((refused.data["reason"], refused.data["room"]), ("room_gone", room_id))
         # Тоглоомын "STEP: join_failed" мөр тоглогчийн үйл явдал болно (бусад мөр болохгүй)
@@ -529,7 +539,7 @@ class FlowTests(TestCase):
         player = Player.objects.get()
         player.gold = 120
         player.save()
-        self.post("provinces/start/", {"province": 0, "protocol": 13}, host)  # 100 үлдэж, 50 нь барьцаанд
+        self.post("provinces/start/", {"province": 0, "protocol": 22}, host)  # 100 үлдэж, 50 нь барьцаанд
         # Цэрэг 120 > 50 (боломжтой)
         self.assertEqual(self.post("shop/buy/", {"item": "soldier", "level": 0}, host, status=402)["error"], "not_enough_gold")
         self.post("shop/buy/", {"item": "magazine", "level": 0}, host)  # 40 <= 50
@@ -538,25 +548,25 @@ class FlowTests(TestCase):
 
     def test_guest_joins_without_invitation(self):
         host, guest = self.two_players()
-        self.assertEqual(self.post("rooms/join/", {"protocol": 13}, guest, status=404)["error"], "no_rooms")
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        self.assertEqual(self.post("rooms/join/", {"protocol": 13}, host, status=404)["error"], "no_rooms")  # өөрийн өрөө биш
-        joined = self.post("rooms/join/", {"protocol": 13}, guest)
+        self.assertEqual(self.post("rooms/join/", {"protocol": 22}, guest, status=404)["error"], "no_rooms")
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        self.assertEqual(self.post("rooms/join/", {"protocol": 22}, host, status=404)["error"], "no_rooms")  # өөрийн өрөө биш
+        joined = self.post("rooms/join/", {"protocol": 22}, guest)
         self.assertEqual((joined["room"]["id"], joined["room"]["role"], joined["room"]["host"]), (room_id, "guest", "Бат"))
         self.assertEqual((joined["account"]["gold"], joined["account"]["gold_locked"]), (480, 50))
         # Өрөө дүүрсэн
         third = self.register(phone="95112233", device="device-cccc-3333", name="Сүх")["token"]
-        self.assertEqual(self.post("rooms/join/", {"protocol": 13}, third, status=404)["error"], "no_rooms")
+        self.assertEqual(self.post("rooms/join/", {"protocol": 22}, third, status=404)["error"], "no_rooms")
         # Gold хүрэлцэхгүй
         player = Player.objects.get(phone="+97695112233")
         player.gold = 60
         player.save()
-        self.assertEqual(self.post("rooms/join/", {"protocol": 13}, third, status=402)["error"], "not_enough_gold")
+        self.assertEqual(self.post("rooms/join/", {"protocol": 22}, third, status=402)["error"], "not_enough_gold")
 
     def test_host_leaving_without_a_guest_keeps_the_stake(self):
         # Зочингүй үед гарах нь апп-аа хаасантай адил шийтгэлгүй (зөв гарсан тоглогч хүчээр хаасанаас муу байдалд орохгүй)
         host = self.register()["token"]
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
         account = self.post(f"rooms/{room_id}/leave/", {}, host)["account"]
         self.assertEqual((account["gold"], account["gold_locked"]), (480, 0))  # 500 - 20 (орох төлбөр)
         self.assertEqual(self.post(f"rooms/{room_id}/leave/", {}, host, status=410)["error"], "room_closed")
@@ -564,30 +574,30 @@ class FlowTests(TestCase):
 
     def test_host_fleeing_an_arriving_guest_burns_the_stake(self):
         host, guest = self.two_players()
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        self.post("rooms/join/", {"protocol": 13}, guest)  # зочин орж байна (холбогдож амжаагүй)
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        self.post("rooms/join/", {"protocol": 22}, guest)  # зочин орж байна (холбогдож амжаагүй)
         account = self.post(f"rooms/{room_id}/leave/", {}, host)["account"]
         self.assertEqual((account["gold"], account["gold_locked"]), (430, 0))  # 500 - 20 - 50 шатсан
         self.assertEqual(self.gold_of("+97688112233"), (500, 0))           # зочны төлбөр буцсан
 
     def test_guest_leaving_keeps_the_battle(self):
         host, guest = self.two_players()
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        self.post("rooms/join/", {"protocol": 13}, guest)
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        self.post("rooms/join/", {"protocol": 22}, guest)
         self.accept(room_id, host)
         # Тулааны үеэр гарсан зочны багийг AI тулалдуулна: барьцаа үр дүн гартал түгжээтэй, байр сул биш
         self.assertEqual(self.post(f"rooms/{room_id}/leave/", {}, guest)["account"]["gold_locked"], 50)
         third = self.register(phone="95112233", device="device-cccc-3333", name="Сүх")["token"]
-        self.assertEqual(self.post("rooms/join/", {"protocol": 13}, third, status=404)["error"], "no_rooms")
+        self.assertEqual(self.post("rooms/join/", {"protocol": 22}, third, status=404)["error"], "no_rooms")
         self.assertTrue(Room.objects.get().guest_left)
 
     def test_completing_the_stage_pays_once(self):
         host, guest = self.two_players()
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
         self.assertEqual(self.post(f"rooms/{room_id}/complete/", {}, host, status=409)["error"], "too_fast")
         Room.objects.filter(pk=room_id).update(created=timezone.now() - timedelta(minutes=30))
         self.played(room_id, host)
-        self.post("rooms/join/", {"protocol": 13}, guest)
+        self.post("rooms/join/", {"protocol": 22}, guest)
         self.assertEqual(self.post(f"rooms/{room_id}/complete/", {}, guest, status=403)["error"], "not_host")
         account = self.post(f"rooms/{room_id}/complete/", {}, host)["account"]
         self.assertEqual((account["gold"], account["gold_locked"]), (520, 0))  # 500 - 20 + 40
@@ -596,11 +606,11 @@ class FlowTests(TestCase):
 
     def test_lost_connection_is_not_a_penalty(self):
         host, guest = self.two_players()
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
         self.post(f"rooms/{room_id}/beat/", {}, host)
         Room.objects.filter(pk=room_id).update(host_seen=timezone.now() - timedelta(minutes=11))
         # Хостын дохио тасарсан: зочин тэр өрөөнд орохгүй, хостын барьцаа шийтгэлгүй буцна
-        self.assertEqual(self.post("rooms/join/", {"protocol": 13}, guest, status=404)["error"], "no_rooms")
+        self.assertEqual(self.post("rooms/join/", {"protocol": 22}, guest, status=404)["error"], "no_rooms")
         host_player = Player.objects.get(phone="+97699112233")
         self.assertEqual((host_player.gold, host_player.locked_gold), (480, 0))
         self.assertEqual(Room.objects.get().closed_reason, "timeout")
@@ -609,8 +619,8 @@ class FlowTests(TestCase):
     # ---- тулаан
     def battle(self):
         host, guest = self.two_players()
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        joined = self.post("rooms/join/", {"protocol": 13}, guest)["room"]
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        joined = self.post("rooms/join/", {"protocol": 22}, guest)["room"]
         self.assertEqual(joined["battle"], 1)
         self.accept(room_id, host)
         self.assertEqual(self.post(f"rooms/{room_id}/beat/", {}, host)["guest"], "Дорж")
@@ -635,7 +645,7 @@ class FlowTests(TestCase):
         # Сул байранд дараагийн зочин орно, ахиц хэвээр
         self.post(f"rooms/{room_id}/stage/", {"stage": "1 3 0 0 0", "recruits": 2}, host)
         third = self.register(phone="95112233", device="device-cccc-3333", name="Сүх")["token"]
-        room = self.post("rooms/join/", {"protocol": 13}, third)["room"]
+        room = self.post("rooms/join/", {"protocol": 22}, third)["room"]
         self.assertEqual((room["id"], room["battle"], room["stage"]), (room_id, 2, "1 3 0 0 0"))
 
     def test_free_gold_stays_free_in_battles(self):
@@ -650,8 +660,8 @@ class FlowTests(TestCase):
     def test_purchased_gold_lost_in_battle_is_withdrawable(self):
         host, guest = self.two_players()
         Player.objects.filter(phone="+97688112233").update(bonus_gold=0)  # зочны Gold бүгд цэнэглэсэн
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        self.post("rooms/join/", {"protocol": 13}, guest)
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        self.post("rooms/join/", {"protocol": 22}, guest)
         self.accept(room_id, host)
         self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, host)
         self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, guest)
@@ -661,7 +671,7 @@ class FlowTests(TestCase):
 
     def test_stage_bonus_is_not_withdrawable(self):
         host = self.register()["token"]
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
         Room.objects.filter(pk=room_id).update(created=timezone.now() - timedelta(minutes=30))
         self.played(room_id, host)
         account = self.post(f"rooms/{room_id}/complete/", {}, host)["account"]
@@ -719,11 +729,11 @@ class FlowTests(TestCase):
 
     def test_repeated_join_failures_are_limited(self):
         host, guest = self.two_players()
-        self.post("provinces/start/", {"province": 7, "protocol": 13}, host)
+        self.post("provinces/start/", {"province": 7, "protocol": 22}, host)
         guest_player = Player.objects.get(phone="+97688112233")
         for _ in range(logic.JOIN_FAILURES):
             Event.objects.create(player=guest_player, kind="room_join_failed", data={"reason": "timeout"})
-        self.assertEqual(self.post("rooms/join/", {"protocol": 13}, guest, status=429)["error"], "too_many_joins")
+        self.assertEqual(self.post("rooms/join/", {"protocol": 22}, guest, status=429)["error"], "too_many_joins")
 
     def test_host_leaving_during_battle_hands_the_room_over(self):
         host, guest, room_id = self.battle()
@@ -740,7 +750,7 @@ class FlowTests(TestCase):
         host, guest, room_id = self.battle()
         for token in (host, guest):
             self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, token)
-        self.post("rooms/join/", {"protocol": 13}, guest)
+        self.post("rooms/join/", {"protocol": 22}, guest)
         self.accept(room_id, host)
         for token in (host, guest):
             self.post(f"rooms/{room_id}/result/", {"battle": 2, "winner": "host"}, token)
@@ -750,8 +760,8 @@ class FlowTests(TestCase):
 
     def test_guest_who_never_connected_gets_the_fee_back(self):
         host, guest = self.two_players()
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        self.post("rooms/join/", {"protocol": 13}, guest)
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        self.post("rooms/join/", {"protocol": 22}, guest)
         self.assertEqual(self.gold_of("+97688112233"), (480, 50))
         # Хост баталгаажуулаагүй: тулаан тоологдохгүй
         self.assertEqual(self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "guest"}, guest, status=409)["error"],
@@ -764,21 +774,21 @@ class FlowTests(TestCase):
 
     def test_unconfirmed_guest_expires_with_refund(self):
         host, guest = self.two_players()
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        self.post("rooms/join/", {"protocol": 13}, guest)
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        self.post("rooms/join/", {"protocol": 22}, guest)
         Room.objects.filter(pk=room_id).update(guest_joined=timezone.now() - timedelta(minutes=4))
         third = self.register(phone="95112233", device="device-cccc-3333", name="Сүх")["token"]
-        self.post("rooms/join/", {"protocol": 13}, third)  # (хайлт хуучирсныг цэвэрлэнэ: гацсан зочин гарч, шинэ зочин орно)
+        self.post("rooms/join/", {"protocol": 22}, third)  # (хайлт хуучирсныг цэвэрлэнэ: гацсан зочин гарч, шинэ зочин орно)
         self.assertEqual(self.gold_of("+97688112233"), (500, 0))
         self.assertEqual(Room.objects.get().guest.name, "Сүх")
 
     def test_only_same_game_version_is_matched(self):
         host, guest = self.two_players()
-        room = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]
+        room = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]
         self.assertEqual(self.post("rooms/join/", {"protocol": 11}, guest, status=426)["error"], "update_required")
         self.assertEqual(self.post("rooms/coop/", {"code": room["code"], "protocol": 11}, guest, status=409)["error"],
                          "version_mismatch")
-        self.assertEqual(self.post("rooms/join/", {"protocol": 13}, guest)["room"]["id"], room["id"])
+        self.assertEqual(self.post("rooms/join/", {"protocol": 22}, guest)["room"]["id"], room["id"])
 
     def test_undecided_report_voids_and_repeated_disputes_block_battles(self):
         host, guest, room_id = self.battle()
@@ -789,7 +799,7 @@ class FlowTests(TestCase):
         self.assertEqual(Event.objects.filter(kind="battle_disputed").count(), 0)
         self.assertEqual(Event.objects.filter(kind="battle_void").count(), 2)  # хоёр талд
         for battle in (2, 3, 4):
-            self.post("rooms/join/", {"protocol": 13}, guest)
+            self.post("rooms/join/", {"protocol": 22}, guest)
             self.accept(room_id, host)
             self.post(f"rooms/{room_id}/result/", {"battle": battle, "winner": "host"}, host)
             self.post(f"rooms/{room_id}/result/", {"battle": battle, "winner": "guest"}, guest)
@@ -801,8 +811,8 @@ class FlowTests(TestCase):
         for k, phone in enumerate(("+97611111111", "+97622222222")):
             other = Player.objects.create(name=f"Өөр{k}", phone=phone)
             Event.objects.create(player=guest_player, kind="battle_disputed", data={"opponent": other.pk})
-        self.assertEqual(self.post("rooms/join/", {"protocol": 13}, guest, status=403)["error"], "disputes")
-        self.assertFalse(self.post("provinces/start/", {"province": 3, "protocol": 13}, guest)["room"]["pvp"])
+        self.assertEqual(self.post("rooms/join/", {"protocol": 22}, guest, status=403)["error"], "disputes")
+        self.assertFalse(self.post("provinces/start/", {"province": 3, "protocol": 22}, guest)["room"]["pvp"])
 
     def test_a_serial_disputer_cannot_block_honest_players(self):
         # Луйварчин гурван өөр шударга тоглогчтой зөрсөн: тэр өөрөө хасагдана, шударга тоглогчид тоологдохгүй
@@ -819,7 +829,7 @@ class FlowTests(TestCase):
         host, guest, room_id = self.battle()
         self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, host)
         self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, guest)
-        self.post("rooms/join/", {"protocol": 13}, guest)
+        self.post("rooms/join/", {"protocol": 22}, guest)
         self.assertEqual(Room.objects.get(pk=room_id).battle, 2)
         late = self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "host"}, host)
         self.assertEqual((late["settled"], late["result"]), (True, "won"))
@@ -833,25 +843,25 @@ class FlowTests(TestCase):
         host, guest, room_id = self.battle()
         for battle in (1, 2, 3):
             if battle > 1:
-                self.post("rooms/join/", {"protocol": 13}, guest)
+                self.post("rooms/join/", {"protocol": 22}, guest)
                 self.accept(room_id, host)
             self.post(f"rooms/{room_id}/result/", {"battle": battle, "winner": "host", "absent": True}, host)
             voided = self.post(f"rooms/{room_id}/result/", {"battle": battle, "winner": "guest", "absent": True}, guest)
             self.assertEqual(voided["result"], "void")
         self.assertEqual(Event.objects.filter(kind="battle_disputed").count(), 0)
-        self.assertEqual(self.post("rooms/join/", {"protocol": 13}, guest)["room"]["id"], room_id)  # хаагдаагүй
+        self.assertEqual(self.post("rooms/join/", {"protocol": 22}, guest)["room"]["id"], room_id)  # хаагдаагүй
         self.assertEqual(self.gold_of("+97688112233")[1], 50)  # (шинэ тулааны барьцаа л)
 
     def test_wrong_friend_codes_are_rate_limited(self):
         host, guest = self.two_players()
-        self.post("provinces/start/", {"province": 7, "protocol": 13}, host)
+        self.post("provinces/start/", {"province": 7, "protocol": 22}, host)
         for _ in range(10):
             self.post("rooms/coop/", {"code": "000000"}, guest, status=404)
         self.assertEqual(self.post("rooms/coop/", {"code": "000000"}, guest, status=429)["error"], "too_many_attempts")
 
     def test_stage_bonus_needs_real_progress(self):
         host = self.register()["token"]
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
         Room.objects.filter(pk=room_id).update(created=timezone.now() - timedelta(minutes=30))
         self.post(f"rooms/{room_id}/stage/", {"stage": "1 0 0 0 0", "recruits": 0}, host)
         self.post(f"rooms/{room_id}/stage/", {"stage": "1 0 0 0 0", "recruits": 0}, host)  # өөрчлөгдөөгүй: тоологдохгүй
@@ -861,8 +871,8 @@ class FlowTests(TestCase):
     def test_host_sees_guest_soldiers_from_the_server(self):
         host, guest = self.two_players()
         Player.objects.filter(phone="+97688112233").update(soldiers=2, health_level=3)
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        self.post("rooms/join/", {"protocol": 13}, guest)
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        self.post("rooms/join/", {"protocol": 22}, guest)
         state = self.accept(room_id, host)
         self.assertEqual((state["members"][0]["soldiers"], state["members"][0]["health_level"]), (2, 3))
 
@@ -880,8 +890,8 @@ class FlowTests(TestCase):
 
     def test_guest_who_never_arrived_is_refunded_when_the_stage_ends(self):
         host, guest = self.two_players()
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        self.post("rooms/join/", {"protocol": 13}, guest)  # (хост түүнийг тоглоомд хүлээж аваагүй)
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        self.post("rooms/join/", {"protocol": 22}, guest)  # (хост түүнийг тоглоомд хүлээж аваагүй)
         Room.objects.filter(pk=room_id).update(created=timezone.now() - timedelta(minutes=30))
         self.played(room_id, host)
         self.post(f"rooms/{room_id}/complete/", {}, host)
@@ -890,8 +900,8 @@ class FlowTests(TestCase):
     def test_host_reports_guest_soldier_losses(self):
         host, guest = self.two_players()
         Player.objects.filter(phone="+97688112233").update(soldiers=3)
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        self.post("rooms/join/", {"protocol": 13}, guest)
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        self.post("rooms/join/", {"protocol": 22}, guest)
         self.accept(room_id, host)
         self.post(f"rooms/{room_id}/guest-lost/", {"battle": 1, "lost": 2}, host)
         self.post(f"rooms/{room_id}/guest-lost/", {"battle": 1, "lost": 2}, host)  # давтан: дахин хасахгүй
@@ -904,7 +914,7 @@ class FlowTests(TestCase):
 
     def test_stale_rooms_release_stakes_without_a_room_search(self):
         host = self.register()["token"]
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
         Room.objects.filter(pk=room_id).update(host_seen=timezone.now() - timedelta(minutes=11))
         logic._last_expire = 0.0
         account = self.get("account/", host)["account"]
@@ -1055,7 +1065,7 @@ class FlowTests(TestCase):
 
     def test_unverified_player_gains_nothing_but_still_pays(self):
         host = self.quick_player()
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]  # төлбөр, барьцаа хасагдана
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]  # төлбөр, барьцаа хасагдана
         self.assertEqual(self.gold_of("+97695112233"), (480, 50))
         Room.objects.filter(pk=room_id).update(created=timezone.now() - timedelta(minutes=30))
         self.played(room_id, host)
@@ -1064,8 +1074,8 @@ class FlowTests(TestCase):
         self.assertTrue(Event.objects.filter(kind="reward_skipped").exists())
 
     def battle_between(self, host, guest):
-        room_id = self.post("provinces/start/", {"province": 7, "protocol": 13}, host)["room"]["id"]
-        self.post("rooms/join/", {"protocol": 13}, guest)
+        room_id = self.post("provinces/start/", {"province": 7, "protocol": 22}, host)["room"]["id"]
+        self.post("rooms/join/", {"protocol": 22}, guest)
         self.accept(room_id, host)
         return room_id
 
@@ -1209,6 +1219,27 @@ class ManageApiTests(FlowTests.__base__):
 
     def login(self):
         return self.call("post", "login/", {"username": "boss", "password": "pass12345"})["token"]
+
+    def test_room_list_queries_do_not_grow_with_friends(self):
+        token = self.login()
+        now = timezone.now()
+
+        def count_queries():
+            with CaptureQueriesContext(connection) as queries:
+                self.call("get", "rooms/", token=token)
+            return len(queries)
+
+        def add_room(index):
+            host = Player.objects.create(name=f"Хост{index}", phone=f"+9769100{index:04d}")
+            friend = Player.objects.create(name=f"Найз{index}", phone=f"+9769200{index:04d}")
+            room = Room.objects.create(province=1, host=host, host_seen=now, guest_coop=True, code=f"{100000 + index}")
+            RoomFriend.objects.create(room=room, player=friend, seen=now, joined=now)
+
+        add_room(1)
+        one = count_queries()
+        for index in range(2, 6):
+            add_room(index)
+        self.assertEqual(count_queries(), one)
 
     def test_cashout_paid_or_rejected(self):
         token = self.login()

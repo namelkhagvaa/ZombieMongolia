@@ -258,7 +258,7 @@ def _take_verified(verification_id, purpose):
 
 # ---------------------------------------------------------------- Бүртгэл, нэвтрэлт
 
-MIN_PROTOCOL = 13  # тоглоомын сүлжээний хамгийн бага хувилбар (13: цэргийн дугаар, тэнцээ, зочныг хүлээх хугацаа)
+MIN_PROTOCOL = 22  # тоглоомын сүлжээний хамгийн бага хувилбар (22: өрөөнд 6 тоглогч, relay-ийн шинэ формат)
 
 
 def register(name, phone_raw, password, device_id, platform, ip):
@@ -854,6 +854,8 @@ def join_coop(player, device_id, code, ip, protocol=0):
             raise GameError("no_room", "Ийм кодтой өрөө алга (найз тань аймгаа эхлүүлсэн эсэхийг шалгаарай)", 404)
         if room.protocol != _protocol(protocol):
             raise GameError("version_mismatch", "Найзын тань тоглоомын хувилбар өөр байна. Бүгд шинэчилнэ үү", 409)
+        if _protocol(protocol) < MIN_PROTOCOL:
+            raise GameError("update_required", "Найзтайгаа тоглохын тулд тоглоомоо шинэ хувилбараар шинэчилнэ үү", 426)
         if room.host_id == locked.pk:
             raise GameError("own_room", "Энэ таны өөрийн өрөө байна", 409)
         if room.guest_id:

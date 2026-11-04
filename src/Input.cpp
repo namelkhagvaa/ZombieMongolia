@@ -908,7 +908,7 @@ bool InMousePressed(int button)
     if (muted) return false;
     if (touchMode)
     {
-        return button == MOUSE_BUTTON_LEFT && (firePressed || pointerPressed);
+        return button == MOUSE_BUTTON_LEFT && (firePressed || pointerPressed || testClick);
     }
     return IsMouseButtonPressed(button) || (testClick && button == MOUSE_BUTTON_LEFT);
 }

@@ -221,7 +221,7 @@ namespace Net
                     if (m.type === 'room') queue.push({ k: 2, v: m.code | 0 });
                     else if (m.type === 'paired') queue.push({ k: 3, v: (m.slot | 0) + 8 * (m.player == null ? 0 : m.player + 1) });
                     else if (m.type === 'left') queue.push({ k: 4, v: m.slot | 0 });
-                    else if (m.type === 'error') queue.push({ k: 5, v: m.reason === 'notfound' ? 1 : m.reason === 'full' ? 2 : 0 });
+                    else if (m.type === 'error') queue.push({ k: 5, v: m.reason === 'notfound' ? 1 : m.reason === 'full' ? 2 : m.reason === 'update' ? 3 : 0 });
                 } else {
                     queue.push({ k: 7, d: new Uint8Array(e.data) });
                 }
@@ -486,7 +486,7 @@ namespace Net
                         else if (text.find("\"type\":\"left\"") != std::string::npos) queue.push_back({ kRelayLeft, SlotOf(text), {} });
                         else if (text.find("\"type\":\"error\"") != std::string::npos)
                         {
-                            const int reason = text.find("notfound") != std::string::npos ? 1 : text.find("full") != std::string::npos ? 2 : 0;
+                            const int reason = text.find("notfound") != std::string::npos ? 1 : text.find("full") != std::string::npos ? 2 : text.find("update") != std::string::npos ? 3 : 0;
                             queue.push_back({ kRelayError, reason, {} });
                         }
                     }
@@ -638,7 +638,7 @@ namespace Net
         // Интернэт: relay сервер дээр өрөө нээнэ (код нь Poll-оор ирнэ)
         if (relay && !relayOpen && GetTime() >= retryAt)
         {
-            RelayOpen((ticket.empty() ? std::string("?host") : "?host&ticket=" + ticket).c_str());
+            RelayOpen((ticket.empty() ? std::string("?v=2&host") : "?v=2&host&ticket=" + ticket).c_str());
             relayOpen = true;
             roomCode = 0;
         }
@@ -728,7 +728,7 @@ namespace Net
         if (game.relay)
         {
             if (!relay) return;
-            RelayOpen(TextFormat("?join=%u", game.address));
+            RelayOpen(TextFormat("?v=2&join=%u", game.address));
             relayOpen = true;
             r.link = Link::Relay;
         }
@@ -755,7 +755,7 @@ namespace Net
     {
         if (!relay) return;
         Stop();
-        RelayOpen(("?ticket=" + value).c_str());
+        RelayOpen(("?v=2&ticket=" + value).c_str());
         relayOpen = true;
         joinTicket = value;
         remotes[0].link = Link::Relay;
@@ -1043,7 +1043,7 @@ namespace Net
         if (anyLost && !relayOpen && now >= reconnectAt && (role == Role::Host ? !ticket.empty() : !joinTicket.empty()))
         {
             reconnectAt = now + kResumeEvery;
-            const std::string query = role == Role::Host ? "?host&ticket=" + ticket : "?ticket=" + joinTicket;
+            const std::string query = role == Role::Host ? "?v=2&host&ticket=" + ticket : "?v=2&ticket=" + joinTicket;
             RelayOpen(query.c_str());
             relayOpen = true;
             TraceLog(LOG_INFO, "NET: reconnecting to the relay");
@@ -1210,7 +1210,8 @@ namespace Net
                 // Сервер хүрэхгүй, өрөө олдсонгүй, эсвэл холболт тасарсан: relay-ээр холбогдсон бүх тал гарна.
                 if (kind == kRelayClosed && role == Role::Host) retryAt = GetTime() + kRelayRetry;
                 std::string reason;
-                if (kind == kRelayError) reason = value == 1 ? "Тоглолт олдсонгүй" : value == 2 ? "Тоглолт дүүрсэн байна" : "";
+                if (kind == kRelayError) reason = value == 1 ? "Тоглолт олдсонгүй" : value == 2 ? "Тоглолт дүүрсэн байна"
+                                     : value == 3 ? "Тоглоомын хувилбар өөр байна: бүгд шинэчилнэ үү" : "";
                 else if (role == Role::Guest && joinPending) reason = "Сервертэй холбогдож чадсангүй";
                 RelayClose();
                 relayOpen = false;
@@ -1556,6 +1557,8 @@ namespace Net
         // snapshot нь энд ирэхгүй (дээр 0 болгосон утгатайгаа хүлээж авна: нэг эвдэрсэн зомбиноос болж бүх дэлгэц
         // хөлдөхгүй).
         if (r.ok && r.finite) events.push_back(e);
+        // Зочин өөрөө гарлаа: "тасарсан" гэж 45 секунд хүлээхгүй, snapshot-ын ээлж авахгүй
+        if (e.type == Msg::Leave && role == Role::Host) ResetRemote(remotes[slot]);
     }
 
     bool Session::TakeSnapshot(Snapshot& out)

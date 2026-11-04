@@ -5,6 +5,8 @@
 // Олон зочин (протокол 2): зочин бүр өрөөнд нэгдмэгц дугаар (slot 0..MAX_GUESTS-1) авна.
 //   Хост -> relay: binary мессежийн эхний байт нь хүлээн авагч зочны дугаар (0xFE = бүх нэгдсэн зочид), дараа нь
 //   өгөгдөл. Relay -> хост: эхний байт нь илгээсэн зочны дугаар. Зочны тал өөрчлөгдөөгүй (дугааргүй).
+//   Шинэ хувилбарын холболт бүр "v=2" параметртэй (?v=2&host, ?v=2&join=...): зочин, хост хоёрын аль нэг нь хуучин бол
+//   зочинд {"type":"error","reason":"update"}.
 //   Хостод ирэх удирдлагын мессеж paired, left нь "slot"-той: {"type":"paired","slot":2}. Тасалбартай өрөөнд paired нь
 //   "player"-тэй (backend-ийн тоглогчийн дугаар: хост серверээс зочин бүрийн мэдээг ялгана).
 // Хоёр төрлийн холболт хүлээн авна; нэг өрөөнд аль ч төрлийнх нь орж болно:
@@ -105,6 +107,8 @@ function deleteRoom(code, room) {
 //   peer.onData = (buffer, droppable) => {}, peer.onClose = () => {}
 function attach(peer, hello) {
   const params = new URLSearchParams(hello);
+  // v=2: олон зочны протокол. Хуучин хувилбар (өөр форматтай) ганцаараа тоглож болох ч хэнтэй ч холбогдохгүй
+  peer.v2 = params.get('v') === '2';
   const ticket = params.has('ticket') ? readTicket(params.get('ticket')) : null;
   if (params.has('ticket') && !ticket) { peer.control({ type: 'error', reason: 'bad' }); peer.close(); return; }
   if (ticket && ticket.role === 'guest') {
@@ -188,6 +192,7 @@ function bindHost(peer, room, code) {
 function joinRoom(peer, code, player) {
   const room = rooms.get(code);
   if (!room) { peer.control({ type: 'error', reason: 'notfound' }); peer.close(); return; }
+  if (!peer.v2 || (room.host && !room.host.v2)) { peer.control({ type: 'error', reason: 'update' }); peer.close(); return; }
   // Ижил тоглогч дахин холбогдож байна (хуучин холболт хариу өгөхгүй болсон): өөрийн дугаараа орлоно
   let slot = player === null ? -1 : room.guestPlayers.indexOf(player);
   if (slot >= 0 && room.guests[slot]) {

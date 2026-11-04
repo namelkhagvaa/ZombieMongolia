@@ -28,20 +28,20 @@ const check = (name, ok) => { console.log((ok ? 'OK   ' : 'FAIL ') + name); if (
 
 await wait(800);
 const now = Math.floor(Date.now() / 1000);
-const loser = connect('?host&ticket=' + ticket(7, 1, 'host', now + 3600));
+const loser = connect('?v=2&host&ticket=' + ticket(7, 1, 'host', now + 3600));
 await wait(300);
-const winner = connect('?host&ticket=' + ticket(7, 2, 'host', now + 3700)); // шинэ тасалбар (ялагч)
+const winner = connect('?v=2&host&ticket=' + ticket(7, 2, 'host', now + 3700)); // шинэ тасалбар (ялагч)
 await wait(300);
 check('winner takes the room', !winner.closed && winner.log.includes('room:'));
 check('loser connection replaced', loser.closed);
-const again = connect('?host&ticket=' + ticket(7, 1, 'host', now + 3600)); // ялагдагч хуучин тасалбараар буцаж оров
+const again = connect('?v=2&host&ticket=' + ticket(7, 1, 'host', now + 3600)); // ялагдагч хуучин тасалбараар буцаж оров
 await wait(300);
 check('loser with an older ticket is refused', again.closed && again.log.includes('error:replaced'));
 check('winner keeps the room', !winner.closed);
-const resume = connect('?host&ticket=' + ticket(7, 2, 'host', now + 3700)); // ялагч өөрөө дахин холбогдов
+const resume = connect('?v=2&host&ticket=' + ticket(7, 2, 'host', now + 3700)); // ялагч өөрөө дахин холбогдов
 await wait(300);
 check('same host reconnects', !resume.closed && resume.log.includes('room:'));
-const guest = connect('?ticket=' + ticket(7, 9, 'guest', now + 3700));
+const guest = connect('?v=2&ticket=' + ticket(7, 9, 'guest', now + 3700));
 await wait(300);
 check('a new guest pairs with the winner', guest.log.includes('paired:') && resume.log.includes('paired:'));
 

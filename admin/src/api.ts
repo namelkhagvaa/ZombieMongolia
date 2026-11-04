@@ -190,7 +190,7 @@ export interface RoomRow {
   id: number;
   province: number;
   status: 'open' | 'closed';
-  phase: 'mission' | 'battle' | 'completed' | 'closed';
+  phase: 'mission' | 'coop' | 'battle' | 'completed' | 'closed';
   host: { id: number; name: string; phone: string };
   guest: { id: number; name: string; phone: string } | null;
   friends: { id: number; name: string; phone: string }[];
