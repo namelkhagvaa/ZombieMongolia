@@ -1904,6 +1904,14 @@ void Environment::SetWeather(WeatherKind kind, bool instant)
     weatherMix = 0.0f;
 }
 
+void Environment::SyncWeather(WeatherKind kind, float snow, float wet, float clock, bool first)
+{
+    if (first || std::fabs(clock - time) > 3.0f) time = clock;
+    SetWeather(kind, first);
+    snowCover = snow;
+    wetness = wet;
+}
+
 void Environment::Update(float dt)
 {
     time += dt;

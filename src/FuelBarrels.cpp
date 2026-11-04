@@ -176,7 +176,7 @@ void FuelBarrels::Explode(Barrel& barrel, ZombieHorde& horde, Player& player, So
         const float distance = Vector3Distance({ soldier.mover.position.x, soldier.mover.position.y + 1.1f, soldier.mover.position.z }, center);
         if (distance < kBlastRadius)
         {
-            squad.Damage(i, kSoldierMaxDamage * (1.0f - distance / kBlastRadius));
+            squad.Damage(i, kSoldierMaxDamage * (1.0f - distance / kBlastRadius), "торхны дэлбэрэлт");
         }
     }
 

@@ -25,6 +25,19 @@
 namespace
 {
     const float kInteractDistance = 2.8f;
+    const float kPartnerReachSlack = 2.5f; // хост зочны хүсэлтийг шалгахад нэмэх зай
+
+    float InteractReach(ObjectiveType type)
+    {
+        return type == ObjectiveType::DeliverItems ? kInteractDistance + 1.0f
+             : type == ObjectiveType::RescueSurvivors ? kInteractDistance + 0.7f : kInteractDistance;
+    }
+
+    bool IsEntityType(ObjectiveType type)
+    {
+        return type == ObjectiveType::InteractObject || type == ObjectiveType::RescueSurvivors ||
+               type == ObjectiveType::CollectItems || type == ObjectiveType::DeliverItems;
+    }
     const float kReachRadius = 9.0f;
     const float kDefendRadius = 30.0f;
     const int kZoneScale = 3;              // бүс, аваргын бараа бологчдын тоог үржүүлнэ
@@ -1345,8 +1358,7 @@ void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde,
             for (int k = 0; k < (int)state.entities.size(); ++k)
             {
                 if (state.entities[(size_t)k].used) continue;
-                const float reach = def.type == ObjectiveType::DeliverItems ? kInteractDistance + 1.0f
-                                  : def.type == ObjectiveType::RescueSurvivors ? kInteractDistance + 0.7f : kInteractDistance;
+                const float reach = InteractReach(def.type);
                 const float distance = HorizontalDistance(position, state.entities[(size_t)k].position);
                 if (distance < reach && distance < nearestDistance)
                 {
@@ -1379,7 +1391,6 @@ void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde,
     }
 
     const ObjectiveDef& def = stage->objectives[(size_t)nearestObjective];
-    ObjectiveState& state = states[(size_t)nearestObjective];
     // Гараар: "E — Радио станц асаах"; мэдрэгчтэй дэлгэцэд товчлуур нь тусдаа тул зөвхөн үйлдлийн нэр.
     prompt = InTouchMode() ? std::string(def.action) : std::string("E \xE2\x80\x94 ") + def.action;
 
@@ -1388,31 +1399,100 @@ void Mission::Update(float dt, World& world, Player& player, ZombieHorde& horde,
         return;
     }
 
-    MissionEntity& entity = state.entities[(size_t)nearestEntity];
-    entity.used = true;
     prompt.clear();
+    UseEntity(nearestObjective, nearestEntity, squad, -1);
+}
+
+void Mission::UseEntity(int objective, int entityIndex, SoldierSquad& squad, int guestOwner)
+{
+    const ObjectiveDef& def = stage->objectives[(size_t)objective];
+    ObjectiveState& state = states[(size_t)objective];
+    MissionEntity& entity = state.entities[(size_t)entityIndex];
+    entity.used = true;
 
     switch (def.type)
     {
     case ObjectiveType::RescueSurvivors:
     case ObjectiveType::CollectItems:
-        if (nearestObjective < StageSave::kEntitySlots) save->entities[nearestObjective] |= 1u << nearestEntity;
+        if (objective < StageSave::kEntitySlots) save->entities[objective] |= 1u << entityIndex;
         ++state.progress;
         dirty = true;
         if (def.type == ObjectiveType::RescueSurvivors && def.survivor == SurvivorKind::Soldier)
         {
             squad.Add(entity.position, entity.facing); // аврагдсан цэрэг багт нэгдэнэ
+            if (guestOwner >= 0)
+            {
+                squad.All().back().guestTeam = true;
+                squad.All().back().guestOwner = (int8_t)guestOwner;
+            }
         }
         if (state.progress >= state.target)
         {
-            Complete(nearestObjective);
+            Complete(objective);
         }
         break;
 
     default: // InteractObject, DeliverItems
-        Complete(nearestObjective);
+        Complete(objective);
         break;
     }
+}
+
+bool Mission::GuestInteract(Vector3 position, bool active, bool onFoot, bool pressed, int& objective, int& entity)
+{
+    prompt.clear();
+    objective = entity = -1;
+    if (!active) return false;
+    float nearest = 1e9f;
+    for (int i = 0; i < ObjectiveCount(); ++i)
+    {
+        const ObjectiveState& state = states[(size_t)i];
+        if (state.status != ObjectiveStatus::Active || !IsEntityType(stage->objectives[(size_t)i].type)) continue;
+        const float reach = InteractReach(stage->objectives[(size_t)i].type);
+        for (int k = 0; k < (int)state.entities.size(); ++k)
+        {
+            if (state.entities[(size_t)k].used) continue;
+            const float distance = HorizontalDistance(position, state.entities[(size_t)k].position);
+            if (distance < reach && distance < nearest)
+            {
+                nearest = distance;
+                objective = i;
+                entity = k;
+            }
+        }
+    }
+    if (objective < 0) return false;
+    if (!onFoot)
+    {
+        prompt = InTouchMode() ? "Эхлээд унаанаасаа бууна уу" : "Эхлээд унаанаасаа бууна уу (F)";
+        return false;
+    }
+    const ObjectiveDef& def = stage->objectives[(size_t)objective];
+    prompt = InTouchMode() ? std::string(def.action) : std::string("E \xE2\x80\x94 ") + def.action;
+    return pressed;
+}
+
+bool Mission::PartnerInteract(int objective, int entity, Vector3 position, SoldierSquad& squad, int guestOwner)
+{
+    if (objective < 0 || objective >= ObjectiveCount()) return false;
+    const ObjectiveState& state = states[(size_t)objective];
+    const ObjectiveType type = stage->objectives[(size_t)objective].type;
+    if (state.status != ObjectiveStatus::Active || !IsEntityType(type) || entity < 0 || entity >= (int)state.entities.size() ||
+        state.entities[(size_t)entity].used)
+    {
+        return false;
+    }
+    // (сүлжээний хоцрогдлоор зочны байрлал хэдэн алхам хоцорч ирж болно)
+    const float distance = HorizontalDistance(position, state.entities[(size_t)entity].position);
+    if (distance >= InteractReach(type) + kPartnerReachSlack)
+    {
+        TraceLog(LOG_WARNING, "MISSION: guest %d too far from objective %d item %d: %.1f m (item at %.1f %.1f)", guestOwner, objective, entity, distance,
+                 state.entities[(size_t)entity].position.x, state.entities[(size_t)entity].position.z);
+        return false;
+    }
+    TraceLog(LOG_INFO, "MISSION: guest %d used objective %d item %d", guestOwner, objective, entity);
+    UseEntity(objective, entity, squad, guestOwner);
+    return true;
 }
 
 // ---------------------------------------------------------------- Туршилтын автомат тоглолт

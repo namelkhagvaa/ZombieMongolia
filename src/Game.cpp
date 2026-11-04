@@ -1972,7 +1972,7 @@ void Game::ExploderBlasts()
             {
                 const Soldier& soldier = squad.All()[(size_t)k];
                 const float ds = Vector3Distance(Vector3Add(soldier.mover.position, { 0.0f, 1.1f, 0.0f }), blast);
-                if (soldier.alive && ds < radius) squad.Damage(k, damage * (1.0f - ds / radius));
+                if (soldier.alive && ds < radius) squad.Damage(k, damage * (1.0f - ds / radius), "дэлбэрэгч зомби");
             }
             for (int g = 0; g < Net::kMaxGuests && net.Connected(); ++g)
             {
@@ -2093,7 +2093,7 @@ void Game::UpdateVehicleCombat(float dt)
             {
                 const Soldier& soldier = squad.All()[(size_t)k];
                 const float d = Vector3Distance(soldier.mover.position, vehicle.position);
-                if (soldier.alive && d < radius) squad.Damage(k, 70.0f * (1.0f - d / radius));
+                if (soldier.alive && d < radius) squad.Damage(k, 70.0f * (1.0f - d / radius), "унааны дэлбэрэлт");
             }
         }
         const float d = Vector3Distance(player.Position(), vehicle.position);
@@ -2135,7 +2135,7 @@ void Game::UpdateVehicleCombat(float dt)
             const Soldier& soldier = squad.All()[(size_t)i];
             if (soldier.alive && SoldierTeam(soldier) != OwnTeam() && soldier.member >= 0 && soldier.riding < 0)
             {
-                ram(soldier.mover.position, (int)soldier.id, [&] { squad.DamageFraction(i, kRamShare); });
+                ram(soldier.mover.position, (int)soldier.id, [&] { squad.DamageFraction(i, kRamShare, "унаа мөргөв"); });
             }
         }
     }
@@ -2167,6 +2167,7 @@ void Game::TrackSoldierLosses()
 {
     if (coopGuest) return; // зочны цэргүүдийг хост тооцож SoldierLost илгээнэ
     int own = 0, guest = 0, lost[Net::kMaxGuests] = {};
+    const char* cause = nullptr;
     for (Soldier& soldier : squad.All())
     {
         if (!soldier.bought || soldier.alive || soldier.lossSent) continue;
@@ -2176,7 +2177,11 @@ void Game::TrackSoldierLosses()
             ++guest;
             if (soldier.guestOwner >= 0) ++lost[soldier.guestOwner];
         }
-        else ++own;
+        else
+        {
+            ++own;
+            cause = soldier.lastHurtBy;
+        }
     }
     for (int i = 0; i < Net::kMaxGuests; ++i)
     {
@@ -2195,7 +2200,8 @@ void Game::TrackSoldierLosses()
         TraceLog(LOG_INFO, "SQUAD: lost %d Gold soldier(s)", own);
         if (Account::ServerShop()) Account::LoseSoldiers(own);
         else progress.soldiers = std::max(0, progress.soldiers - own);
-        SetNotice(own == 1 ? "Gold-оор авсан цэрэг үхлээ — цэргийн тоо хасагдлаа" : "Gold-оор авсан цэргүүд үхлээ — цэргийн тоо хасагдлаа", 2.5f);
+        if (own == 1 && cause) SetNotice(TextFormat("Gold-оор авсан цэрэг үхлээ (%s) — цэргийн тоо хасагдлаа", cause), 3.5f);
+        else SetNotice(own == 1 ? "Gold-оор авсан цэрэг үхлээ — цэргийн тоо хасагдлаа" : "Gold-оор авсан цэргүүд үхлээ — цэргийн тоо хасагдлаа", 2.5f);
     }
 }
 
@@ -2671,7 +2677,7 @@ void Game::FireGun(Ray aim, float cameraDistance)
                 // (хүн хоорондын хохирол: зочны оноолтыг хост өсгөнө, хост өөрийнхийг энд)
                 if (coopGuest) net.SendHitHuman((uint32_t)human, damage);
                 else if (human <= kGuestTarget) DamageGuest(kGuestTarget - human, damage * PvpScale());
-                else squad.Damage(human, damage * PvpScale());
+                else squad.Damage(human, damage * PvpScale(), "тоглогчийн сум");
                 const Vector3 at = Vector3Add(ray.position, Vector3Scale(ray.direction, humanDistance));
                 if (!camera.IsFirstPerson()) tracers.Add(muzzle, at, humanHead ? RED : YELLOW);
                 if (pellet == 0) localShotEnd = at;
@@ -3769,7 +3775,7 @@ void Game::LeaveHelicopterCrew(bool hurt)
         soldier.riding = -1;
         soldier.boarding = false;
         soldier.seatStyle = 0;
-        if (hurt && soldier.alive) squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.7f * severity);
+        if (hurt && soldier.alive) squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.7f * severity, "нисдэг тэрэгний осол");
     }
 }
 
@@ -3843,7 +3849,7 @@ void Game::UpdateGuestHelicopterCrew()
         soldier.riding = -1;
         soldier.boarding = false;
         soldier.seatStyle = 0;
-        if (vehicle.wrecked && soldier.alive) squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.7f * std::max(0.2f, vehicle.crashSeverity > 0.0f ? vehicle.crashSeverity : 0.7f));
+        if (vehicle.wrecked && soldier.alive) squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.7f * std::max(0.2f, vehicle.crashSeverity > 0.0f ? vehicle.crashSeverity : 0.7f), "унааны осол");
     }
     if (heli >= 0 && !garage.At(heli).wrecked) SeatHelicopterTeam(heli, owner, first);
     }
@@ -3957,7 +3963,7 @@ void Game::HelicopterCrashed(int index)
         soldier.mover.position = out;
         soldier.riding = -1;
         soldier.seatStyle = 0;
-        squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.7f * heli.crashSeverity);
+        squad.Damage(i, soldier.maxHealth * kTeamToughness * 0.7f * heli.crashSeverity, "нисдэг тэрэгний осол");
     }
 }
 
@@ -4757,7 +4763,7 @@ void Game::UpdateMission(float dt)
         const float damage = hit.damage * PvpScale(); // хүн хоорондын хохирол (Team.h); тулааны эхэнд 0
         if (hit.id == kHostTarget) player.TakeDamage(damage);
         else if (hit.id <= kGuestTarget) DamageGuest(kGuestTarget - hit.id, damage);
-        else if (hit.id >= 0 && hit.id < squad.Total()) squad.Damage(hit.id, damage);
+        else if (hit.id >= 0 && hit.id < squad.Total()) squad.Damage(hit.id, damage, "дайсны цэргийн сум");
     }
     grenades.Update(dt, world, horde, player, particles, garage);
     // Бензинтэй торх: гранат, пуужингийн дэлбэрэлт, хурдтай унаа дэлбэлнэ; тоглогч дундуур нь гарахгүй.
@@ -4869,6 +4875,15 @@ void Game::UpdateMission(float dt)
         inShop = player.IsAlive() && !garage.IsDriving() && !player.IsTraversing() &&
                  world.InSafeRoom(player.Position().x, player.Position().z);
         if (inShop && InKeyPressed(KEY_E)) OpenShop();
+        // Даалгаврын объект: бичгийг энд харуулж, E-г хост руу илгээнэ (хост шалгаж биелүүлнэ, ахиц StageSync-ээр ирнэ)
+        guestInteractCooldown = std::max(0.0f, guestInteractCooldown - dt);
+        int objective = -1, item = -1;
+        const bool canAct = player.IsAlive() && !player.IsDowned() && !inShop && !battleActive && !player.IsTraversing();
+        if (mission.GuestInteract(player.Position(), canAct && guestInteractCooldown <= 0.0f, RideVehicle() < 0, InKeyPressed(KEY_E), objective, item))
+        {
+            net.SendGuestInteract(objective, item);
+            guestInteractCooldown = 1.0f;
+        }
         return;
     }
 
@@ -6866,6 +6881,7 @@ Net::AvatarState Game::LocalAvatar() const
 void Game::StartCoopGuest(int province)
 {
     guestStage = StageSave{}; // хостын ахиц StageSync-ээр ирнэ
+    guestWeatherSynced = false;
     guestSetupSent = false;
     guestSwitchTimer = 0.0f;
     StartMission(province, &guestStage);
@@ -7435,8 +7451,8 @@ void Game::UpdateNetwork(float dt)
                 else if (targetGuest >= 0) DamageGuest(targetGuest, amount);
                 else if (squad.All()[(size_t)targetSoldier].alive)
                 {
-                    if (share) squad.DamageFraction(targetSoldier, std::min(1.0f, -amount));
-                    else squad.Damage(targetSoldier, amount);
+                    if (share) squad.DamageFraction(targetSoldier, std::min(1.0f, -amount), "зочны унаа");
+                    else squad.Damage(targetSoldier, amount, "зочны сум");
                 }
             }
             break;
@@ -7613,6 +7629,14 @@ void Game::UpdateNetwork(float dt)
                     squad.All().back().guestTeam = true;
                     squad.All().back().guestOwner = (int8_t)event.slot;
                 }
+            }
+            break;
+        case Net::Msg::GuestInteract:
+            // Хост: зочин даалгаврын объектод E дарав. Биелвэл зочид шууд мэдэнэ (2 секунд хүлээхгүй).
+            if (!coopGuest && !battleActive && peer.active && peer.figure.alive && !(peer.figure.flags & (Net::kDowned | Net::kRiding)) &&
+                mission.PartnerInteract((int)(event.id & 255u), (int)(event.id >> 8), peer.figure.position, squad, event.slot))
+            {
+                stageSyncTimer = 0.0f;
             }
             break;
         case Net::Msg::GuestHeal:
@@ -9172,11 +9196,13 @@ void Game::UpdateCoopMission(float dt)
     {
         guestView = snapshot;
         dayClock = snapshot.dayClock; // хосттой ижил цаг
-        // Хосттой ижил цаг агаар (зочин даалгавраа эхлүүлэхдээ санамсаргүй сонгосон байж болно)
-        if (snapshot.weather >= 0 && snapshot.weather <= (int)WeatherKind::Dust && snapshot.weather != (int)environment.Weather())
+        // Хосттой ижил цаг агаар (зочин даалгавраа эхлүүлэхдээ санамсаргүй сонгосон байж болно). Нэгдмэгц шууд: эс бөгөөс
+        // хост дээр цас хунгарласан байхад зочинд цас дөнгөж орж эхэлдэг байв.
+        if (snapshot.weather >= 0 && snapshot.weather <= (int)WeatherKind::Dust)
         {
-            environment.SetWeather((WeatherKind)snapshot.weather);
-            TraceLog(LOG_INFO, "COOP: weather %d from host", snapshot.weather);
+            environment.SyncWeather((WeatherKind)snapshot.weather, snapshot.snowCover, snapshot.wetness, snapshot.weatherClock, !guestWeatherSynced);
+            if (!guestWeatherSynced) TraceLog(LOG_INFO, "COOP: weather %d from host (snow %.2f, wet %.2f)", snapshot.weather, snapshot.snowCover, snapshot.wetness);
+            guestWeatherSynced = true;
         }
         horde.ApplySnapshot(snapshot.zombies, params, snapshot.host.sentAt);
         UpdateRemoteFigure(hostFigure, snapshot.host, dt, !guestPlaced);
@@ -9407,6 +9433,9 @@ void Game::SendHostSnapshot(float dt)
     snapshot.zombieSpeed = horde.SpeedMultiplier();
     snapshot.dayClock = dayClock;
     snapshot.weather = (int)environment.Weather();
+    snapshot.snowCover = environment.SnowCover();
+    snapshot.wetness = environment.Wetness();
+    snapshot.weatherClock = environment.Time();
 
     // Зочин бүрд өөрийн хэсэг: түүний баг, бусад зочид, түүний эргэн тойрны зомбинууд
     for (int send = 0; send < sends; ++send)
@@ -10379,7 +10408,7 @@ void Game::UpdateShrinkZone(float dt)
     {
         const Soldier& soldier = squad.All()[(size_t)i];
         if (soldier.alive && !soldier.downed && soldier.member >= 0 && shrinkZone.Outside(soldier.mover.position))
-            squad.DamageFraction(i, share);
+            squad.DamageFraction(i, share, "хумигдах бүс");
     }
     for (int slot = 0; slot < Net::kMaxGuests; ++slot)
     {

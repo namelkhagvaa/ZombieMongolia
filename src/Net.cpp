@@ -1411,6 +1411,9 @@ namespace Net
             s.dayClock = r.F();
             // Цаг агаар: төгсгөлд нэмсэн (хуучин хост илгээдэггүй, хуучин зочин үл тоомсорлоно)
             if (r.ok && r.at < r.size) s.weather = r.U8();
+            s.snowCover = (float)r.U8() / 255.0f;
+            s.wetness = (float)r.U8() / 255.0f;
+            s.weatherClock = r.F();
             if (r.ok)
             {
                 latest = std::move(s);
@@ -1473,6 +1476,10 @@ namespace Net
             break;
         case Msg::GuestRecruit:
             e.id = r.U8();
+            break;
+        case Msg::GuestInteract:
+            e.id = r.U8();
+            e.id |= (uint32_t)r.U8() << 8;
             break;
         case Msg::GuestHeal:
             break;
@@ -1656,6 +1663,9 @@ namespace Net
         w.F(s.zombieSpeed);
         w.F(s.dayClock);
         w.U8((uint8_t)std::max(0, s.weather));
+        w.U8((uint8_t)std::clamp(s.snowCover * 255.0f + 0.5f, 0.0f, 255.0f));
+        w.U8((uint8_t)std::clamp(s.wetness * 255.0f + 0.5f, 0.0f, 255.0f));
+        w.F(s.weatherClock);
         Send(w.data, false);
     }
 
@@ -1870,6 +1880,15 @@ namespace Net
         Writer w;
         w.U8((uint8_t)Msg::GuestRecruit);
         w.U8((uint8_t)count);
+        Send(w.data, true);
+    }
+
+    void Session::SendGuestInteract(int objective, int entity)
+    {
+        Writer w;
+        w.U8((uint8_t)Msg::GuestInteract);
+        w.U8((uint8_t)objective);
+        w.U8((uint8_t)entity);
         Send(w.data, true);
     }
 

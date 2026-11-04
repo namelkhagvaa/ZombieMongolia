@@ -897,7 +897,7 @@ void ZombieHorde::Update(float dt, World& world, Player& player, SoldierSquad& s
             }
             else
             {
-                squad.Damage(target, zombie.damage);
+                squad.Damage(target, zombie.damage, "зомби");
             }
         }
     }
@@ -1071,7 +1071,7 @@ void ZombieHorde::UpdateBear(Zombie& bear, float dt, World& world, Player& playe
                 Damage(prey, std::max(160.0f, bear.damage * 8.0f));
                 noCredit = false;
             }
-            else squad.Damage(target, bear.damage);
+            else squad.Damage(target, bear.damage, "баавгай");
         }
     }
     else if (bear.screamTimer > 0.0f)

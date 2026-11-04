@@ -43,6 +43,10 @@ public:
 
     // instant: даалгаврын эхэнд шууд (үгүй бол тэнгэр, манан, гадаргуу ~20 секундэд аажмаар шилжинэ)
     void SetWeather(WeatherKind kind, bool instant = false);
+    // Зочин: хостын цаг агаар, хунгарласан цас, чийг, цасны хүчний цаг (first: нэгдмэгц шууд, аажим биш)
+    void SyncWeather(WeatherKind kind, float snow, float wet, float clock, bool first);
+    float SnowCover() const { return snowCover; }
+    float Wetness() const { return wetness; }
     // Бороо, цасны одоогийн хүч 0..1 (бороо шиврээд, хүчтэй орж, ээлжилнэ)
     float PrecipitationAmount() const { return precipitation; }
     // Камерын доорх газрын өндөр: намхан газрын манан (хотгор, голын хөндийд өтгөн)

@@ -322,6 +322,8 @@ private:
     StageSave guestStage;           // зочин: хостын өрөөний ахиц (StageSync), өөрийн хадгалалтыг хөндөхгүй
     float guestSwitchTimer = 0.0f;  // зочин: шилжих хүсэлт илгээсний дараа давхар илгээхгүй
     float stageSyncTimer = 0.0f;    // хост: өрөөний ахицыг зочинд илгээх
+    bool guestWeatherSynced = false; // зочин: хостын цаг агаарыг шууд авсан (эхний snapshot)
+    float guestInteractCooldown = 0.0f; // зочин: даалгаврын хүсэлт илгээсний дараа хариу хүлээх
     // ---- Хамтарсан тоглолтын хамгаалалт (хост зочны мэдэгдэлд шууд итгэхгүй) ----
     struct PendingGuestSetup
     {

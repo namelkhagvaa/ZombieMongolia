@@ -71,7 +71,7 @@ namespace
             return !std::strstr(text, "Indices data converted") && !std::strstr(text, "could not open port");
         }
         if (StartsWith(text, "BATTLE: AI hit") || StartsWith(text, "BATTLE: rammed")) return false;
-        static const char* const prefixes[] = { "STEP:", "BATTLE:", "COOP:", "NET:", "ACCOUNT:", "MISSION: kill count",
+        static const char* const prefixes[] = { "STEP:", "BATTLE:", "COOP:", "NET:", "ACCOUNT:", "SQUAD:", "MISSION: kill count", "MISSION: guest",
                                                 "GAME: GPU", "SESSION:" };
         for (const char* prefix : prefixes)
         {

@@ -27,7 +27,7 @@ namespace Net
     constexpr int kMaxGuests = 5; // нэг өрөөнд хост + 5 зочин = 6 тоглогч
     // Сүлжээний мессежийн хувилбар: мессежийн бүтэц өөрчлөгдөх бүрд нэмэгдүүлнэ. Хост ба зочин ижил хувилбартай
     // байж л нэгдэнэ (эс бөгөөс өгөгдөл буруу уншигдаж, жишээ нь цэргүүд "үхсэн" мэт харагдана).
-    constexpr uint16_t kProtocolVersion = 22; // 22: өрөөний горим, баг; 21: зочид бие биеэ харна (snapshot-ын бусад тоглогч, Roster); 20: нэг өрөөнд 6 тоглогч (relay-ийн зочны дугаар); 19: тэмдэг (Ping); 18: Aqua (унааны төрөл 10); 17: Crown (унааны төрөл 9); 16: баавгай (ZombieState.type 3); 15: хуягт машин; 14: нисдэг тэрэг (зорчигч, хаалганы буудагч), чат, унааны дугаар 254 хүртэл;
+    constexpr uint16_t kProtocolVersion = 23; // 23: зочин даалгавар биелүүлнэ (GuestInteract), цас, чийг snapshot-оор; 22: өрөөний горим, баг; 21: зочид бие биеэ харна (snapshot-ын бусад тоглогч, Roster); 20: нэг өрөөнд 6 тоглогч (relay-ийн зочны дугаар); 19: тэмдэг (Ping); 18: Aqua (унааны төрөл 10); 17: Crown (унааны төрөл 9); 16: баавгай (ZombieState.type 3); 15: хуягт машин; 14: нисдэг тэрэг (зорчигч, хаалганы буудагч), чат, унааны дугаар 254 хүртэл;
                                              // 13: цэргийн тогтвортой дугаар, зочныг хүлээх хугацаа дуусав (GuestKick);
                                              // 12: шахсан snapshot, хайрцгийг хост олгоно, дахин холбогдох; 4: унааны эрүүл мэнд, нисэж буй зомби; 5: X-Trail, Yaris; 6: 1-р дайчны дүр;
                                              // 7: тулаан (тоглогч хооронд); 8: зочин хосттой адил (гишүүн солих г.м.);
@@ -77,7 +77,8 @@ namespace Net
         Stats,           // аль аль нь: энэ тоглолтын өөрийн үзүүлэлт (устгасан, толгой, босгосон, унасан, оновчлол)
         Roster,          // хост -> зочин: өрөөний горим, тоглогчдын баг, нэр, энэ зочны дугаар
         MatchStart,      // хост -> зочин: найзуудын тулаан эхэллээ (зочны гарах байрлал)
-        MatchOver        // хост -> зочин: найзуудын тулаан дууслаа (ялсан баг, 255 = тэнцээ)
+        MatchOver,       // хост -> зочин: найзуудын тулаан дууслаа (ялсан баг, 255 = тэнцээ)
+        GuestInteract    // зочин -> хост: даалгаврын объектод E дарав (id: даалгавар | объект << 8)
     };
     constexpr uint32_t kHostPlayer = 0xFFFF; // GuestHitHuman: хостын удирдаж буй тоглогч (бусад нь Soldier::id)
     constexpr uint32_t kGuestPlayerBase = 0x10000; // GuestHitHuman: зочин (+ дугаар)
@@ -179,6 +180,8 @@ namespace Net
         float zombieSpeed = 1.0f;
         float dayClock = 0.0f; // өдөр шөнийн мөчлөг (секунд): зочин хосттой ижил цагтай
         int weather = -1;      // хостын цаг агаар (WeatherKind); -1 = илгээгээгүй (хуучин хувилбар)
+        float snowCover = 0.0f, wetness = 0.0f; // хостын газрын цас, чийг 0..1
+        float weatherClock = 0.0f;              // хостын цаг агаарын цаг (цас, борооны хүч үүгээр ээлжилнэ)
     };
 
     // Хайлтаар олдсон хост
@@ -300,6 +303,7 @@ namespace Net
         void SendStageSync(const std::string& stage);
         void SendGuestSwitch(int member, bool hold);
         void SendGuestRecruit(int count);
+        void SendGuestInteract(int objective, int entity);
         void SendGuestHeal();
         void SendGuestSetup(float memberHealth, int recruits);
         void SendVehicleHit(int index, float damage);

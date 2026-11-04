@@ -37,6 +37,7 @@ struct Soldier
     float aimHold = 0.0f;    // >0 үед буугаа онилсон хэвээр барина (буудсаны дараа, тулааны үед)
     float aimPose = 0.0f;    // 0 = бэлэн барьсан .. 1 = онилсон (зөөлөн шилжинэ)
     float deathTimer = 0.0f;
+    const char* lastHurtBy = nullptr; // сүүлд юунд өртсөн (үхлийн шалтгааныг мэдэгдэж, логд бичихэд)
     // Хаалгаар дамжих зам: аль өрөөнөөс аль өрөө рүү, хэддүгээр цэг рүү явж байгаа
     int routeFrom = -2, routeTo = -2, routeStage = 0;
     float bestDistance = 0.0f; // зорилт хүртэлх хамгийн бага зай (ахиц хэмжихэд)
@@ -181,9 +182,9 @@ public:
     // world нь тогтмол биш: цэргүүд замдаа таарсан хаалгыг онгойлгоно.
     void Update(float dt, World& world, Vector3 playerPosition, ZombieHorde& horde, Tracers& tracers,
                 Particles& particles);
-    void Damage(int index, float amount);
+    void Damage(int index, float amount, const char* cause = nullptr);
     // Амийн дээд хэмжээний fraction хувийг хасна (унаагаар дайрах г.м.)
-    void DamageFraction(int index, float fraction);
+    void DamageFraction(int index, float fraction, const char* cause = nullptr);
     // Тушаал (тоглогчийн баг, зочны багт биш): seconds хугацаанд байлдахаа түр больж удирдагч руу гүйнэ ("энд бай" цуцлагдана)
     void Regroup(float seconds);
     // Бүгд энэ зомби руу буудна (seconds хугацаанд, буудах зайд байвал)

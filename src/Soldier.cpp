@@ -1014,11 +1014,12 @@ void SoldierSquad::Update(float dt, World& world, Vector3 hostPosition, ZombieHo
     }
 }
 
-void SoldierSquad::Damage(int index, float amount)
+void SoldierSquad::Damage(int index, float amount, const char* cause)
 {
     Soldier& soldier = soldiers[index];
     if (!soldier.alive) return;
     soldier.sinceHit = 0.0f;
+    if (cause) soldier.lastHurtBy = cause;
     if (soldier.downed)
     {
         soldier.downTimer -= amount * 0.12f; // унасан хүнийг цохивол хурдан үхнэ
@@ -1051,6 +1052,9 @@ void SoldierSquad::Damage(int index, float amount)
 void SoldierSquad::Die(Soldier& soldier)
 {
     // Унасан байсан бол хэвтсэн хэвээр, эс бөгөөс санамсаргүйгээр хойш, урагш, хажуу тийш унана
+    TraceLog(LOG_INFO, "SQUAD: soldier %u died (member %d, owner %d, bought %d): %s%s at (%.0f, %.0f)", (unsigned)soldier.id, soldier.member, (int)soldier.guestOwner,
+             soldier.bought ? 1 : 0, soldier.lastHurtBy ? soldier.lastHurtBy : "unknown", soldier.downed ? " (downed, not revived)" : "",
+             soldier.mover.position.x, soldier.mover.position.z);
     soldier.deathStyle = soldier.downed ? 3 : (uint8_t)GetRandomValue(0, kDeathStyles - 1);
     soldier.downed = false;
     soldier.health = 0.0f;
@@ -1133,10 +1137,10 @@ void SoldierSquad::Regroup(float seconds)
     }
 }
 
-void SoldierSquad::DamageFraction(int index, float fraction)
+void SoldierSquad::DamageFraction(int index, float fraction, const char* cause)
 {
     Soldier& soldier = soldiers[index];
-    Damage(index, soldier.maxHealth * fraction * (soldier.member < 0 ? 1.0f / 1.5f : kTeamToughness));
+    Damage(index, soldier.maxHealth * fraction * (soldier.member < 0 ? 1.0f / 1.5f : kTeamToughness), cause);
 }
 
 void SoldierSquad::AddGuestFighter(int owner, int member, Vector3 position, float facing, float health, float frozen)

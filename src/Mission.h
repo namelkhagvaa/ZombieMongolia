@@ -61,6 +61,12 @@ public:
     void Update(float dt, World& world, Player& player, ZombieHorde& horde, SoldierSquad& squad, bool interactPressed,
                 bool onFoot);
 
+    // Зочин: Update-ийн оронд (даалгаврыг хост тооцно): ойрын объектын бичгийг харуулж, E дарвал хост руу илгээх
+    // объектыг буцаана. active = false: бичиг гаргахгүй (унасан, тулаан).
+    bool GuestInteract(Vector3 position, bool active, bool onFoot, bool pressed, int& objective, int& entity);
+    // Хост: зочин объектод E дарав. Хост өөрөө шалгана: идэвхтэй даалгавар, зочин үнэхээр дэргэд нь. guestOwner: зочны дугаар
+    bool PartnerInteract(int objective, int entity, Vector3 position, SoldierSquad& squad, int guestOwner);
+
     bool IsComplete() const;
 
     // Үеийн зомбины нөөц: ийм тооны зомби л гарч ирнэ; бүгдийг устгасны дараа шинээр гарахгүй.
@@ -144,6 +150,8 @@ private:
     std::vector<Vector3> partners;
     void Activate(int index);
     void Complete(int index);
+    // Объектыг ашиглав: аврах, цуглуулах, идэвхжүүлэх (guestOwner >= 0: аврагдсан цэрэг тэр зочны багт)
+    void UseEntity(int objective, int entity, SoldierSquad& squad, int guestOwner);
     void PushBanner(int objective, bool completed);
     // Гацахад зөвлөгөө: одоогийн даалгаварт ойртохгүй, явц гарахгүй удвал газрын зургийг ашиглахыг сануулна
     void UpdateHint(float dt, Vector3 player);
