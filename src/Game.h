@@ -649,7 +649,12 @@ private:
         Net::AvatarState state; // сүүлийн байдал (бусад зочдод snapshot-оор)
         int vehicle = -1;       // жолоодож буй унаа
         float health = 0.0f;    // сүүлд мэдэгдсэн амь (тасарвал AI дайчин болно)
-        double revivedUntil = 0.0; // энэ цаг хүртэл зочны амийн тооцоог шинээр эхлүүлнэ (саяхан босгосон)
+        double healthResyncUntil = 0.0; // энэ цаг хүртэл амийн тооцоог зочны мэдээгээр шинэчилнэ
+        void ResetHealthCheck() // амь нь сэргэв (босгосон, эмийн хайрцаг, өөр биед шилжсэн)
+        {
+            shadow = -1.0f;
+            healthResyncUntil = GetTime() + 2.0;
+        }
         bool rejoined = false;  // тасарсан зочин багаа хэвээр (тулаанд) буцаж нэгдлээ: анхны байдлаар биед нь оруулна
         bool keepRecruits = false; // (дахин нэгдсэн) зочны Gold-ийн цэргүүд аль хэдийн байгаа: дахин үүсгэхгүй
         float memberHealth = 100.0f; // гишүүдийн амийн дээд хэмжээ (GuestSetup)

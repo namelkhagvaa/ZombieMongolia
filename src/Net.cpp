@@ -933,6 +933,9 @@ namespace Net
             switch (event.type)
             {
             case ENET_EVENT_TYPE_CONNECT:
+                // Зочин ертөнцөө ачаалах зуур (удаан төхөөрөмжид олон арван секунд) сүлжээг ажиллуулдаггүй: анхны 5-30 секундээр
+                // хоёр тал нэгнээ "гарсан" гэж үздэг байв. Гарч буй тал Leave илгээдэг тул зөвхөн гэнэт унасныг удаан мэднэ.
+                enet_peer_timeout(event.peer, ENET_PEER_TIMEOUT_LIMIT, 60000, 90000);
                 if (role == Role::Host)
                 {
                     const int slot = FindRemote(event.peer) >= 0 ? FindRemote(event.peer) : FreeRemote();

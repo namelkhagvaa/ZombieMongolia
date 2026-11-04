@@ -1791,7 +1791,7 @@ void Game::UpdateDowned(float dt)
             if (!squad.TakeGuestRevived(i) || !net.SlotConnected(i)) continue;
             net.To(i);
             net.SendRevive(i + 1);
-            guests[i].shadow = -1.0f; // босгосон: давхар тооцоо дараагийн мэдээгээр
+            guests[i].ResetHealthCheck(); // босгосон: давхар тооцоо дараагийн мэдээгээр
             guests[i].forcedDown = false;
         }
     }
@@ -1856,8 +1856,7 @@ void Game::UpdateDowned(float dt)
             net.SendRevive(downedPlayer);
             if (!coopGuest)
             {
-                guests[downedPlayer - 1].shadow = -1.0f;
-                guests[downedPlayer - 1].revivedUntil = GetTime() + 2.0;
+                guests[downedPlayer - 1].ResetHealthCheck();
                 guests[downedPlayer - 1].forcedDown = false;
             }
             SetNotice("НӨХРӨӨ БОСГОЛОО!", 2.0f);
@@ -7097,8 +7096,9 @@ void Game::UpdateNetwork(float dt)
             {
                 // Тулаан: зочны мэдэгдсэн амь хостын тооцооноос их бол (хохирлоо хасаагүй) хостынхоор. ~3 секунд (20/с)
                 // дараалан илүү мэдэгдвэл хуурамч: тулаанд унасанд тооцно. (Сүлжээний хоцролтоос болох зөрүүнд тэсвэртэй.)
-                // (Саяхан босгосон: зочин босоогүй үеийн мессеж замд явж байж магадгүй тул тооцоог шинээр эхлүүлнэ)
-                if (peer.shadow < 0.0f || GetTime() < peer.revivedUntil) peer.shadow = event.avatar.health;
+                // (Саяхан амь нь сэргэсэн: өмнөх амьтай мессеж замд явж байж магадгүй тул тооцоог шинээр эхлүүлнэ.
+                // Эс бөгөөс тэр мессеж тооцоог бууруулж, зочны шинэ амь "хуурамч" болж унасанд тооцогддог.)
+                if (peer.shadow < 0.0f || GetTime() < peer.healthResyncUntil) peer.shadow = event.avatar.health;
                 if (event.avatar.health <= peer.shadow + 0.25f * peer.memberHealth)
                 {
                     peer.shadow = std::min(peer.shadow, event.avatar.health);
@@ -7157,7 +7157,7 @@ void Game::UpdateNetwork(float dt)
             break;
         case Net::Msg::GuestPickup:
             // Хайрцаг байсан бол (хост түрүүлж аваагүй) зочны амь дүүрнэ: давхар тооцоог шинэчилнэ
-            if (!coopGuest && medKits.RemoveNear(event.position, 2.5f)) peer.shadow = -1.0f;
+            if (!coopGuest && medKits.RemoveNear(event.position, 2.5f)) peer.ResetHealthCheck();
             break;
         case Net::Msg::Projectile:
             // Нөгөө тоглогчийн гранат, пуужин: зөвхөн харагдана (хохирлыг шидсэн тал / хост тооцно).
@@ -7287,8 +7287,7 @@ void Game::UpdateNetwork(float dt)
                 const int downed = event.player - 1;
                 if (downed >= Net::kMaxGuests || !guests[downed].active || IsEnemyOf(event.slot + 1, event.player) ||
                     HorizontalDistance(peer.figure.position, guests[downed].figure.position) > 8.0f) break;
-                guests[downed].shadow = -1.0f;
-                guests[downed].revivedUntil = GetTime() + 2.0;
+                guests[downed].ResetHealthCheck();
                 guests[downed].forcedDown = false;
                 net.To(downed);
                 net.SendRevive(event.player);
@@ -7304,7 +7303,7 @@ void Game::UpdateNetwork(float dt)
                 near = near || (coopGuest && HorizontalDistance(player.Position(), soldier.position) < 4.0f);
             }
             if (!near) break;
-            if (!coopGuest) peer.shadow = -1.0f; // (хост: зочныг манай дайчин босгосныг доор тооцно)
+            if (!coopGuest) peer.ResetHealthCheck(); // (хост: зочныг манай дайчин босгосныг доор тооцно)
             if (player.IsDowned())
             {
                 player.Revive(0.3f);
@@ -7322,7 +7321,7 @@ void Game::UpdateNetwork(float dt)
                     net.SendCrateGrant((int)event.id);
                     net.Except(event.slot); // бусад зочдын дэлгэцээс алга болно
                     net.SendCrateTaken((int)event.id);
-                    peer.shadow = -1.0f; // (зочны амь 40% нэмэгдэнэ)
+                    peer.ResetHealthCheck(); // (зочны амь 40% нэмэгдэнэ)
                 }
             }
             else
@@ -7616,7 +7615,7 @@ void Game::UpdateNetwork(float dt)
             if (!coopGuest && peer.healCooldown <= 0.0f && world.InSafeRoom(peer.figure.position.x, peer.figure.position.z))
             {
                 peer.healCooldown = 5.0f;
-                peer.shadow = -1.0f;
+                peer.ResetHealthCheck();
                 for (Soldier& soldier : squad.All())
                 {
                     if (soldier.guestOwner == event.slot && soldier.alive) soldier.health = soldier.maxHealth;
@@ -7873,7 +7872,7 @@ void Game::StartSkirmish()
     {
         if (!guests[i].active) continue;
         guests[i].teamSpawned = true; // унасан дайчид дахин үүсэхгүй
-        guests[i].shadow = -1.0f;
+        guests[i].ResetHealthCheck();
         guests[i].forcedDown = false;
         net.To(i);
         net.SendMatchStart(spawnFor(TeamOf(i + 1)));
@@ -7921,7 +7920,7 @@ void Game::EndSkirmish(int winner)
     }
     for (GuestPeer& peer : guests)
     {
-        peer.shadow = -1.0f;
+        peer.ResetHealthCheck();
         peer.forcedDown = false;
         peer.teamSpawned = false;
     }
@@ -8447,7 +8446,7 @@ void Game::GuestTakeOver(int slot, int index, bool leaveDead, bool hold)
     guestFigure.target = position;
     guestFigure.member = (uint8_t)member;
     peer.health = health;
-    peer.shadow = health; // шинэ бие: хостын давхар тооцоо түүний амиар
+    peer.ResetHealthCheck(); // шинэ бие: хостын давхар тооцоо түүний амиар (дараагийн мэдээгээр)
     peer.forcedDown = false;
 }
 
@@ -8919,7 +8918,8 @@ void Game::ResumeGuestBody()
     net.SendTakeover(body.mover.position, body.health, body.member);
     BattleGuest().figure.position = BattleGuest().figure.target = body.mover.position;
     BattleGuest().figure.member = (uint8_t)body.member;
-    BattleGuest().health = BattleGuest().shadow = body.health;
+    BattleGuest().health = body.health;
+    BattleGuest().ResetHealthCheck();
     TraceLog(LOG_INFO, "BATTLE: rejoined guest took back member %d (%.0f hp)", body.member, body.health);
 }
 
@@ -8980,7 +8980,7 @@ void Game::AcceptGuest()
     rosterDirty = true;
     // (Серверт "зочин холбогдлоо" гэж зочин ертөнцөд ирсний дараа (анхны GuestState) мэдэгдэнэ: ачаалж чадаагүй, хэт
     // удаан ачаалсан зочны төлбөр буцна, тулаан тоологдохгүй.)
-    peer.shadow = -1.0f;
+    peer.ResetHealthCheck();
     peer.forcedDown = false;
     peer.suspicion = 0;
     peer.humanTokens = 24.0f;
