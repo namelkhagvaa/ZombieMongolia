@@ -28,7 +28,7 @@ namespace
                                                   "iron",          "survivor_doctor_man", "survivor_doctor_woman",
                                                   "survivor_student_boy", "survivor_student_girl", "survivor_monk",
                                                   "model2",        "woman_zombie", "fp_arms",
-                                                  "emgen" };
+                                                  "emgen",         "mongolian_hero" };
 
     // Загварын өндөр тоглоомын хүний өндөртэй (~1.9 м) таарахаар томруулна. Аврах иргэд бодит харьцаагаар:
     // эрэгтэй цэргээс бага зэрэг намхан, эмэгтэй, сурагч (15 настай) нь түүнээс намхан.
@@ -148,6 +148,7 @@ namespace
     {
         // (iron-ы өөрийн гар: асар том хуяг дэлгэцийг дүүргэж, мөрөвч хөвж харагдана: хүрэл өнгөтэй бээлийтэй гараар)
         // (demon-ы өөрийн гар: том хар бээлий, боолттой шуу хэлбэргүй бөөн харагддаг: урт буунд шиг fp_arms гараар)
+        // (баатрын өөрийн сарвуу: Tripo хуруунуудыг нэг бөөн болгосон, гар буу бөөн бээлийд нуугдана)
         return id == kCharacterFpArms || id == kCharacterModel2 || id == kCharacterModel3;
     }
 
@@ -156,7 +157,8 @@ namespace
     bool WantsClipArms(int id)
     {
         return id == kCharacterFighter1 || id == kCharacterFighter2 || id == kCharacterSniper || id == kCharacterModel1 ||
-               id == kCharacterModel2 || id == kCharacterModel3 || id == kCharacterIron || id == kCharacterDemon || id == kCharacterFpArms;
+               id == kCharacterModel2 || id == kCharacterModel3 || id == kCharacterIron || id == kCharacterDemon || id == kCharacterFpArms ||
+               id == kCharacterMongolHero;
     }
 
     // Сарвууны жижигрүүлэлт зөвхөн 1-р этгээдийн гарыг зурах үед (DrawCharacterArms): 3-р этгээдийн дүр хэвээр
@@ -1563,7 +1565,8 @@ void LoadCharacterModels(Shader shader)
             {
                 // Iron-ы сарвуу шовх хэлтэрхий хэлбэртэй, атгаж чадахгүй: сарвуугүй (хүрэл бээлийн сарвуу, DrawCharacterClipArms)
                 c.clipArms.push_back(ExtractArms(c.model, c.model.meshes[index], c.joints[RightArm], c.joints[LeftArm], -1, 0, true,
-                                                 c.joints[RightHand], c.joints[LeftHand], id == kCharacterIron || id == kCharacterDemon ? 1 : 0));
+                                                 c.joints[RightHand], c.joints[LeftHand],
+                                                 id == kCharacterIron || id == kCharacterDemon || id == kCharacterMongolHero ? 1 : 0));
                 if (id == kCharacterFpArms)
                 {
                     c.clipHands.push_back(ExtractArms(c.model, c.model.meshes[index], c.joints[RightArm], c.joints[LeftArm], -1, 0, true,
@@ -1574,7 +1577,7 @@ void LoadCharacterModels(Shader shader)
         // Цэргүүд, сонгож болох дүрүүд Mixamo-гийн нэг хөдөлгөөнийг хуваалцана (файл байхгүй бол кодоор тооцсон хөдөлгөөн).
         // Demon, Iron үгүй: биеийн хэлбэр нь хөдөлгөөнийг даахгүй.
         if (id == kCharacterFighter1 || id == kCharacterFighter2 || id == kCharacterSniper || id == kCharacterModel1 ||
-            id == kCharacterModel2 || id == kCharacterModel3)
+            id == kCharacterModel2 || id == kCharacterModel3 || id == kCharacterMongolHero)
         {
             static AnimSet soldierClips;
             static int soldierClipsState = 0; // 0 уншаагүй, 1 бэлэн, -1 алга

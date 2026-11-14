@@ -43,7 +43,8 @@ constexpr int kCharacterZombieWoman = 19;  // assets\woman_zombie (гүйгч з
 // Байхгүй бол кодоор угсарсан бээлийтэй гар (Humanoid.cpp: BuildFist).
 constexpr int kCharacterFpArms = 20;
 constexpr int kCharacterZombieElder = 21; // assets\emgen (алхагч зомбины тал нь: хөгшин эмэгтэй)
-constexpr int kCharacterCount = 22;
+constexpr int kCharacterMongolHero = 22;  // assets\mongolian_hero (1-р дайчны сонгож болох дүр: Монгол баатар)
+constexpr int kCharacterCount = 23;
 
 // shader: текстур, гэрэлтүүлэг, манантай дүрийн shader (Environment::CharacterShader).
 void LoadCharacterModels(Shader shader);

@@ -1719,7 +1719,9 @@ void SetViewModelArms(int characterModel)
     viewArmsId = characterModel >= 0 && HasCharacterArms(characterModel) ? characterModel : kCharacterFpArms;
     // Iron (хуягт робот): бээлийтэй гарыг хуяг шиг хүрэл өнгөөр
     // Demon: бараан саарал хөх арьс, хар бээлий (дүрийнх шиг)
-    viewArmsTint = characterModel == kCharacterIron ? Color{ 196, 150, 96, 255 } : characterModel == kCharacterDemon ? Color{ 92, 116, 160, 255 } : WHITE;
+    // Монгол баатар: савхин бээлий
+    viewArmsTint = characterModel == kCharacterIron ? Color{ 196, 150, 96, 255 } : characterModel == kCharacterDemon ? Color{ 92, 116, 160, 255 }
+                 : characterModel == kCharacterMongolHero ? Color{ 150, 108, 74, 255 } : WHITE;
     viewBodyModel = HasCharacterClipArms(characterModel) ? characterModel : kCharacterFpArms;
 }
 
@@ -1849,7 +1851,10 @@ void DrawViewModel(const Camera3D& camera, HeldItem held, float recoil, float wa
             DrawCharacterClipArms(viewBodyModel, rightPalm, leftPalm, viewBodyModel == kCharacterFpArms ? viewArmsTint : WHITE);
             // Iron: төмөр гар, сарвуу нь хүрэл бээлий
             // (demon: боолттой өөрийн гар, сарвуу нь саарал хөх FPS Hands)
-            if (viewBodyModel == kCharacterIron || viewBodyModel == kCharacterDemon) DrawCharacterClipArms(kCharacterFpArms, rightPalm, leftPalm, viewArmsTint, true);
+            if (viewBodyModel == kCharacterIron || viewBodyModel == kCharacterDemon || viewBodyModel == kCharacterMongolHero)
+            {
+                DrawCharacterClipArms(kCharacterFpArms, rightPalm, leftPalm, viewArmsTint, true);
+            }
         }
         else
         {

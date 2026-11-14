@@ -50,6 +50,35 @@ def rewrite_vec3(gltf, binary, index):
     return len(gltf['accessors']) - 1
 
 
+def drop_parent_rotation(gltf, skin):
+    # Зарим Tripo загварт (mongolian_hero) яс ба биеийн эцэг зангилаа (node_0) яг энэ эргэлтийг агуулдаг: raylib
+    # зангилааны хувиргалтыг оройд, ясанд хэрэглэдэг тул оройг эргүүлсний дараа тэр нь давхар эргүүлнэ (бие 90 градус
+    # хажуу тийш, гар нь клипийн зүгээр: буу хажуу тийш). Ижил эргэлттэй эцгийг нэгж болгоно.
+    nodes = gltf['nodes']
+    parent = {child: i for i, node in enumerate(nodes) for child in node.get('children', [])}
+    joints = set(skin['joints'])
+    starts = [i for i, node in enumerate(nodes) if 'mesh' in node] + [j for j in skin['joints'] if parent.get(j) not in joints]
+    ancestors = set()
+    for start in starts:
+        k = parent.get(start)
+        while k is not None and k not in joints:
+            ancestors.add(k)
+            k = parent.get(k)
+    cleared = 0
+    for k in sorted(ancestors):
+        node = nodes[k]
+        if 'matrix' in node:
+            m = node['matrix']
+            if all(abs(m[i] - R[i]) < 1e-4 for i in range(12)) and all(abs(v) < 1e-4 for v in m[12:15]):
+                del node['matrix']
+                cleared += 1
+            elif any(abs(m[i] - (1.0 if i % 5 == 0 else 0.0)) > 1e-4 for i in range(16)):
+                print(f"warning: parent node {node.get('name', k)} has another transform, left as is")
+        elif 'rotation' in node or 'scale' in node:
+            print(f"warning: parent node {node.get('name', k)} has a rotation/scale, left as is")
+    return cleared
+
+
 def main(path):
     gltf, binary = read_glb(path)
     # Загварын бие (mesh) өөрөө зөв зүгтэй, зөвхөн яс нь 90 градус эргэсэн байдаг: ясыг л эргүүлнэ.
@@ -77,9 +106,10 @@ def main(path):
     gltf['accessors'].append({'bufferView': len(gltf['bufferViews']) - 1, 'componentType': 5126,
                               'count': len(matrices), 'type': 'MAT4'})
     skin['inverseBindMatrices'] = len(gltf['accessors']) - 1
+    cleared = drop_parent_rotation(gltf, skin) if '--mesh' in sys.argv else 0
     gltf['buffers'] = [{'byteLength': len(binary)}]
     write_glb(path, gltf, binary)
-    print(f'{path}: skeleton rotated 90 degrees (forward +X -> +Z)')
+    print(f'{path}: skeleton rotated 90 degrees (forward +X -> +Z)' + (f', removed the same rotation from {cleared} parent node(s)' if cleared else ''))
 
 
 if __name__ == '__main__':

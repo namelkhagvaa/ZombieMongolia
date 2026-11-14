@@ -25,9 +25,11 @@ $build = Join-Path $root "build_web"
 $python = (Get-Command python -ErrorAction Stop).Source
 $env:EMSDK_QUIET = 1
 & (Join-Path $Emsdk "emsdk_env.ps1") | Out-Null
-$env:PATH = "$env:PATH;C:\msys64\ucrt64\bin"
+$env:PATH = "$env:PATH;C:\msys64\ucrt64\bin;$(Join-Path $Emsdk "upstream\emscripten")" # (emsdk_env заримдаа emcmake-ийг PATH-д нэмдэггүй)
 
 function Run([string]$exe, [string[]]$arguments) {
+    # (олдохгүй тушаал LASTEXITCODE-ийг өөрчлөхгүй: тохиргоо алгасагдаж хуучин assets багцлагддаг байв)
+    if (-not (Get-Command $exe -ErrorAction SilentlyContinue)) { throw "$exe not found" }
     & $exe @arguments
     if ($LASTEXITCODE -ne 0) { throw "$exe failed with exit code $LASTEXITCODE" }
 }
