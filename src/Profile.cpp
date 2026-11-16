@@ -13,7 +13,7 @@
 // glFinish (--gpu-sync): систем дээрх GL сан (Windows: opengl32, Android: GLESv3, хөтөч: WebGL) аль хэдийн холбогдсон.
 #if defined(_WIN32)
 extern "C" __declspec(dllimport) void __stdcall glFinish(void);
-#elif defined(__ANDROID__) || defined(__EMSCRIPTEN__)
+#elif defined(__ANDROID__) || defined(__EMSCRIPTEN__) || defined(ZM_IOS)
 #include <GLES3/gl3.h>
 #else
 #include <GL/gl.h>
