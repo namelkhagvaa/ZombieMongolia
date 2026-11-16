@@ -2,6 +2,8 @@
 # цонх (UIKit), OpenGL ES 3.0, хүрэлт, гар, дууг гүйцэтгэнэ. raylib-ийн CMake нь SDL горимд SDL2-ийг системээс хайдаг
 # тул raylib-ийн эх файлуудаас өөрөө сан угсарна. CMakeLists.txt-ээс include хийнэ (raylib_SOURCE_DIR тохируулна).
 enable_language(OBJC OBJCXX)
+# App Store-ийн archive-д сангууд (SDL2, raylib, ENet) суулгагдахгүй: эс бөгөөс Xcode "Generic Archive" үүсгэж .ipa гарахгүй
+set(CMAKE_XCODE_ATTRIBUTE_SKIP_INSTALL "YES")
 
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)

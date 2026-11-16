@@ -140,7 +140,10 @@ if(ANDROID)
     target_link_libraries(ZombieMongolia PRIVATE log android EGL GLESv3 m)
 elseif(IOS)
     # Апп багц (.app): Info.plist, assets (ios/CopyAssets.cmake), SDL2-ийн main (UIKit-ийн эхлэл -> main.cpp-ийн main)
-    add_executable(ZombieMongolia MACOSX_BUNDLE ${GAME_SOURCES} src/PlatformIos.mm)
+    # Икон: ios/Assets.xcassets (assets/icon.png-ээс 1024 px, App Store-д заавал)
+    set(ZM_IOS_ASSETS ${CMAKE_SOURCE_DIR}/ios/Assets.xcassets)
+    add_executable(ZombieMongolia MACOSX_BUNDLE ${GAME_SOURCES} src/PlatformIos.mm ${ZM_IOS_ASSETS})
+    set_source_files_properties(${ZM_IOS_ASSETS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     target_compile_definitions(ZombieMongolia PRIVATE ZM_IOS=1)
     target_link_libraries(ZombieMongolia PRIVATE SDL2::SDL2main "-framework UIKit" "-framework Foundation")
     set(ZM_IOS_BUNDLE_ID "mn.zombiemongolia.game" CACHE STRING "App Store-ийн bundle id")
@@ -151,10 +154,13 @@ elseif(IOS)
         MACOSX_BUNDLE_BUNDLE_VERSION "${ZM_IOS_BUILD_NUMBER}"
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${ZM_IOS_BUNDLE_ID}"
         XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "14.0"
-        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+        XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
+        # App Store-ийн archive: зөвхөн апп суулгагдана (сангууд SKIP_INSTALL, ios/IosLibraries.cmake)
+        XCODE_ATTRIBUTE_SKIP_INSTALL "NO"
+        XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)")
     add_custom_command(TARGET ZombieMongolia POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR} -DDST=$<TARGET_BUNDLE_DIR:ZombieMongolia>/assets
-                -P ${CMAKE_SOURCE_DIR}/ios/CopyAssets.cmake
+        COMMAND sh ${CMAKE_SOURCE_DIR}/ios/copy_assets.sh ${CMAKE_SOURCE_DIR} ${CMAKE_COMMAND}
         VERBATIM)
 else()
     if(WIN32)

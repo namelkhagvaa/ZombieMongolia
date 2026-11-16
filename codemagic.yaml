@@ -47,3 +47,44 @@ workflows:
       - errors.txt
       - configure.log
       - build.log
+
+  # iPhone-д: гарын үсэгтэй .ipa -> App Store Connect (TestFlight). Гараар л эхлүүлнэ (Start new build).
+  # Codemagic-д: Developer Portal integration "ZombieMongolia ASC" (App Store Connect API түлхүүр), Code signing
+  # identities-д Apple Distribution гэрчилгээ ба mn.zombiemongolia.game-ийн App Store profile.
+  ios-testflight:
+    name: iOS TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+    integrations:
+      app_store_connect: ZombieMongolia ASC
+    environment:
+      xcode: latest
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: mn.zombiemongolia.game
+    scripts:
+      - name: Configure
+        script: |
+          command -v cmake >/dev/null || brew install cmake
+          # CFBundleVersion: Codemagic-ийн build-ийн дугаар (App Store Connect илгээх бүрд өсөх ёстой)
+          cmake -S . -B build-ios -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+            -DCMAKE_XCODE_GENERATE_SCHEME=ON \
+            -DZM_IOS_BUILD_NUMBER=$BUILD_NUMBER
+      - name: Signing
+        script: xcode-project use-profiles --project build-ios/ZombieMongolia.xcodeproj
+      - name: Build ipa
+        script: |
+          xcode-project build-ipa \
+            --project build-ios/ZombieMongolia.xcodeproj \
+            --scheme ZombieMongolia \
+            --config Release
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
