@@ -170,6 +170,7 @@ bool LoadProgress(Progress& progress, int provinceCount)
         else if (key == "health") progress.healthLevel = std::clamp(value, 0, kMaxHealthLevel);
         else if (key == "soldiers") progress.soldiers = std::clamp(value, 0, kMaxSoldiers);
         else if (key == "aimAssist") progress.aimAssist = value != 0;
+        else if (key == "language") progress.language = std::clamp(value, -1, 1);
         else if (key == "fullscreen") progress.fullscreen = value != 0;
         else if (key == "frameLimit") progress.frameLimit = std::clamp(value, 0, 4);
         else if (key == "graphics") progress.graphics = std::clamp(value, 0, 2);
@@ -253,6 +254,7 @@ bool SaveProgress(const Progress& progress)
     file << "soldiers " << progress.soldiers << '\n';
     file << "tutorial " << progress.tutorial << '\n';
     file << "aimAssist " << (progress.aimAssist ? 1 : 0) << '\n';
+    file << "language " << progress.language << '\n';
     if (!progress.touchLayout.empty()) file << "touchLayout " << progress.touchLayout << '\n';
     file << "firstPerson " << (progress.firstPerson ? 1 : 0) << '\n';
     file << "viewVersion 2\n";

@@ -103,7 +103,9 @@ namespace
 int Online::Send(const char* method, const std::string& url, const std::string& body, const std::string& token)
 {
     const int id = nextId++;
-    JsSend(id, method, url.c_str(), body.c_str(), token.c_str());
+    // Англи горим: сервер тоглогчид харагдах мессежүүдээ англиар буцаана (backend game/lang.py)
+    const std::string target = English() ? url + (url.find('?') == std::string::npos ? "?lang=en" : "&lang=en") : url;
+    JsSend(id, method, target.c_str(), body.c_str(), token.c_str());
     return id;
 }
 
@@ -190,7 +192,9 @@ int Online::Send(const char* method, const std::string& url, const std::string& 
         id = nextId++;
         requests[id] = request;
     }
-    std::thread(Run, request, std::string(method), url, body, token).detach();
+    // Англи горим: сервер тоглогчид харагдах мессежүүдээ англиар буцаана (backend game/lang.py)
+    const std::string target = English() ? url + (url.find('?') == std::string::npos ? "?lang=en" : "&lang=en") : url;
+    std::thread(Run, request, std::string(method), target, body, token).detach();
     return id;
 }
 

@@ -40,14 +40,16 @@ def main():
             count += 1
     print(f"native_jpg: {count} textures {before / 1e6:.1f} MB -> {after / 1e6:.1f} MB")
     # Мэдэгдлийн дуу хоолой (sounds/narration/*.wav) -> OGG: тоглоом .wav олдохгүй бол .ogg-г ачаална (src/Audio.cpp)
-    voices = os.path.join(folder, "sounds", "narration")
     before = after = count = 0
-    if os.path.isdir(voices):
+    for sub in ("narration", "narration_en"):  # (англи хэлнийх: gen_narration.py --english)
+        voices = os.path.join(folder, "sounds", sub)
+        if not os.path.isdir(voices):
+            continue
         for name in os.listdir(voices):
             if not name.endswith(".wav"):
                 continue
             path = os.path.join(voices, name)
-            target, data = convert(path, "assets/sounds/narration/" + name, CACHE)
+            target, data = convert(path, f"assets/sounds/{sub}/" + name, CACHE)
             before += os.path.getsize(path)
             open(path[:-4] + ".ogg", "wb").write(data)
             after += len(data)

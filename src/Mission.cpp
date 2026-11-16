@@ -786,13 +786,13 @@ std::string Mission::ProgressText(int index) const
     {
     case ObjectiveType::RescueSurvivors:
     case ObjectiveType::CollectItems:
-        std::snprintf(buffer, sizeof(buffer), "%d / %d", state.progress, state.target);
+        LangSnprintf(buffer, sizeof(buffer), "%d / %d", state.progress, state.target);
         break;
     case ObjectiveType::ClearZone:
-        std::snprintf(buffer, sizeof(buffer), "Үлдсэн %d зомби", std::max(0, ZoneRemaining(index)));
+        LangSnprintf(buffer, sizeof(buffer), "Үлдсэн %d зомби", std::max(0, ZoneRemaining(index)));
         break;
     case ObjectiveType::DefendLocation:
-        std::snprintf(buffer, sizeof(buffer), "%d / %d сек", state.progress, state.target);
+        LangSnprintf(buffer, sizeof(buffer), "%d / %d сек", state.progress, state.target);
         break;
     default:
         break;
@@ -996,8 +996,8 @@ void Mission::DrawBanner() const
 
     const int textX = (int)card.x + 98, textWidth = (int)card.width - 98 - 20;
     char label[96];
-    if (banner->completed) std::snprintf(label, sizeof(label), "ДААЛГАВАР БИЕЛЛЭЭ  ·  %d / %d", CompletedCount(), ObjectiveCount());
-    else std::snprintf(label, sizeof(label), "ШИНЭ ДААЛГАВАР  ·  %s", MarkerName(kind));
+    if (banner->completed) LangSnprintf(label, sizeof(label), "ДААЛГАВАР БИЕЛЛЭЭ  ·  %d / %d", CompletedCount(), ObjectiveCount());
+    else LangSnprintf(label, sizeof(label), "ШИНЭ ДААЛГАВАР  ·  %s", MarkerName(kind));
     Ui::TextBold(label, textX, (int)card.y + 12, 15, Fade(accent, alpha));
     Ui::TextBold(FitLine(def.title, 26, textWidth, true).c_str(), textX, (int)card.y + 32, 26, Fade(Ui::kText, alpha));
     // Биелсэн бол: дараагийн нээгдсэн даалгаврын нэр (дараалалд байгаа), эсвэл бүгд биелсэн
@@ -1699,7 +1699,7 @@ void Mission::DrawJournal() const
     Ui::TextDisplay("ДААЛГАВРЫН ЖУРНАЛ", left + 28, y, 30, text, 0.06f);
     DrawRectangle(left + 28, y + 40, 60, 3, kMarker);
     char header[128];
-    std::snprintf(header, sizeof(header), "%s \xE2\x80\x94 ҮЕ %02d / %02d", stage->provinceName, province + 1,
+    LangSnprintf(header, sizeof(header), "%s \xE2\x80\x94 ҮЕ %02d / %02d", stage->provinceName, province + 1,
                   (int)Provinces().size());
     UiText(header, left + width - 28 - UiMeasure(header, 26), y + 6, 26, text);
     y += 48;
@@ -1749,7 +1749,7 @@ void Mission::DrawJournal() const
         }
 
         char title[160];
-        std::snprintf(title, sizeof(title), "%d. %s", i + 1, def.title);
+        LangSnprintf(title, sizeof(title), "%d. %s", i + 1, def.title);
         const Color titleColor = done ? kDoneGreen : locked ? dim : text;
         DrawMarkerBadge(KindOf(def.type), { (float)left + 88.0f, (float)y + (compact ? 11.0f : 13.0f) }, compact ? 11.0f : 13.0f,
                         locked ? 0.5f : 1.0f);
@@ -1764,8 +1764,8 @@ void Mission::DrawJournal() const
         {
             // Нэг мөр: тайлбар, баруун талд нь явц эсвэл шагнал
             char right[96];
-            if (locked && def.after >= 0) std::snprintf(right, sizeof(right), "%d-р даалгаврын дараа", def.after + 1);
-            else if (!progress.empty()) std::snprintf(right, sizeof(right), "Явц: %s", progress.c_str());
+            if (locked && def.after >= 0) LangSnprintf(right, sizeof(right), "%d-р даалгаврын дараа", def.after + 1);
+            else if (!progress.empty()) LangSnprintf(right, sizeof(right), "Явц: %s", progress.c_str());
             else right[0] = '\0';
             const int rightWidth = UiMeasure(right, 16);
             UiText(right, left + width - 34 - rightWidth, y + 28, 16, done ? kDoneGreen : dim);
@@ -1779,11 +1779,11 @@ void Mission::DrawJournal() const
         char detail[160];
         if (locked && def.after >= 0)
         {
-            std::snprintf(detail, sizeof(detail), "Эхлээд %d-р даалгаврыг биелүүл.", def.after + 1);
+            LangSnprintf(detail, sizeof(detail), "Эхлээд %d-р даалгаврыг биелүүл.", def.after + 1);
         }
         else if (!progress.empty())
         {
-            std::snprintf(detail, sizeof(detail), "Явц: %s", progress.c_str());
+            LangSnprintf(detail, sizeof(detail), "Явц: %s", progress.c_str());
         }
         else
         {
@@ -1795,7 +1795,7 @@ void Mission::DrawJournal() const
     }
 
     char footer[128];
-    std::snprintf(footer, sizeof(footer), "Явц: %d / %d даалгавар биелсэн.", CompletedCount(), ObjectiveCount());
+    LangSnprintf(footer, sizeof(footer), "Явц: %d / %d даалгавар биелсэн.", CompletedCount(), ObjectiveCount());
     UiText(footer, left + 28, top + height - 44, 24, CompletedCount() == ObjectiveCount() ? kDoneGreen : text);
     const char* close = InTouchMode() ? "" : "Q / ESC \xE2\x80\x94 хаах";
     UiText(close, left + width - 28 - UiMeasure(close, 20), top + height - 40, 20, dim);

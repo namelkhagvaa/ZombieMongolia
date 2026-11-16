@@ -198,6 +198,7 @@ def settings_json(settings):
         "pack_size": settings.pack_size,
         "pack_price": settings.pack_price,
         "device_change_price": settings.device_change_price,
+        "device_change_gold": settings.device_change_gold,
         "province_count": settings.province_count,
         "capital_index": settings.capital_index,
         "max_devices": settings.max_devices,
@@ -622,7 +623,7 @@ def settings_view(request):
         if not request.staff.is_superuser:
             raise ManageError("Зөвхөн ерөнхий админ үнэ, тохиргоо өөрчилнө", 403)
         limits = {"free_provinces": (0, 22), "pack_size": (1, 22), "pack_price": (0, 1_000_000),
-                  "device_change_price": (0, 1_000_000), "max_devices": (1, 5),
+                  "device_change_price": (0, 1_000_000), "device_change_gold": (0, 100_000), "max_devices": (1, 5),
                   "capital_price": (0, 1_000_000), "start_gold": (0, 100_000),
                   "price_damage": (0, 100_000), "price_fire_rate": (0, 100_000), "price_magazine": (0, 100_000),
                   "price_health": (0, 100_000), "price_soldier": (0, 100_000), "skin_price": (0, 100_000), "skin_price_iron": (0, 100_000),

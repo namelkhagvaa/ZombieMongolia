@@ -28,7 +28,7 @@ export default function SettingsPage() {
       const r = await api<{ settings: Settings }>('settings/', {
         method: 'PUT',
         body: {
-          device_change_price: v.device_change_price,
+          device_change_gold: v.device_change_gold,
           max_devices: v.max_devices,
           start_gold: v.start_gold,
           price_damage: v.price_damage,
@@ -124,12 +124,12 @@ export default function SettingsPage() {
                   <InputNumber min={1} max={5} style={{ width: 200 }} suffix="төхөөрөмж" />
                 </Form.Item>
                 <Form.Item
-                  name="device_change_price"
+                  name="device_change_gold"
                   label="Төхөөрөмж солих үнэ"
-                  extra="Байр дүүрсэн үед шинэ төхөөрөмж нэмэхэд төлнө (хамгийн эрт бүртгэсэн нь чөлөөлөгдөнө)."
+                  extra="Байр дүүрсэн үед шинэ төхөөрөмж нэмэхэд Gold-оор төлнө (хамгийн эрт бүртгэсэн нь чөлөөлөгдөнө)."
                   rules={[{ required: true }]}
                 >
-                  <InputNumber min={0} max={1000000} step={500} style={{ width: 200 }} suffix="₮" />
+                  <InputNumber min={0} max={100000} step={50} style={{ width: 200 }} suffix="Gold" />
                 </Form.Item>
                 <Typography.Paragraph type="secondary">Аймгийн тоо: {settings.province_count} (бүгд үнэгүй)</Typography.Paragraph>
               </Card>
@@ -249,7 +249,12 @@ export default function SettingsPage() {
             </Col>
             <Col xs={24} lg={12}>
               <Card title="Gold татах (зөвхөн тоглоомоос хожсон Gold)" variant="borderless" style={{ height: '100%' }}>
-                <Form.Item name="cashout_enabled" label="Gold татах нээлттэй" valuePropName="checked">
+                <Form.Item
+                  name="cashout_enabled"
+                  label="Gold татах нээлттэй"
+                  valuePropName="checked"
+                  extra="Хаалттай байх ёстой: App Store-д Gold мөнгө болдоггүй (Gambling: No) гэж мэдүүлсэн. Нээвэл iOS апп бооцоот тоглоомд тооцогдож хасагдах эрсдэлтэй."
+                >
                   <Switch />
                 </Form.Item>
                 <Form.Item

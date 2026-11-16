@@ -1,5 +1,7 @@
 #include "UiFont.h"
 
+#include "Lang.h"
+
 #include <vector>
 
 namespace
@@ -23,6 +25,7 @@ void LoadUiFont()
     // Латин + кирилл (монгол хэлний Ө, Ү-г оролцуулаад) + цөөн тэмдэг
     std::vector<int> codepoints;
     for (int c = 32; c <= 126; ++c) codepoints.push_back(c);
+    for (int c = 0x00C0; c <= 0x00FF; ++c) codepoints.push_back(c); // (англи хэл: Ölgii, Khövsgöl, Sükhbaatar)
     for (int c = 0x0400; c <= 0x045F; ++c) codepoints.push_back(c);
     for (int c : { 0x04AE, 0x04AF, 0x04E8, 0x04E9, 0x2014, 0x2013, 0x2116, 0x00B7, 0x00D7, 0x2022, 0x2190, 0x2191, 0x2192, 0x2193, 0x20AE })
         codepoints.push_back(c);
@@ -111,8 +114,11 @@ bool UiHasCyrillic()
     return loaded;
 }
 
+// Дэлгэцийн бичвэр бүр зурах, хэмжих мөчид идэвхтэй хэл рүү (Tr): кодын хаана ч бичсэн монгол текст (массив, бүтэц,
+// тогтмол) хэл солимогц шууд солигдоно. TextFormat-ийн загвар src/LangFormat.h-аар орчуулагдана.
 void UiText(const char* text, int x, int y, int size, Color color)
 {
+    text = Tr(text);
     DrawTextEx(loaded ? font : GetFontDefault(), text, { (float)x, (float)y }, (float)size, Spacing(size), color);
 }
 
@@ -124,11 +130,13 @@ void UiTextShadow(const char* text, int x, int y, int size, Color color)
 
 int UiMeasure(const char* text, int size)
 {
+    text = Tr(text);
     return (int)MeasureTextEx(loaded ? font : GetFontDefault(), text, (float)size, Spacing(size)).x;
 }
 
 void UiTextBold(const char* text, int x, int y, int size, Color color)
 {
+    text = Tr(text);
     if (!boldLoaded)
     {
         UiText(text, x, y, size, color);
@@ -139,6 +147,7 @@ void UiTextBold(const char* text, int x, int y, int size, Color color)
 
 void UiTextDisplay(const char* text, int x, int y, int size, Color color, float tracking)
 {
+    text = Tr(text);
     if (!displayLoaded)
     {
         UiTextBold(text, x, y, size, color);
@@ -151,6 +160,7 @@ void UiTextDisplay(const char* text, int x, int y, int size, Color color, float 
 
 int UiMeasureDisplay(const char* text, int size, float tracking)
 {
+    text = Tr(text);
     if (!displayLoaded) return UiMeasureBold(text, size);
     const float scaled = (float)size * 1.08f;
     return (int)MeasureTextEx(displayFont, text, scaled, scaled * tracking).x;
@@ -158,6 +168,7 @@ int UiMeasureDisplay(const char* text, int size, float tracking)
 
 int UiMeasureBold(const char* text, int size)
 {
+    text = Tr(text);
     if (!boldLoaded)
     {
         return UiMeasure(text, size);

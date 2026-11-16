@@ -221,6 +221,7 @@ def account_state(player, device_id):
             "pack": settings.pack_price,
             "pack_size": settings.pack_size,
             "device_change": settings.device_change_price,
+            "device_change_gold": settings.device_change_gold,
             "capital": settings.capital_price,
         },
     }
@@ -341,7 +342,12 @@ def login(phone_raw, password, device_id, platform, ip):
     if Event.objects.filter(kind="login_failed", data__phone=phone, created__gte=since).count() >= LOGIN_FAILURES_LIMIT:
         raise GameError("too_many_attempts", "Хэт олон удаа буруу оруулсан. 15 минутын дараа дахин оролдоно уу", 429)
     player = Player.objects.filter(phone=phone).first()
-    if player is None or not player.check_password(password or ""):
+    if player is None:
+        # Бүртгэлгүй дугаар: тоглоом "Бүртгүүлэх үү?" гэж санал болгоно. (Бүртгүүлэхэд "phone_taken" аль хэдийн дугаар
+        # бүртгэлтэйг хэлдэг тул шинэ мэдээлэл задруулахгүй; оролдлогын хязгаар хэвээр тоологдоно.)
+        log_event(None, "login_failed", {"phone": phone, "unregistered": True}, device_id, ip)
+        raise GameError("not_registered", "Энэ дугаар бүртгэлгүй байна. Бүртгүүлнэ үү", 404)
+    if not player.check_password(password or ""):
         log_event(player, "login_failed", {"phone": phone}, device_id, ip)
         raise GameError("bad_login", "Утас эсвэл нууц үг буруу байна", 401)
     if player.blocked:
@@ -1283,6 +1289,21 @@ def cashout_json(cashout):
             "created": cashout.created.isoformat() if cashout.created else None}
 
 
+# Google Play, App Store-ийн апп: Gold худалдах, татах, төхөөрөмжийн төлбөрийг хийхгүй (дэлгүүрийн дүрэм: дижитал бараа зөвхөн
+# дэлгүүрийн төлбөрөөр, бодит мөнгө болгох нь мөнгөний тоглоом). Вэб, Windows хэвээр. Платформыг төхөөрөмж бүртгэхэд
+# хадгалсан (Device.platform): тоглоом өөрийгөө өөр платформ гэж хэлж тойрохгүй.
+STORE_PLATFORMS = ("android", "ios")
+
+
+def store_app(device_id):
+    return Device.objects.filter(device_id=device_id, platform__in=STORE_PLATFORMS).exists()
+
+
+def web_payments(device_id):
+    """QPay-ээр Gold худалдах: зөвхөн вэб (Gold цэнэглэх хуудас эсвэл хөтөч дээрх тоглоом)."""
+    return device_id == WEB_DEVICE or Device.objects.filter(device_id=device_id, platform="web").exists()
+
+
 def cashout_info(player):
     settings = GameSettings.load()
     active = player.cashouts.filter(status__in=Cashout.OPEN).order_by("-created").first()
@@ -1293,9 +1314,11 @@ def cashout_info(player):
 
 def start_cashout(player, device_id, gold, bank, account, holder, ip):
     """Татах хүсэлт: Gold шууд хасагдаж, тоглогч утсаа баталгаажуулна (144773 руу SMS)."""
+    if store_app(device_id):
+        raise GameError("store_app", "Утасны апп-аас Gold татах боломжгүй", 403)
     settings = GameSettings.load()
     if not settings.cashout_enabled:
-        raise GameError("cashout_disabled", "Gold татах түр хаалттай байна", 403)
+        raise GameError("cashout_disabled", "Gold татах хаалттай байна", 403)
     if not player.phone or not player.phone_verified:
         raise GameError("phone_required", "Gold татахын тулд эхлээд утсаа баталгаажуулна уу", 403)
     if not isinstance(gold, int) or isinstance(gold, bool) or gold <= 0:
@@ -1415,11 +1438,54 @@ def admin_reject_cashout(cashout, by, note):
 
 # ---------------------------------------------------------------- Төлбөр
 
+def activate_device(player, device_id, platform, existing):
+    """Байр дүүрсэн бол хамгийн эрт бүртгэгдсэн төхөөрөмжийг чөлөөлж шинийг бүртгэнэ (transaction дотор)."""
+    limit = max(1, GameSettings.load().max_devices)
+    active = list(player.devices.filter(active=True).exclude(device_id=device_id).order_by("bound_at"))
+    for old in active[:max(0, len(active) - limit + 1)]:
+        Device.objects.filter(pk=old.pk).update(active=False)
+        AuthToken.objects.filter(player=player, device_id=old.device_id).update(revoked=True)
+    if existing is None:
+        Device.objects.create(device_id=device_id, player=player, platform=(platform or "")[:16])
+    else:
+        Device.objects.filter(pk=existing.pk).update(active=True, bound_at=timezone.now())
+
+
+def buy_device(player, device_id, platform, ip):
+    """Төхөөрөмж солих: Gold-оор (GameSettings.device_change_gold). Хамгийн эрт бүртгэсэн төхөөрөмж чөлөөлөгдөнө."""
+    if device_id == WEB_DEVICE:
+        raise GameError("game_only", "Үүнийг тоглоом дотроос хийнэ", 403)
+    validate_device(device_id)
+    with transaction.atomic():
+        locked = Player.objects.select_for_update().get(pk=player.pk)
+        if device_ok(locked, device_id):
+            raise GameError("device_already_active", "Энэ төхөөрөмж аль хэдийн идэвхтэй байна", 409)
+        existing = Device.objects.filter(device_id=device_id).first()
+        if existing is not None and existing.player_id != locked.pk:
+            raise GameError("device_taken", "Энэ төхөөрөмж өөр дансанд бүртгэлтэй байна", 409)
+        price = GameSettings.load().device_change_gold
+        if locked.gold - locked.locked_gold < price:
+            raise GameError("not_enough_gold", f"Төхөөрөмж солиход {price} Gold хэрэгтэй", 402)
+        if price:
+            change_gold(locked, -price, GoldTransaction.DEVICE, f"device:{locked.pk}:{time.time_ns()}",
+                        {"device": device_id[:64]})
+        # (бүртгэлтэй төхөөрөмжийн платформ хэвээр: тоглоом өөрийгөө өөр платформ гэж хэлж солихгүй)
+        activate_device(locked, device_id, existing.platform if existing else platform, existing)
+        log_event(locked, "device_bought", {"gold": price, "platform": (platform or "")[:16]}, device_id, ip)
+    return Player.objects.get(pk=player.pk)
+
+
 def create_invoice(player, device_id, kind, platform, ip, pack=None):
-    settings = GameSettings.load()
     if kind in (Invoice.PACK, Invoice.CAPITAL):
         # Бүх аймаг үнэгүй болсон: аймгийн багц, Улаанбаатарыг худалдахгүй (хуучин төлсөн нэхэмжлэх хэвээр)
         raise GameError("not_for_sale", "Бүх аймаг үнэгүй болсон", 410)
+    if kind == Invoice.DEVICE:
+        # Төхөөрөмж солих нь Gold-оор (buy_device): QPay-ээр зөвхөн Gold худалдана
+        raise GameError("pay_with_gold", "Төхөөрөмжийг Gold-оор солино. Тоглоомоо шинэчилнэ үү", 410)
+    if kind == Invoice.GOLD and not web_payments(device_id):
+        # QPay зөвхөн вэб дээр (вэб тоглоом, Gold цэнэглэх хуудас): Windows, утасны апп-аас Gold худалдахгүй
+        raise GameError("web_only", "Gold-ийг зөвхөн вэб хувилбараас худалдаж авна", 403)
+    settings = GameSettings.load()
     gold = 0
     if kind == Invoice.GOLD:
         packs = gold_packs()
@@ -1502,16 +1568,7 @@ def apply_payment(invoice_id, payment_id, source):
                 invoice.save(update_fields=["status", "paid_at", "qpay_payment_id"])
                 log_event(player, "device_change_conflict", {"invoice": invoice.pk, "device": invoice.device_id})
                 return invoice
-            # Байр дүүрсэн бол хамгийн эрт бүртгэгдсэн төхөөрөмжийг чөлөөлж шинийг бүртгэнэ
-            limit = max(1, GameSettings.load().max_devices)
-            active = list(player.devices.filter(active=True).exclude(device_id=invoice.device_id).order_by("bound_at"))
-            for old in active[:max(0, len(active) - limit + 1)]:
-                Device.objects.filter(pk=old.pk).update(active=False)
-                AuthToken.objects.filter(player=player, device_id=old.device_id).update(revoked=True)
-            if existing is None:
-                Device.objects.create(device_id=invoice.device_id, player=player, platform=invoice.platform)
-            else:
-                Device.objects.filter(pk=existing.pk).update(active=True, bound_at=timezone.now())
+            activate_device(player, invoice.device_id, invoice.platform, existing)
             invoice.applied = True
         invoice.save(update_fields=["status", "paid_at", "qpay_payment_id", "applied"])
         log_event(player, "payment", {"invoice": invoice.pk, "kind": invoice.kind, "amount": invoice.amount,

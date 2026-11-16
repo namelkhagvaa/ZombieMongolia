@@ -35,7 +35,8 @@ class GameSettings(models.Model):
     free_provinces = models.PositiveSmallIntegerField("Үнэгүй аймгийн тоо", default=2)
     pack_size = models.PositiveSmallIntegerField("Багц дахь аймгийн эрх", default=3)
     pack_price = models.PositiveIntegerField("Багцын үнэ (₮)", default=3000)
-    device_change_price = models.PositiveIntegerField("Төхөөрөмж солих үнэ (₮)", default=5000)
+    device_change_price = models.PositiveIntegerField("Төхөөрөмж солих үнэ (₮)", default=5000)  # (хуучин: QPay-ээр)
+    device_change_gold = models.PositiveIntegerField("Төхөөрөмж солих үнэ (Gold)", default=500)
     province_count = models.PositiveSmallIntegerField("Аймгийн тоо (тоглоомд)", default=22)
     capital_index = models.SmallIntegerField("Улаанбаатарын дугаар (тусдаа үнэтэй)", default=15)
     capital_price = models.PositiveIntegerField("Улаанбаатарын үнэ (₮)", default=5000)
@@ -63,7 +64,8 @@ class GameSettings(models.Model):
     skin_price = models.PositiveIntegerField("DEMON дүрээр тоглох (Gold)", default=50)
     skin_price_iron = models.PositiveIntegerField("IRON дүрээр тоглох (Gold)", default=50)
     # Gold татах (хожсон Gold-оос л): доод хэмжээ, 1 Gold-ийн ₮ ханш
-    cashout_enabled = models.BooleanField("Gold татах нээлттэй", default=True)
+    # (App Store-д Gambling = No гэж мэдүүлсэн: Gold мөнгө болдоггүй. Нээвэл iOS апп бооцоот тоглоомд тооцогдоно.)
+    cashout_enabled = models.BooleanField("Gold татах нээлттэй", default=False)
     cashout_min = models.PositiveIntegerField("Татах доод хэмжээ (Gold)", default=20000)
     cashout_rate = models.DecimalField("1 Gold = ₮", max_digits=8, decimal_places=2, default=1)
 
@@ -259,12 +261,13 @@ class GoldTransaction(models.Model):
     COOP_WIN = "coop_win"
     ROOM_REFUND = "room_refund"
     VERIFY_BONUS = "verify_bonus"
+    DEVICE = "device"
     REASONS = [(SIGNUP, "Эхлэл"), (SHOP, "Дэлгүүр"), (ADMIN, "Админ"), (ROOM_FEE, "Өрөөнд орсон"),
                (ROOM_LEAVE, "Өрөөнөөс гарсан (барьцаа шатсан)"), (STAGE_COMPLETE, "Үе шат дуусгасан"),
                (BATTLE_WIN, "Тулаанд ялсан"), (BATTLE_LOSS, "Тулаанд ялагдсан"), (PURCHASE, "Худалдаж авсан"),
                (CASHOUT, "Gold татсан"), (CASHOUT_REFUND, "Татах хүсэлт буцсан"), (SKIN, "Онцгой дүрээр тоглосон"),
                (COOP_WIN, "Найзтайгаа хамт давсан"), (ROOM_REFUND, "Өрөөнд холбогдож чадаагүй (төлбөр буцсан)"),
-               (VERIFY_BONUS, "Утас баталгаажуулсан")]
+               (VERIFY_BONUS, "Утас баталгаажуулсан"), (DEVICE, "Төхөөрөмж солих")]
     # Хожсон Gold (Player.won_gold) нэмэгдэх шалтгаан; урамшууллын Gold (Player.bonus_gold) нэмэгдэх шалтгаан.
     # Бусад орлого (худалдан авалт) цэнэглэсэн Gold. Үе шатны шагналыг хожсонд тооцохгүй: тоглоомгүйгээр (API-гаар)
     # өрөө нээж 5 минут хүлээгээд "дууслаа" гэж олборлож болдог байсан.
