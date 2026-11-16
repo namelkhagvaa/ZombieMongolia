@@ -77,13 +77,30 @@ workflows:
         script: xcode-project use-profiles --project build-ios/ZombieMongolia.xcodeproj
       - name: Build ipa
         script: |
+          status=0
           xcode-project build-ipa \
             --project build-ios/ZombieMongolia.xcodeproj \
             --scheme ZombieMongolia \
-            --config Release
+            --config Release || status=$?
+          if [ $status -ne 0 ]; then
+            # Алдаатай үед: xcodebuild-ийн log-оос алдааны мөрүүдийг шууд харуулна (errors.txt артефакт ч болно)
+            {
+              echo "===== errors"
+              cat /tmp/xcodebuild_logs/*.log 2>/dev/null \
+                | grep -E "error:|fatal error|Undefined symbols|ld: |No profile|Provisioning|requires a provisioning" \
+                | sed -E "s#^$PWD/##" | awk '!seen[$0]++' | head -80
+              echo "===== details"
+              cat /tmp/xcodebuild_logs/*.log 2>/dev/null | grep -E -A6 "Undefined symbols" | head -40
+              echo "===== tail"
+              cat /tmp/xcodebuild_logs/*.log 2>/dev/null | tail -40
+            } > errors.txt
+            cat errors.txt
+          fi
+          exit $status
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+      - errors.txt
     publishing:
       app_store_connect:
         auth: integration
