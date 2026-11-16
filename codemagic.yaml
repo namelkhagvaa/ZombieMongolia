@@ -69,6 +69,7 @@ workflows:
           # CFBundleVersion: Codemagic-ийн build-ийн дугаар (App Store Connect илгээх бүрд өсөх ёстой)
           cmake -S . -B build-ios -G Xcode \
             -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
             -DCMAKE_XCODE_GENERATE_SCHEME=ON \
@@ -81,7 +82,8 @@ workflows:
           xcode-project build-ipa \
             --project build-ios/ZombieMongolia.xcodeproj \
             --scheme ZombieMongolia \
-            --config Release || status=$?
+            --config Release \
+            --archive-flags="-destination 'generic/platform=iOS'" || status=$?
           if [ $status -ne 0 ]; then
             # Алдаатай үед: xcodebuild-ийн log-оос алдааны мөрүүдийг шууд харуулна (errors.txt артефакт ч болно)
             {
