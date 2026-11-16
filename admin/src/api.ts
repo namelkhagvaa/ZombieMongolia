@@ -142,6 +142,7 @@ export interface Settings {
   pack_size: number;
   pack_price: number;
   device_change_price: number;
+  device_change_gold: number;
   province_count: number;
   capital_index: number;
   max_devices: number;

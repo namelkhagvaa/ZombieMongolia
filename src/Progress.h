@@ -44,6 +44,7 @@ struct Progress
     int healthLevel = 0;
     int soldiers = 0;
     bool aimAssist = false;      // утсан дээр автомат онилгоо (тохиргоо)
+    int language = -1;           // тоглогчийн сонгосон хэл (Lang.h): -1 бүсээр, 0 монгол, 1 англи
     std::string touchLayout;     // утасны товчнуудын тоглогчийн байрлал (InLayoutText; хоосон = анхны)
     bool firstPerson = true;     // анхдагч: 1-р этгээд (зөвхөн зэвсэг харагдана)
     bool fullscreen = true;      // компьютер: бүтэн дэлгэцээр тоглох (F11 / цэс)

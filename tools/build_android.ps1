@@ -108,6 +108,8 @@ Copy-Item (Join-Path $root "assets\sounds\*.wav") (Join-Path $staging "assets\so
 # Мэдэгдлийн дуу хоолой (tools/gen_narration.py)
 New-Item -ItemType Directory -Force (Join-Path $staging "assets\sounds\narration") | Out-Null
 Copy-Item (Join-Path $root "assets\sounds\narration\*.wav") (Join-Path $staging "assets\sounds\narration") -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force (Join-Path $staging "assets\sounds\narration_en") | Out-Null # (англи хэл)
+Copy-Item (Join-Path $root "assets\sounds\narration_en\*.wav") (Join-Path $staging "assets\sounds\narration_en") -ErrorAction SilentlyContinue
 # Том текстурууд PNG -> JPG (APK ~70 MB багасна; huds, icons PNG хэвээр)
 Run "python" @((Join-Path $root "tools\native_jpg.py"), (Join-Path $staging "assets"))
 

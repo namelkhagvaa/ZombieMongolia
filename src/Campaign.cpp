@@ -482,6 +482,15 @@ MapScreen::Result MapScreen::Update(Progress& progress, bool& progressChanged)
         return Result::None;
     }
 
+    // Хэл солих (EN / МН): зөвхөн Монголоос гадна харагдана
+    if (InMousePressed(MOUSE_BUTTON_LEFT) && LanguageSelectable() && CheckCollisionPointRec(InPointer(), languageChip))
+    {
+        SetLanguage(English() ? Language::Mongolian : Language::English);
+        progress.language = LanguageSaveValue();
+        progressChanged = true;
+        return Result::None;
+    }
+
     // Сонголт: сум товч (аяны дарааллаар) эсвэл аймаг дээр товших
     if (InKeyPressed(KEY_RIGHT) || InKeyPressed(KEY_DOWN)) selected = (selected + 1) % count;
     if (InKeyPressed(KEY_LEFT) || InKeyPressed(KEY_UP)) selected = (selected + count - 1) % count;
@@ -622,8 +631,7 @@ void MapScreen::Draw(const Progress& progress) const
         const int rank = Account::Rank();
         int stars = 0;
         const char* title = RankTitle(rank, stars);
-        std::string label = std::string(title);
-        if (stars > 0) label += TextFormat(" %d од", stars); // (фонтод ★ байхгүй)
+        const std::string label = stars > 0 ? TextFormat("%s %d од", title, stars) : TextFormat("%s", title); // (фонтод ★ байхгүй)
         // Чөлөөлсөн аймгийн мөрний баруун талд (давхцахгүй)
         const int x = std::max(30 + Ui::MeasureDisplay("ZOMBIE MONGOLIA", 38, 0.08f), 42 + Ui::Measure(progressText, 16) + 200) + 30;
         const int width = 320;
@@ -636,6 +644,23 @@ void MapScreen::Draw(const Progress& progress) const
         Ui::Bar({ (float)x + 12.0f, 44.0f, 150.0f, 8.0f }, std::clamp((float)into / (float)need, 0.0f, 1.0f), kGold, { 0, 0, 0, 140 });
         const char* xpText = Account::SignedIn() ? TextFormat("%d / %d XP", into, need) : "нэвтэрвэл хадгална";
         Ui::Text(xpText, x + width - 12 - Ui::Measure(xpText, 13), 40, 13, Ui::kText);
+        // Хэл: EN / МН (идэвхтэй нь алтан), товшиход солигдоно. Монголд байхгүй.
+        languageChip = {};
+        if (LanguageSelectable())
+        {
+            languageChip = { (float)(x + width + 12), 10.0f, 104.0f, 58.0f };
+            const bool hover = !InTouchMode() && CheckCollisionPointRec(InPointer(), languageChip);
+            Ui::Panel(languageChip, hover ? Color{ 30, 42, 58, 236 } : Color{ 20, 30, 43, 214 });
+            Ui::Outline(languageChip, Fade(kGold, hover ? 0.9f : 0.45f), 1.0f);
+            const int cy = (int)languageChip.y + 18;
+            const int enW = Ui::MeasureBold("EN", 20), slashW = Ui::Measure("/", 20), mnW = Ui::MeasureBold("МН", 20);
+            int tx = (int)(languageChip.x + (languageChip.width - (float)(enW + slashW + mnW + 12)) * 0.5f);
+            Ui::TextBold("EN", tx, cy, 20, English() ? kGold : Ui::kTextDim);
+            tx += enW + 6;
+            Ui::Text("/", tx, cy, 20, Ui::kTextDim);
+            tx += slashW + 6;
+            Ui::TextBold("МН", tx, cy, 20, English() ? Ui::kTextDim : kGold);
+        }
     }
     // Данс: нэр, үнэгүй үлдсэн аймаг, худалдаж авсан эрх, "Гарах" товч
     Account::DrawBadge(screenWidth - 28, 20, true); // баруун дээд буланд

@@ -52,6 +52,7 @@ private:
     int confirmItem = -1;                 // баталгаажуулж буй сайжруулалт (ShopItem), -1 = цонхгүй
     mutable Rectangle shopCards[8] = {};  // сайжруулалтын мөрүүд (Draw тооцно, Update товшилтыг шалгана)
     mutable Rectangle confirmYes = {}, confirmNo = {}, confirmPanel = {};
+    mutable Rectangle languageChip = {};  // EN / МН (Монголоос гадна л: Lang.h LanguageSelectable)
     int selected = 0;
     // Давхар товшилт: сүүлийн товшсон аймаг ба цаг
     int lastClicked = -1;

@@ -3,6 +3,7 @@
 #include "Platform.h"
 
 #import <Foundation/Foundation.h>
+#import <StoreKit/StoreKit.h>
 #import <UIKit/UIKit.h>
 
 #include <dispatch/dispatch.h>
@@ -75,5 +76,24 @@ std::string IosVendorId()
     {
         NSUUID* vendor = UIDevice.currentDevice.identifierForVendor;
         return vendor ? std::string(vendor.UUIDString.UTF8String) : std::string();
+    }
+}
+
+// Хэл сонгоход (src/Lang.cpp): "<App Store-ийн улс> <төхөөрөмжийн бүс> <цагийн бүс> <хэл>", жишээ нь
+// "MNG MN Asia/Ulaanbaatar mn". Мэдэгдэхгүй нь "-". App Store-ийн улс (SKStorefront) хамгийн найдвартай:
+// тоглогч аль улсын App Store-оос татсан.
+std::string IosRegionInfo()
+{
+    @autoreleasepool
+    {
+        NSString* store = nil;
+        if (@available(iOS 13.0, *)) store = SKPaymentQueue.defaultQueue.storefront.countryCode;
+        NSLocale* locale = NSLocale.currentLocale;
+        NSString* country = [locale objectForKey:NSLocaleCountryCode];
+        NSString* zone = NSTimeZone.localTimeZone.name;
+        NSString* language = NSLocale.preferredLanguages.firstObject;
+        if (language.length > 2) language = [language substringToIndex:2];
+        auto text = [](NSString* value) { return std::string(value.length ? value.UTF8String : "-"); };
+        return text(store) + " " + text(country) + " " + text(zone) + " " + text(language);
     }
 }

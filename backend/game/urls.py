@@ -35,6 +35,7 @@ urlpatterns = [
     path("rooms/<int:room_id>/leave/", views.room_leave),
     path("rooms/<int:room_id>/complete/", views.room_complete),
     path("invoices/", views.invoice_create),
+    path("devices/buy/", views.device_buy),
     path("invoices/<int:invoice_id>/", views.invoice_status),
     path("qpay/callback/<int:invoice_id>/<str:key>/", views.qpay_callback),
     path("events/", views.events),

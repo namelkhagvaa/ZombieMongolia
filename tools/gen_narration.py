@@ -72,6 +72,42 @@ SAMPLES = {
     "heli_try_d": "Нис-дэг тэрэг оногдлоо! Унаж байна!",
 }
 
+# Англи хэлний мэдэгдэл (--english: assets/sounds/narration_en, src/Audio.cpp англи горимд эндээс)
+EN_MEMBERS = ["Fighter one", "Fighter two", "The sniper"]
+EN_LINES = {
+    "airdrop": "Supply drop! Ammo, grenades and medkits. Look for the green smoke.",
+    "crash": "There's a crashed vehicle ahead. Grab its cargo!",
+    "horde": "Zombie horde ahead. Be careful!",
+    "survivor": "Someone needs rescue! Head to the marker on the map.",
+    "crate": "Supplies collected. Ammo, grenades and medicine added.",
+    "rescued": "Rescued! They joined your team.",
+    "night": "Night has fallen. Be careful.",
+    "dawn": "Dawn is breaking.",
+    "faster": "The zombies got faster!",
+    "fastest": "The zombies are at top speed!",
+    "medkit": "A medkit dropped! Look for the red cross on the map.",
+    "full_health": "Health fully restored.",
+    "land_first": "Land first.",
+    "wait_pilot": "Wait for the pilot to land.",
+    "heli_gunner": "You're the helicopter gunner. You follow the pilot.",
+    "heli_controls": "This is a helicopter. Press climb, then steer.",
+    "heli_hit": "Our helicopter is hit! We're going down!",
+    "heli_crash": "Our helicopter crashed!",
+    "horse_dead": "The horse is dead!",
+    "vehicle_broken": "The vehicle broke down!",
+    "fuel_out": "Out of fuel! Go to a gas station to refuel.",
+    "driver_down": "The driver is down, so you got out.",
+    "armor_drive": "Armored car. You drive, a nearby soldier takes the machine gun.",
+    "armor_no_driver": "No soldier nearby to drive. Take the driver's seat.",
+    "rank_up": "Congratulations! You ranked up.",
+}
+for i, name in enumerate(EN_MEMBERS):
+    EN_LINES[f"member_drives_{i}"] = f"{name} is driving, you shoot."
+    EN_LINES[f"you_drive_{i}"] = f"You're driving, {name.lower() if name.startswith('The') else name} shoots."
+    EN_LINES[f"gunner_seated_{i}"] = f"{name} took the gunner seat."
+    EN_LINES[f"armor_gunner_{i}"] = f"Armored car. You're on the machine gun, {name.lower() if name.startswith('The') else name} drives toward the nearest zombies."
+LANGUAGE = "mn"
+
 for i, name in enumerate(MEMBERS):
     LINES[f"member_drives_{i}"] = f"{name} жолоодож байна, та буудна."
     LINES[f"you_drive_{i}"] = f"Та жолоодож байна, {name} буудна."
@@ -132,8 +168,16 @@ def main():
     parser.add_argument("--estimate", action="store_true", help="зардлыг тооцох (төлбөргүй)")
     parser.add_argument("--yes", action="store_true", help="төлбөртэй үүсгэлтийг зөвшөөрөх")
     parser.add_argument("--only", help="зөвхөн энэ мэдэгдлийг (key) дахин үүсгэх: бусдыг нь хөндөхгүй, кредит хэмнэнэ")
+    parser.add_argument("--english", action="store_true", help="англи мэдэгдлүүд (assets/sounds/narration_en)")
     parser.add_argument("--sample", help="зөвхөн энэ мэдэгдлийг жишээ болгон үүсгэх (build_web/narration_samples, тоглоомд орохгүй)")
     args = parser.parse_args()
+    if args.english:
+        # Англи: тусдаа мөрүүд, хавтас, ажлын төлөв (монгол бичлэгүүдийг хөндөхгүй)
+        global LINES, OUT, STATE, LANGUAGE
+        LINES = EN_LINES
+        OUT = os.path.join(ROOT, "assets", "sounds", "narration_en")
+        STATE = os.path.join(ROOT, "build_web", "narration_en_jobs.json")
+        LANGUAGE = "en"
 
     key = os.environ.get("NOMAD_API_KEY", "").strip()
     if not key:
@@ -164,7 +208,6 @@ def main():
         if args.sample not in LINES and args.sample not in SAMPLES:
             raise SystemExit("Ийм мэдэгдэл алга: " + args.sample)
         # Хоолой сонгох жишээ: тусдаа төлөв, тусдаа хавтас (тоглоомын бичлэгүүдийг хөндөхгүй)
-        global STATE
         STATE = os.path.join(ROOT, "build_web", "narration_samples.json")
         out_folder = os.path.join(ROOT, "build_web", "narration_samples")
         state = load_state()
@@ -190,7 +233,7 @@ def main():
             save_state(state)  # POST-оос өмнө: тасарвал ижил түлхүүрээр давтана
         if "job" not in entry:
             payload = {"voice_id": args.voice, "text": text, "stability": 0.5, "similarity": 0.75, "pacing": "normal",
-                       "speed": 1, "language_code": "mn", "variants": 1, "title": "Zombie Mongolia: " + name}
+                       "speed": 1, "language_code": LANGUAGE, "variants": 1, "title": "Zombie Mongolia: " + name}
             _, job = request("POST", "/generations", key, payload, entry["idempotency"])
             job = job[0] if isinstance(job, list) else job
             entry["job"] = job["id"]

@@ -13,6 +13,7 @@
 #include "GameLog.h"
 #include "Platform.h"
 #include "Input.h"
+#include "Lang.h"
 
 #include "CharacterModel.h"
 #include "HorseModel.h"
@@ -143,6 +144,7 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
     // Нуугдсан цонхны дэлгэцийн buffer найдваргүй тул зураглалыг дотоод зурагт хийж, дэлгэцийн зургийг тэндээс авна.
     const bool hidden = benchmark && !options.show;
     if (hidden) flags |= FLAG_WINDOW_HIDDEN;
+    LangInit(-1); // бүсээр (ачааллын дэлгэцэнд); хадгалалт уншсаны дараа тоглогчийн сонголтоор
     SetConfigFlags(flags);
 
 #if defined(__ANDROID__) || defined(ZM_IOS)
@@ -225,6 +227,7 @@ Game::Game(const LaunchOptions& launchOptions)
     Audio::Init();
     Splash::Step(0.94f, "Газрын зургийг бэлтгэж байна...");
     LoadProgress(progress, (int)Provinces().size());
+    LangInit(progress.language); // (бүсээр эсвэл тоглогчийн сонголтоор)
     InLayoutLoad(progress.touchLayout); // утасны товчнуудын тоглогчийн байрлал
     Audio::SetVolume(progress.sound ? kSoundLevels[std::clamp(progress.soundLevel, 0, 3)] : 0.0f);
     // Компьютерт (утас биш) видео картын хүчээр график сонгоно: тоглогч цэснээс сонгоогүй үед
@@ -1104,7 +1107,7 @@ void Game::DrawCharacterSelect() const
     const Rectangle button = CharacterStartRect();
     const bool unaffordable = Account::Enabled() && !pendingApproved && Account::PremiumSkin(characterChoice) &&
                               Account::GoldAvailable() < Account::SkinPrice(characterChoice);
-    const char* label = unaffordable ? "GOLD АВАХ" : "ЭХЛЭХ";
+    const char* label = !unaffordable ? "ЭХЛЭХ" : Account::GoldShop() ? "GOLD АВАХ" : "GOLD ХҮРЭЛЦЭХГҮЙ";
     Ui::Button(button, label, Ui::ButtonKind::Primary, !InTouchMode() && CheckCollisionPointRec(InPointer(), button), 26);
     if (!InTouchMode())
     {
@@ -4670,8 +4673,8 @@ void Game::UpdateMission(float dt)
         {
             bool city = false;
             const char* town = TownName(provinceIndex, city);
-            SetNotice(city ? std::string(town) + " ХОТ"
-                           : std::string(town) + "  •  " + Provinces()[(size_t)provinceIndex].name + " аймгийн төв", 3.0f);
+            SetNotice(city ? TextFormat("%s ХОТ", town) : TextFormat("%s  •  %s аймгийн төв", town, Provinces()[(size_t)provinceIndex].name),
+                      3.0f);
         }
         inTown = nowInTown;
     }
@@ -5045,7 +5048,7 @@ void Game::UpdateAirstrike(float dt)
 // ---------------------------------------------------------------- Тоглоомын цэс (ESC)
 namespace
 {
-    enum class PauseItem { Resume, Graphics, Sound, Fullscreen, FrameRate, Map, Quit };
+    enum class PauseItem { Resume, Graphics, Sound, Language, Fullscreen, FrameRate, Map, Quit };
 
     // Компьютерийн FPS хязгаар (Progress::frameLimit): 0 = дэлгэцийн давтамж (VSync), хязгааргүй = 0 FPS
     const int kFrameLimits[5] = { -1, 60, 120, 144, 0 };
@@ -5058,6 +5061,7 @@ namespace
         out[count++] = PauseItem::Resume;
         out[count++] = PauseItem::Graphics;
         out[count++] = PauseItem::Sound;
+        if (LanguageSelectable()) out[count++] = PauseItem::Language; // (Монголоос гадна)
 #if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__) && !defined(ZM_IOS)
         if (!InTouchMode()) out[count++] = PauseItem::Fullscreen;
         if (!InTouchMode()) out[count++] = PauseItem::FrameRate;
@@ -5134,6 +5138,11 @@ void Game::UpdatePauseMenu()
         else if (progress.soundLevel >= 2) progress.sound = false;
         else ++progress.soundLevel;
         Audio::SetVolume(progress.sound ? kSoundLevels[progress.soundLevel] : 0.0f);
+        Save();
+        break;
+    case PauseItem::Language:
+        SetLanguage(English() ? Language::Mongolian : Language::English);
+        progress.language = LanguageSaveValue();
         Save();
         break;
     case PauseItem::Fullscreen: SetFullscreen(!progress.fullscreen); break;
@@ -5225,6 +5234,7 @@ void Game::DrawPauseMenu() const
         case PauseItem::Graphics:
             label = progress.graphics == 2 ? "График: ӨНДӨР" : progress.graphics == 1 ? "График: ДУНД" : "График: БАГА";
             break;
+        case PauseItem::Language: label = English() ? "Language: ENGLISH" : "Хэл: МОНГОЛ"; break;
         case PauseItem::Fullscreen: label = progress.fullscreen ? "Бүтэн дэлгэц: ТИЙМ" : "Бүтэн дэлгэц: ҮГҮЙ"; break;
         case PauseItem::FrameRate:
             label = progress.frameLimit == 0 ? TextFormat("FPS: ДЭЛГЭЦЭЭР (%d)", GetMonitorRefreshRate(GetCurrentMonitor()))
@@ -5245,6 +5255,7 @@ void Game::DrawPauseMenu() const
         case PauseItem::Resume: icon = Ui::Icon::Play; break;
         case PauseItem::Graphics: icon = Ui::Icon::Settings; break;
         case PauseItem::Sound: icon = Ui::Icon::Sound; break;
+        case PauseItem::Language: icon = Ui::Icon::Settings; break;
         case PauseItem::Fullscreen: icon = Ui::Icon::Fullscreen; break;
         case PauseItem::FrameRate: icon = Ui::Icon::Settings; break;
         case PauseItem::Map: icon = Ui::Icon::Back; break;
@@ -5715,12 +5726,12 @@ void Game::DrawMission() const
     const int focus = mission.FocusObjective();
     if (focus >= 0)
     {
-        std::snprintf(objectiveText, sizeof(objectiveText), "%d / %d  %s", focus + 1, mission.ObjectiveCount(),
+        LangSnprintf(objectiveText, sizeof(objectiveText), "%d / %d  %s", focus + 1, mission.ObjectiveCount(),
                       mission.Stage().objectives[(size_t)focus].title);
         const std::string progressText = mission.ProgressText(focus);
         const int meters = (int)mission.DistanceTo(focus, player.Position());
-        if (progressText.empty()) std::snprintf(objectiveDetail, sizeof(objectiveDetail), "%d м", meters);
-        else std::snprintf(objectiveDetail, sizeof(objectiveDetail), "%s    %d м", progressText.c_str(), meters);
+        if (progressText.empty()) LangSnprintf(objectiveDetail, sizeof(objectiveDetail), "%d м", meters);
+        else LangSnprintf(objectiveDetail, sizeof(objectiveDetail), "%s    %d м", progressText.c_str(), meters);
         info.objective = objectiveText;
         info.objectiveDetail = objectiveDetail;
         const ObjectiveDef& focusDef = mission.Stage().objectives[(size_t)focus];
@@ -5731,7 +5742,7 @@ void Game::DrawMission() const
         for (int i = 0; i < mission.ObjectiveCount(); ++i)
         {
             if (i == focus || mission.State(i).status != ObjectiveStatus::Active) continue;
-            std::snprintf(objectiveNext, sizeof(objectiveNext), "+ %d. %s  ·  %d м", i + 1, mission.Stage().objectives[(size_t)i].title,
+            LangSnprintf(objectiveNext, sizeof(objectiveNext), "+ %d. %s  ·  %d м", i + 1, mission.Stage().objectives[(size_t)i].title,
                           (int)mission.DistanceTo(i, player.Position()));
             info.objectiveNext = objectiveNext;
             break;
@@ -5793,13 +5804,13 @@ void Game::DrawMission() const
     static char revivePrompt[96];
     if (soldierReviveTarget >= 0)
     {
-        std::snprintf(revivePrompt, sizeof(revivePrompt), "Босгож байна... %d%%  (дэргэд нь зогс)", (int)(100.0f * soldierRevive / 3.0f));
+        LangSnprintf(revivePrompt, sizeof(revivePrompt), "Босгож байна... %d%%  (дэргэд нь зогс)", (int)(100.0f * soldierRevive / 3.0f));
         info.prompt = revivePrompt;
     }
     static char recruitPrompt[96];
     if (inShop && !shopOpen && state == GameState::Playing)
     {
-        std::snprintf(recruitPrompt, sizeof(recruitPrompt), "%sДэлгүүр — сум, гранат, амь, цэрэг (%d зоос)",
+        LangSnprintf(recruitPrompt, sizeof(recruitPrompt), "%sДэлгүүр — сум, гранат, амь, цэрэг (%d зоос)",
                       InTouchMode() ? "" : "E — ", progress.coins);
         info.prompt = recruitPrompt;
     }
@@ -5814,13 +5825,13 @@ void Game::DrawMission() const
         // Унасан: нөхөд босгохыг хүлээнэ
         const float revive = squad.HostReviveProgress();
         info.banner = "УНАЛАА!";
-        if (revive > 0.0f) std::snprintf(downText, sizeof(downText), "Нөхөр чинь босгож байна... %d%%", (int)(revive / 3.0f * 100.0f));
-        else std::snprintf(downText, sizeof(downText), "%d сек дотор босгохгүй бол үхнэ — мөлхөж нуугдаж, гар буугаар хамгаал", (int)std::ceil(player.DownTimeLeft()));
+        if (revive > 0.0f) LangSnprintf(downText, sizeof(downText), "Нөхөр чинь босгож байна... %d%%", (int)(revive / 3.0f * 100.0f));
+        else LangSnprintf(downText, sizeof(downText), "%d сек дотор босгохгүй бол үхнэ — мөлхөж нуугдаж, гар буугаар хамгаал", (int)std::ceil(player.DownTimeLeft()));
         info.subBanner = downText;
     }
     else if (state == GameState::Playing && humanRevive > 0.0f)
     {
-        std::snprintf(downText, sizeof(downText), "Нөхрөө босгож байна... %d%%", (int)(humanRevive / 3.0f * 100.0f));
+        LangSnprintf(downText, sizeof(downText), "Нөхрөө босгож байна... %d%%", (int)(humanRevive / 3.0f * 100.0f));
         info.subBanner = downText;
     }
     if (state == GameState::Lost)
@@ -5842,9 +5853,9 @@ void Game::DrawMission() const
         const bool horse = vehicle.type == VehicleType::Horse;
         const int condition = (int)std::ceil(100.0f * vehicle.health / SpecFor(vehicle.type).maxHealth);
         char status[64];
-        if (horse) std::snprintf(status, sizeof(status), "Амь %d%%", condition);
-        else std::snprintf(status, sizeof(status), "Бензин %d%%   Бүтэн %d%%", (int)std::ceil(vehicle.fuel * 100.0f), condition);
-        std::snprintf(rideText, sizeof(rideText),
+        if (horse) LangSnprintf(status, sizeof(status), "Амь %d%%", condition);
+        else LangSnprintf(status, sizeof(status), "Бензин %d%%   Бүтэн %d%%", (int)std::ceil(vehicle.fuel * 100.0f), condition);
+        LangSnprintf(rideText, sizeof(rideText),
                       InTouchMode() ? "%s  %d км/ц  %s   %s%s"
                                     : "%s  %d км/ц  %s   %s%s     F — буух",
                       SpecFor(vehicle.type).name, (int)(std::sqrt(vehicle.speed * vehicle.speed + vehicle.slip * vehicle.slip) * 3.6f), surface, status,
@@ -5853,7 +5864,7 @@ void Game::DrawMission() const
         {
             // Нисдэг тэрэг: газрын гадаргуу, бензингүй; өндөр ба өндөр авах / газардах санамж
             const char* hint = InTouchMode() ? "" : vehicle.lift ? "     Space — газардах" : "     Space — өндөр авах   F — буух";
-            std::snprintf(rideText, sizeof(rideText), "%s  %d км/ц  Өндөр %d м   Бүтэн %d%%%s", SpecFor(vehicle.type).name,
+            LangSnprintf(rideText, sizeof(rideText), "%s  %d км/ц  Өндөр %d м   Бүтэн %d%%%s", SpecFor(vehicle.type).name,
                           (int)(std::fabs(vehicle.speed) * 3.6f), (int)vehicle.altitude, condition, hint);
         }
         info.rideText = rideText;
@@ -5862,7 +5873,7 @@ void Game::DrawMission() const
     {
         const Vehicle& vehicle = garage.At(gunnerVehicle);
         const int condition = (int)std::ceil(100.0f * vehicle.health / SpecFor(vehicle.type).maxHealth);
-        std::snprintf(rideText, sizeof(rideText), InTouchMode() ? "%s  буудагч   Бүтэн %d%%" : "%s  буудагч   Бүтэн %d%%     Tab — жолоо авах   F — буух",
+        LangSnprintf(rideText, sizeof(rideText), InTouchMode() ? "%s  буудагч   Бүтэн %d%%" : "%s  буудагч   Бүтэн %d%%     Tab — жолоо авах   F — буух",
                       SpecFor(vehicle.type).name, condition);
         info.rideText = rideText;
     }
@@ -5870,7 +5881,7 @@ void Game::DrawMission() const
     {
         const Vehicle& vehicle = garage.At(heliPassenger);
         const int condition = (int)std::ceil(100.0f * vehicle.health / SpecFor(vehicle.type).maxHealth);
-        std::snprintf(rideText, sizeof(rideText), InTouchMode() ? "%s  буудагч   Өндөр %d м   Бүтэн %d%%" : "%s  буудагч   Өндөр %d м   Бүтэн %d%%     F — буух (газардсан үед)",
+        LangSnprintf(rideText, sizeof(rideText), InTouchMode() ? "%s  буудагч   Өндөр %d м   Бүтэн %d%%" : "%s  буудагч   Өндөр %d м   Бүтэн %d%%     F — буух (газардсан үед)",
                       SpecFor(vehicle.type).name, (int)vehicle.altitude, condition);
         info.rideText = rideText;
     }
@@ -5883,7 +5894,7 @@ void Game::DrawMission() const
         }
         else if (target.vehicle >= 0)
         {
-            std::snprintf(rideText, sizeof(rideText), "F — унах: %s", SpecFor(garage.At(target.vehicle).type).name);
+            LangSnprintf(rideText, sizeof(rideText), "F — унах: %s", SpecFor(garage.At(target.vehicle).type).name);
             info.rideText = rideText;
         }
         else if (target.door >= 0)
@@ -6183,18 +6194,18 @@ void Game::DrawMissionCompleted() const
     }
 
     char line[200];
-    std::snprintf(line, sizeof(line), "%s  ·  ҮЕ %02d / %02d", mission.Stage().provinceName, provinceIndex + 1,
+    LangSnprintf(line, sizeof(line), "%s  ·  ҮЕ %02d / %02d", mission.Stage().provinceName, provinceIndex + 1,
                   (int)Provinces().size());
     Ui::TextDisplay(line, (width - Ui::MeasureDisplay(line, 26, 0.06f)) / 2, 210, 26, text, 0.06f);
 
-    std::snprintf(line, sizeof(line), "Биелүүлсэн даалгавар: %d / %d", mission.CompletedCount(), mission.ObjectiveCount());
+    LangSnprintf(line, sizeof(line), "Биелүүлсэн даалгавар: %d / %d", mission.CompletedCount(), mission.ObjectiveCount());
     centered(line, 262, 20, Ui::kTextDim);
 
     if (helpedHost)
     {
-        std::snprintf(line, sizeof(line), "Та %s-д тусалж аймгийг чөлөөллөө", hostName.empty() ? "хост" : hostName.c_str());
+        LangSnprintf(line, sizeof(line), "Та %s-д тусалж аймгийг чөлөөллөө", hostName.empty() ? "хост" : hostName.c_str());
     }
-    else std::snprintf(line, sizeof(line), "Ганцаарчилсан тоглолт: Gold өөрчлөгдөхгүй");
+    else LangSnprintf(line, sizeof(line), "Ганцаарчилсан тоглолт: Gold өөрчлөгдөхгүй");
     centered(line, 300, 20, gold);
     if (lastReward > 0)
     {
@@ -6203,7 +6214,7 @@ void Game::DrawMissionCompleted() const
 
     if (Account::ServerShop())
     {
-        std::snprintf(line, sizeof(line), "Gold: %d", Account::Gold());
+        LangSnprintf(line, sizeof(line), "Gold: %d", Account::Gold());
         centered(line, 330, 20, text);
     }
 
@@ -6220,7 +6231,7 @@ void Game::DrawMissionCompleted() const
     }
     else if (next < (int)Provinces().size())
     {
-        std::snprintf(line, sizeof(line), "Дараагийн үе нээгдлээ: %s (%02d / %02d)", StageFor(next).provinceName, next + 1,
+        LangSnprintf(line, sizeof(line), "Дараагийн үе нээгдлээ: %s (%02d / %02d)", StageFor(next).provinceName, next + 1,
                       (int)Provinces().size());
         centered(line, nextY, 28, { 150, 220, 150, 255 });
     }
@@ -10749,7 +10760,7 @@ void Game::AddPing(Vector3 position, int kind, bool mine)
     {
         const std::string& who = actorName;
         const int meters = (int)HorizontalDistance(player.Position(), position);
-        AddChatLine((who.empty() ? std::string("Найз") : who) + ": " + PingText(kind, false) + " (" + std::to_string(meters) + " м)", false);
+        AddChatLine(TextFormat("%s: %s (%d м)", who.empty() ? "Найз" : who.c_str(), PingText(kind, false), meters), false);
     }
 }
 

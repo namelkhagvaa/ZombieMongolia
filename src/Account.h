@@ -115,6 +115,8 @@ namespace Account
     bool TakeSearchNote(std::string& text); // нэг удаа: хайлтын үр дүн ("өрөө олдсонгүй" г.м.)
     bool TakeJoinedRoom(); // нэг удаа: JoinRoom амжилттай (RoomTicket, RoomProvince бэлэн)
     // Тоглоом дотроос Gold авах: багц сонгоод QPay (QR, банкны апп) — тоглоомоос гарахгүй.
+    // Gold худалдах цонх байгаа эсэх (утасны апп-д байхгүй: Gold-ийг тоглож цуглуулна)
+    bool GoldShop();
     void OpenGoldShop();
     // Gold татах цонх (тоглоомоос хожсон Gold-оо банкны данс руу)
     void OpenCashout();

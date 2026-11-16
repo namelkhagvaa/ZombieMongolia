@@ -6,7 +6,7 @@ set(rules
     ".|*_mesh.glb" ".|*_color.png" ".|window_icon.png" ".|home_back.png" ".|splash.png" ".|soldier_anims.bin"
     "icons|*.png" "huds|*.png" "terrain|*.png" "surfaces|*.jpg"
     "cars|*.vmesh" "cars|*_color.png" "buu|*.vmesh" "buu|*_color.png"
-    "sounds|*.wav" "sounds/narration|*.wav" "trees|*.vmesh" "trees|*_color.png" "trees|*_far.bin"
+    "sounds|*.wav" "sounds/narration|*.wav" "sounds/narration_en|*.wav" "trees|*.vmesh" "trees|*_color.png" "trees|*_far.bin"
     "pooshig|*.vmesh" "pooshig|*_color.png" "monuments|*.vmesh" "monuments|*_color.png"
     "broken_cars|*.vmesh" "broken_cars|*_color.png" "mission|*.vmesh" "mission|*_color.png" "city|*.bin")
 set(count 0)

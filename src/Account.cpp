@@ -1,4 +1,6 @@
 #include "Account.h"
+
+#include "Lang.h"
 #include "Rank.h"
 #include "GameLog.h"
 
@@ -79,7 +81,7 @@ namespace
     std::string playerName;
     std::vector<int> owned;
     int freeLeft = 0, credits = 0, capital = 15, packPrice = 3000, packSize = 3, devicePrice = 5000, maxDevices = 2,
-        capitalPrice = 5000;
+        capitalPrice = 5000, deviceGold = 500;
     bool deviceOk = true;
     // Gold ба сайжруулалт (серверийн "upgrades", "shop"): ShopItem-ийн дараалал
     constexpr int kUpgradeCount = 5;
@@ -190,12 +192,29 @@ namespace
     const Color kInk = { 26, 18, 4, 255 };
     const Color kFrame = Ui::kBorderStrong; // (дизайн систем: нимгэн цайвар хүрээ, онцлол нь булангийн алтан хаалт)
 
+    // Google Play, App Store-ийн апп: Gold худалдах, татах, төхөөрөмжийн төлбөр байхгүй (дэлгүүрийн дүрэм; сервер ч
+    // хориглоно: backend logic.STORE_PLATFORMS). Gold тоглоом дотроо (шагнал, тулаан, дүр, барьцаа) хэвээр.
+#if defined(__ANDROID__) || defined(__APPLE__)
+    constexpr bool kStoreApp = true;
+#else
+    constexpr bool kStoreApp = false;
+#endif
+    // Gold худалдах (QPay) зөвхөн вэб дээр; бусад бүх төлбөр (дүр, сайжруулалт, төхөөрөмж солих) Gold-оор.
+    // Сервер ч хориглоно: logic.web_payments.
+#if defined(__EMSCRIPTEN__)
+    constexpr bool kGoldShop = true;
+#else
+    constexpr bool kGoldShop = false;
+#endif
+
     const char* Platform()
     {
 #if defined(__EMSCRIPTEN__)
         return "web";
 #elif defined(__ANDROID__)
         return "android";
+#elif defined(__APPLE__)
+        return "ios";
 #elif defined(_WIN32)
         return "windows";
 #else
@@ -429,6 +448,7 @@ namespace
         packPrice = prices["pack"].Int(packPrice);
         packSize = prices["pack_size"].Int(packSize);
         devicePrice = prices["device_change"].Int(devicePrice);
+        deviceGold = prices["device_change_gold"].Int(deviceGold);
         verified = account.Has("verified") ? account["verified"].Bool() : true; // (хуучин сервер: бүгд баталгаажсан)
         accountPhone = account["phone"].Str();
         verifyBonus = account["verify_bonus"].Int(0);
@@ -600,7 +620,7 @@ namespace
                 ReadAccount(reply["account"]);
                 if (reply["missed"].Int(0) > 0)
                 {
-                    pendingNote = "Тулаанд яллаа! Утсаа баталгаажуулсан бол +" + std::to_string(reply["missed"].Int(0)) + " Gold авах байсан";
+                    pendingNote = TextFormat("Тулаанд яллаа! Утсаа баталгаажуулсан бол +%d Gold авах байсан", reply["missed"].Int(0));
                 }
                 const std::string result = reply["result"].Str();
                 // Ялагч өрөөтэй (зочин ялсан бол шинэ хостын тасалбар), ялагдагч өрөөгүй
@@ -634,7 +654,7 @@ namespace
             ReadAccount(reply["account"]);
             if (reply["missed"].Int(0) > 0)
             {
-                pendingNote = "Утсаа баталгаажуулсан бол +" + std::to_string(reply["missed"].Int(0)) + " Gold авах байсан";
+                pendingNote = TextFormat("Утсаа баталгаажуулсан бол +%d Gold авах байсан", reply["missed"].Int(0));
             }
         };
         roomId = -1; // орон нутагт шууд гарсан (хариу ирэхэд Gold шинэчлэгдэнэ)
@@ -651,7 +671,7 @@ namespace
         }
         if (status == 404 && reply.type != Json::Type::Object)
         {
-            ShowMessage("Сервер олдсонгүй", "Данс, төлбөрийн сервер (" + apiBase + ") ажиллахгүй байна. Дараа дахин оролдоно уу.");
+            ShowMessage("Сервер олдсонгүй", TextFormat("Данс, төлбөрийн сервер (%s) ажиллахгүй байна. Дараа дахин оролдоно уу.", apiBase.c_str()));
             return;
         }
         if (status == 401 && reply["error"].Str() == "session_replaced")
@@ -667,7 +687,7 @@ namespace
             return;
         }
         std::string text = reply["message"].Str();
-        if (text.empty()) text = "Алдаа гарлаа (" + std::to_string(status) + "). Дахин оролдоно уу.";
+        if (text.empty()) text = TextFormat("Алдаа гарлаа (%d). Дахин оролдоно уу.", status);
         ShowMessage("Анхааруулга", text);
     }
 
@@ -749,6 +769,8 @@ namespace
         return true;
     }
 
+    void OfferRegister();
+
     void Login()
     {
         if (!CheckFields(false, false)) return;
@@ -762,6 +784,7 @@ namespace
                    { "device_id", JsonQuote(deviceId) }, { "platform", JsonQuote(Platform()) } }),
              [](int status, const Json& reply) {
                  if (status == 200) SignIn(reply);
+                 else if (status == 404 && reply["error"].Str() == "not_registered") OfferRegister();
                  else Fail(status, reply);
              },
              "Нэвтэрч байна...");
@@ -806,6 +829,19 @@ namespace
         message.onPrimary = [] { RegisterWithSms(); };
         message.secondary = "Буцах";
         message.onSecondary = [] { Open(Screen::Register); };
+        Open(Screen::Message);
+    }
+
+    // Бүртгэлгүй дугаараар нэвтрэх гэсэн: бүртгүүлэх хуудас руу (утас, нууц үг нь бөглөгдсөн хэвээр)
+    void OfferRegister()
+    {
+        message = {};
+        message.title = "Бүртгэлгүй дугаар";
+        message.text = "Энэ дугаар бүртгэлгүй байна. Энэ дугаараар бүртгүүлэх үү?";
+        message.primary = "БҮРТГҮҮЛЭХ";
+        message.onPrimary = [] { Open(Screen::Register); };
+        message.secondary = "Буцах";
+        message.onSecondary = [] { Open(Screen::Login); };
         Open(Screen::Message);
     }
 
@@ -870,13 +906,13 @@ namespace
         }
         if (gold < cashoutMin)
         {
-            ShowMessage("Татах дүн", "Хамгийн багадаа " + Thousands(cashoutMin) + " Gold татна.");
+            ShowMessage("Татах дүн", TextFormat("Хамгийн багадаа %s Gold татна.", Thousands(cashoutMin).c_str()));
             return;
         }
         if (gold > cashoutWithdrawable)
         {
-            ShowMessage("Татах дүн", "Зөвхөн тоглоомоос хожсон Gold-оо татна. Одоо " + Thousands(cashoutWithdrawable) +
-                                         " Gold татах боломжтой (цэнэглэсэн Gold татагдахгүй).");
+            ShowMessage("Татах дүн", TextFormat("Зөвхөн тоглоомоос хожсон Gold-оо татна. Одоо %s Gold татах боломжтой (цэнэглэсэн Gold "
+                                                "татагдахгүй).", Thousands(cashoutWithdrawable).c_str()));
             return;
         }
         Call("POST", "cashouts/",
@@ -924,8 +960,9 @@ namespace
             {
                 fields[kAmount].clear();
                 ShowMessage("Хүсэлт илгээгдлээ",
-                            Thousands(cashout["gold"].Int()) + " Gold (" + Money(cashout["amount"].Int()) + ") " + cashout["bank"].Str() + " " +
-                                cashout["account"].Str() + " данс руу шилжинэ. Админ шалгаад шилжүүлэхэд түр хугацаа шаардагдана.",
+                            TextFormat("%s Gold (%s) %s %s данс руу шилжинэ. Админ шалгаад шилжүүлэхэд түр хугацаа шаардагдана.",
+                                       Thousands(cashout["gold"].Int()).c_str(), Money(cashout["amount"].Int()).c_str(),
+                                       cashout["bank"].Str().c_str(), cashout["account"].Str().c_str()),
                             Screen::None);
             }
             else if (state != "verifying")
@@ -954,9 +991,12 @@ namespace
                 {
                     ReadAccount(reply["account"]);
                     ShowMessage("Утас баталгаажлаа",
-                                verifyBonus > 0 ? "Баярлалаа! +" + std::to_string(verifyBonus) +
-                                                      " Gold урамшуулал авлаа. Одоо шагнал, тулааны хожил, Gold татах бүгд нээлттэй."
-                                                : "Баярлалаа! Одоо шагнал, тулааны хожил, Gold татах бүгд нээлттэй.",
+                                verifyBonus > 0 ? TextFormat(cashoutEnabled ? "Баярлалаа! +%d Gold урамшуулал авлаа. Одоо шагнал, тулааны хожил, "
+                                                                              "Gold татах бүгд нээлттэй."
+                                                                            : "Баярлалаа! +%d Gold урамшуулал авлаа. Одоо шагнал, тулааны хожил нээлттэй.",
+                                                             verifyBonus)
+                                : cashoutEnabled ? "Баярлалаа! Одоо шагнал, тулааны хожил, Gold татах бүгд нээлттэй."
+                                                 : "Баярлалаа! Одоо шагнал, тулааны хожил нээлттэй.",
                                 Screen::None);
                 }
                 else if (status == 410) ShowMessage("Хугацаа дууссан", "Мессеж ирээгүй тул хугацаа дууссан. Дахин оролдоно уу.", Screen::None);
@@ -1074,6 +1114,41 @@ namespace
         Open(Screen::Offer);
     }
 
+    // Gold хүрэлцэхгүй: вэб дээр Gold авах цонх, бусад нь тайлбар (утасны апп-д худалдах газар руу заахгүй)
+    void NotEnoughGold()
+    {
+        if (kGoldShop)
+        {
+            Open(Screen::Gold);
+            return;
+        }
+        ShowMessage("Gold хүрэлцэхгүй", kStoreApp ? "Gold-ийг даалгавар биелүүлж, тулаанд ялж цуглуулна."
+                                                  : "Gold-ийг даалгавар биелүүлж, тулаанд ялж цуглуулна. Мөн вэб хувилбараас худалдаж авна.",
+                    Screen::None);
+    }
+
+    // Төхөөрөмж солих: Gold-оор (хамгийн эрт бүртгэсэн төхөөрөмж чөлөөлөгдөнө)
+    void BuyDevice()
+    {
+        if (std::max(0, gold - goldLocked) < deviceGold)
+        {
+            NotEnoughGold();
+            return;
+        }
+        Call("POST", "devices/buy/", Obj({ { "platform", JsonQuote(Platform()) } }),
+             [](int status, const Json& reply) {
+                 if (status == 200)
+                 {
+                     ReadAccount(reply["account"]);
+                     if (province < 0) ShowMessage("Төхөөрөмж бүртгэгдлээ", "Энэ төхөөрөмжөөр тоглох боломжтой боллоо.", Screen::None);
+                     else Evaluate();
+                 }
+                 else if (status == 402 && reply["error"].Str() == "not_enough_gold") NotEnoughGold();
+                 else Fail(status, reply);
+             },
+             "Төхөөрөмж бүртгэж байна...");
+    }
+
     void ClosePay()
     {
         if (qr.id != 0) UnloadTexture(qr);
@@ -1137,7 +1212,7 @@ namespace
         ClosePay();
         if (invoiceKind == "gold")
         {
-            ShowMessage("Төлбөр орлоо", std::to_string(invoiceGold) + " Gold нэмэгдлээ. Одоо танд " + std::to_string(gold) + " Gold байна.",
+            ShowMessage("Төлбөр орлоо", TextFormat("%d Gold нэмэгдлээ. Одоо танд %d Gold байна.", invoiceGold, gold),
                         Screen::None);
             return;
         }
@@ -1263,8 +1338,9 @@ namespace
         }
     }
 
-    std::vector<std::string> Wrap(const std::string& text, int size, float width)
+    std::vector<std::string> Wrap(const std::string& source, int size, float width)
     {
+        const std::string text = Tr(source); // (мөрөөр хуваахаас өмнө: мөр бүр тусдаа орчуулагдахгүй)
         std::vector<std::string> lines;
         std::string line, word;
         auto flushWord = [&] {
@@ -1545,7 +1621,8 @@ namespace
             Wrap(smsCashout ? "Gold татах хүсэлтээ баталгаажуулахын тулд бүртгэлтэй утаснаасаа доорх мессежийг илгээнэ үү. "
                               "Баталгаажсаны дараа мөнгийг таны данс руу шилжүүлнэ."
                  : smsVerify ? std::string("Дансандаа бүртгэлтэй утаснаасаа доорх мессежийг илгээнэ үү. Мессеж ирмэгц утас тань баталгаажна.")
-                            : "Утасны дугаараа баталгаажуулахын тулд " + fields[kPhone] + " дугаартай утаснаасаа доорх мессежийг илгээнэ үү.",
+                            : std::string(TextFormat("Утасны дугаараа баталгаажуулахын тулд %s дугаартай утаснаасаа доорх мессежийг илгээнэ үү.",
+                                                     fields[kPhone].c_str())),
                  16, inner);
         const bool touch = InTouchMode();
         const float height = 22.0f + 40.0f + (float)lines.size() * LineHeight(16) + 14.0f + 104.0f + 16.0f + 28.0f + 34.0f +
@@ -1599,15 +1676,15 @@ namespace
         {
         case Offer::Free:
             text = "Энэ аймгийг үнэгүй эрхээрээ нээх үү?";
-            note = "Үнэгүй эрх " + std::to_string(freeLeft) + " үлдсэн. Нээсэн аймаг тань үргэлж нээлттэй байна.";
+            note = TextFormat("Үнэгүй эрх %d үлдсэн. Нээсэн аймаг тань үргэлж нээлттэй байна.", freeLeft);
             break;
         case Offer::Credit:
             text = "1 эрх ашиглан энэ аймгийг нээх үү?";
-            note = "Танд " + std::to_string(credits) + " эрх байна.";
+            note = TextFormat("Танд %d эрх байна.", credits);
             break;
         case Offer::Pack:
             text = "Аймаг нээх эрх тань дууссан байна.";
-            item = std::to_string(packSize) + " аймгийн эрх";
+            item = TextFormat("%d аймгийн эрх", packSize);
             note = "Улаанбаатараас бусад дурын аймгийг сонгон нээнэ.";
             price = packPrice;
             button = "QPAY-ЭЭР ТӨЛӨХ";
@@ -1621,11 +1698,12 @@ namespace
             break;
         case Offer::Device:
             title = "ТӨХӨӨРӨМЖ СОЛИХ";
-            text = "Таны дансанд " + std::to_string(maxDevices) + " төхөөрөмж аль хэдийн бүртгэлтэй байна.";
+            text = TextFormat("Таны дансанд %d төхөөрөмж аль хэдийн бүртгэлтэй байна.", maxDevices);
             item = "Энэ төхөөрөмжийг бүртгэх";
-            note = "Хамгийн эрт бүртгэсэн төхөөрөмж тань чөлөөлөгдөнө (тэнд дахин тоглоход мөн төлбөртэй).";
-            price = devicePrice;
-            button = "QPAY-ЭЭР ТӨЛӨХ";
+            note = TextFormat("Хамгийн эрт бүртгэсэн төхөөрөмж тань чөлөөлөгдөнө (тэнд дахин тоглоход мөн төлбөртэй). Танд %s Gold байна.",
+                              Thousands(std::max(0, gold - goldLocked)).c_str());
+            price = deviceGold;
+            button = "GOLD-ООР СОЛИХ";
             break;
         }
         const std::vector<std::string> textLines = Wrap(text, 17, inner), noteLines = Wrap(note, 15, inner);
@@ -1646,7 +1724,7 @@ namespace
                 Ui::Fill(box, { 0, 0, 0, 130 });
                 Ui::Stroke(box, 1.0f, kFrame);
                 Ui::TextBold(item.c_str(), (int)x + 16, (int)y + 17, 18, Ui::kText);
-                const std::string money = Money(price);
+                const std::string money = offer == Offer::Device ? Thousands(price) + " Gold" : Money(price);
                 Ui::TextBold(money.c_str(), (int)(x + inner) - 16 - Ui::MeasureBold(money.c_str(), 24), (int)y + 13, 24, Ui::kAccent);
             }
             y += 70.0f;
@@ -1656,7 +1734,8 @@ namespace
         if (Button({ x, y, inner, 50.0f }, button.c_str(), Style::Primary, true))
         {
             if (offer == Offer::Free || offer == Offer::Credit) Claim();
-            else Buy(offer == Offer::Pack ? "pack" : offer == Offer::Capital ? "capital" : "device");
+            else if (offer == Offer::Device) BuyDevice();
+            else Buy(offer == Offer::Pack ? "pack" : "capital");
         }
         y += 62.0f;
         if (Button({ x, y, inner, 30.0f }, "Болих", Style::Link))
@@ -1702,7 +1781,7 @@ namespace
         y += 10.0f;
         if (cashoutEnabled)
         {
-            const std::string label = "GOLD ТАТАХ  (хожсон " + Thousands(cashoutWithdrawable) + " Gold)"; // (дээд мөрөнд ч товч бий)
+            const std::string label = TextFormat("GOLD ТАТАХ  (хожсон %s Gold)", Thousands(cashoutWithdrawable).c_str()); // (дээд мөрөнд ч товч бий)
             if (Button({ x, y, inner, 44.0f }, label.c_str(), Style::Secondary))
             {
                 Open(Screen::Cashout);
@@ -1729,13 +1808,14 @@ namespace
         if (drawPass)
         {
             Ui::Coin({ x + 9.0f, y + 11.0f }, 9.0f);
-            const std::string text = "Татах боломжтой: " + Thousands(cashoutWithdrawable) + " Gold (тоглоомоос хожсон)";
+            const std::string text = TextFormat("Татах боломжтой: %s Gold (тоглоомоос хожсон)", Thousands(cashoutWithdrawable).c_str());
             Ui::TextBold(text.c_str(), (int)x + 26, (int)y, 18, cashoutWithdrawable >= cashoutMin ? Ui::kAccent : Ui::kText);
         }
         y += 26.0f;
         if (drawPass)
         {
-            const std::string text = "Доод хэмжээ " + Thousands(cashoutMin) + " Gold · 1 Gold = " + RateText() + "₮ · Цэнэглэсэн Gold татагдахгүй";
+            const std::string text = TextFormat("Доод хэмжээ %s Gold · 1 Gold = %s₮ · Цэнэглэсэн Gold татагдахгүй", Thousands(cashoutMin).c_str(),
+                                                RateText().c_str());
             Ui::Text(text.c_str(), (int)x, (int)y, 15, Ui::kTextDim);
         }
         y += 24.0f;
@@ -1744,8 +1824,9 @@ namespace
             const bool verifying = activeStatus == "verifying";
             if (drawPass)
             {
-                const std::string text = verifying ? "Баталгаажаагүй хүсэлт байна: " + Thousands(activeGold) + " Gold"
-                                                   : "Шилжүүлэг хүлээж буй: " + Thousands(activeGold) + " Gold → " + activeBank;
+                const std::string text = verifying ? TextFormat("Баталгаажаагүй хүсэлт байна: %s Gold", Thousands(activeGold).c_str())
+                                                   : TextFormat("Шилжүүлэг хүлээж буй: %s Gold → %s", Thousands(activeGold).c_str(),
+                                                                activeBank.c_str());
                 Ui::Text(text.c_str(), (int)x, (int)y + 4, 15, verifying ? Ui::kText : Ui::kAccent);
             }
             if (verifying && Button({ x + inner - 140.0f, y, 140.0f, 26.0f }, "Цуцлах", Style::Link))
@@ -1804,7 +1885,7 @@ namespace
         y += 60.0f + 14.0f;
         if (Button({ x, y, inner, 50.0f }, "ТАТАХ ХҮСЭЛТ ИЛГЭЭХ", Style::Primary, true)) RequestCashout();
         y += 56.0f;
-        if (Button({ x, y, inner, 30.0f }, "Болих", Style::Link)) Open(Screen::Gold);
+        if (Button({ x, y, inner, 30.0f }, "Болих", Style::Link)) Open(kGoldShop ? Screen::Gold : Screen::None);
     }
 
     void PayScreen()
@@ -1885,16 +1966,19 @@ namespace
     void VerifyScreen()
     {
         const float width = std::min(600.0f, (float)ViewWidth() - 24.0f), inner = width - 56.0f;
-        const std::string bonusText = "Баталгаажуулсны дараа +" + std::to_string(verifyBonus) + " Gold авна.";
+        const std::string bonusText = TextFormat("Баталгаажуулсны дараа +%d Gold авна.", verifyBonus);
         struct Row { Ui::Icon icon; Color tint; const char* title; std::string text; };
-        const Row rows[] = {
+        std::vector<Row> rows = {
             { Ui::Icon::Reward, Ui::kAccent, "Нэг удаагийн Gold урамшуулал", bonusText },
             { Ui::Icon::MissionComplete, Ui::kGood, "Үе давах шагнал",
               "Үеийг амжилттай давсан болон найзтайгаа хамт үе давсан шагналаа авна." },
             { Ui::Icon::WeaponMelee, Ui::kTextDim, "PvP тулааны шагнал", "Бусад тоглогчтой тулалдаж, ялалтаараа Gold хожно." },
-            { Ui::Icon::Currency, Ui::kAccent, "Gold-оо мөнгө болгон авах",
-              "Тоглоомын нөхцлийн дагуу Gold-оо мөнгө болгон татах боломжтой." },
         };
+        if (cashoutEnabled)
+        {
+            rows.push_back({ Ui::Icon::Currency, Ui::kAccent, "Gold-оо мөнгө болгон авах",
+                             "Тоглоомын нөхцлийн дагуу Gold-оо мөнгө болгон татах боломжтой." });
+        }
         const std::vector<std::string> warning =
             Wrap("Утсаа баталгаажуулаагүй бол Gold шинээр авах боломжгүй бөгөөд зөвхөн өөрт байгаа Gold-оо зарцуулна. "
                  "Тулаанд ялагдвал барьцаалсан Gold-оо алдана.", 14, inner - 56.0f);
@@ -1902,7 +1986,7 @@ namespace
                                 "Тоглоомд харуулсан 6 оронтой кодыг 144773 дугаарт SMS-ээр илгээнэ.",
                                 "Баталгаажуулалт амжилттай болсны дараа урамшууллаа авна." };
         const float warningH = 42.0f + (float)warning.size() * LineHeight(14) + 10.0f;
-        const float height = 22.0f + 106.0f + 4.0f * 48.0f + 14.0f + warningH + 20.0f + 30.0f + 3.0f * 26.0f + 14.0f +
+        const float height = 22.0f + 106.0f + (float)rows.size() * 48.0f + 14.0f + warningH + 20.0f + 30.0f + 3.0f * 26.0f + 14.0f +
                              50.0f + 10.0f + 44.0f + 22.0f;
         const Rectangle panel = Panel(width, height);
         const float x = panel.x + 28.0f;
@@ -2025,7 +2109,7 @@ namespace
     {
         message = {};
         message.title = "Гарах уу?";
-        message.text = playerName + " дансаас гарна.";
+        message.text = TextFormat("%s дансаас гарна.", playerName.c_str());
         message.primary = "ГАРАХ";
         message.onPrimary = [] { SignOut(); };
         message.secondary = "Болих";
@@ -2358,7 +2442,7 @@ bool Account::Back()
         if (smsCashout) CancelCashout(cashoutId);
         else Open(smsVerify ? Screen::None : smsReset ? Screen::Reset : Screen::Register);
         return true;
-    case Screen::Cashout: Open(Screen::Gold); return true;
+    case Screen::Cashout: Open(kGoldShop ? Screen::Gold : Screen::None); return true; // (Gold авах цонх зөвхөн вэб дээр)
     case Screen::Offer: province = -1; Open(Screen::None); return true;
     case Screen::Gold: Open(Screen::None); return true;
     case Screen::Verify: Open(Screen::None); return true;
@@ -2448,6 +2532,12 @@ void Account::TestScreen(const char* name)
     else if (s == "cashout") Open(Screen::Cashout);
     else if (s == "verify") Open(Screen::Verify);
     else if (s == "offer") Open(Screen::Offer);
+    else if (s == "device")
+    {
+        offer = Offer::Device;
+        Open(Screen::Offer);
+    }
+    else if (s == "unregistered") OfferRegister();
     else if (s == "message") ShowMessage("Мэдэгдэл", "Энэ бол туршилтын мэдэгдлийн цонх. Дизайныг шалгахад ашиглана.");
 }
 
@@ -2464,8 +2554,9 @@ int Account::DrawBadge(int x, int y, bool alignRight)
     {
         // Нийт өргөн (баруун ирмэгт тэгшлэхэд), ард нь нэг шилэн самбар
         const int chipW = Ui::Measure(playerName.c_str(), 15) + Ui::MeasureBold(Thousands(gold).c_str(), 17) + 76;
-        const int total = chipW + 8 + Ui::MeasureBold("Gold авах", 15) + 56 + 8 +
-                          Ui::MeasureBold(verified ? "Gold татах" : "Баталгаажуулах", 15) + 54 + 8 + (int)h;
+        const int total = chipW + 8 + (kGoldShop ? Ui::MeasureBold("Gold авах", 15) + 56 + 8 : 0) +
+                          ((kStoreApp || !cashoutEnabled) && verified ? 0 : Ui::MeasureBold(verified ? "Gold татах" : "Баталгаажуулах", 15) + 54 + 8) +
+                          (int)h;
         if (alignRight) x -= total;
         const Rectangle bar = { (float)x - 7.0f, (float)y - 7.0f, (float)total + 14.0f, h + 14.0f };
         Ui::Panel(bar, { 8, 10, 14, 175 }, bar.height * 0.5f);
@@ -2486,7 +2577,9 @@ int Account::DrawBadge(int x, int y, bool alignRight)
         Ui::Text("G", (int)(chip.x + 57.0f + (float)(nameW + amountW)), (int)cy - 8, 13, Fade(goldInk, 0.75f));
         width = (int)chip.width;
     }
-    // + Gold авах: алтан, дээд хагас нь тод (гэрэлтсэн), "+" тойрог дүрстэй
+    // + Gold авах: алтан, дээд хагас нь тод (гэрэлтсэн), "+" тойрог дүрстэй (зөвхөн вэб дээр: QPay)
+    topupBadge = cashoutBadge = {};
+    if (kGoldShop)
     {
         const char* label = "Gold авах";
         topupBadge = { (float)(x + width + 8), (float)y, (float)Ui::MeasureBold(label, 15) + 56.0f, h };
@@ -2516,8 +2609,8 @@ int Account::DrawBadge(int x, int y, bool alignRight)
         Ui::TextBold(label, (int)cashoutBadge.x + 36, (int)cy - 10, 15, { 255, 176, 112, 255 });
         width += 8 + (int)cashoutBadge.width;
     }
-    // Gold татах: бараан, алтан хүрээтэй, "доош сум тавиур руу" дүрс
-    else
+    // Gold татах: бараан, алтан хүрээтэй, "доош сум тавиур руу" дүрс (утасны апп-д, хаалттай үед байхгүй)
+    else if (!kStoreApp && cashoutEnabled)
     {
         const char* label = "Gold татах";
         cashoutBadge = { (float)(x + width + 8), (float)y, (float)Ui::MeasureBold(label, 15) + 54.0f, h };
@@ -2718,14 +2811,16 @@ bool Account::TakeSearchNote(std::string& text)
     return true;
 }
 
+bool Account::GoldShop() { return kGoldShop && ServerShop(); }
+
 void Account::OpenGoldShop()
 {
-    if (ServerShop()) Open(Screen::Gold);
+    if (ServerShop()) NotEnoughGold();
 }
 
 void Account::OpenCashout()
 {
-    if (!ServerShop()) return;
+    if (kStoreApp || !ServerShop()) return;
     if (!cashoutKnown) ShowMessage("Gold татах", "Gold татах үйлчилгээ одоогоор ажиллахгүй байна. Дараа дахин оролдоно уу.", Screen::None);
     else if (!cashoutEnabled) ShowMessage("Gold татах", "Gold татах түр хаалттай байна.", Screen::None);
     else Open(Screen::Cashout);

@@ -12,7 +12,7 @@ from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
-from . import gamelog, logic
+from . import gamelog, lang, logic
 from .logic import GameError
 from .models import AuthToken, Invoice
 
@@ -31,6 +31,13 @@ def api(methods, auth=True):
         @csrf_exempt
         @wraps(view)
         def wrapper(request, *args, **kwargs):
+            response = respond(request, *args, **kwargs)
+            # Англи горимын тоглоом (?lang=en): тоглогчид харагдах мессежүүдийг орчуулна (game/lang.py)
+            if request.GET.get("lang") == "en" and isinstance(response, JsonResponse):
+                response = JsonResponse(lang.translate(json.loads(response.content)), status=response.status_code)
+            return response
+
+        def respond(request, *args, **kwargs):
             if request.method not in methods:
                 return JsonResponse({"ok": False, "error": "method", "message": "Буруу хүсэлт"}, status=405)
             try:
@@ -298,6 +305,13 @@ def cashout_status(request, cashout_id):
     """Тоглоом SMS илгээгдтэл хэдэн секунд тутам асууна: verifying -> pending (баталгаажсан) эсвэл expired."""
     cashout = logic.refresh_cashout(logic.player_cashout(request.token.player, cashout_id))
     return ok(cashout=logic.cashout_json(cashout), account=account(request.token))
+
+
+@api(["POST"])
+def device_buy(request):
+    """Төхөөрөмж солих Gold-оор: {"platform"}"""
+    player = logic.buy_device(request.token.player, request.token.device_id, request.json.get("platform"), client_ip(request))
+    return ok(account=logic.account_state(player, request.token.device_id))
 
 
 @api(["POST"])

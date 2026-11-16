@@ -9,7 +9,7 @@ from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
-from . import logic, qpay
+from . import lang, logic, qpay
 from .models import AuthToken, Cashout, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, RoomFriend, Verification
 
 UB = 15  # Улаанбаатар
@@ -41,9 +41,9 @@ class FlowTests(TestCase):
         verification.payload = {**verification.payload, "dev_verified": True}
         verification.save(update_fields=["payload"])
 
-    def register(self, phone="99112233", device="device-aaaa-1111", name="Бат"):
+    def register(self, phone="99112233", device="device-aaaa-1111", name="Бат", platform="windows"):
         start = self.post("register/start/", {"name": name, "phone": phone, "password": "secret1", "device_id": device,
-                                              "platform": "windows"})
+                                              "platform": platform})
         self.assertEqual(start["sms"]["shortcode"], "144773")
         self.sms_sent(start["verification_id"])
         return self.post("register/confirm/", {"verification_id": start["verification_id"]})
@@ -163,6 +163,7 @@ class FlowTests(TestCase):
 
     def test_cashout_only_won_gold(self):
         token = self.register()["token"]
+        GameSettings.objects.filter(pk=GameSettings.load().pk).update(cashout_enabled=True)  # (анхдагчаар хаалттай)
         # Цэнэглэсэн Gold татагдахгүй
         self.give(30000, GoldTransaction.PURCHASE, "test:buy")
         self.assertEqual(self.get("account/", token)["account"]["cashout"]["withdrawable"], 0)
@@ -195,6 +196,7 @@ class FlowTests(TestCase):
 
     def test_cashout_expired_or_cancelled_refunds(self):
         token = self.register()["token"]
+        GameSettings.objects.filter(pk=GameSettings.load().pk).update(cashout_enabled=True)  # (анхдагчаар хаалттай)
         self.give(45000, GoldTransaction.BATTLE_WIN, "test:win")
         first = self.cashout(token, 20000)
         Verification.objects.filter(pk=first["verification_id"]).update(expires=timezone.now() - timedelta(seconds=1))
@@ -226,10 +228,8 @@ class FlowTests(TestCase):
         self.assertEqual(self.post("shop/buy/", {"item": "magazine", "level": 0}, token)["account"]["gold"], 475)
 
     def test_callback_with_wrong_key_is_ignored(self):
-        self.register()
-        token = self.post("login/", {"phone": "99112233", "password": "secret1", "device_id": "device-two-2222"})["token"]
-        token = self.post("login/", {"phone": "99112233", "password": "secret1", "device_id": "device-new-3333"})["token"]
-        invoice = self.post("invoices/", {"kind": "device"}, token)["invoice"]
+        token = self.register(platform="web")["token"]
+        invoice = self.post("invoices/", {"kind": "gold", "pack": 0}, token)["invoice"]
         qpay.MockQPay.paid.add(f"mock-{invoice['id']}")
         self.client.get(f"/api/qpay/callback/{invoice['id']}/wrong-key/")
         self.assertFalse(Invoice.objects.get(pk=invoice["id"]).applied)
@@ -498,6 +498,12 @@ class FlowTests(TestCase):
                          "room_gone")
         self.assertEqual(self.post("rooms/join/", {"protocol": 22, "room": room_id}, guest)["room"]["id"], room_id)
         self.assertEqual(self.get("rooms/list/?protocol=22", guest)["rooms"], [])  # дүүрсэн
+
+    def test_cashout_is_closed_by_default(self):
+        token = self.register()["token"]
+        self.give(50000, GoldTransaction.BATTLE_WIN, "won-1")
+        self.assertFalse(self.get("account/", token)["account"]["cashout"]["enabled"])
+        self.assertEqual(self.cashout(token, 20000, status=403)["error"], "cashout_disabled")
 
     def test_disputed_player_is_told_why(self):
         host, guest = self.two_players()
@@ -960,11 +966,15 @@ class FlowTests(TestCase):
         self.post(f"rooms/{room_id}/result/", {"battle": 1, "winner": "nobody"}, host, status=400)
         self.post(f"rooms/{room_id}/result/", {"battle": 9, "winner": "host"}, host, status=410)
 
-    def test_game_buys_gold_in_app(self):
-        token = self.register()["token"]
+    def test_web_game_buys_gold(self):
+        # QPay зөвхөн вэб дээр: Windows-ийн тоглоомоос Gold худалдахгүй (тоглоомын илгээсэн платформыг биш, бүртгэснийг харна)
+        windows = self.register(phone="88112233", device="device-bbbb-2222", name="Дорж")["token"]
+        self.assertEqual(self.post("invoices/", {"kind": "gold", "pack": 0, "platform": "web"}, windows, status=403)["error"],
+                         "web_only")
+        token = self.register(platform="web")["token"]
         account = self.get("account/", token)["account"]
         self.assertEqual([p["price"] for p in account["gold_packs"]], [3000, 5000, 10000])
-        invoice = self.post("invoices/", {"kind": "gold", "pack": 0, "platform": "android"}, token)["invoice"]
+        invoice = self.post("invoices/", {"kind": "gold", "pack": 0, "platform": "web"}, token)["invoice"]
         self.assertEqual((invoice["amount"], invoice["gold"]), (3000, 300))
         self.pay(invoice["id"])
         self.assertEqual(self.get(f"invoices/{invoice['id']}/", token)["account"]["gold"], 800)
@@ -984,8 +994,9 @@ class FlowTests(TestCase):
         self.client.get(f"/api/qpay/callback/{invoice['id']}/{key}/")  # давхар мэдэгдэл
         self.assertEqual(self.get(f"invoices/{invoice['id']}/", token)["account"]["gold"], 1050)
         self.assertEqual(GoldTransaction.objects.filter(reason="purchase").count(), 1)
-        # Вэбээс зөвхөн Gold
-        self.post("invoices/", {"kind": "device"}, token, status=403)
+        # Вэбээс зөвхөн Gold (төхөөрөмжийг QPay-ээр солихгүй: Gold-оор)
+        self.assertEqual(self.post("invoices/", {"kind": "device"}, token, status=410)["error"], "pay_with_gold")
+        self.post("devices/buy/", {}, token, status=403)
         self.post("shop/buy/", {"item": "damage", "level": 0}, token, status=402)
         self.post("provinces/start/", {"province": 1}, token, status=402)
         self.post("invoices/", {"kind": "gold", "pack": 7}, token, status=400)
@@ -1003,10 +1014,17 @@ class FlowTests(TestCase):
         self.assertEqual(self.post("provinces/claim/", {"province": 1}, token, status=402)["error"], "device_change_required")
         self.assertEqual(self.post("shop/buy/", {"item": "damage", "level": 0}, token, status=402)["error"],
                          "device_change_required")
-        invoice = self.post("invoices/", {"kind": "device"}, token)["invoice"]
-        self.assertEqual(invoice["amount"], 5000)
-        self.pay(invoice["id"])
-        self.assertTrue(self.get("account/", token)["account"]["device_ok"])
+        # QPay-ээр биш, Gold-оор (хуучин тоглоом: "шинэчилнэ үү")
+        self.assertEqual(self.post("invoices/", {"kind": "device"}, token, status=410)["error"], "pay_with_gold")
+        self.assertEqual(login["account"]["prices"]["device_change_gold"], 500)
+        GameSettings.objects.filter(pk=GameSettings.load().pk).update(device_change_gold=600)
+        self.assertEqual(self.post("devices/buy/", {}, token, status=402)["error"], "not_enough_gold")
+        GameSettings.objects.filter(pk=GameSettings.load().pk).update(device_change_gold=500)
+        account = self.post("devices/buy/", {"platform": "android"}, token)["account"]
+        self.assertTrue(account["device_ok"])
+        self.assertEqual(account["gold"], 0)
+        self.assertEqual(GoldTransaction.objects.get(reason="device").amount, -500)
+        self.assertEqual(self.post("devices/buy/", {}, token, status=409)["error"], "device_already_active")
         # Хамгийн эрт бүртгэгдсэн нь чөлөөлөгдөж, 2 төхөөрөмж хэвээр
         self.assertEqual(Device.objects.get(device_id="device-aaaa-1111").active, False)
         self.assertEqual(Device.objects.filter(active=True).count(), 2)
@@ -1107,6 +1125,17 @@ class FlowTests(TestCase):
         self.assertEqual(self.get("account/", squatter, status=401)["error"], "auth")
         self.assertIsNone(Player.objects.get(name="Тэмүүлэн").phone)
 
+    def test_store_app_cannot_pay_or_cash_out(self):
+        # Google Play, App Store-ийн апп: Gold худалдах, татах, төхөөрөмжийн төлбөр хаалттай; ижил данс вэбээр болно
+        token = self.register(platform="android")["token"]
+        GameSettings.objects.filter(pk=GameSettings.load().pk).update(cashout_enabled=True)
+        self.give(50000, GoldTransaction.BATTLE_WIN, "won-1")
+        self.assertEqual(self.post("invoices/", {"kind": "gold", "pack": 0}, token, status=403)["error"], "web_only")
+        self.assertEqual(self.post("invoices/", {"kind": "device"}, token, status=410)["error"], "pay_with_gold")
+        self.assertEqual(self.cashout(token, 20000, status=403)["error"], "store_app")
+        web = self.post("web/login/", {"phone": "99112233", "password": "secret1"})["token"]
+        self.assertEqual(self.post("invoices/", {"kind": "gold", "pack": 0}, web)["invoice"]["gold"], 300)
+
     def test_unverified_cannot_cash_out(self):
         token = self.quick_player()
         GameSettings.objects.filter(pk=GameSettings.load().pk).update(cashout_enabled=True)
@@ -1123,6 +1152,30 @@ class FlowTests(TestCase):
         self.register()
         self.assertEqual(self.post("login/", {"phone": "99112233", "password": "wrong!!", "device_id": "device-aaaa-1111"},
                                    status=401)["error"], "bad_login")
+
+    def test_english_messages(self):
+        # Англи горимын тоглоом (?lang=en): мессеж англиар; тоотой мессеж загвараар
+        reply = self.post("login/?lang=en", {"phone": "88001122", "password": "secret1", "device_id": "device-aaaa-1111"}, status=404)
+        self.assertEqual((reply["error"], reply["message"]), ("not_registered", "This number is not registered. Please register"))
+        self.assertEqual(lang.english("Тулаанд 70 Gold хэрэгтэй (танд 5)"), "Battles need 70 Gold (you have 5)")
+        # Серверийн бүх тогтмол GameError мессеж англи орчуулгатай (шинэ мессеж нэмбэл game/lang.py-д нэмнэ)
+        import ast, pathlib
+        source = (pathlib.Path(logic.__file__)).read_text(encoding="utf-8")
+        missing = []
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "GameError" and len(node.args) >= 2:
+                arg = node.args[1]
+                if isinstance(arg, ast.Constant) and lang.english(arg.value) == arg.value:
+                    missing.append(arg.value)
+        self.assertEqual(missing, [])
+
+    def test_login_unregistered_phone(self):
+        self.assertEqual(self.post("login/", {"phone": "88001122", "password": "secret1", "device_id": "device-aaaa-1111"},
+                                   status=404)["error"], "not_registered")
+        for _ in range(9):  # (бүртгэлгүй дугаарын оролдлого ч хязгаарт тоологдоно: 15 минутад 10)
+            self.post("login/", {"phone": "88001122", "password": "secret1", "device_id": "device-aaaa-1111"}, status=404)
+        self.assertEqual(self.post("login/", {"phone": "88001122", "password": "secret1", "device_id": "device-aaaa-1111"},
+                                   status=429)["error"], "too_many_attempts")
 
     # ---- лог, хадгалалт, нууц үг
     def test_events_and_progress(self):

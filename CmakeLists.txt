@@ -78,6 +78,8 @@ set(GAME_SOURCES
     src/ProvinceMap.cpp
     src/WorldEvents.cpp
     src/Json.cpp
+    src/Lang.cpp
+    src/LangEn.cpp
     src/Online.cpp
     src/Airstrike.cpp
     src/Audio.cpp
@@ -145,7 +147,7 @@ elseif(IOS)
     add_executable(ZombieMongolia MACOSX_BUNDLE ${GAME_SOURCES} src/PlatformIos.mm ${ZM_IOS_ASSETS})
     set_source_files_properties(${ZM_IOS_ASSETS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     target_compile_definitions(ZombieMongolia PRIVATE ZM_IOS=1)
-    target_link_libraries(ZombieMongolia PRIVATE SDL2::SDL2main "-framework UIKit" "-framework Foundation")
+    target_link_libraries(ZombieMongolia PRIVATE SDL2::SDL2main "-framework UIKit" "-framework Foundation" "-framework StoreKit")
     set(ZM_IOS_BUNDLE_ID "mn.zombiemongolia.game" CACHE STRING "App Store-ийн bundle id")
     set(ZM_IOS_BUILD_NUMBER "1" CACHE STRING "CFBundleVersion: App Store Connect руу илгээх бүрд өсөх тоо")
     set_target_properties(ZombieMongolia PROPERTIES
@@ -171,6 +173,8 @@ else()
     add_executable(ZombieMongolia ${GAME_SOURCES})
 endif()
 target_include_directories(ZombieMongolia PRIVATE src ${enet_SOURCE_DIR}/include ${CMAKE_BINARY_DIR}/generated)
+# Хэл (src/LangFormat.h): TextFormat-ийн загварыг орчуулна — тоглоомын бүх C++ файлд эхэнд нь
+target_compile_options(ZombieMongolia PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${CMAKE_SOURCE_DIR}/src/LangFormat.h>")
 # Хувилбарын цаг (src/BuildStamp.cpp): build бүрд шинэчилнэ
 set(BUILD_STAMP_VALUE ${CMAKE_BINARY_DIR}/generated/BuildStampValue.h)
 add_custom_target(build_stamp
@@ -215,6 +219,10 @@ if(EMSCRIPTEN)
     file(GLOB files ${CMAKE_SOURCE_DIR}/assets/sounds/narration/*.wav) # мэдэгдлийн дуу хоолой (tools/gen_narration.py)
     if(files)
         file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/sounds/narration)
+    endif()
+    file(GLOB files ${CMAKE_SOURCE_DIR}/assets/sounds/narration_en/*.wav) # англи хэлний мэдэгдэл (gen_narration.py --english)
+    if(files)
+        file(COPY ${files} DESTINATION ${WEB_ASSETS}/assets/sounds/narration_en)
     endif()
     file(COPY ${CMAKE_SOURCE_DIR}/android/ui_font.ttf DESTINATION ${WEB_ASSETS})
 

@@ -1,0 +1,1 @@
+Мэдэгдлийн дуу хоолой: Nomad Labs, Nomad Voice (nomad-voice-v1) text-to-speech, https://developers.nomadlabs.mn (tools/gen_narration.py: MP3 -> моно 16 бит WAV)

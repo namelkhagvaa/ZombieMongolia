@@ -840,17 +840,19 @@ namespace Audio
     void Announce(const char* key)
     {
         if (!ready || !enabled || key == nullptr) return;
-        auto found = narration.find(key);
+        // Англи горим: sounds/narration_en/ (tools/gen_narration.py --english). Байхгүй бол дуугүй (монгол хоолой холилдохгүй)
+        const std::string id = std::string(English() ? "en/" : "mn/") + key;
+        auto found = narration.find(id);
         if (found == narration.end())
         {
             Sound sound = {};
-            const std::string base = SoundFolder() + "narration/" + key;
+            const std::string base = SoundFolder() + (English() ? "narration_en/" : "narration/") + key;
             if (!TryLoad(base + ".wav", sound) && !TryLoad(base + ".ogg", sound))
             {
                 sound = {};
                 TraceLog(LOG_WARNING, "NARRATION: %s not found (%s)", key, base.c_str());
             }
-            found = narration.emplace(key, sound).first;
+            found = narration.emplace(id, sound).first;
         }
         Sound& sound = found->second;
         if (sound.frameCount == 0) return;
