@@ -145,7 +145,7 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
     if (hidden) flags |= FLAG_WINDOW_HIDDEN;
     SetConfigFlags(flags);
 
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(ZM_IOS)
     InitWindow(0, 0, "Zombie Mongolia"); // утасны бүтэн дэлгэц
     InSetTouchMode(true);
     ViewInit(720);
@@ -236,7 +236,7 @@ Game::Game(const LaunchOptions& launchOptions)
     }
     config.touchAimAssist = progress.aimAssist;
     mapScreen.SelectNextTarget(progress);
-#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__) && !defined(ZM_IOS)
     // Компьютер: хадгалсан сонголтоор бүтэн дэлгэц (туршилтын горимд цонхоор).
     if (progress.fullscreen && !options.screenshotPath && !options.touch) SetFullscreen(true);
     if (!options.screenshotPath) ApplyFrameLimit(); // (туршилт хязгааргүй)
@@ -654,7 +654,7 @@ void Game::Run()
                 OpenPause(); // тоглоомын цэс: шууд гарахгүй
             }
         }
-#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__) && !defined(ZM_IOS)
         if (IsKeyPressed(KEY_F11)) SetFullscreen(!progress.fullscreen);
 #endif
         // Хөтөч: өөр tab руу шилжих, ESC зэргээр хулганы түгжээ алдагдвал тоглоомын цэсийг нээнэ
@@ -5058,7 +5058,7 @@ namespace
         out[count++] = PauseItem::Resume;
         out[count++] = PauseItem::Graphics;
         out[count++] = PauseItem::Sound;
-#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__) && !defined(ZM_IOS)
         if (!InTouchMode()) out[count++] = PauseItem::Fullscreen;
         if (!InTouchMode()) out[count++] = PauseItem::FrameRate;
 #endif
@@ -5092,7 +5092,7 @@ void Game::ClosePause()
 
 void Game::SetFullscreen(bool enabled)
 {
-#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__) && !defined(ZM_IOS)
     // Хүрээгүй бүтэн цонх (alt-tab хурдан). UI 1280x720-д зориулсан тул бүтэн дэлгэцэд 720 өндөртэй
     // дотоод зургаар зурж, дэлгэцэнд сунгана (газрын зураг, HUD-ийн байрлал ижил хэвээр).
     if (enabled != IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE)) ToggleBorderlessWindowed();
@@ -5177,7 +5177,7 @@ void Game::UpdateVehicleBlockers()
 
 void Game::ApplyFrameLimit()
 {
-#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__) && !defined(ZM_IOS)
     // Дэлгэцийн давтамжаар: VSync (тасархай зураггүй, 144 Hz дэлгэц дээр 144). Бусад: VSync унтраад тогтсон
     // хязгаар (120, 144) эсвэл хязгааргүй (хүчтэй компьютерт хамгийн бага хоцрогдол).
     const int index = std::clamp(progress.frameLimit, 0, 4);
@@ -10344,7 +10344,7 @@ void Game::DrawCoopMap() const
     }
 }
 
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(ZM_IOS)
 // raylib 5.5 нь OpenGL ES 3.0 горимд glDrawBuffersEXT-ийг дууддаг боловч ES 3.0-ийн санд энэ нь
 // glDrawBuffers нэртэй байдаг: холбоосын алдаанаас сэргийлж дамжуулагч функц өгнө.
 #include <GLES3/gl3.h>
@@ -11156,8 +11156,8 @@ namespace
 
 bool Game::UpdateVersionCheck()
 {
-#if defined(__EMSCRIPTEN__)
-    return false; // (хөтөч: web/shell.html)
+#if defined(__EMSCRIPTEN__) || defined(ZM_IOS)
+    return false; // (хөтөч: web/shell.html; iOS: зөвхөн App Store-оор шинэчлэгдэнэ)
 #else
     if (options.screenshotPath && !options.apiBase && !std::getenv("ZM_SITE_URL")) return false; // туршилт: сүлжээнд гарахгүй
     if (!updateChecked)

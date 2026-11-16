@@ -29,6 +29,10 @@ namespace
 #if defined(__ANDROID__)
         // Апп-ын дотоод хадгалах сан (зөвхөн энэ апп унших, бичих эрхтэй).
         return std::string(GetAndroidApp()->activity->internalDataPath) + "/savegame.txt";
+#elif defined(ZM_IOS)
+        // Апп багц зөвхөн уншигдана: апп-ын Documents хавтас (src/PlatformIos.mm)
+        if (!overridePath.empty()) return overridePath;
+        return IosDataPath() + "/savegame.txt";
 #elif defined(_WIN32)
         // Хэрэглэгчийн хавтас (%LOCALAPPDATA%\ZombieMongolia): Program Files-д суулгасан үед exe-ийн хавтсанд
         // бичих эрхгүй. Хуучин хувилбар exe-ийн хажууд хадгалдаг байсан тул тэр файл байвал анх удаа хуулна.

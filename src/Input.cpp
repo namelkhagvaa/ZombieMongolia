@@ -498,7 +498,7 @@ namespace
     // Хүрэлтүүдийг уншина. Компьютер дээрх туршилтад хулганы зүүн товч нэг хурууг орлоно.
     int ReadTouches(Vector2* positions, int* ids, int capacity)
     {
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(ZM_IOS)
         const int count = std::min(GetTouchPointCount(), capacity);
         for (int i = 0; i < count; ++i)
         {

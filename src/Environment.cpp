@@ -9,7 +9,7 @@
 #include "raymath.h"
 #include "rlgl.h"
 
-#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
+#if defined(__EMSCRIPTEN__) || defined(__ANDROID__) || defined(ZM_IOS)
 #include <GLES3/gl3.h> // сүүдрийн гүний текстур (LoadShadowTarget), гүнийг цэвэрлэх (ClearDepth)
 #elif defined(_WIN32)
 // OpenGL 1.1-ийн функцууд (opengl32.dll-ээс шууд): сүүдрийн өнгөгүй framebuffer-т draw buffer-гүй гэж заана
@@ -1181,7 +1181,7 @@ void main()
 )";
 
     // Shader-ийн эхлэл: компьютер дээр OpenGL 3.3, утсан ба хөтөч дээр OpenGL ES 3.0 (WebGL2).
-#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__) || defined(ZM_IOS)
     const char* kShaderHeader = "#version 300 es\nprecision highp float;\n";
     const char* kLightingDefines = "";
     const int kShadowMapSize = 1024;
@@ -1592,7 +1592,7 @@ void Environment::LoadSurfaceTextures()
         if (DirectoryExists(candidate.c_str())) { folder = candidate; break; }
     }
 #endif
-#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__) || defined(ZM_IOS)
     const int size = 512;
 #else
     const int size = 1024;

@@ -21,7 +21,7 @@ extern "C" __declspec(dllimport) void __stdcall glFinish(void);
 
 // GPU-ийн хугацаа (--gpu-timer): зөвхөн компьютер дээр, GLFW-ээр функцээ ачаална (raylib-ийн дотоод glad-д хүрэхгүй).
 // Android (GL_EXT_disjoint_timer_query) ба WebGL2 (EXT_disjoint_timer_query_webgl2) дээр баталгаагүй тул дэмжихгүй.
-#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__) && !defined(ZM_IOS)
 #define ZM_GPU_TIMER 1
 extern "C" void (*glfwGetProcAddress(const char* name))(void);
 #if defined(_WIN32)

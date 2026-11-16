@@ -31,6 +31,11 @@ void LoadUiFont()
     // APK-ийн assets дотор хамт ирсэн чөлөөт лицензтэй фонт (FileExists нь assets-ийг хардаггүй тул шалгахгүй).
     const char* candidates[] = { "ui_font.ttf" };
     const bool checkExists = false;
+#elif defined(ZM_IOS)
+    // iOS: Android-тай ижил фонт апп багцын assets/ дотор (ios/CopyAssets.cmake)
+    const std::string bundled = std::string(GetApplicationDirectory()) + "assets/ui_font.ttf";
+    const char* candidates[] = { bundled.c_str() };
+    const bool checkExists = true;
 #elif defined(__EMSCRIPTEN__)
     // Хөтөч: Android-тай ижил фонтыг хуудасны файлын системд урьдчилан ачаалсан (CMakeLists.txt)
     const char* candidates[] = { "ui_font.ttf" };
@@ -43,7 +48,7 @@ void LoadUiFont()
     };
     const bool checkExists = true;
 #endif
-#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__) && !defined(ZM_IOS)
     // Гарчгийн фонт: Bahnschrift (Windows 10+), нарийн DIN үсэг
     if (FileExists("C:/Windows/Fonts/bahnschrift.ttf"))
     {

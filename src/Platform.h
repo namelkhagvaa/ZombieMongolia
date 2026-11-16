@@ -2,6 +2,17 @@
 
 #include <string>
 
+#if defined(ZM_IOS)
+// iOS (src/PlatformIos.mm): апп-ын бичих эрхтэй хавтас (Documents), HTTP (NSURLSession), холбоос нээх,
+// төхөөрөмжийн дугаар (identifierForVendor). Утасны гарын оронд тоглоомын дэлгэцийн гар (Account.cpp).
+std::string IosDataPath();
+// Хүлээж буй урсгалаас (Online-ийн хүсэлтийн thread) дуудна: хариу иртэл блоклоно. status = 0: сүлжээгүй
+bool IosHttp(const std::string& method, const std::string& url, const std::string& body, const std::string& token,
+             int& status, std::string& response);
+void IosOpenUrl(const std::string& url);
+std::string IosVendorId();
+#endif
+
 // Хөтөч (WebAssembly) дээр ажиллахад хэрэгтэй жижиг ялгаанууд.
 // Хөтөч дотор үндсэн урсгал frame бүрийн дараа удирдлагыг хөтчид буцааж байж зураг дэлгэцэнд гарна
 // (-sASYNCIFY). raylib-ийн WindowShouldClose нь хөтөч дээр үргэлж 16 мс унтдаг тул оронд нь эдгээрийг хэрэглэнэ.

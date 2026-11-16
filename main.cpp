@@ -10,6 +10,9 @@
 #if defined(__ANDROID__)
 #include <android/log.h>
 #endif
+#if defined(ZM_IOS)
+#include "SDL.h" // iOS: SDL2 апп-ын эхлэлийг (UIKit) өгч, доорх main-ийг SDL_main болгон дуудна
+#endif
 
 namespace
 {

@@ -1,0 +1,54 @@
+# iOS build (Mac-гүйгээр: GitHub-ийн macOS сервер дээр Xcode). Эхний шат: симулятор (гарын үсэггүй) build.
+# Алдааг annotation болгон гаргана: build-ийн бүтэн лог нэвтрэлт шаарддаг, annotation-ыг нийтийн API-гаар уншиж болно.
+name: iOS
+
+on:
+  push:
+    branches: [ios]
+  workflow_dispatch:
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Configure
+        run: |
+          set -o pipefail
+          cmake -S . -B build-ios -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphonesimulator \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 2>&1 | tee configure.log
+
+      - name: Build
+        run: |
+          set -o pipefail
+          cmake --build build-ios --config Release --target ZombieMongolia -- \
+            -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO 2>&1 | tee build.log
+
+      - name: Report errors
+        if: failure()
+        run: |
+          # Алдааны мөрүүд (давхардалгүй), бүлэг бүрийг нэг annotation болгоно (мөр хоорондоо %0A)
+          report() {
+            local title="$1"; shift
+            local text
+            text=$(cat)
+            [ -z "$text" ] && return
+            text=${text//'%'/'%25'}
+            text=${text//$'\r'/}
+            text=${text//$'\n'/'%0A'}
+            echo "::error title=${title}::${text}"
+          }
+          for log in configure.log build.log; do
+            [ -f "$log" ] || continue
+            grep -E "error:|Error:|CMake Error|fatal error|undefined symbol|Undefined symbols|ld: " "$log" \
+              | sed -E 's#^/Users/runner/work/[^/]+/[^/]+/##' | awk '!seen[$0]++' | head -40 | report "$log errors"
+            grep -E -A3 "Undefined symbols|CMake Error" "$log" | head -40 | report "$log details"
+            tail -25 "$log" | report "$log tail"
+          done

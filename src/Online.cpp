@@ -503,6 +503,41 @@ std::string Online::DeviceId()
     return id;
 }
 
+#elif defined(ZM_IOS)
+// ---------------------------------------------------------------- iOS (NSURLSession: src/PlatformIos.mm)
+#include "Platform.h"
+
+namespace
+{
+    void Run(std::shared_ptr<Request> request, std::string method, std::string url, std::string body, std::string token)
+    {
+        int status = 0;
+        std::string received;
+        IosHttp(method, url, body, token, status, received);
+        request->body = std::move(received);
+        request->status = status;
+        request->done = true;
+    }
+
+    std::string StoragePath(const char* key) { return IosDataPath() + "/" + key + ".txt"; }
+}
+
+void Online::OpenUrl(const std::string& url) { IosOpenUrl(url); }
+
+std::string Online::DeviceId()
+{
+    // Апп дахин суулгахад хадгалсан файл устна: үйлдвэрлэгчийн дугаараар (identifierForVendor) тогтмол байлгана
+    const std::string vendor = IosVendorId();
+    if (!vendor.empty()) return "ios-" + HashId(vendor);
+    std::string id = Load("device");
+    if (id.size() < 8)
+    {
+        id = "ios-" + RandomId();
+        Store("device", id);
+    }
+    return id;
+}
+
 #else
 // ---------------------------------------------------------------- Бусад (Linux г.м.): сүлжээгүй
 namespace
