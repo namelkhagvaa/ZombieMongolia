@@ -2,9 +2,8 @@
 # Алдааг annotation болгон гаргана: build-ийн бүтэн лог нэвтрэлт шаарддаг, annotation-ыг нийтийн API-гаар уншиж болно.
 name: iOS
 
+# (GitHub-ийн бүртгэлийн Actions түгжээтэй байх хооронд Codemagic-аар build хийнэ: codemagic.yaml. Гараар л ажиллана.)
 on:
-  push:
-    branches: [ios]
   workflow_dispatch:
 
 jobs:

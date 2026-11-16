@@ -1,0 +1,49 @@
+# iOS build (Mac-гүйгээр: Codemagic-ийн macOS сервер дээр Xcode). Эхний шат: симулятор (гарын үсэггүй) build.
+# Алдаа гарсан ч алдааны мөрүүдийг errors.txt-д цуглуулж артефакт болгоно (build.log бүтнээрээ хамт).
+workflows:
+  ios-simulator:
+    name: iOS simulator build
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: ios
+          include: true
+    environment:
+      xcode: latest
+    scripts:
+      - name: Build
+        script: |
+          command -v cmake >/dev/null || brew install cmake
+          cmake --version | head -1
+          status=0
+          cmake -S . -B build-ios -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphonesimulator \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 > configure.log 2>&1 || status=1
+          if [ $status -eq 0 ]; then
+            cmake --build build-ios --config Release --target ZombieMongolia -- \
+              -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO > build.log 2>&1 || status=1
+          fi
+          touch build.log
+          {
+            echo "status: $status"
+            for log in configure.log build.log; do
+              echo "===== $log: errors"
+              grep -E "error:|Error:|CMake Error|fatal error|Undefined symbols|ld: " "$log" \
+                | sed -E "s#^$PWD/##" | awk '!seen[$0]++' | head -80
+              echo "===== $log: details"
+              grep -E -A4 "Undefined symbols|CMake Error" "$log" | head -60
+              echo "===== $log: tail"
+              tail -30 "$log"
+            done
+          } > errors.txt
+          cat errors.txt
+          exit $status
+    artifacts:
+      - errors.txt
+      - configure.log
+      - build.log
