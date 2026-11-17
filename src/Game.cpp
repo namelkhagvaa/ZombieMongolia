@@ -1,6 +1,8 @@
 #include "ViewCull.h"
 #include "Profile.h"
 #include "Game.h"
+
+#include "ChatFilter.h"
 #include "City.h"
 #include "Structures.h"
 #include "VehicleModel.h"
@@ -7584,7 +7586,11 @@ void Game::UpdateNetwork(float dt)
         case Net::Msg::Chat:
         {
             const std::string who = PlayerNameOf(actor);
-            AddChatLine((who.empty() ? std::string("Найз") : who) + ": " + event.text, false);
+            // Блоклосон тоглогчийн мессеж харагдахгүй (хост бусад зочдод дамжуулсаар); муу үгийг шүүнэ (ChatFilter.h)
+            if (!ChatMuted(who))
+            {
+                AddChatLine((who.empty() ? std::string("Найз") : who) + ": " + FilterChat(event.text), false, who);
+            }
             if (!coopGuest)
             {
                 net.Except(event.slot);
@@ -10889,17 +10895,97 @@ Rectangle Game::ChatPhraseRect(int index) const
     return { bar.x + (float)(index % 3) * cell + 3.0f, bar.y + bar.height + 10.0f + (float)(index / 3) * 46.0f, cell - 6.0f, 40.0f };
 }
 
-void Game::AddChatLine(const std::string& text, bool mine)
+void Game::AddChatLine(const std::string& text, bool mine, const std::string& sender)
 {
     TraceLog(LOG_INFO, "CHAT: %s", text.c_str());
-    chatLog.push_back({ text, 0.0f, mine });
+    chatLog.push_back({ text, 0.0f, mine, sender });
     while (chatLog.size() > kChatLines) chatLog.erase(chatLog.begin());
 }
 
-void Game::SendChatLine(const std::string& text)
+void Game::SendChatLine(const std::string& raw)
 {
+    const std::string text = FilterChat(raw); // (хүлээн авагч ч шүүнэ: хуучин хувилбарын тоглоомд ч цэвэр очно)
     net.SendChat(text);
     AddChatLine("Би: " + text, true);
+}
+
+std::vector<Game::ChatPeer> Game::ChatPeers() const
+{
+    std::vector<ChatPeer> peers;
+    if (coopGuest)
+    {
+        if (!hostName.empty()) peers.push_back({ 0, hostName, -1 });
+        const std::string self = Account::SignedIn() ? Account::Name() : std::string();
+        for (int i = 0; i < Net::kMaxGuests; ++i)
+        {
+            const std::string& name = rosterNames[i];
+            if (!name.empty() && name != self) peers.push_back({ i + 1, name, -1 });
+        }
+    }
+    else
+    {
+        for (int i = 0; i < Net::kMaxGuests; ++i)
+        {
+            if (guests[i].active && !guests[i].name.empty()) peers.push_back({ i + 1, guests[i].name, guests[i].player });
+        }
+    }
+    if (peers.size() > 5) peers.resize(5);
+    return peers;
+}
+
+bool Game::ChatMuted(const std::string& name) const
+{
+    return !name.empty() && std::find(progress.muted.begin(), progress.muted.end(), name) != progress.muted.end();
+}
+
+void Game::ToggleChatMute(const std::string& name)
+{
+    if (name.empty()) return;
+    auto found = std::find(progress.muted.begin(), progress.muted.end(), name);
+    if (found != progress.muted.end())
+    {
+        progress.muted.erase(found);
+        SetNotice(TextFormat("%s-ийн мессеж дахин харагдана", name.c_str()), 3.0f);
+    }
+    else
+    {
+        progress.muted.push_back(name);
+        // Өмнөх мессежүүд нь ч алга болно
+        chatLog.erase(std::remove_if(chatLog.begin(), chatLog.end(), [&](const ChatLine& line) { return line.sender == name; }),
+                      chatLog.end());
+        SetNotice(TextFormat("%s блоклогдлоо: мессеж нь харагдахгүй", name.c_str()), 3.0f);
+    }
+    SaveProgress(progress);
+}
+
+void Game::ReportChatPeer(const ChatPeer& peer)
+{
+    if (std::find(chatReported.begin(), chatReported.end(), peer.name) != chatReported.end())
+    {
+        SetNotice("Энэ тоглогчийн талаар гомдол илгээсэн", 3.0f);
+        return;
+    }
+    std::vector<std::string> messages;
+    for (const ChatLine& line : chatLog)
+    {
+        if (line.sender == peer.name) messages.push_back(line.text);
+    }
+    chatReported.push_back(peer.name);
+    Account::ReportChat(peer.name, peer.account, messages);
+}
+
+Rectangle Game::ChatPeerRect(int index) const
+{
+    const Rectangle bar = ChatBarRect();
+    const Rectangle last = ChatPhraseRect(kChatPhraseCount - 1);
+    return { bar.x, last.y + last.height + 14.0f + (float)index * 46.0f, bar.width, 40.0f };
+}
+
+Rectangle Game::ChatPeerButton(int index, bool report) const
+{
+    const Rectangle row = ChatPeerRect(index);
+    const float width = 128.0f;
+    return { row.x + row.width - (report ? width : width * 2.0f + 8.0f) - 4.0f, row.y + 4.0f, width, row.height - 8.0f };
 }
 
 void Game::CloseChat()
@@ -10955,6 +11041,7 @@ bool Game::UpdateChat(float dt)
         if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) send = true;
     }
     if (chatDraft.size() > kChatMaxBytes) chatDraft.resize(kChatMaxBytes);
+    const std::vector<ChatPeer> peers = ChatPeers();
     if (tapped)
     {
         // Android: бичих мөрийг товшвол утасны гар (үг таамаглахгүй) нээгдэнэ (хөтөч дээр хуруу <input>-д шууд хүрнэ)
@@ -10967,9 +11054,24 @@ bool Game::UpdateChat(float dt)
             CloseChat();
             return true;
         }
+        // Тоглогч бүрийн мөр: блоклох / гомдол мэдүүлэх (App Store 1.2)
+        for (int i = 0; i < (int)peers.size(); ++i)
+        {
+            if (CheckCollisionPointRec(pointer, ChatPeerButton(i, false)))
+            {
+                ToggleChatMute(peers[(size_t)i].name);
+                return true;
+            }
+            if (CheckCollisionPointRec(pointer, ChatPeerButton(i, true)))
+            {
+                ReportChatPeer(peers[(size_t)i]);
+                return true;
+            }
+            if (CheckCollisionPointRec(pointer, ChatPeerRect(i))) return true; // (мөрийн хоосон хэсэг: цонх хаагдахгүй)
+        }
         // Утас: товчийг дахин, эсвэл цонхны гадна товшвол хаана
         const Rectangle bar = ChatBarRect();
-        const Rectangle last = ChatPhraseRect(kChatPhraseCount - 1);
+        const Rectangle last = peers.empty() ? ChatPhraseRect(kChatPhraseCount - 1) : ChatPeerRect((int)peers.size() - 1);
         const Rectangle panel = { bar.x - 10.0f, bar.y - 10.0f, bar.width + 20.0f, last.y + last.height + 20.0f - bar.y };
         if (touch && (CheckCollisionPointRec(pointer, ChatButtonRect()) || !CheckCollisionPointRec(pointer, panel)))
         {
@@ -11031,6 +11133,26 @@ void Game::DrawChat() const
         Ui::Panel(r, { 20, 30, 43, 220 }, 8.0f);
         Ui::Outline(r, Ui::kBorder, 1.0f, 8.0f);
         Ui::Text(kChatPhrases[i], (int)(r.x + (r.width - (float)Ui::Measure(kChatPhrases[i], 14)) * 0.5f), (int)r.y + 12, 14, Ui::kText);
+    }
+    // Бусад тоглогч: нэр, блоклох, гомдол мэдүүлэх
+    const std::vector<ChatPeer> peers = ChatPeers();
+    for (int i = 0; i < (int)peers.size(); ++i)
+    {
+        const ChatPeer& peer = peers[(size_t)i];
+        const Rectangle row = ChatPeerRect(i);
+        const bool muted = ChatMuted(peer.name);
+        Ui::Panel(row, { 14, 20, 30, 225 }, 8.0f);
+        Ui::Outline(row, Ui::kBorder, 1.0f, 8.0f);
+        Ui::Text(peer.name.c_str(), (int)row.x + 14, (int)row.y + 10, 16, muted ? Ui::kTextDim : Ui::kText);
+        const Rectangle mute = ChatPeerButton(i, false), report = ChatPeerButton(i, true);
+        const char* muteLabel = muted ? "БЛОКООС ГАРГАХ" : "БЛОКЛОХ";
+        Ui::Panel(mute, muted ? Ui::kPanel : Color{ 60, 44, 20, 235 }, 6.0f);
+        Ui::Outline(mute, Ui::kBorder, 1.0f, 6.0f);
+        Ui::TextBold(muteLabel, (int)(mute.x + (mute.width - (float)Ui::MeasureBold(muteLabel, 13)) * 0.5f), (int)mute.y + 8, 13, Ui::kText);
+        Ui::Panel(report, { 80, 26, 26, 235 }, 6.0f);
+        Ui::Outline(report, { 240, 110, 100, 160 }, 1.0f, 6.0f);
+        Ui::TextBold("ГОМДОЛ", (int)(report.x + (report.width - (float)Ui::MeasureBold("ГОМДОЛ", 13)) * 0.5f), (int)report.y + 8, 13,
+                     { 255, 190, 180, 255 });
     }
     // Утасны гар (хөтөч): бичих мөрийн дээр үл үзэгдэх <input>
     if (touch)
@@ -11169,6 +11291,8 @@ bool Game::UpdateVersionCheck()
 {
 #if defined(__EMSCRIPTEN__) || defined(ZM_IOS)
     return false; // (хөтөч: web/shell.html; iOS: зөвхөн App Store-оор шинэчлэгдэнэ)
+#elif defined(ZM_PLAY_STORE)
+    return false; // Google Play: апп зөвхөн Play-ээр шинэчлэгдэнэ (Play-ийн дүрэм)
 #else
     if (options.screenshotPath && !options.apiBase && !std::getenv("ZM_SITE_URL")) return false; // туршилт: сүлжээнд гарахгүй
     if (!updateChecked)

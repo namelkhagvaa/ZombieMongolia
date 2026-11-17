@@ -1386,3 +1386,70 @@ class ManageApiTests(FlowTests.__base__):
         self.assertEqual(self.call("get", "logs/?player=Бат", token=token)["player"], "Бат")
         self.call("get", "logs/?player=байхгүй", token=token, status=404)
         self.call("get", "logs/", status=401)
+
+    def test_chat_reports_page(self):
+        from .models import ChatReport
+        token = self.login()
+        report = ChatReport.objects.create(reported=self.player, reported_name="Бат", messages="муу үг\nдахиад")
+        result = self.call("get", "reports/?resolved=0", token=token)
+        self.assertEqual((result["total"], result["open_count"]), (1, 1))
+        self.assertEqual(result["items"][0]["messages"], ["муу үг", "дахиад"])
+        self.call("post", f"reports/{report.pk}/resolve/", {"resolved": True}, token=token)
+        self.assertEqual(self.call("get", "reports/?resolved=0", token=token)["total"], 0)
+        self.call("get", "reports/", status=401)
+
+
+@override_settings(DEBUG=True, QPAY_MODE="mock", SMS_MODE="console")
+class SafetyTests(TestCase):
+    """Чатын гомдол, данс устгах (App Store 1.2, 5.1.1(v); Google Play)."""
+
+    def setUp(self):
+        self.player = Player.objects.create(name="Бат", phone="+97699112233")
+        self.player.set_password("secret1")
+        self.player.save()
+        self.other = Player.objects.create(name="Дорж", phone="+97688112233", password="x")
+        Device.objects.create(device_id="device-aaaa-1111", player=self.player, platform="android")
+        self.token = AuthToken.objects.create(key="k" * 40, player=self.player, device_id="device-aaaa-1111").key
+
+    def post(self, path, data=None, status=200, lang=""):
+        response = self.client.post(f"/api/{path}{lang}", data or {}, content_type="application/json",
+                                    HTTP_AUTHORIZATION=f"Bearer {self.token}")
+        self.assertEqual(response.status_code, status, response.content)
+        return response.json()
+
+    def test_report_chat(self):
+        from .models import ChatReport
+        result = self.post("chat/report/", {"name": "Дорж", "player": self.other.pk, "messages": ["муу үг"] * 15,
+                                            "room": 7})
+        self.assertTrue(result["ok"])
+        report = ChatReport.objects.get()
+        self.assertEqual((report.reporter, report.reported, report.room_id), (self.player, self.other, 7))
+        self.assertEqual(len(report.messages.splitlines()), 10)
+        # Өөрийгөө, байхгүй данс: нэрээр л хадгална
+        self.post("chat/report/", {"name": "Би", "player": self.player.pk, "messages": "буруу төрөл", "room": "x"})
+        self.assertIsNone(ChatReport.objects.order_by("-pk").first().reported)
+        self.assertIn("Report received", self.post("chat/report/", {"name": "A"}, lang="?lang=en")["message"])
+
+    def test_report_limit(self):
+        for _ in range(logic.REPORTS_PER_DAY):
+            self.post("chat/report/", {"name": "Дорж"})
+        self.assertEqual(self.post("chat/report/", {"name": "Дорж"}, status=429)["error"], "too_many_reports")
+
+    def test_delete_account(self):
+        self.assertEqual(self.post("account/delete/", {"password": "wrong"}, status=403)["error"], "bad_password")
+        room = Room.objects.create(host=self.player, province=1, host_seen=timezone.now(), code="555001")
+        self.assertEqual(self.post("account/delete/", {"password": "secret1"}, status=409)["error"], "in_room")
+        room.status = Room.CLOSED
+        room.save()
+        self.post("account/delete/", {"password": "secret1"})
+        self.player.refresh_from_db()
+        self.assertIsNone(self.player.phone)
+        self.assertTrue(self.player.blocked)
+        self.assertIsNotNone(self.player.deleted_at)
+        self.assertFalse(self.player.check_password("secret1"))
+        self.assertFalse(AuthToken.objects.filter(player=self.player).exists())
+        self.assertFalse(Device.objects.filter(player=self.player).exists())
+        self.assertTrue(Event.objects.filter(kind="account_deleted").exists())
+        self.post("account/delete/", {"password": "secret1"}, status=401)  # (нэвтрэлт устсан)
+        # Дугаар чөлөөлөгдсөн: дахин бүртгүүлж болно
+        self.assertFalse(Player.objects.filter(phone="+97699112233").exists())

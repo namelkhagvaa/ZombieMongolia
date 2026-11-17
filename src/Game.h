@@ -856,8 +856,23 @@ private:
         std::string text;
         float age = 0.0f;
         bool mine = false;
+        std::string sender; // бусдын мессеж: илгээгчийн нэр (гомдолд сүүлийн мессежүүдийг нь хавсаргана)
     };
     std::vector<ChatLine> chatLog;
+    // Чатын цонхонд бусад тоглогч бүрд: блоклох (мессеж нь харагдахгүй, progress.muted-д хадгална), гомдол мэдүүлэх
+    struct ChatPeer
+    {
+        int who = -1;        // 0 = хост, N = N-1 дугаартай зочин (PlayerNameOf)
+        std::string name;
+        int account = -1;    // серверийн данс (хост л мэднэ; -1 = мэдэхгүй)
+    };
+    std::vector<ChatPeer> ChatPeers() const;
+    bool ChatMuted(const std::string& name) const;
+    void ToggleChatMute(const std::string& name);
+    void ReportChatPeer(const ChatPeer& peer);
+    Rectangle ChatPeerRect(int index) const;
+    Rectangle ChatPeerButton(int index, bool report) const;
+    std::vector<std::string> chatReported; // энэ тоглолтод гомдол илгээсэн нэрс (давхар илгээхгүй)
     // Тэмдэг (ping): X / хулганы дунд товч — харж буй цэгээ хамтрагчдаа заана (зомби, унаа, "энд ир")
     struct PingMark
     {
@@ -879,7 +894,7 @@ private:
     bool ChatAvailable() const;
     bool UpdateChat(float dt); // чатын цонх нээлттэй (тоглоомын оролтыг хаана) бол true
     void SendChatLine(const std::string& text);
-    void AddChatLine(const std::string& text, bool mine);
+    void AddChatLine(const std::string& text, bool mine, const std::string& sender = std::string());
     void CloseChat();
     Rectangle ChatButtonRect() const;
     Rectangle ChatBarRect() const;

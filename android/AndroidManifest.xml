@@ -2,11 +2,10 @@
 <!-- Zombie Mongolia: бараг бүхэлдээ native (NativeActivity нь libZombieMongolia.so-г ачаална). Java-д зөвхөн утасны гар
      (android/java/.../GameActivity.java). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="mn.zombiemongolia.game"
-    android:versionCode="1"
-    android:versionName="1.0">
+    package="mn.zombiemongolia.game">
+    <!-- versionCode, versionName: tools\build_android.ps1 бүтээх үед нэмнэ (Play-д илгээх бүрд өсөх ёстой) -->
 
-    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35" />
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
     <!-- Wi-Fi дээрх хамтарсан тоглолт -->
     <uses-permission android:name="android.permission.INTERNET" />

@@ -117,6 +117,9 @@ class Player(models.Model):
     progress = models.TextField("Тоглоомын хадгалалт", blank=True)
     progress_updated = models.DateTimeField("Хадгалалт шинэчлэгдсэн", null=True, blank=True)
     created = models.DateTimeField("Бүртгүүлсэн", auto_now_add=True)
+    # Тоглогч дансаа өөрөө устгасан (logic.delete_account): нэр, утас, нууц үг, хадгалалт, төхөөрөмж арилна; Gold-ийн
+    # гүйлгээний түүх нягтлан бодоход үлдэнэ
+    deleted_at = models.DateTimeField("Устгасан", null=True, blank=True)
 
     class Meta:
         verbose_name = "Тоглогч"
@@ -479,3 +482,26 @@ class GameLog(models.Model):
 
     def __str__(self):
         return f"{self.at:%Y-%m-%d %H:%M:%S} {self.role} {self.text[:60]}"
+
+
+class ChatReport(models.Model):
+    """Тоглогч чат дээр өөр тоглогчийн талаар гомдол мэдүүлсэн (App Store 1.2, Google Play-ийн UGC бодлого).
+    Админ шалгаж, шаардлагатай бол дансыг хаана (Player.blocked)."""
+
+    reporter = models.ForeignKey(Player, verbose_name="Мэдүүлсэн", related_name="reports_made", null=True, blank=True,
+                                 on_delete=models.SET_NULL)
+    reported = models.ForeignKey(Player, verbose_name="Гомдол гаргасан тоглогч", related_name="reports_received",
+                                 null=True, blank=True, on_delete=models.SET_NULL)
+    reported_name = models.CharField("Тоглоомд харагдсан нэр", max_length=60, blank=True)
+    messages = models.TextField("Сүүлийн мессежүүд", blank=True)
+    room_id = models.IntegerField("Өрөө", null=True, blank=True)
+    resolved = models.BooleanField("Шийдвэрлэсэн", default=False)
+    created = models.DateTimeField("Мэдүүлсэн", auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = "Чатын гомдол"
+        verbose_name_plural = "Чатын гомдлууд"
+        ordering = ["-created"]
+
+    def __str__(self):
+        return f"{self.created:%Y-%m-%d %H:%M} {self.reported_name}"

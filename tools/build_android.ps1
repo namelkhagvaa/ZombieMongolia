@@ -7,8 +7,19 @@
 #   sdk\ndk\26.3.11579264     C++ хөрвүүлэгч
 #
 # Хэрэглээ:  powershell -ExecutionPolicy Bypass -File tools\build_android.ps1
-# Үр дүн:    build_android\ZombieMongolia.apk
+# Үр дүн:    build_android\ZombieMongolia.apk (вэб сайтаас татах, туршилтын түлхүүрээр)
+#
+# Google Play:  powershell -ExecutionPolicy Bypass -File tools\build_android.ps1 -PlayStore
+# Үр дүн:       build_android\ZombieMongolia.aab (App Bundle, upload түлхүүрээр; вэбээс шинэчлэх баннергүй)
+#   Upload түлхүүр: %USERPROFILE%\ZombieMongoliaKeys\upload.jks, нууц үг нь хажуудаа upload-password.txt
+#   (эсвэл $env:ZM_UPLOAD_PASSWORD). Байхгүй бол анх удаа үүснэ: хоёуланг нь нөөцлөх (алдвал Play-ээс солиулна).
+#   bundletool: C:\Android\bundletool\bundletool-all-<хувилбар>.jar (github.com/google/bundletool/releases)
 param(
+    [switch]$PlayStore,
+    [int]$VersionCode = 0,     # 0: огнооноос (ЖЖССӨӨЦЦ, жишээ нь 26111714): Play-д илгээх бүрд өснө
+    [string]$VersionName = "1.0",
+    [string]$Bundletool = "",  # хоосон: C:\Android\bundletool\ доторх хамгийн шинэ jar
+    [string]$UploadKeystore = "$env:USERPROFILE\ZombieMongoliaKeys\upload.jks",
     [string]$AndroidRoot = "C:\Android",
     [string[]]$Abis = @("arm64-v8a", "armeabi-v7a"),
     [string]$NdkVersion = "26.3.11579264",
@@ -46,6 +57,18 @@ function Run([string]$exe, [string[]]$arguments) {
     if ($LASTEXITCODE -ne 0) { throw "$exe failed with exit code $LASTEXITCODE" }
 }
 
+if ($VersionCode -le 0) { $VersionCode = [int](Get-Date -Format "yyMMddHH") }
+"Version: $VersionName ($VersionCode)$(if ($PlayStore) { ', Google Play' })"
+if ($PlayStore) {
+    if (-not $Bundletool) {
+        $Bundletool = (Get-ChildItem (Join-Path $AndroidRoot "bundletool") -Filter "bundletool-all-*.jar" -ErrorAction SilentlyContinue |
+                       Sort-Object Name | Select-Object -Last 1).FullName
+    }
+    if (-not $Bundletool -or -not (Test-Path $Bundletool)) {
+        throw "bundletool олдсонгүй: github.com/google/bundletool/releases-ээс bundletool-all-<хувилбар>.jar-ыг $AndroidRoot\bundletool\ руу хуулна уу"
+    }
+}
+
 # --- 1. Native сан: ABI бүрд хөрвүүлнэ ---
 $staging = Join-Path $out "apk"
 if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
@@ -54,11 +77,12 @@ New-Item -ItemType Directory -Force (Join-Path $staging "assets") | Out-Null
 foreach ($abi in $Abis) {
     # Хөрвүүлэлтийн хавтас git-ээс гадуур (.gitignore: cmake-build-*): build_android
     # \native-* нь өөр замд тохируулагдсан байсан
-    $build = Join-Path $root "cmake-build-android-$abi"
+    # (Play-ийн хувилбар тусдаа хавтаст: хоёр хувилбарыг ээлжлэн бүтээхэд бүгдийг дахин хөрвүүлэхгүй)
+    $build = Join-Path $root $(if ($PlayStore) { "cmake-build-android-play-$abi" } else { "cmake-build-android-$abi" })
     Run "cmake" @("-S", $root, "-B", $build, "-G", "Ninja",
                   "-DCMAKE_TOOLCHAIN_FILE=$ndk\build\cmake\android.toolchain.cmake",
                   "-DANDROID_ABI=$abi", "-DANDROID_PLATFORM=android-24", "-DANDROID_STL=c++_static",
-                  "-DCMAKE_BUILD_TYPE=Release")
+                  "-DCMAKE_BUILD_TYPE=Release", "-DZM_PLAY_STORE=$(if ($PlayStore) { 'ON' } else { 'OFF' })")
     Run "cmake" @("--build", $build)
 
     $libDir = Join-Path $staging "lib\$abi"
@@ -129,8 +153,53 @@ Run "javac" (@("-source", "8", "-target", "8", "-nowarn", "-encoding", "UTF-8", 
 $classFiles = @(Get-ChildItem (Join-Path $javaOut "classes") -Recurse -Filter *.class | ForEach-Object { $_.FullName })
 Run "$tools\d8.bat" (@("--min-api", "24", "--lib", $androidJar, "--output", (Join-Path $javaOut "dex")) + $classFiles)
 
+if ($PlayStore) {
+    # --- 3b. Google Play: App Bundle (.aab) ---
+    # aapt2: нөөцийг proto форматаар -> base модуль (tools/make_aab_module.py) -> bundletool -> upload түлхүүрээр гарын үсэг
+    $aab = Join-Path $out "ZombieMongolia.aab"
+    $resZip = Join-Path $out "res_compiled.zip"
+    $protoApk = Join-Path $out "proto.apk"
+    $module = Join-Path $out "base.zip"
+    Remove-Item -Force -ErrorAction SilentlyContinue $aab, $resZip, $protoApk, $module
+    Run "$tools\aapt2.exe" @("compile", "--dir", (Join-Path $root "android\res"), "-o", $resZip)
+    Run "$tools\aapt2.exe" @("link", "--proto-format", "-o", $protoApk, "-I", $androidJar,
+                             "--manifest", (Join-Path $root "android\AndroidManifest.xml"),
+                             "--version-code", "$VersionCode", "--version-name", $VersionName,
+                             "-A", (Join-Path $staging "assets"), $resZip)
+    Run "python" @((Join-Path $root "tools\make_aab_module.py"), $protoApk, (Join-Path $staging "lib"),
+                   (Join-Path $javaOut "dex\classes.dex"), $module)
+    Run "java" @("-jar", $Bundletool, "build-bundle", "--modules=$module", "--output=$aab")
+
+    # Upload түлхүүр (git-ээс гадуур). Нууц үг: $env:ZM_UPLOAD_PASSWORD эсвэл хажуу дахь upload-password.txt
+    $passwordFile = Join-Path (Split-Path -Parent $UploadKeystore) "upload-password.txt"
+    if (-not $env:ZM_UPLOAD_PASSWORD -and (Test-Path $passwordFile)) {
+        $env:ZM_UPLOAD_PASSWORD = (Get-Content -Raw $passwordFile).Trim()
+    }
+    if (-not (Test-Path $UploadKeystore)) {
+        New-Item -ItemType Directory -Force (Split-Path -Parent $UploadKeystore) | Out-Null
+        if (-not $env:ZM_UPLOAD_PASSWORD) {
+            $bytes = New-Object byte[] 24
+            [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+            $env:ZM_UPLOAD_PASSWORD = [Convert]::ToBase64String($bytes) -replace '[+/=]', 'x'
+            [System.IO.File]::WriteAllText($passwordFile, $env:ZM_UPLOAD_PASSWORD, (New-Object System.Text.UTF8Encoding $false))
+        }
+        Run "keytool" @("-genkeypair", "-keystore", $UploadKeystore, "-storetype", "PKCS12",
+                        "-storepass:env", "ZM_UPLOAD_PASSWORD", "-keypass:env", "ZM_UPLOAD_PASSWORD",
+                        "-alias", "upload", "-keyalg", "RSA", "-keysize", "4096", "-validity", "10000",
+                        "-dname", "CN=Zombie Mongolia,O=ZombieMongolia,C=MN")
+        Write-Warning "Шинэ upload түлхүүр үүслээ: $UploadKeystore (нууц үг: $passwordFile). Хоёуланг нь аюулгүй газар нөөцлөөрэй!"
+    }
+    if (-not $env:ZM_UPLOAD_PASSWORD) { throw "Upload түлхүүрийн нууц үг алга: `$env:ZM_UPLOAD_PASSWORD эсвэл $passwordFile" }
+    Run "jarsigner" @("-keystore", $UploadKeystore, "-storepass:env", "ZM_UPLOAD_PASSWORD",
+                      "-sigalg", "SHA256withRSA", "-digestalg", "SHA-256", $aab, "upload")
+    Run "jarsigner" @("-verify", $aab)
+    Remove-Item -Force $resZip, $protoApk, $module
+    "AAB: $aab ($([int]((Get-Item $aab).Length / 1MB)) MB, version $VersionName / $VersionCode)"
+    return
+}
+
 Run "$tools\aapt.exe" @("package", "-f", "-M", (Join-Path $root "android\AndroidManifest.xml"),
-                        "-S", (Join-Path $root "android\res"),
+                        "-S", (Join-Path $root "android\res"), "--version-code", "$VersionCode", "--version-name", $VersionName,
                         "-A", (Join-Path $staging "assets"), "-I", $androidJar, "-F", $unsigned)
 
 Push-Location $staging

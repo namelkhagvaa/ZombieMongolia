@@ -1,7 +1,7 @@
 from django.contrib import admin, messages
 
 from . import logic
-from .models import AuthToken, Device, Event, GameSettings, Invoice, Player, UnlockedProvince, Verification
+from .models import AuthToken, ChatReport, Device, Event, GameSettings, Invoice, Player, UnlockedProvince, Verification
 
 
 @admin.register(GameSettings)
@@ -115,3 +115,18 @@ class AuthTokenAdmin(admin.ModelAdmin):
     search_fields = ["player__phone", "device_id"]
     exclude = ["key"]
 
+
+
+@admin.register(ChatReport)
+class ChatReportAdmin(admin.ModelAdmin):
+    """Чатын гомдол: шалгаад шаардлагатай бол тоглогчийн дансыг хаана (Тоглогчид -> Хаагдсан)."""
+
+    list_display = ["created", "reported_name", "reported", "reporter", "room_id", "resolved"]
+    list_filter = ["resolved", "created"]
+    list_editable = ["resolved"]
+    search_fields = ["reported_name", "reported__name", "reported__phone", "messages"]
+    readonly_fields = ["created", "reporter", "reported", "reported_name", "messages", "room_id"]
+    date_hierarchy = "created"
+
+    def has_add_permission(self, request):
+        return False

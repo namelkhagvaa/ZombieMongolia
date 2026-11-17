@@ -133,6 +133,15 @@ bool LoadProgress(Progress& progress, int provinceCount)
             }
             continue;
         }
+        if (key == "muted")
+        {
+            // muted <нэр>: чатад блоклосон тоглогч (нэрэнд зай байж болно)
+            std::string rest;
+            std::getline(file, rest);
+            const size_t first = rest.find_first_not_of(' ');
+            if (first != std::string::npos && progress.muted.size() < 200) progress.muted.push_back(rest.substr(first));
+            continue;
+        }
         if (key == "touchLayout")
         {
             std::string rest;
@@ -260,6 +269,7 @@ bool SaveProgress(const Progress& progress)
     file << "aimAssist " << (progress.aimAssist ? 1 : 0) << '\n';
     file << "language " << progress.language << '\n';
     if (!progress.touchLayout.empty()) file << "touchLayout " << progress.touchLayout << '\n';
+    for (const std::string& name : progress.muted) file << "muted " << name << '\n';
     file << "firstPerson " << (progress.firstPerson ? 1 : 0) << '\n';
     file << "viewVersion 2\n";
     file << "fullscreen " << (progress.fullscreen ? 1 : 0) << '\n';

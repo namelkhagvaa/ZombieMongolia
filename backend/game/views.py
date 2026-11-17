@@ -428,3 +428,19 @@ def progress(request):
         return ok()
     return ok(progress=player.progress,
               updated=player.progress_updated.isoformat() if player.progress_updated else None)
+
+
+# ---------------------------------------------------------------- Чатын гомдол, данс устгах
+
+@api(["POST"])
+def chat_report(request):
+    """{"name", "player", "messages": [...], "room"}: чат дээрх тоглогчийн талаар гомдол мэдүүлнэ."""
+    logic.report_chat(request.token.player, request.json, request.token.device_id, client_ip(request))
+    return ok(message="Гомдлыг хүлээн авлаа. Бид шалгаж үзнэ.")
+
+
+@api(["POST"])
+def account_delete(request):
+    """{"password"}: тоглогч дансаа бүрмөсөн устгана."""
+    logic.delete_account(request.token.player, request.json.get("password"), request.token.device_id, client_ip(request))
+    return ok(message="Таны данс устгагдлаа.")

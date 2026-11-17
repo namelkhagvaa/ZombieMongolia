@@ -581,7 +581,12 @@ void MapScreen::DrawConfirm(const Progress& progress) const
         Ui::Text(have, (int)(x + inner) - Ui::Measure(have, 16), (int)panel.y + 129, 16, Ui::kTextDim);
     }
     const float by = panel.y + height - 74.0f, half = inner * 0.5f - 6.0f;
-    const char* yesLabel = maxed ? "ОК" : affordable ? "АВАХ" : Account::ServerShop() ? "+ GOLD АВАХ" : "ЗООС ХҮРЭЛЦЭХГҮЙ";
+    // (Gold зөвхөн вэбэд худалдаж авна: апп дэлгүүрийн хувилбарт товч "хүрэлцэхгүй" гэж бичигдэнэ, дарахад тайлбар гарна)
+    const char* yesLabel = maxed                     ? "ОК"
+                           : affordable              ? "АВАХ"
+                           : Account::GoldShop()     ? "+ GOLD АВАХ"
+                           : Account::ServerShop()   ? "GOLD ХҮРЭЛЦЭХГҮЙ"
+                                                     : "ЗООС ХҮРЭЛЦЭХГҮЙ";
     confirmYes = { x, by, maxed ? inner : half, 52.0f };
     confirmNo = maxed ? Rectangle{} : Rectangle{ x + half + 12.0f, by, half, 52.0f };
     const bool yesHover = !InTouchMode() && CheckCollisionPointRec(InPointer(), confirmYes);

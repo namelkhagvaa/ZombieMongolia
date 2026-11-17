@@ -209,3 +209,21 @@ export interface StaffUser {
   username: string;
   superuser: boolean;
 }
+
+export interface ReportPerson {
+  id: number;
+  name: string;
+  phone: string;
+  blocked: boolean;
+}
+
+export interface ReportRow {
+  id: number;
+  created: string;
+  reported_name: string;
+  reported: ReportPerson | null;
+  reporter: ReportPerson | null;
+  messages: string[];
+  room_id: number | null;
+  resolved: boolean;
+}
