@@ -11,6 +11,7 @@ import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.View;
 import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
@@ -64,6 +65,33 @@ public class GameActivity extends NativeActivity {
             }
             visible = Math.max(0.2f, Math.min(1.0f, (float) (height - covered) / height));
         });
+        hideSystemBars();
+    }
+
+    // Бүтэн дэлгэц (immersive): төлөвийн мөр ба навигацийн товчнууд нуугдана, ирмэгээс шудрахад түр гарна.
+    // Android 15+ (targetSdk 35) апп ирмэг хүртэл зурагддаг: үгүй бол навигацийн товчнууд HUD-ийг дарна.
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) hideSystemBars();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void hideSystemBars() {
+        View decor = getWindow().getDecorView();
+        if (Build.VERSION.SDK_INT >= 30) {
+            getWindow().setDecorFitsSystemWindows(false);
+            WindowInsetsController controller = decor.getWindowInsetsController();
+            if (controller != null) {
+                controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        } else {
+            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_FULLSCREEN
+                                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        }
     }
 
     // kind: 0 текст, 1 утасны дугаар, 2 нууц үг, 3 тоо, 4 чат. next >= 0 бол гарын товч "Дараах", эс бөгөөс "Болсон".

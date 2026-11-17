@@ -84,6 +84,7 @@ set(GAME_SOURCES
     src/Hitbox.cpp
     src/Rank.cpp
     src/Campaign.cpp
+    src/ChatFilter.cpp
     src/City.cpp
     src/Splash.cpp
     src/CampaignData.cpp
@@ -134,7 +135,14 @@ if(ANDROID)
     add_library(ZombieMongolia SHARED ${GAME_SOURCES})
     target_include_directories(ZombieMongolia PRIVATE ${ANDROID_NDK}/sources/android/native_app_glue)
     target_link_options(ZombieMongolia PRIVATE -u ANativeActivity_onCreate)
+    # 16 KB-ийн санах ойн хуудастай утсууд (Android 15+): Google Play үүнийг шаарддаг
+    target_link_options(ZombieMongolia PRIVATE "-Wl,-z,max-page-size=16384")
     target_link_libraries(ZombieMongolia PRIVATE log android EGL GLESv3 m)
+    # Google Play-ийн хувилбар (tools\build_android.ps1 -PlayStore): апп Play-ээр шинэчлэгдэнэ, вэбээс шинэчлэх баннергүй
+    option(ZM_PLAY_STORE "Google Play build (no self-update banner)" OFF)
+    if(ZM_PLAY_STORE)
+        target_compile_definitions(ZombieMongolia PRIVATE ZM_PLAY_STORE=1)
+    endif()
 else()
     if(WIN32)
         # Exe-ийн икон (assets\app.ico)

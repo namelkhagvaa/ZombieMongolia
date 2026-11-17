@@ -20,7 +20,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
 from . import gamelog, logic
-from .models import AuthToken, Cashout, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, UnlockedProvince
+from .models import AuthToken, Cashout, ChatReport, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, UnlockedProvince
 
 TOKEN_SALT = "zm-manage"
 TOKEN_AGE = 12 * 3600
@@ -668,3 +668,39 @@ def settings_view(request):
         settings.save()
         audit(request, None, "settings_updated", {"before": before, "after": settings_json(settings)})
     return ok(settings=settings_json(settings))
+
+
+# ---------------------------------------------------------------- Чатын гомдол
+
+def report_row(report):
+    person = lambda p: {"id": p.pk, "name": p.name, "phone": p.contact, "blocked": p.blocked} if p else None
+    return {
+        "id": report.pk,
+        "created": iso(report.created),
+        "reported_name": report.reported_name,
+        "reported": person(report.reported),
+        "reporter": person(report.reporter),
+        "messages": report.messages.splitlines(),
+        "room_id": report.room_id,
+        "resolved": report.resolved,
+    }
+
+
+@staff_api(["GET"])
+def reports(request):
+    """Чатын гомдлууд: ?resolved=0 (шийдвэрлээгүй) эсвэл 1."""
+    qs = ChatReport.objects.select_related("reporter", "reported")
+    if request.GET.get("resolved") in ("0", "1"):
+        qs = qs.filter(resolved=request.GET["resolved"] == "1")
+    open_count = ChatReport.objects.filter(resolved=False).count()
+    return ok(**page_of(request, qs.order_by("-created"), report_row), open_count=open_count)
+
+
+@staff_api(["POST"])
+def report_resolve(request, report_id):
+    report = ChatReport.objects.filter(pk=report_id).first()
+    if report is None:
+        raise ManageError("Гомдол олдсонгүй", 404)
+    report.resolved = bool(request.json.get("resolved", True))
+    report.save(update_fields=["resolved"])
+    return ok(report=report_row(report))

@@ -15,10 +15,11 @@ from datetime import timedelta
 from django.conf import settings as django_settings
 from django.contrib.auth.hashers import make_password
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from . import gamelog, qpay, sms
-from .models import (AuthToken, Cashout, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, RoomFriend, UnlockedProvince,
+from .models import (AuthToken, Cashout, ChatReport, Device, Event, GameSettings, GoldTransaction, Invoice, Player, Room, RoomFriend, UnlockedProvince,
                      Verification)
 
 def request_ip(request):
@@ -1575,3 +1576,65 @@ def apply_payment(invoice_id, payment_id, source):
                                       "credits": invoice.credits, "payment": invoice.qpay_payment_id, "source": source},
                   invoice.device_id)
     return invoice
+
+
+# ---------------------------------------------------------------- Чатын гомдол, данс устгах (App Store, Google Play)
+
+REPORTS_PER_DAY = 20
+
+
+def report_chat(player, data, device_id, ip):
+    """Тоглогч чат дээр өөр тоглогчийн талаар гомдол мэдүүлнэ: {"name", "player" (данс, мэдэгдэхгүй бол -1),
+    "messages": [сүүлийн мессежүүд], "room"}. Админ "Чатын гомдлууд" хэсэгт шалгана."""
+    since = timezone.now() - timedelta(days=1)
+    if ChatReport.objects.filter(reporter=player, created__gte=since).count() >= REPORTS_PER_DAY:
+        raise GameError("too_many_reports", "Өнөөдөр хэт олон гомдол илгээсэн байна", 429)
+    name = str(data.get("name") or "")[:60]
+    messages = data.get("messages")
+    lines = [str(line)[:200] for line in messages[:10]] if isinstance(messages, list) else []
+    try:
+        reported_id = int(data.get("player", -1))
+    except (TypeError, ValueError):
+        reported_id = -1
+    reported = Player.objects.filter(pk=reported_id).first() if reported_id > 0 and reported_id != player.pk else None
+    try:
+        room_id = int(data["room"]) if data.get("room") is not None else None
+    except (TypeError, ValueError):
+        room_id = None
+    if room_id is not None and room_id < 0:
+        room_id = None
+    report = ChatReport.objects.create(reporter=player, reported=reported, reported_name=name,
+                                       messages="\n".join(lines), room_id=room_id)
+    log_event(player, "chat_report", {"report": report.pk, "name": name, "player": reported.pk if reported else None},
+              device_id, ip)
+    return report
+
+
+def delete_account(player, password, device_id, ip):
+    """Тоглогч дансаа өөрөө устгана (App Store 5.1.1(v)): нууц үгээр баталгаажуулна. Нэр, утас, нууц үг, хадгалалт,
+    төхөөрөмж, нэвтрэлт арилна; Gold-ийн гүйлгээний түүх нягтлан бодоход нэргүй үлдэнэ. Утасны дугаар чөлөөлөгдөж
+    дахин бүртгүүлж болно."""
+    if not player.check_password(password or ""):
+        raise GameError("bad_password", "Нууц үг буруу байна", 403)
+    with transaction.atomic():
+        locked = Player.objects.select_for_update().get(pk=player.pk)
+        if locked.deleted_at is not None:
+            raise GameError("auth", "Дахин нэвтэрнэ үү", 401)
+        if Room.objects.filter(Q(host=locked) | Q(guest=locked), status=Room.OPEN).exists():
+            raise GameError("in_room", "Тулааны өрөөнөөс гарсны дараа дансаа устгана уу", 409)
+        if Cashout.objects.filter(player=locked, status__in=Cashout.OPEN).exists():
+            raise GameError("cashout_pending", "Gold татах хүсэлт шийдвэрлэгдсэний дараа дансаа устгана уу", 409)
+        log_event(locked, "account_deleted", {"gold": locked.gold}, device_id, ip)
+        locked.name = "Устгагдсан тоглогч"
+        locked.phone = None
+        locked.phone_verified = False
+        locked.password = make_password(None)  # (нэвтрэх боломжгүй)
+        locked.progress = ""
+        locked.progress_updated = None
+        locked.blocked = True
+        locked.deleted_at = timezone.now()
+        locked.save()
+        AuthToken.objects.filter(player=locked).delete()
+        Device.objects.filter(player=locked).delete()
+        RoomFriend.objects.filter(player=locked).delete()
+    return locked

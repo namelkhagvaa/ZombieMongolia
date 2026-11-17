@@ -34,6 +34,7 @@ namespace
         Gold,    // Gold авах: багц сонгох (дараа нь Pay)
         Cashout, // Gold татах: банк, данс, дүн (дараа нь Sms баталгаажуулалт)
         Verify,  // утсаа баталгаажуулахыг урих цонх (давуу тал, заавар)
+        Delete,  // данс устгах: нууц үгээр баталгаажуулна (App Store 5.1.1(v))
         Message
     };
     enum class Offer
@@ -70,8 +71,8 @@ namespace
 
     struct Message
     {
-        std::string title, text, primary, secondary;
-        std::function<void()> onPrimary, onSecondary;
+        std::string title, text, primary, secondary, link; // link: доор жижиг холбоос (жишээ нь "Данс устгах")
+        std::function<void()> onPrimary, onSecondary, onLink;
     };
 
     // --- Тохиргоо, данс ---
@@ -547,7 +548,7 @@ namespace
     }
 
     // Өрөөний хүсэлт (гарах, дуусгах, дохио): цонхыг хаахгүй, даалгаврын үеэр ч (Tick) хариуг авна.
-    Pending roomRequest, roomBeat, roomStageCall, battleCall, roomSearchCall, soldierLossCall, guestLostCall, logCall, roomListCall;
+    Pending roomRequest, roomBeat, roomStageCall, battleCall, roomSearchCall, soldierLossCall, guestLostCall, logCall, roomListCall, reportCall;
     std::vector<Account::RoomListing> roomList;
     std::string roomListNote, roomListBlocked;
     double roomListTime = 0.0;
@@ -2061,7 +2062,8 @@ namespace
     {
         const float width = 480.0f, inner = width - 56.0f;
         const std::vector<std::string> lines = Wrap(message.text, 17, inner);
-        const Rectangle panel = Panel(width, 22.0f + 42.0f + (float)lines.size() * LineHeight(17) + 20.0f + 50.0f + 24.0f);
+        const float linkHeight = message.link.empty() ? 0.0f : 42.0f;
+        const Rectangle panel = Panel(width, 22.0f + 42.0f + (float)lines.size() * LineHeight(17) + 20.0f + 50.0f + 24.0f + linkHeight);
         const float x = panel.x + 28.0f;
         float y = panel.y + 22.0f;
         Title(message.title.c_str(), x, y);
@@ -2079,7 +2081,69 @@ namespace
         {
             const std::function<void()> action = message.onPrimary; // үйлдэл message-ийг сольж болно
             action();
+            return;
         }
+        if (!message.link.empty() && Button({ x, y + 62.0f, inner, 30.0f }, message.link.c_str(), Style::Link) && message.onLink)
+        {
+            const std::function<void()> action = message.onLink;
+            action();
+        }
+    }
+
+    // Данс устгах: нууц үгээ оруулж баталгаажуулна. Устгасны дараа энэ төхөөрөмж дансгүй болно.
+    void DeleteAccount()
+    {
+        if (fields[kPassword].empty())
+        {
+            ShowMessage("Нууц үг", "Нууц үгээ оруулна уу.", Screen::Delete);
+            return;
+        }
+        Call("POST", "account/delete/", Obj({ { "password", JsonQuote(fields[kPassword]) } }),
+             [](int status, const Json& reply) {
+                 fields[kPassword].clear();
+                 if (status == 200)
+                 {
+                     token.clear();
+                     Online::Store("token", "");
+                     signedIn = false;
+                     owned.clear();
+                     province = -1;
+                     roomId = -1;
+                     roomRole = Account::RoomRole::None;
+                     ShowMessage("Данс устгагдлаа", reply["message"].Str().empty() ? "Таны данс устгагдлаа." : reply["message"].Str(),
+                                 Screen::None);
+                 }
+                 else
+                 {
+                     ShowMessage("Данс устгах", reply["message"].Str().empty() ? "Сервертэй холбогдож чадсангүй." : reply["message"].Str(),
+                                 Screen::Delete);
+                 }
+             },
+             "Устгаж байна...");
+    }
+
+    void DeleteScreen()
+    {
+        const float width = 480.0f, inner = width - 56.0f;
+        const std::vector<std::string> lines =
+            Wrap("Данс бүрмөсөн устгагдана: нэр, утасны дугаар, Gold, сайжруулалт, нээсэн аймгууд, хадгалалт буцаагдахгүй. "
+                 "Баталгаажуулахын тулд нууц үгээ оруулна уу.", 16, inner);
+        const Rectangle panel = Panel(width, 22.0f + 42.0f + (float)lines.size() * LineHeight(16) + 16.0f + 60.0f + 64.0f + 24.0f);
+        const float x = panel.x + 28.0f;
+        float y = panel.y + 22.0f;
+        Title("ДАНС УСТГАХ", x, y);
+        y += 42.0f;
+        Paragraph(lines, x, y, 16, Ui::kText);
+        y += (float)lines.size() * LineHeight(16) + 16.0f;
+        FieldBox({ x, y, inner, 48.0f }, kPassword, "Нууц үг");
+        y += 60.0f;
+        if (Button({ x + inner * 0.5f + 6.0f, y, inner * 0.5f - 6.0f, 50.0f }, "Болих", Style::Secondary))
+        {
+            fields[kPassword].clear();
+            Open(Screen::None);
+            return;
+        }
+        if (Button({ x, y, inner * 0.5f - 6.0f, 50.0f }, "УСТГАХ", Style::Primary, true)) DeleteAccount();
     }
 
     void Frame()
@@ -2098,6 +2162,7 @@ namespace
         case Screen::Cashout: CashoutScreen(); break;
         case Screen::Message: MessageScreen(); break;
         case Screen::Verify: VerifyScreen(); break;
+        case Screen::Delete: DeleteScreen(); break;
         case Screen::None: break;
         }
         // Гар самбрын дээр зурагдана, харин товшилтыг түрүүлж авна: эс бөгөөс гарын ард нуугдсан товч/талбар
@@ -2114,6 +2179,11 @@ namespace
         message.onPrimary = [] { SignOut(); };
         message.secondary = "Болих";
         message.onSecondary = [] { Open(Screen::None); };
+        message.link = "Данс устгах";
+        message.onLink = [] {
+            fields[kPassword].clear();
+            Open(Screen::Delete);
+        };
         Open(Screen::Message);
     }
 }
@@ -2167,6 +2237,7 @@ void Account::Tick()
     Finish(guestLostCall);
     Finish(logCall);
     Finish(roomListCall);
+    Finish(reportCall);
     // Тоглолтын лог: мөр бүрт одоогийн өрөө, тулаан, үүрэг; 30 секунд тутам (алхам, алдаа гарвал даруй) серверт
     GameLog::SetRoom(roomId, roomBattle, roomRole == Account::RoomRole::Host ? 'h' : roomRole == Account::RoomRole::Guest ? 'g' : 0);
     GameLog::Persist(GetTime());
@@ -2538,6 +2609,8 @@ void Account::TestScreen(const char* name)
         Open(Screen::Offer);
     }
     else if (s == "unregistered") OfferRegister();
+    else if (s == "logout") ConfirmLogout();
+    else if (s == "delete") Open(Screen::Delete);
     else if (s == "message") ShowMessage("Мэдэгдэл", "Энэ бол туршилтын мэдэгдлийн цонх. Дизайныг шалгахад ашиглана.");
 }
 
@@ -2656,6 +2729,28 @@ bool Account::TakeNotice(std::string& text)
     text = std::exchange(pendingNote, std::string());
     return true;
 }
+void Account::ReportChat(const std::string& name, int player, const std::vector<std::string>& messages)
+{
+    if (!ServerShop())
+    {
+        pendingNote = "Гомдол илгээхийн тулд нэвтэрнэ үү";
+        return;
+    }
+    if (reportCall.id >= 0) return;
+    std::string list = "[";
+    for (size_t i = 0; i < messages.size(); ++i) list += (i ? "," : "") + JsonQuote(messages[i]);
+    list += "]";
+    reportCall.id = Online::Send("POST", apiBase + "chat/report/",
+                                 Obj({ { "name", JsonQuote(name) }, { "player", std::to_string(player) }, { "messages", list },
+                                       { "room", std::to_string(roomId) } }),
+                                 token);
+    reportCall.handler = [](int status, const Json& reply) {
+        pendingNote = status == 200 ? std::string("Гомдлыг хүлээн авлаа. Бид шалгаж үзнэ.")
+                      : reply["message"].Str().empty() ? std::string("Гомдол илгээж чадсангүй")
+                                                       : reply["message"].Str();
+    };
+}
+
 int Account::Gold() { return gold; }
 int Account::UpgradeLevel(int item) { return item >= 0 && item < kUpgradeCount ? upgradeLevels[item] : 0; }
 

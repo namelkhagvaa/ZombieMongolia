@@ -61,6 +61,8 @@ namespace Account
     void OpenVerify(); // баталгаажуулах санал (утасны мессежийн цонх)
     // Нэг удаа: тоглоомд харуулах мэдэгдэл (жишээ нь баталгаажаагүй тул олгоогүй шагнал)
     bool TakeNotice(std::string& text);
+    // Чатын гомдол (App Store 1.2): тоглогчийн нэр, данс (-1 = мэдэхгүй), сүүлийн мессежүүд. Үр дүн TakeNotice-оор.
+    void ReportChat(const std::string& name, int player, const std::vector<std::string>& messages);
     int Gold();
     int UpgradeLevel(int item);
     int UpgradePrice(int item); // дараагийн түвшний үнэ (сервер: суурь үнэ x (түвшин + 1))

@@ -39,3 +39,10 @@
 { "%s ХОТ", "%s CITY" },
 { "%s  •  %s аймгийн төв", "%s  •  capital of %s province" },
 { "%s: %s (%d м)", "%s: %s (%d m)" },
+// --- Чат: блоклох, гомдол
+{ "БЛОКЛОХ", "BLOCK" },
+{ "БЛОКООС ГАРГАХ", "UNBLOCK" },
+{ "ГОМДОЛ", "REPORT" },
+{ "%s-ийн мессеж дахин харагдана", "Messages from %s are shown again" },
+{ "%s блоклогдлоо: мессеж нь харагдахгүй", "%s is blocked: you won't see their messages" },
+{ "Энэ тоглогчийн талаар гомдол илгээсэн", "You already reported this player" },

@@ -8,6 +8,13 @@ FIELDS = ("message", "pvp_note", "blocked", "reason")
 EN = {
     "Буруу хүсэлт": "Bad request",
     "Дахин нэвтэрнэ үү": "Please sign in again",
+    "Нууц үг буруу байна": "Wrong password",
+    "Өнөөдөр хэт олон гомдол илгээсэн байна": "You have sent too many reports today",
+    "Тулааны өрөөнөөс гарсны дараа дансаа устгана уу": "Leave the battle room before deleting your account",
+    "Gold татах хүсэлт шийдвэрлэгдсэний дараа дансаа устгана уу":
+        "Wait until your Gold withdrawal request is settled before deleting your account",
+    "Гомдлыг хүлээн авлаа. Бид шалгаж үзнэ.": "Report received. We will review it.",
+    "Таны данс устгагдлаа.": "Your account has been deleted.",
     "Таны данс өөр төхөөрөмж дээр нэвтэрсэн тул энд гарлаа": "Your account signed in on another device, so you were signed out here",
     "Сүүлийн 7 хоногт олон тулааны үр дүн зөрсөн тул тулаанд түр орох боломжгүй":
         "Too many battle results didn't match in the last 7 days, so you can't battle for now",
