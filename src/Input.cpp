@@ -17,6 +17,10 @@ namespace
     RenderTexture2D target = {};
     bool scaled = false;
     int viewWidth = 0, viewHeight = 0;
+    // Дотоод зургийг дэлгэцийн аль хэсэгт сунгах вэ (letterbox: 4:3 таблетад 16:9 зургийг голд, дээд доод зурвас бараан)
+    Rectangle viewDest = {};
+
+    Rectangle ScreenRect() { return { 0.0f, 0.0f, (float)GetScreenWidth(), (float)GetScreenHeight() }; }
 
     // Дэлгэцийн цэгийг харагдацын координат руу
     Vector2 ToView(Vector2 screen)
@@ -25,7 +29,7 @@ namespace
         {
             return screen;
         }
-        return { screen.x * (float)viewWidth / (float)GetScreenWidth(), screen.y * (float)viewHeight / (float)GetScreenHeight() };
+        return { (screen.x - viewDest.x) * (float)viewWidth / viewDest.width, (screen.y - viewDest.y) * (float)viewHeight / viewDest.height };
     }
 
     // ------------------------------------------------------------ Товчлуурууд
@@ -528,11 +532,29 @@ namespace
 
 // ================================================================ Харагдац
 
-void ViewInit(int targetHeight)
+void ViewInit(int targetHeight, bool letterbox)
 {
     viewWidth = GetScreenWidth();
     viewHeight = GetScreenHeight();
+    viewDest = ScreenRect();
     scaled = false;
+    // Утас, таблет: 16:9-өөс өндөр дэлгэц (iPad 4:3, 16:10 таблет) бол цэс, газрын зураг 1280x720-д зориулагдсан тул
+    // 1280x720 зургийг голд нь (харьцааг хадгалж) зурна, дээд доод зурвас бараан
+    if (letterbox && GetScreenHeight() > 0 && (double)GetScreenWidth() / GetScreenHeight() < 16.0 / 9.0 - 0.01)
+    {
+        target = LoadRenderTexture(1280, 720);
+        if (target.id != 0)
+        {
+            SetTextureFilter(target.texture, TEXTURE_FILTER_BILINEAR);
+            scaled = true;
+            viewWidth = 1280;
+            viewHeight = 720;
+            const float height = (float)GetScreenWidth() * 9.0f / 16.0f;
+            viewDest = { 0.0f, ((float)GetScreenHeight() - height) * 0.5f, (float)GetScreenWidth(), height };
+            TraceLog(LOG_INFO, "VIEW: letterbox 1280x720 in %dx%d", GetScreenWidth(), GetScreenHeight());
+            return;
+        }
+    }
     // (Дэлгэц зорилтот өндрөөс намхан бол өөрийнх нь өндрөөр: утсан дээр дотоод зураг үргэлж хэрэглэгдэнэ,
     // учир нь түүний гүний buffer нь дэлгэцийнхээс нарийвчлал сайтай.)
     targetHeight = std::min(targetHeight, GetScreenHeight());
@@ -585,8 +607,8 @@ void ViewEnd()
     {
         EndTextureMode();
         // Дотоод зураг босоо тэнхлэгээр урвуу хадгалагддаг тул эргүүлж сунгана.
-        DrawTexturePro(target.texture, { 0.0f, 0.0f, (float)viewWidth, -(float)viewHeight },
-                       { 0.0f, 0.0f, (float)GetScreenWidth(), (float)GetScreenHeight() }, { 0.0f, 0.0f }, 0.0f, WHITE);
+        if (viewDest.y > 0.0f) ClearBackground(BLACK); // (letterbox: дээд доод зурвас)
+        DrawTexturePro(target.texture, { 0.0f, 0.0f, (float)viewWidth, -(float)viewHeight }, viewDest, { 0.0f, 0.0f }, 0.0f, WHITE);
     }
 }
 

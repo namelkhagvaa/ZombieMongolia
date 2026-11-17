@@ -16,7 +16,8 @@
 // ---------------------------------------------------------------- Харагдац
 
 // targetHeight > 0 бол тоглоомыг ийм өндөртэй дотоод зурагт зурна (дэлгэц түүнээс өндөр үед); 0 = шууд.
-void ViewInit(int targetHeight);
+// letterbox: утас, таблет (16:9-өөс өндөр дэлгэцэд 1280x720 зургийг голд нь, дээд доод зурвас бараан)
+void ViewInit(int targetHeight, bool letterbox = false);
 void ViewShutdown();
 int ViewWidth();
 int ViewHeight();

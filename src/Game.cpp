@@ -152,7 +152,7 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
 #if defined(__ANDROID__) || defined(ZM_IOS)
     InitWindow(0, 0, "Zombie Mongolia"); // утасны бүтэн дэлгэц
     InSetTouchMode(true);
-    ViewInit(720);
+    ViewInit(720, true); // (4:3, 16:10 таблет: letterbox)
 #else
     {
         // Туршилт: өөр дэлгэцийн хэмжээ (ZM_WINDOW=1600x720 — 20:9 утас ViewInit(720)-тэй ижил)
@@ -172,7 +172,8 @@ GameWindow::GameWindow(const GameConfig& config, const LaunchOptions& options)
         break;
     }
     InSetTouchMode(options.touch || WebIsTouchDevice()); // хөтөч: утас, таблет дээр мэдрэгчтэй товчлуурууд
-    ViewInit(hidden && options.viewHeight <= 0 ? GetScreenHeight() : options.viewHeight);
+    // (--touch туршилт: утас, таблетын адил letterbox, жишээ нь ZM_WINDOW=2752x2064 iPad)
+    ViewInit(hidden && options.viewHeight <= 0 ? GetScreenHeight() : options.viewHeight, options.touch);
 #endif
 #if defined(__EMSCRIPTEN__)
     SetTargetFPS(0); // хөтөч: кадрын хурдыг requestAnimationFrame тогтооно (FrameYield)
